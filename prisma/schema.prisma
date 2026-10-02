@@ -1,0 +1,12 @@
+// Prisma schema for Assistant.
+// All models live in this one file, grouped by module with comments
+// (core, tasks, meetings, team, planograms). Models are added stage by stage.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
