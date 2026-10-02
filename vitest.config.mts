@@ -27,6 +27,7 @@ export default defineConfig({
       TELEGRAM_WEBHOOK_SECRET: "test-webhook-secret",
       ALLOW_DEV_LOGIN: "true",
       DEFAULT_TIMEZONE: "Asia/Tashkent",
+      UPLOAD_DIR: "./.test-uploads",
     },
   },
 });

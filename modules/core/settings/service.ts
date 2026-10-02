@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { db } from "@/lib/db";
+import { todayInTimezone } from "@/lib/dates";
 import { getEnv } from "@/lib/env";
 import { isValidTimezone } from "@/lib/time";
 import { OPTIONAL_NOTIFICATION_TYPES } from "@/modules/core/notifications/types";
@@ -35,4 +36,10 @@ export async function updateSettings(userId: string, input: SettingsInput) {
     create: { userId, ...data },
     update: data,
   });
+}
+
+// "Today" as YYYY-MM-DD in the user's timezone.
+export async function getUserToday(userId: string, now = new Date()) {
+  const { timezone } = await getSettings(userId);
+  return todayInTimezone(timezone, now);
 }

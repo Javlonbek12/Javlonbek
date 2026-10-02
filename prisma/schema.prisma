@@ -42,6 +42,12 @@ model User {
   invitesCreated Invite[]       @relation("InviteCreatedBy")
   inviteUsed     Invite?        @relation("InviteUsedBy")
   activity       ActivityLog[]
+
+  tasksCreated  Task[]           @relation("TaskCreator")
+  tasksAssigned Task[]           @relation("TaskAssignee")
+  plansCreated  Plan[]
+  comments      Comment[]
+  attachments   TaskAttachment[]
 }
 
 model Invite {
@@ -102,4 +108,132 @@ model ActivityLog {
   actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
 
   @@index([entityType, entityId])
+}
+
+// ============================================================
+// tasks: tasks, dependencies, plans, comments, attachments
+// ============================================================
+
+enum TaskStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  IN_PROGRESS
+  IN_REVIEW
+  DONE
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum PlanLevel {
+  YEAR
+  MONTH
+  WEEK
+}
+
+model Task {
+  id              String       @id @default(cuid())
+  title           String
+  description     String?
+  // Personal tasks are visible only to their author and skip approval.
+  isPersonal      Boolean      @default(false)
+  creatorId       String
+  assigneeId      String
+  status          TaskStatus   @default(DRAFT)
+  priority        TaskPriority @default(MEDIUM)
+  project         String?
+  // Calendar dates (no time of day). startDate is optional and used by the timeline.
+  startDate       DateTime?    @db.Date
+  dueDate         DateTime?    @db.Date
+  estimateMinutes Int?
+  planId          String?
+  approvedAt      DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  creator     User             @relation("TaskCreator", fields: [creatorId], references: [id])
+  assignee    User             @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  plan        Plan?            @relation(fields: [planId], references: [id], onDelete: SetNull)
+  // "blockedBy": tasks that must be closed before this one can be DONE.
+  blockedBy   TaskDependency[] @relation("DependencyBlocked")
+  blocks      TaskDependency[] @relation("DependencyBlocker")
+  comments    Comment[]
+  attachments TaskAttachment[]
+
+  @@index([assigneeId, status])
+  @@index([creatorId])
+  @@index([dueDate])
+}
+
+model TaskDependency {
+  blockerId String
+  blockedId String
+  createdAt DateTime @default(now())
+
+  blocker Task @relation("DependencyBlocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked Task @relation("DependencyBlocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@id([blockerId, blockedId])
+}
+
+model Plan {
+  id          String    @id @default(cuid())
+  title       String
+  level       PlanLevel
+  // First day of the period: Jan 1 (YEAR), 1st of month (MONTH), Monday (WEEK).
+  periodStart DateTime  @db.Date
+  isPersonal  Boolean   @default(false)
+  createdById String
+  parentId    String?
+  createdAt   DateTime  @default(now())
+
+  createdBy User   @relation(fields: [createdById], references: [id])
+  parent    Plan?  @relation("PlanChildren", fields: [parentId], references: [id], onDelete: SetNull)
+  children  Plan[] @relation("PlanChildren")
+  tasks     Task[]
+
+  @@index([level, periodStart])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  taskId    String
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+
+  task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author User @relation(fields: [authorId], references: [id])
+
+  @@index([taskId, createdAt])
+}
+
+enum AttachmentKind {
+  LINK
+  FILE
+}
+
+model TaskAttachment {
+  id           String         @id @default(cuid())
+  taskId       String
+  kind         AttachmentKind
+  title        String
+  // LINK: the URL. FILE: null.
+  url          String?
+  // FILE: path relative to UPLOAD_DIR, original MIME type and size in bytes.
+  filePath     String?
+  mimeType     String?
+  sizeBytes    Int?
+  uploadedById String
+  createdAt    DateTime       @default(now())
+
+  task       Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  uploadedBy User @relation(fields: [uploadedById], references: [id])
 }

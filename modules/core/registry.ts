@@ -1,4 +1,4 @@
-import { Bell, House, Settings, Users, type LucideIcon } from "lucide-react";
+import { Bell, House, ListTodo, Settings, Users, type LucideIcon } from "lucide-react";
 
 import type { Role } from "@/lib/generated/prisma/client";
 import type { TranslationKey } from "@/lib/i18n";
@@ -16,6 +16,7 @@ const ALL_ROLES: Role[] = ["OWNER", "MANAGER", "MEMBER"];
 // Every module registers itself here: name, icon, link and which roles see it.
 export const MODULES: ModuleEntry[] = [
   { id: "home", titleKey: "nav.home", href: "/", icon: House, roles: ALL_ROLES },
+  { id: "tasks", titleKey: "nav.tasks", href: "/tasks", icon: ListTodo, roles: ALL_ROLES },
   { id: "team", titleKey: "nav.team", href: "/team", icon: Users, roles: ALL_ROLES },
   {
     id: "notifications",

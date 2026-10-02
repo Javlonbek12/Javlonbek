@@ -33,7 +33,7 @@ export function AppNav({ role, unreadCount }: { role: Role; unreadCount: number 
                 href={href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex flex-col items-center gap-1 px-2 py-2 text-xs md:flex-row md:gap-3 md:rounded-md md:px-3 md:text-sm",
+                  "flex flex-col items-center gap-1 px-1 py-2 text-[11px] md:flex-row md:gap-3 md:rounded-md md:px-3 md:text-sm",
                   active ? "text-foreground md:bg-accent font-medium" : "text-muted-foreground",
                 )}
               >

@@ -8,7 +8,8 @@ vi.mock("next/navigation", () => ({ usePathname: () => "/team" }));
 describe("AppNav", () => {
   it("shows the registry modules in Russian and marks the current page", () => {
     render(<AppNav role="MEMBER" unreadCount={0} />);
-    expect(screen.getByRole("link", { name: "Главная" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Сегодня" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Задачи" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Команда" })).toHaveAttribute("aria-current", "page");
   });
 
