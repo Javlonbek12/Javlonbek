@@ -1,10 +1,23 @@
 import { z } from "zod";
 
-// Server-side environment variables. Only variables needed by the current stage
-// are required; the rest are optional until their stage is implemented.
+// Empty strings in .env mean "not set".
+const optional = <T extends z.ZodType>(schema: T) =>
+  z.preprocess((value) => (value === "" ? undefined : value), schema.optional());
+
+// Server-side environment variables. Variables of later stages stay optional
+// until their stage is implemented.
 const envSchema = z.object({
+  NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
   APP_URL: z.url().default("http://localhost:3000"),
+  SESSION_SECRET: optional(z.string().min(32, "SESSION_SECRET must be at least 32 characters")),
+  TELEGRAM_BOT_TOKEN: optional(z.string()),
+  TELEGRAM_BOT_USERNAME: optional(z.string()),
+  TELEGRAM_WEBHOOK_SECRET: optional(z.string()),
+  ALLOW_DEV_LOGIN: z
+    .enum(["true", "false", ""])
+    .default("false")
+    .transform((value) => value === "true"),
   DEFAULT_TIMEZONE: z.string().default("Asia/Tashkent"),
   CLAUDE_MODEL: z.string().default("claude-haiku-4-5"),
   AI_DAILY_LIMIT: z.coerce.number().int().positive().default(200),
@@ -30,4 +43,18 @@ let cached: Env | undefined;
 export function getEnv(): Env {
   cached ??= parseEnv(process.env);
   return cached;
+}
+
+export function requireSessionSecret(): string {
+  const secret = getEnv().SESSION_SECRET;
+  if (!secret) {
+    throw new Error("SESSION_SECRET is not set. Add it to .env (see .env.example).");
+  }
+  return secret;
+}
+
+// Dev login is never available in production, whatever the env says.
+export function isDevLoginEnabled(): boolean {
+  const env = getEnv();
+  return env.ALLOW_DEV_LOGIN && env.NODE_ENV !== "production";
 }

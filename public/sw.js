@@ -1,8 +1,9 @@
 // Basic offline support for the app shell.
-// Pages: network first, fall back to cache, then to /offline.
+// Pages: always from the network (they contain private data, so they are not cached);
+// without network the cached /offline page is shown.
 // Static assets (/_next/static, /icons): cache first.
-const CACHE = "assistant-shell-v1";
-const SHELL = ["/", "/offline", "/manifest.webmanifest", "/icons/icon-192.png"];
+const CACHE = "assistant-shell-v2";
+const SHELL = ["/offline", "/manifest.webmanifest", "/icons/icon-192.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)));
@@ -32,15 +33,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (request.mode === "navigate") {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE).then((cache) => cache.put(request, copy));
-          return response;
-        })
-        .catch(async () => (await caches.match(request)) ?? (await caches.match("/offline"))),
-    );
+    event.respondWith(fetch(request).catch(() => caches.match("/offline")));
     return;
   }
 

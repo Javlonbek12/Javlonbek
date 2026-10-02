@@ -3,7 +3,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { GET } from "@/app/api/health/route";
 import { db } from "@/lib/db";
 
-// Needs a running PostgreSQL (see README: docker compose up -d).
+// Needs a running PostgreSQL with the test database (see README).
 describe("GET /api/health", () => {
   afterAll(async () => {
     await db.$disconnect();

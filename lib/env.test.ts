@@ -26,3 +26,22 @@ describe("parseEnv", () => {
     );
   });
 });
+
+describe("parseEnv: stage 1 variables", () => {
+  const base = { DATABASE_URL: "postgresql://x" };
+
+  it("treats empty strings as not set", () => {
+    const env = parseEnv({ ...base, TELEGRAM_BOT_TOKEN: "", SESSION_SECRET: "" });
+    expect(env.TELEGRAM_BOT_TOKEN).toBeUndefined();
+    expect(env.SESSION_SECRET).toBeUndefined();
+  });
+
+  it("rejects a short SESSION_SECRET", () => {
+    expect(() => parseEnv({ ...base, SESSION_SECRET: "short" })).toThrow(/SESSION_SECRET/);
+  });
+
+  it("parses ALLOW_DEV_LOGIN as a boolean", () => {
+    expect(parseEnv({ ...base, ALLOW_DEV_LOGIN: "true" }).ALLOW_DEV_LOGIN).toBe(true);
+    expect(parseEnv(base).ALLOW_DEV_LOGIN).toBe(false);
+  });
+});

@@ -16,3 +16,15 @@ describe("t", () => {
     expect(t("home" as TranslationKey)).toBe("home");
   });
 });
+
+describe("t with params", () => {
+  it("fills placeholders", () => {
+    expect(t("home.greeting", { name: "Тестовый сотрудник 1" })).toBe(
+      "Здравствуйте, Тестовый сотрудник 1!",
+    );
+  });
+
+  it("leaves unknown placeholders as they are", () => {
+    expect(t("home.greeting", {})).toBe("Здравствуйте, {name}!");
+  });
+});

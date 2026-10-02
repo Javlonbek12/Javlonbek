@@ -15,7 +15,11 @@ export type Locale = keyof typeof dictionaries;
 
 export const defaultLocale: Locale = "ru";
 
-export function t(key: TranslationKey, locale: Locale = defaultLocale): string {
+export function t(
+  key: TranslationKey,
+  params?: Record<string, string | number>,
+  locale: Locale = defaultLocale,
+): string {
   let node: unknown = dictionaries[locale];
   for (const part of key.split(".")) {
     if (typeof node !== "object" || node === null || !(part in node)) {
@@ -23,5 +27,13 @@ export function t(key: TranslationKey, locale: Locale = defaultLocale): string {
     }
     node = (node as Record<string, unknown>)[part];
   }
-  return typeof node === "string" ? node : key;
+  if (typeof node !== "string") {
+    return key;
+  }
+  if (!params) {
+    return node;
+  }
+  return node.replace(/\{(\w+)\}/g, (match, name: string) =>
+    name in params ? String(params[name]) : match,
+  );
 }

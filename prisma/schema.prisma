@@ -10,3 +10,96 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+// ============================================================
+// core: users, roles, invites, notifications, settings, activity log
+// ============================================================
+
+enum Role {
+  OWNER
+  MANAGER
+  MEMBER
+}
+
+model User {
+  id               String   @id @default(cuid())
+  telegramId       BigInt   @unique
+  telegramUsername String?
+  firstName        String
+  lastName         String?
+  photoUrl         String?
+  role             Role     @default(MEMBER)
+  // Set when the user pressed /start in the bot; the bot can only message such users.
+  botChatId        BigInt?
+  invitedById      String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  invitedBy      User?          @relation("UserInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
+  invitedUsers   User[]         @relation("UserInvitedBy")
+  settings       UserSettings?
+  notifications  Notification[]
+  invitesCreated Invite[]       @relation("InviteCreatedBy")
+  inviteUsed     Invite?        @relation("InviteUsedBy")
+  activity       ActivityLog[]
+}
+
+model Invite {
+  id          String    @id @default(cuid())
+  code        String    @unique
+  role        Role
+  createdById String
+  expiresAt   DateTime
+  usedAt      DateTime?
+  usedById    String?   @unique
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  createdBy User  @relation("InviteCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  usedBy    User? @relation("InviteUsedBy", fields: [usedById], references: [id], onDelete: SetNull)
+}
+
+model Notification {
+  id               String    @id @default(cuid())
+  userId           String
+  type             String
+  title            String
+  body             String?
+  // Relative app path to open, e.g. "/team".
+  link             String?
+  readAt           DateTime?
+  sentToTelegramAt DateTime?
+  createdAt        DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model UserSettings {
+  userId          String   @id
+  timezone        String   @default("Asia/Tashkent")
+  telegramEnabled Boolean  @default(true)
+  // Quiet hours in minutes from midnight (user's timezone); both null = off.
+  quietHoursStart Int?
+  quietHoursEnd   Int?
+  // Notification types the user turned off.
+  disabledTypes   String[] @default([])
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ActivityLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String
+  details    Json?
+  createdAt  DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+}
