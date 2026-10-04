@@ -93,7 +93,7 @@ jobs:
                 echo "TELEGRAM_BOT_USERNAME=${TELEGRAM_BOT_USERNAME#@}"
                 echo "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY"
               } | ssh vps 'umask 077 && cat > ~/.assistant-provided.env'
-              ssh vps 'bash -s' < scripts/server/setup.sh ;;
+              ssh vps 'bash ~/assistant/scripts/server/setup.sh' ;;
             deploy)
               ssh vps 'cd ~/assistant && ./scripts/deploy.sh' ;;
             logs)

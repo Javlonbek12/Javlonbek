@@ -3,6 +3,8 @@
 # .github/workflows/server.yml ("setup"), after the project files were copied to ~/assistant.
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
+# No command below may wait for keyboard input.
+exec < /dev/null
 
 APP="$HOME/assistant"
 PROVIDED="$HOME/.assistant-provided.env"
@@ -131,3 +133,4 @@ step "Done"
 $COMPOSE ps
 echo
 echo "Site: https://$DOMAIN"
+echo "SETUP FINISHED"
