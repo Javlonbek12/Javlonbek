@@ -1,4 +1,4 @@
-import { Api } from "grammy";
+import { Api, InputFile } from "grammy";
 
 import { getEnv } from "@/lib/env";
 
@@ -29,6 +29,29 @@ export async function sendTelegramMessage(
     return true;
   } catch (error) {
     console.error("Failed to send Telegram message", error);
+    return false;
+  }
+}
+
+// Sends a picture with a caption (e.g. an approved planogram). Same error handling as above.
+export async function sendTelegramPhoto(
+  chatId: bigint,
+  png: Buffer,
+  caption: string,
+): Promise<boolean> {
+  const token = getEnv().TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    console.warn("TELEGRAM_BOT_TOKEN is not set; Telegram photo skipped.");
+    return false;
+  }
+  api ??= new Api(token);
+  try {
+    await api.sendPhoto(Number(chatId), new InputFile(png, "planogram.png"), {
+      caption: caption.slice(0, 1000),
+    });
+    return true;
+  } catch (error) {
+    console.error("Failed to send Telegram photo", error);
     return false;
   }
 }

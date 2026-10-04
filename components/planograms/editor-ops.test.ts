@@ -1,0 +1,45 @@
+import { describe, expect, it } from "vitest";
+
+import { EQUIPMENT_FIXTURES } from "@/modules/planograms/fixtures";
+import type { Layout } from "@/modules/planograms/layout";
+
+import { copyShelf, moveCell, placeAt, removeAt, swapShelves, toggleBadge } from "./editor-ops";
+
+const g = EQUIPMENT_FIXTURES.find((e) => e.code === "DISPLAY_L")!.geometry;
+const sku = (skuId: string, badges: string[] = []) => ({ kind: "SKU" as const, skuId, badges });
+
+describe("editor operations", () => {
+  it("a banner replaces what stood in its span; a SKU on the banner removes it", () => {
+    const layout: Layout = { "1:0": sku("a"), "1:3": sku("b"), "1:9": sku("c") };
+    const withBanner = placeAt(layout, g, "1:0", { kind: "POSM", posmId: "banner", span: 5 })!;
+    expect(withBanner).toEqual({
+      "1:0": { kind: "POSM", posmId: "banner", span: 5 },
+      "1:9": sku("c"),
+    });
+    expect(removeAt(withBanner, "1:3")).toEqual({ "1:9": sku("c") });
+    expect(placeAt(layout, g, "1:8", { kind: "POSM", posmId: "x", span: 5 })).toBeNull();
+  });
+
+  it("moves and swaps single cells", () => {
+    const layout: Layout = { "0:0": sku("a"), "0:1": sku("b") };
+    expect(moveCell(layout, g, "0:0", "0:1")).toEqual({ "0:0": sku("b"), "0:1": sku("a") });
+    expect(moveCell(layout, g, "0:0", "3:4")).toEqual({ "0:1": sku("b"), "3:4": sku("a") });
+  });
+
+  it("toggles a badge on several cells", () => {
+    const layout: Layout = { "0:0": sku("a", ["YANGI"]), "0:1": sku("b") };
+    expect(toggleBadge(layout, ["0:0", "0:1"], "YANGI")).toEqual({
+      "0:0": sku("a", ["YANGI"]),
+      "0:1": sku("b", ["YANGI"]),
+    });
+    expect(
+      toggleBadge(toggleBadge(layout, ["0:0", "0:1"], "YANGI"), ["0:0", "0:1"], "YANGI"),
+    ).toEqual({ "0:0": sku("a"), "0:1": sku("b") });
+  });
+
+  it("copies and swaps shelves", () => {
+    const layout: Layout = { "0:0": sku("a"), "1:5": sku("b") };
+    expect(copyShelf(layout, g, 0, 1)).toEqual({ "0:0": sku("a"), "1:0": sku("a") });
+    expect(swapShelves(layout, g, 0, 1)).toEqual({ "1:0": sku("a"), "0:5": sku("b") });
+  });
+});

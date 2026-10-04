@@ -8,4 +8,5 @@ afterEach(() => cleanup());
 // Tests never talk to the real Telegram API.
 vi.mock("@/modules/bot/send", () => ({
   sendTelegramMessage: vi.fn(async () => true),
+  sendTelegramPhoto: vi.fn(async () => true),
 }));

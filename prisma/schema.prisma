@@ -403,3 +403,196 @@ model EmployeeNote {
 
   @@index([employeeId, kind])
 }
+
+// ============================================================
+// planograms: equipment, SKUs, prices, POSM, planograms
+// ============================================================
+
+model Equipment {
+  id        String   @id @default(cuid())
+  // e.g. DISPLAY_L, MODULE_9x2, LEGO_21, POG_MINI
+  code      String   @unique
+  name      String
+  channel   String
+  // { header: null | "horizontal" | "vertical", shelves: [{ slots, offset, group }] } — see modules/planograms/geometry.ts
+  geometry  Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  planograms Planogram[]
+}
+
+enum PriceLabelStyle {
+  // "31 000"
+  NUMBER
+  // "18 ming"
+  MING
+}
+
+model Sku {
+  id            String          @id @default(cuid())
+  code          String          @unique
+  brand         String
+  name          String
+  format        String?
+  // Path under UPLOAD_DIR of the pack picture (PNG/JPEG/WebP).
+  imagePath     String?
+  defaultBadges String[]        @default([])
+  isNew         Boolean         @default(false)
+  newSince      DateTime?       @db.Date
+  isMandatory   Boolean         @default(false)
+  priceStyle    PriceLabelStyle @default(NUMBER)
+  // Placeholder colour when there is no picture.
+  color         String          @default("#64748b")
+  archived      Boolean         @default(false)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  prices SkuPrice[]
+  slots  PlanogramSlot[]
+}
+
+model PriceList {
+  id            String    @id @default(cuid())
+  name          String
+  effectiveFrom DateTime  @db.Date
+  createdById   String
+  // Set when the list was applied to all active planograms.
+  appliedAt     DateTime?
+  createdAt     DateTime  @default(now())
+
+  prices     SkuPrice[]
+  planograms Planogram[]
+}
+
+model SkuPrice {
+  priceListId String
+  skuId       String
+  // Price in sum.
+  price       Int
+
+  priceList PriceList @relation(fields: [priceListId], references: [id], onDelete: Cascade)
+  sku       Sku       @relation(fields: [skuId], references: [id], onDelete: Cascade)
+
+  @@id([priceListId, skuId])
+}
+
+enum PosmType {
+  // Above the shelves (horizontal or vertical).
+  HEADER
+  // A banner taking a whole shelf or part of it.
+  BANNER
+  // A sticker / wobbler taking one or more slots.
+  STICKER
+}
+
+model Posm {
+  id        String   @id @default(cuid())
+  name      String
+  type      PosmType
+  // How many slots it covers on a shelf (ignored for HEADER).
+  slotSpan  Int      @default(1)
+  imagePath String?
+  color     String   @default("#16a34a")
+  archived  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  slots    PlanogramSlot[]
+  headerOf Planogram[]
+}
+
+enum PlanogramStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  ARCHIVED
+}
+
+model Planogram {
+  id                String          @id @default(cuid())
+  title             String
+  equipmentId       String
+  channel           String
+  project           String?
+  validFrom         DateTime?       @db.Date
+  validTo           DateTime?       @db.Date
+  status            PlanogramStatus @default(DRAFT)
+  version           Int             @default(1)
+  // All versions of one planogram share rootId (= id of version 1).
+  rootId            String?
+  previousVersionId String?
+  priceListId       String?
+  headerPosmId      String?
+  isTemplate        Boolean         @default(false)
+  // Free text, e.g. lighting notes.
+  notes             String?
+  // Opens the approved planogram without login (for merchandisers).
+  shareToken        String?         @unique
+  createdById       String
+  approvedById      String?
+  approvedAt        DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  equipment       Equipment       @relation(fields: [equipmentId], references: [id])
+  priceList       PriceList?      @relation(fields: [priceListId], references: [id], onDelete: SetNull)
+  headerPosm      Posm?           @relation(fields: [headerPosmId], references: [id], onDelete: SetNull)
+  previousVersion Planogram?      @relation("PlanogramVersions", fields: [previousVersionId], references: [id], onDelete: SetNull)
+  nextVersions    Planogram[]     @relation("PlanogramVersions")
+  slots           PlanogramSlot[]
+  rules           PlanogramRule[]
+
+  @@index([rootId])
+  @@index([status])
+}
+
+enum SlotKind {
+  SKU
+  POSM
+  // Deliberately left empty.
+  EMPTY
+}
+
+model PlanogramSlot {
+  planogramId String
+  shelf       Int
+  position    Int
+  kind        SlotKind
+  skuId       String?
+  posmId      String?
+  badges      String[] @default([])
+
+  planogram Planogram @relation(fields: [planogramId], references: [id], onDelete: Cascade)
+  sku       Sku?      @relation(fields: [skuId], references: [id])
+  posm      Posm?     @relation(fields: [posmId], references: [id])
+
+  @@id([planogramId, shelf, position])
+}
+
+enum RuleKind {
+  MANDATORY_SKUS
+  FACINGS
+  BRAND_BLOCKS
+  BRAND_ORDER
+  NEW_ITEMS
+  ALL_SLOTS_DECIDED
+}
+
+enum RuleSeverity {
+  CRITICAL
+  WARNING
+}
+
+model PlanogramRule {
+  id          String       @id @default(cuid())
+  planogramId String
+  kind        RuleKind
+  severity    RuleSeverity
+  enabled     Boolean      @default(true)
+  // Rule settings, e.g. { "shelves": [0] } or { "order": ["ESSE", "BOHEM", "PINE"] }.
+  params      Json         @default("{}")
+
+  planogram Planogram @relation(fields: [planogramId], references: [id], onDelete: Cascade)
+
+  @@unique([planogramId, kind])
+}

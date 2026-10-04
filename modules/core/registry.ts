@@ -2,6 +2,7 @@ import {
   Bell,
   CalendarClock,
   House,
+  LayoutGrid,
   ListTodo,
   Settings,
   Users,
@@ -36,6 +37,13 @@ export const MODULES: ModuleEntry[] = [
   },
   { id: "team", titleKey: "nav.team", href: "/team", icon: Users, roles: ALL_ROLES },
   {
+    id: "planograms",
+    titleKey: "nav.planograms",
+    href: "/planograms",
+    icon: LayoutGrid,
+    roles: ALL_ROLES,
+  },
+  {
     id: "notifications",
     titleKey: "nav.notifications",
     href: "/notifications",
@@ -43,7 +51,15 @@ export const MODULES: ModuleEntry[] = [
     roles: ALL_ROLES,
     mobile: false,
   },
-  { id: "settings", titleKey: "nav.settings", href: "/settings", icon: Settings, roles: ALL_ROLES },
+  // On phones settings sit behind the gear in the header, so the bottom bar keeps 5 items.
+  {
+    id: "settings",
+    titleKey: "nav.settings",
+    href: "/settings",
+    icon: Settings,
+    roles: ALL_ROLES,
+    mobile: false,
+  },
 ];
 
 export function modulesForRole(role: Role, modules: ModuleEntry[] = MODULES): ModuleEntry[] {

@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell } from "lucide-react";
+import { Bell, Settings } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -64,14 +64,19 @@ export function MobileHeader({ unreadCount }: { unreadCount: number }) {
   return (
     <header className="bg-background/95 sticky top-0 z-10 flex items-center justify-between border-b px-4 py-2 backdrop-blur md:hidden">
       <span className="font-semibold">{t("app.name")}</span>
-      <Link href="/notifications" aria-label={t("nav.notifications")} className="relative p-1">
-        <Bell className="size-5" />
-        {unreadCount > 0 && (
-          <span className="bg-destructive absolute -top-0.5 -right-1 min-w-4 rounded-full px-1 text-center text-[10px] leading-4 text-white">
-            {unreadCount > 99 ? "99+" : unreadCount}
-          </span>
-        )}
-      </Link>
+      <div className="flex items-center gap-2">
+        <Link href="/settings" aria-label={t("nav.settings")} className="p-1">
+          <Settings className="size-5" />
+        </Link>
+        <Link href="/notifications" aria-label={t("nav.notifications")} className="relative p-1">
+          <Bell className="size-5" />
+          {unreadCount > 0 && (
+            <span className="bg-destructive absolute -top-0.5 -right-1 min-w-4 rounded-full px-1 text-center text-[10px] leading-4 text-white">
+              {unreadCount > 99 ? "99+" : unreadCount}
+            </span>
+          )}
+        </Link>
+      </div>
     </header>
   );
 }
