@@ -1,0 +1,8 @@
+.next
+node_modules
+lib/generated
+prisma/migrations
+package-lock.json
+*.md
+.test-uploads
+uploads

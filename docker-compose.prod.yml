@@ -1,0 +1,117 @@
+# Production: docker compose -f docker-compose.prod.yml up -d
+# Settings come from .env next to this file (see docs/SETUP-SERVER.md).
+name: assistant
+
+x-app: &app
+  build: .
+  image: assistant-app
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    NODE_ENV: production
+    DATABASE_URL: postgresql://assistant:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/assistant
+    UPLOAD_DIR: /data/uploads
+  volumes:
+    - uploads:/data/uploads
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: assistant
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: assistant
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U assistant"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Applies database migrations and exits; the app starts after it succeeds.
+  migrate:
+    <<: *app
+    restart: "no"
+    command: ["npx", "prisma", "migrate", "deploy"]
+
+  app:
+    <<: *app
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Reminders, digests, meeting reminders (every minute).
+  worker:
+    <<: *app
+    command: ["node", "--import", "tsx", "modules/scheduler/worker.ts"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # Tells the OWNER in Telegram if the site, the scheduler or the bot stops working.
+  watchdog:
+    <<: *app
+    command: ["node", "--import", "tsx", "scripts/watchdog.ts"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://assistant:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/assistant
+      APP_HEALTH_URL: http://app:3000/api/health
+    volumes: []
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # Own speech recognition (faster-whisper, model "small", CPU). Turned on by
+  # COMPOSE_PROFILES=whisper in .env; without it use STT_PROVIDER=openai or mock.
+  whisper:
+    image: fedirz/faster-whisper-server:latest-cpu
+    profiles: ["whisper"]
+    restart: unless-stopped
+    # --no-sync: start the server as installed in the image, without re-checking packages online.
+    command:
+      ["uv", "run", "--no-sync", "uvicorn", "--factory", "faster_whisper_server.main:create_app"]
+    environment:
+      WHISPER__MODEL: Systran/faster-whisper-small
+      WHISPER__INFERENCE_DEVICE: cpu
+    volumes:
+      - whisper-models:/root/.cache/huggingface
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - app
+
+volumes:
+  postgres-data:
+  uploads:
+  whisper-models:
+  caddy-data:
+  caddy-config:
