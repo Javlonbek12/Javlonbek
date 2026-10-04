@@ -89,6 +89,11 @@ echo "Claude key: $( [ -n "$(get_kv ANTHROPIC_API_KEY)" ] && echo set || echo NO
 step "Build and start (first time 5-10 minutes)"
 chmod +x scripts/*.sh
 $COMPOSE build
+# The database may have been created earlier with another password (e.g. a manual install);
+# align it with .env. Local connections inside the container need no password.
+$COMPOSE up -d --wait postgres
+$COMPOSE exec -T postgres psql -U assistant -d postgres -q -v ON_ERROR_STOP=1 \
+  -c "ALTER USER assistant WITH PASSWORD '$(get_kv POSTGRES_PASSWORD)'"
 $COMPOSE run --rm migrate
 $COMPOSE up -d --remove-orphans
 docker image prune -f > /dev/null
