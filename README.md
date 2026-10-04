@@ -130,7 +130,7 @@ tests/        интеграционные тесты (с настоящей б�
 
 Пошаговая инструкция — [`docs/SETUP-SERVER.md`](docs/SETUP-SERVER.md): Ubuntu 24.04, Docker, домен с HTTPS,
 бот, ежедневные бэкапы, мониторинг. После настройки секретов `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`
-каждый push в `main` с зелёными проверками сам обновляет сервер (`.github/workflows/deploy.yml`).
+каждый push в `main` с зелёными проверками сам обновляет сервер, а установку, состояние, журналы и бэкап можно запускать кнопкой Actions → Server (`.github/workflows/server.yml`).
 
 Руководство для сотрудников — [`docs/USER-GUIDE.md`](docs/USER-GUIDE.md).
 

@@ -1,0 +1,108 @@
+name: Server
+
+# Works with the VPS over SSH. The key and the passwords live only in the repository
+# secrets; nobody sees them in the logs.
+#   status  - what is running, memory, disk, recent logs (changes nothing)
+#   setup   - first installation (safe to repeat): Docker, firewall, settings, start, backups, bot
+#   deploy  - copy the current code and restart (also runs by itself after green CI on main)
+#   logs    - last 200 log lines of one service
+#   backup  - make a backup now
+#   restart - restart all services
+# Secrets: VPS_HOST, VPS_USER (root), VPS_SSH_KEY; for setup also TELEGRAM_BOT_TOKEN,
+# TELEGRAM_BOT_USERNAME, ANTHROPIC_API_KEY. Variable (optional): DOMAIN. See docs/SETUP-SERVER.md.
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: What to do
+        type: choice
+        options: [status, setup, deploy, logs, backup, restart]
+        default: status
+      service:
+        description: "For logs: app, worker, watchdog, caddy, postgres, whisper, migrate"
+        type: string
+        default: app
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+concurrency: server
+
+jobs:
+  server:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      ACTION: ${{ github.event_name == 'workflow_run' && 'deploy' || inputs.action }}
+      SERVICE: ${{ inputs.service }}
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Connect
+        id: connect
+        run: |
+          if [ -z "$VPS_HOST" ] || [ -z "$VPS_USER" ] || [ -z "$VPS_SSH_KEY" ]; then
+            echo "Secrets VPS_HOST / VPS_USER / VPS_SSH_KEY are not set: nothing to do."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_vps
+          chmod 600 ~/.ssh/id_vps
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2> /dev/null
+          printf 'Host vps\n  HostName %s\n  User %s\n  IdentityFile ~/.ssh/id_vps\n  ServerAliveInterval 30\n' \
+            "$VPS_HOST" "$VPS_USER" > ~/.ssh/config
+          ssh vps 'echo "Connected to $(hostname) as $(whoami)"'
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Copy the code to the server
+        if: steps.connect.outputs.ready == 'true' && (env.ACTION == 'setup' || env.ACTION == 'deploy')
+        run: |
+          git archive --format=tar HEAD | ssh vps 'mkdir -p ~/assistant && tar -x -C ~/assistant'
+          ssh vps "echo '$(git log -1 --format='%h %cs %s' | tr -d "'")' > ~/assistant/REVISION"
+
+      - name: Run
+        if: steps.connect.outputs.ready == 'true'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_BOT_USERNAME: ${{ secrets.TELEGRAM_BOT_USERNAME }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DOMAIN: ${{ vars.DOMAIN }}
+        run: |
+          case "$ACTION" in
+            status)
+              ssh vps 'bash -s' < scripts/server/status.sh ;;
+            setup)
+              # Without an own domain: a free name that points to the server IP (e.g. 5-182-33-60.sslip.io).
+              domain="$DOMAIN"
+              if [ -z "$domain" ]; then
+                ip="$VPS_HOST"
+                [[ "$ip" =~ ^[0-9]+(\.[0-9]+){3}$ ]] || ip="$(ssh vps 'curl -fsS -4 https://api.ipify.org')"
+                domain="$(echo "$ip" | tr . -).sslip.io"
+              fi
+              {
+                echo "DOMAIN=$domain"
+                echo "TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN"
+                echo "TELEGRAM_BOT_USERNAME=${TELEGRAM_BOT_USERNAME#@}"
+                echo "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY"
+              } | ssh vps 'umask 077 && cat > ~/.assistant-provided.env'
+              ssh vps 'bash -s' < scripts/server/setup.sh ;;
+            deploy)
+              ssh vps 'cd ~/assistant && ./scripts/deploy.sh' ;;
+            logs)
+              if ! [[ "$SERVICE" =~ ^[a-z]+$ ]]; then echo "Unknown service: $SERVICE"; exit 1; fi
+              ssh vps "cd ~/assistant && docker compose -f docker-compose.prod.yml logs --tail 200 --timestamps $SERVICE" ;;
+            backup)
+              ssh vps '~/assistant/scripts/backup.sh' ;;
+            restart)
+              ssh vps 'cd ~/assistant && docker compose -f docker-compose.prod.yml restart && docker compose -f docker-compose.prod.yml ps' ;;
+            *)
+              echo "Unknown action: $ACTION"; exit 1 ;;
+          esac
