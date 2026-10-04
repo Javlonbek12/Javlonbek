@@ -43,13 +43,14 @@ model User {
   inviteUsed     Invite?        @relation("InviteUsedBy")
   activity       ActivityLog[]
 
-  tasksCreated  Task[]           @relation("TaskCreator")
-  tasksAssigned Task[]           @relation("TaskAssignee")
-  plansCreated  Plan[]
-  comments      Comment[]
-  attachments   TaskAttachment[]
-  aiUsage       AiUsage[]
-  botDrafts     BotDraft[]
+  tasksCreated   Task[]           @relation("TaskCreator")
+  tasksAssigned  Task[]           @relation("TaskAssignee")
+  plansCreated   Plan[]
+  comments       Comment[]
+  attachments    TaskAttachment[]
+  aiUsage        AiUsage[]
+  botDrafts      BotDraft[]
+  scheduledSends ScheduledSend[]
 }
 
 model Invite {
@@ -68,16 +69,18 @@ model Invite {
 }
 
 model Notification {
-  id               String    @id @default(cuid())
-  userId           String
-  type             String
-  title            String
-  body             String?
+  id                String    @id @default(cuid())
+  userId            String
+  type              String
+  title             String
+  body              String?
   // Relative app path to open, e.g. "/team".
-  link             String?
-  readAt           DateTime?
-  sentToTelegramAt DateTime?
-  createdAt        DateTime  @default(now())
+  link              String?
+  readAt            DateTime?
+  sentToTelegramAt  DateTime?
+  // Created during quiet hours: the scheduler sends it to Telegram when they end.
+  deliverAfterQuiet Boolean   @default(false)
+  createdAt         DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -93,6 +96,8 @@ model UserSettings {
   quietHoursEnd   Int?
   // Notification types the user turned off.
   disabledTypes   String[] @default([])
+  // Morning digest time in minutes from midnight (user's timezone); 510 = 08:30.
+  digestTime      Int      @default(510)
   updatedAt       DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -281,4 +286,29 @@ model BotDraft {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, updatedAt])
+}
+
+// ============================================================
+// scheduler: one row per reminder/digest sent, so nothing is sent twice
+// ============================================================
+
+model ScheduledSend {
+  id        String   @id @default(cuid())
+  userId    String
+  // "digest" | "due_reminder" | "overdue" | "weekly_summary" | "meeting_reminder"
+  kind      String
+  // What exactly was sent, e.g. the local date of a digest or "<taskId>:<dueDate>".
+  key       String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, kind, key])
+}
+
+// Small key-value store for service state (e.g. the scheduler's last run, for monitoring).
+model SystemState {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
 }

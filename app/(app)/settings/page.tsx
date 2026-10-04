@@ -105,6 +105,18 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
         </Card>
 
         <Card>
+          <Label className="flex-col items-start">
+            {t("settings.digestTime")}
+            <Input
+              type="time"
+              name="digestTime"
+              className="w-28"
+              defaultValue={formatTimeOfDay(settings.digestTime)}
+            />
+          </Label>
+        </Card>
+
+        <Card>
           <CardTitle>{t("settings.types")}</CardTitle>
           {OPTIONAL_NOTIFICATION_TYPES.map((type) => (
             <Label key={type}>

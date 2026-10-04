@@ -23,6 +23,7 @@ export const settingsInputSchema = z
     quietHoursStart: minutes,
     quietHoursEnd: minutes,
     disabledTypes: z.array(z.enum(OPTIONAL_NOTIFICATION_TYPES as [string, ...string[]])),
+    digestTime: z.number().int().min(0).max(1439),
   })
   // Quiet hours are either fully set or fully off.
   .refine((v) => (v.quietHoursStart === null) === (v.quietHoursEnd === null), "quiet hours");

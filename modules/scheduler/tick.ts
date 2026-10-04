@@ -1,0 +1,136 @@
+import { db } from "@/lib/db";
+import { formatDay, fromDateString } from "@/lib/dates";
+
+import { Prisma, type User } from "@/lib/generated/prisma/client";
+import { t } from "@/lib/i18n";
+import { deliverDeferredNotifications, notify } from "@/modules/core/notifications/service";
+import { getSettings } from "@/modules/core/settings/service";
+import { displayName } from "@/modules/core/users/display-name";
+import { CLOSED_STATUSES, isApprover } from "@/modules/tasks/access";
+
+import { collectDigestData, defaultDigestWriter, isDigestEmpty, type DigestWriter } from "./digest";
+import { dueReminderDate, isDigestTime, localClock, overdueRange, weeklySummaryWeek } from "./plan";
+import { weeklySummaryText } from "./weekly";
+
+export const LAST_TICK_KEY = "scheduler.lastTick";
+
+// Records that this (user, kind, key) was handled. Returns false if it already was:
+// the unique index makes this safe even if two ticks run at the same time.
+export async function claim(userId: string, kind: string, key: string): Promise<boolean> {
+  try {
+    await db.scheduledSend.create({ data: { userId, kind, key } });
+    return true;
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")
+      return false;
+    throw error;
+  }
+}
+
+// Tasks that should produce reminders: personal ones, or team ones after approval.
+const remindable: Prisma.TaskWhereInput = {
+  status: { notIn: CLOSED_STATUSES },
+  OR: [{ isPersonal: true }, { approvedAt: { not: null } }],
+};
+
+async function digestFor(user: User, today: string, writer: DigestWriter) {
+  if (!(await claim(user.id, "digest", today))) return;
+  const data = await collectDigestData(user, today);
+  if (isDigestEmpty(data)) return;
+  await notify(user.id, {
+    type: "digest",
+    title: t("notifications.events.digestTitle", { name: user.firstName }),
+    body: await writer(user, today, data),
+    link: "/",
+  });
+}
+
+async function dueRemindersFor(user: User, dueDate: string) {
+  const tasks = await db.task.findMany({
+    where: { ...remindable, assigneeId: user.id, dueDate: fromDateString(dueDate) },
+    select: { id: true, title: true },
+  });
+  for (const task of tasks) {
+    if (!(await claim(user.id, "due_reminder", `${task.id}:${dueDate}`))) continue;
+    await notify(user.id, {
+      type: "due_reminder",
+      title: t("notifications.events.dueReminderTitle"),
+      body: t("notifications.events.dueReminderBody", {
+        title: task.title,
+        date: formatDay(dueDate),
+      }),
+      link: `/tasks/${task.id}`,
+    });
+  }
+}
+
+// Overdue: the assignee and (for team tasks) the creator, once per task and due date.
+async function overdueFor(user: User, range: { from: string; to: string }) {
+  const tasks = await db.task.findMany({
+    where: {
+      ...remindable,
+      dueDate: { gte: fromDateString(range.from), lt: fromDateString(range.to) },
+      OR: [{ assigneeId: user.id }, { creatorId: user.id, isPersonal: false }],
+    },
+    select: {
+      id: true,
+      title: true,
+      dueDate: true,
+      assignee: { select: { firstName: true, lastName: true } },
+    },
+  });
+  for (const task of tasks) {
+    const due = task.dueDate!.toISOString().slice(0, 10);
+    if (!(await claim(user.id, "overdue", `${task.id}:${due}`))) continue;
+    await notify(user.id, {
+      type: "overdue",
+      title: t("notifications.events.overdueTitle"),
+      body: t("notifications.events.overdueBody", {
+        title: task.title,
+        date: formatDay(due),
+        name: displayName(task.assignee),
+      }),
+      link: `/tasks/${task.id}`,
+    });
+  }
+}
+
+async function weeklyFor(user: User, weekStart: string, today: string) {
+  if (!isApprover(user.role) || !(await claim(user.id, "weekly_summary", weekStart))) return;
+  await notify(user.id, {
+    type: "weekly_summary",
+    title: t("notifications.events.weeklyTitle"),
+    body: await weeklySummaryText(weekStart, today),
+    link: "/tasks?scope=team",
+  });
+}
+
+export type TickDeps = { writeDigest?: DigestWriter };
+
+// One scheduler pass. Safe to run every minute: everything sent is claimed first.
+export async function runSchedulerTick(now = new Date(), deps: TickDeps = {}) {
+  const writer = deps.writeDigest ?? defaultDigestWriter;
+  const users = await db.user.findMany();
+  for (const user of users) {
+    try {
+      const settings = await getSettings(user.id);
+      const clock = localClock(now, settings.timezone);
+      if (isDigestTime(clock, settings.digestTime)) await digestFor(user, clock.date, writer);
+      const tomorrow = dueReminderDate(clock);
+      if (tomorrow) await dueRemindersFor(user, tomorrow);
+      const overdue = overdueRange(clock);
+      if (overdue) await overdueFor(user, overdue);
+      const week = weeklySummaryWeek(clock);
+      if (week) await weeklyFor(user, week, clock.date);
+    } catch (error) {
+      // One user's problem must not stop reminders for everyone else.
+      console.error(`Scheduler failed for user ${user.id}`, error);
+    }
+  }
+  await deliverDeferredNotifications(now);
+  await db.systemState.upsert({
+    where: { key: LAST_TICK_KEY },
+    create: { key: LAST_TICK_KEY, value: now.toISOString() },
+    update: { value: now.toISOString() },
+  });
+}

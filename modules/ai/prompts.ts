@@ -119,3 +119,37 @@ export async function interpretCommand(
     taskQuery: result.taskQuery?.trim() || null,
   };
 }
+
+// ---------- writeDigest ----------
+
+export const digestSchema = z.object({ text: z.string() });
+
+export const WRITE_DIGEST_SYSTEM = `You write a short morning digest for a busy trade-marketing manager, in Russian, for a Telegram message.
+You get JSON with the person's tasks: dueToday, overdue, waitingForDecision (tasks they must approve or accept), dueTomorrow.
+Write at most 8 short lines: start with what is overdue (most urgent first), then today's tasks, then what waits for their decision, then a one-line heads-up about tomorrow if anything is due.
+Mention task titles exactly as given, with assignee names where present. Plain text with a few emojis, no Markdown, no greeting (it is added separately), no invented facts.`;
+
+export type DigestData = {
+  dueToday: { title: string; assignee?: string }[];
+  overdue: { title: string; dueDate: string; assignee?: string }[];
+  waitingForDecision: { title: string; status: string }[];
+  dueTomorrow: { title: string }[];
+};
+
+export async function writeDigest(
+  userId: string,
+  today: string,
+  data: DigestData,
+  call?: ModelCall,
+) {
+  const result = await runStructured({
+    userId,
+    fn: "writeDigest",
+    system: WRITE_DIGEST_SYSTEM,
+    prompt: `Today: ${today}\n\n${JSON.stringify(data)}`,
+    schema: digestSchema,
+    today,
+    call,
+  });
+  return result.text.trim().slice(0, 3000);
+}

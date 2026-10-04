@@ -7,6 +7,10 @@ export const NOTIFICATION_TYPES = [
   "task_assigned",
   "task_status",
   "task_comment",
+  "digest",
+  "due_reminder",
+  "overdue",
+  "weekly_summary",
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];

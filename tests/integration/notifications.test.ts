@@ -20,6 +20,7 @@ const baseSettings = {
   quietHoursStart: null,
   quietHoursEnd: null,
   disabledTypes: [],
+  digestTime: 510,
 };
 
 describe("notify", () => {

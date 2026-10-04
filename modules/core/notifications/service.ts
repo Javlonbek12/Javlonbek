@@ -53,7 +53,14 @@ export async function notify(userId: string, event: NotificationEvent, deps?: Pa
     settings.quietHoursStart,
     settings.quietHoursEnd,
   );
-  if (user.botChatId && settings.telegramEnabled && !quiet) {
+  if (user.botChatId && settings.telegramEnabled && quiet) {
+    // Sent by the scheduler once quiet hours are over.
+    return db.notification.update({
+      where: { id: notification.id },
+      data: { deliverAfterQuiet: true },
+    });
+  }
+  if (user.botChatId && settings.telegramEnabled) {
     const sent = await sendTelegram(
       user.botChatId,
       formatTelegramText(event, getEnv().APP_URL),
@@ -102,4 +109,44 @@ export async function markRead(userId: string, notificationId: string, now = new
 
 export async function markAllRead(userId: string, now = new Date()) {
   await db.notification.updateMany({ where: { userId, readAt: null }, data: { readAt: now } });
+}
+
+// Telegram delivery of notifications held back by quiet hours (called by the scheduler).
+export async function deliverDeferredNotifications(
+  now = new Date(),
+  deps?: Partial<Pick<Deps, "sendTelegram">>,
+) {
+  const sendTelegram = deps?.sendTelegram ?? sendTelegramMessage;
+  const pending = await db.notification.findMany({
+    where: { deliverAfterQuiet: true, sentToTelegramAt: null },
+    include: { user: { include: { settings: true } } },
+    orderBy: { createdAt: "asc" },
+    take: 500,
+  });
+  let sent = 0;
+  for (const n of pending) {
+    const settings = n.user.settings;
+    if (!n.user.botChatId || !settings?.telegramEnabled) {
+      await db.notification.update({ where: { id: n.id }, data: { deliverAfterQuiet: false } });
+      continue;
+    }
+    if (isInQuietHours(now, settings.timezone, settings.quietHoursStart, settings.quietHoursEnd))
+      continue;
+    const text = formatTelegramText(
+      {
+        type: n.type as NotificationType,
+        title: n.title,
+        body: n.body ?? undefined,
+        link: n.link ?? undefined,
+      },
+      getEnv().APP_URL,
+    );
+    const ok = await sendTelegram(n.user.botChatId, text);
+    await db.notification.update({
+      where: { id: n.id },
+      data: ok ? { sentToTelegramAt: now, deliverAfterQuiet: false } : { deliverAfterQuiet: false },
+    });
+    if (ok) sent += 1;
+  }
+  return sent;
 }

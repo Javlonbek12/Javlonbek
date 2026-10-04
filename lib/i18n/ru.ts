@@ -101,6 +101,10 @@ export const ru = {
       task_assigned: "Мне назначили задачу",
       task_status: "Изменился статус моей задачи",
       task_comment: "Новый комментарий к моей задаче",
+      digest: "Утренний дайджест",
+      due_reminder: "Напоминание за день до срока",
+      overdue: "Задача просрочена",
+      weekly_summary: "Пятничный итог по команде (руководителям)",
     },
     events: {
       testTitle: "Тестовое уведомление",
@@ -117,6 +121,12 @@ export const ru = {
       taskCommentTitle: "Новый комментарий",
       taskBody: "«{title}» — {name}",
       taskCommentBody: "«{title}»: {name} — {text}",
+      digestTitle: "☀️ Доброе утро, {name}!",
+      dueReminderTitle: "⏰ Завтра срок",
+      dueReminderBody: "«{title}» — срок {date}.",
+      overdueTitle: "🔥 Задача просрочена",
+      overdueBody: "«{title}» — срок был {date}. Исполнитель: {name}.",
+      weeklyTitle: "📊 Итоги недели по команде",
     },
   },
   tasks: {
@@ -294,6 +304,21 @@ export const ru = {
       forbidden: "Командные планы создают руководитель и владелец.",
     },
   },
+  digest: {
+    dueToday: "📋 На сегодня: {count}",
+    overdue: "🔥 Просрочено: {count}",
+    waiting: "⏳ Ждут вашего решения: {count}",
+    tomorrow: "📅 Завтра срок: {count}",
+    more: "  …и ещё {count}",
+  },
+  weekly: {
+    period: "Неделя {from} – {to}",
+    done: "✅ Выполнено: {count}",
+    overdue: "🔥 Просрочено сейчас: {count}",
+    inProgress: "🔄 В работе: {count}",
+    pending: "⏳ Ждут утверждения: {count}",
+    person: "• {name}: выполнено {done}, в работе {active}, просрочено {overdue}",
+  },
   today: {
     title: "Сегодня",
     dueToday: "На сегодня",
@@ -312,6 +337,7 @@ export const ru = {
     quietHours: "Тихие часы",
     quietHoursHint:
       "В это время уведомления не приходят в Telegram (но видны в приложении). Оставьте пустым, чтобы выключить.",
+    digestTime: "Время утреннего дайджеста",
     quietFrom: "С",
     quietTo: "До",
     types: "Какие уведомления получать",
