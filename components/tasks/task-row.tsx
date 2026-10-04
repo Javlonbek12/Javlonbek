@@ -54,6 +54,8 @@ export function TaskList({
   empty?: string;
 }) {
   if (tasks.length === 0) {
+    // empty="" means "show nothing".
+    if (empty === "") return null;
     return <p className="text-muted-foreground text-sm">{empty ?? t("tasks.empty")}</p>;
   }
   return (

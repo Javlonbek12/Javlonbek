@@ -43,14 +43,17 @@ model User {
   inviteUsed     Invite?        @relation("InviteUsedBy")
   activity       ActivityLog[]
 
-  tasksCreated   Task[]           @relation("TaskCreator")
-  tasksAssigned  Task[]           @relation("TaskAssignee")
-  plansCreated   Plan[]
-  comments       Comment[]
-  attachments    TaskAttachment[]
-  aiUsage        AiUsage[]
-  botDrafts      BotDraft[]
-  scheduledSends ScheduledSend[]
+  tasksCreated    Task[]               @relation("TaskCreator")
+  tasksAssigned   Task[]               @relation("TaskAssignee")
+  plansCreated    Plan[]
+  comments        Comment[]
+  attachments     TaskAttachment[]
+  aiUsage         AiUsage[]
+  botDrafts       BotDraft[]
+  scheduledSends  ScheduledSend[]
+  meetingsCreated Meeting[]            @relation("MeetingCreator")
+  meetings        MeetingParticipant[]
+  meetingNotes    MeetingNotes[]
 }
 
 model Invite {
@@ -160,6 +163,8 @@ model Task {
   dueDate         DateTime?    @db.Date
   estimateMinutes Int?
   planId          String?
+  // Set when the task came from meeting minutes.
+  meetingId       String?
   approvedAt      DateTime?
   completedAt     DateTime?
   createdAt       DateTime     @default(now())
@@ -168,6 +173,7 @@ model Task {
   creator     User             @relation("TaskCreator", fields: [creatorId], references: [id])
   assignee    User             @relation("TaskAssignee", fields: [assigneeId], references: [id])
   plan        Plan?            @relation(fields: [planId], references: [id], onDelete: SetNull)
+  meeting     Meeting?         @relation(fields: [meetingId], references: [id], onDelete: SetNull)
   // "blockedBy": tasks that must be closed before this one can be DONE.
   blockedBy   TaskDependency[] @relation("DependencyBlocked")
   blocks      TaskDependency[] @relation("DependencyBlocker")
@@ -311,4 +317,51 @@ model SystemState {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+// ============================================================
+// meetings: meetings, participants, minutes
+// ============================================================
+
+model Meeting {
+  id              String   @id @default(cuid())
+  title           String
+  startsAt        DateTime
+  durationMinutes Int      @default(60)
+  agenda          String?
+  link            String?
+  createdById     String
+  // Weekly meetings are stored as separate occurrences sharing one seriesId.
+  seriesId        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  createdBy    User                 @relation("MeetingCreator", fields: [createdById], references: [id])
+  participants MeetingParticipant[]
+  notes        MeetingNotes?
+  tasks        Task[]
+
+  @@index([startsAt])
+  @@index([seriesId])
+}
+
+model MeetingParticipant {
+  meetingId String
+  userId    String
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([meetingId, userId])
+}
+
+model MeetingNotes {
+  id        String   @id @default(cuid())
+  meetingId String   @unique
+  text      String
+  authorId  String
+  updatedAt DateTime @updatedAt
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  author  User    @relation(fields: [authorId], references: [id])
 }

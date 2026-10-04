@@ -9,12 +9,24 @@ import { t } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getUserToday } from "@/modules/core/settings/service";
 import { getTodayOverview } from "@/modules/tasks/service";
+import { MeetingChip } from "@/components/meetings/meeting-chip";
+import { addDays } from "@/lib/dates";
+import { zonedLocalToUtc } from "@/lib/time";
+import { getSettings } from "@/modules/core/settings/service";
+import { listMeetingsBetween } from "@/modules/meetings/service";
 
 // The "Today" screen: tasks due today, overdue tasks, tasks waiting for my decision.
 export default async function TodayPage() {
   const user = await requireUser();
   const today = await getUserToday(user.id);
   const { dueToday, overdue, waiting } = await getTodayOverview(user, today);
+  const { timezone } = await getSettings(user.id);
+  const meetings = await listMeetingsBetween(
+    user,
+    zonedLocalToUtc(`${today}T00:00`, timezone)!,
+    zonedLocalToUtc(`${addDays(today, 1)}T00:00`, timezone)!,
+    true,
+  );
   const botUsername = getEnv().TELEGRAM_BOT_USERNAME;
 
   return (
@@ -32,6 +44,17 @@ export default async function TodayPage() {
           <Link href="/tasks/new">{t("tasks.newTask")}</Link>
         </Button>
       </div>
+
+      {meetings.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <h2 className="font-medium">
+            {t("nav.meetings")} · {meetings.length}
+          </h2>
+          {meetings.map((m) => (
+            <MeetingChip key={m.id} meeting={m} timezone={timezone} />
+          ))}
+        </section>
+      )}
 
       {overdue.length > 0 && (
         <section className="flex flex-col gap-2">

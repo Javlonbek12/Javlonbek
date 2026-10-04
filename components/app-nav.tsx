@@ -1,5 +1,6 @@
 "use client";
 
+import { Bell } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -24,11 +25,14 @@ export function AppNav({ role, unreadCount }: { role: Role; unreadCount: number 
     >
       <div className="hidden px-4 py-5 text-lg font-semibold md:block">{t("app.name")}</div>
       <ul className="flex justify-around md:flex-col md:gap-1 md:px-2">
-        {items.map(({ id, href, icon: Icon, titleKey }) => {
+        {items.map(({ id, href, icon: Icon, titleKey, mobile }) => {
           const active = isActive(pathname, href);
           const badge = id === "notifications" && unreadCount > 0 ? unreadCount : null;
           return (
-            <li key={id} className="flex-1 md:flex-none">
+            <li
+              key={id}
+              className={cn("flex-1 md:flex-none", mobile === false && "hidden md:block")}
+            >
               <Link
                 href={href}
                 aria-current={active ? "page" : undefined}
@@ -52,5 +56,22 @@ export function AppNav({ role, unreadCount }: { role: Role; unreadCount: number 
         })}
       </ul>
     </nav>
+  );
+}
+
+// Phone-only top bar: app name and the notifications bell.
+export function MobileHeader({ unreadCount }: { unreadCount: number }) {
+  return (
+    <header className="bg-background/95 sticky top-0 z-10 flex items-center justify-between border-b px-4 py-2 backdrop-blur md:hidden">
+      <span className="font-semibold">{t("app.name")}</span>
+      <Link href="/notifications" aria-label={t("nav.notifications")} className="relative p-1">
+        <Bell className="size-5" />
+        {unreadCount > 0 && (
+          <span className="bg-destructive absolute -top-0.5 -right-1 min-w-4 rounded-full px-1 text-center text-[10px] leading-4 text-white">
+            {unreadCount > 99 ? "99+" : unreadCount}
+          </span>
+        )}
+      </Link>
+    </header>
   );
 }

@@ -14,6 +14,7 @@ import {
   handleVoice,
   rememberCardMessage,
   showList,
+  showMeetingsForNotes,
   type BotReply,
   type ConversationDeps,
 } from "./conversation";
@@ -106,12 +107,15 @@ export function createBot(
     await next();
   });
 
+  bot.command("notes", async (ctx) => send(ctx, await showMeetingsForNotes(ctx.user!, deps.now)));
+
   for (const kind of ["today", "week", "overdue", "pending"] as const) {
     bot.command(kind, async (ctx) => send(ctx, await showList(ctx.user!, kind, deps.now)));
   }
 
   bot.on("callback_query:data", async (ctx) => {
-    const reply = await handleCallback(ctx.user!, ctx.callbackQuery.data, deps);
+    const chatId = BigInt(ctx.chat?.id ?? ctx.from.id);
+    const reply = await handleCallback(ctx.user!, ctx.callbackQuery.data, deps, chatId);
     await ctx.answerCallbackQuery();
     await send(ctx, reply);
   });

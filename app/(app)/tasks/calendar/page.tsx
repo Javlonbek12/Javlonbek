@@ -16,6 +16,10 @@ import {
 } from "@/modules/tasks/calendar";
 import { parseTaskFilters } from "@/modules/tasks/filters";
 import { listTasksDueBetween, type TaskView } from "@/modules/tasks/service";
+import { MeetingChip } from "@/components/meetings/meeting-chip";
+import { utcToZonedLocal, zonedLocalToUtc } from "@/lib/time";
+import { getSettings } from "@/modules/core/settings/service";
+import { listMeetingsBetween } from "@/modules/meetings/service";
 import { isOverdue } from "@/modules/tasks/today";
 
 export default async function CalendarPage({ searchParams }: PageProps<"/tasks/calendar">) {
@@ -25,7 +29,22 @@ export default async function CalendarPage({ searchParams }: PageProps<"/tasks/c
   const { mode, date } = parseCalendarParams(params, today);
   const { scope } = parseTaskFilters(params);
   const { days, from, to } = calendarRange(mode, date);
-  const tasks = await listTasksDueBetween(user, scope, from, to);
+  const [tasks, { timezone }] = await Promise.all([
+    listTasksDueBetween(user, scope, from, to),
+    getSettings(user.id),
+  ]);
+  // Meetings: "mine" = I take part; "team" = every meeting I can see.
+  const meetings = await listMeetingsBetween(
+    user,
+    zonedLocalToUtc(`${from}T00:00`, timezone)!,
+    zonedLocalToUtc(`${to}T00:00`, timezone)!,
+    scope === "mine",
+  );
+  const meetingsByDay = new Map<string, typeof meetings>();
+  for (const m of meetings) {
+    const day = utcToZonedLocal(m.startsAt, timezone).slice(0, 10);
+    meetingsByDay.set(day, [...(meetingsByDay.get(day) ?? []), m]);
+  }
 
   const byDay = new Map<string, TaskView[]>();
   for (const task of tasks) byDay.set(task.dueDate!, [...(byDay.get(task.dueDate!) ?? []), task]);
@@ -112,11 +131,14 @@ export default async function CalendarPage({ searchParams }: PageProps<"/tasks/c
                 >
                   {Number(day.slice(8))}
                 </span>
-                {list.length > 0 && (
+                {list.length + (meetingsByDay.get(day)?.length ?? 0) > 0 && (
                   <span className="bg-primary/10 rounded px-1 text-center font-medium md:hidden">
-                    {list.length}
+                    {list.length + (meetingsByDay.get(day)?.length ?? 0)}
                   </span>
                 )}
+                {(meetingsByDay.get(day) ?? []).slice(0, 2).map((m) => (
+                  <MeetingChip key={m.id} meeting={m} timezone={timezone} compact />
+                ))}
                 {list.slice(0, 3).map((task) => (
                   <span
                     key={task.id}
@@ -152,7 +174,14 @@ export default async function CalendarPage({ searchParams }: PageProps<"/tasks/c
               >
                 {weekdays[i]}, {formatDay(day)}
               </Link>
-              <TaskList tasks={byDay.get(day) ?? []} today={today} empty="—" />
+              {(meetingsByDay.get(day) ?? []).map((m) => (
+                <MeetingChip key={m.id} meeting={m} timezone={timezone} />
+              ))}
+              <TaskList
+                tasks={byDay.get(day) ?? []}
+                today={today}
+                empty={meetingsByDay.has(day) ? "" : "—"}
+              />
             </section>
           ))}
         </div>
@@ -160,6 +189,9 @@ export default async function CalendarPage({ searchParams }: PageProps<"/tasks/c
 
       {mode === "day" && (
         <div className="flex flex-col gap-2">
+          {(meetingsByDay.get(date) ?? []).map((m) => (
+            <MeetingChip key={m.id} meeting={m} timezone={timezone} />
+          ))}
           <TaskList tasks={byDay.get(date) ?? []} today={today} />
           <Button asChild variant="outline" size="sm" className="self-start">
             <Link href={`/tasks/new?due=${date}`}>{t("tasks.newTask")}</Link>

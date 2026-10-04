@@ -19,7 +19,8 @@ export type DraftTask = {
   project: string | null;
 };
 
-export type DraftPayload = { tasks: DraftTask[] };
+// meetingId: set when the tasks come from meeting minutes.
+export type DraftPayload = { tasks: DraftTask[]; meetingId?: string };
 
 type Person = { id: string; firstName: string; lastName: string | null };
 

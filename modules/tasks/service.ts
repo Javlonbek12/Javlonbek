@@ -14,6 +14,7 @@ import { filtersWhere, scopeWhere, type Scope, type TaskFilters } from "./filter
 import { sendTaskNotices, statusChangeRecipients } from "./notifications";
 import { visiblePlansWhere } from "./plan-service";
 import { availableTransitions, checkTransition } from "./status";
+import { canViewMeeting } from "@/modules/meetings/access";
 import { classifyByDueDate } from "./today";
 
 const dateField = z
@@ -46,6 +47,8 @@ export const taskInputSchema = z
       .nullable()
       .transform((value) => value || null),
     estimateHours: z.number().min(0).max(10_000).nullable(),
+    // Only set when creating tasks from meeting minutes.
+    meetingId: z.string().max(64).nullable().optional(),
   })
   .refine((v) => !v.startDate || !v.dueDate || v.startDate <= v.dueDate, "start after due");
 
@@ -93,6 +96,17 @@ export async function createTask(actor: Actor, input: TaskInput, mode: CreateMod
     assigneeId = assignee.id;
   }
   await assertPlanAllowed(actor, data.planId, data.isPersonal);
+  if (data.meetingId) {
+    const meeting = await db.meeting.findUnique({
+      where: { id: data.meetingId },
+      include: { participants: { select: { userId: true } } },
+    });
+    const info = meeting && {
+      createdById: meeting.createdById,
+      participantIds: meeting.participants.map((p) => p.userId),
+    };
+    if (!info || !canViewMeeting(actor, info)) throw new TaskError("forbidden");
+  }
 
   // Check the requested first step before saving anything.
   const target = CREATE_MODES[mode];
@@ -107,7 +121,13 @@ export async function createTask(actor: Actor, input: TaskInput, mode: CreateMod
     throw new TaskError("forbidden");
 
   const task = await db.task.create({
-    data: { ...taskData(data), isPersonal: data.isPersonal, creatorId: actor.id, assigneeId },
+    data: {
+      ...taskData(data),
+      isPersonal: data.isPersonal,
+      creatorId: actor.id,
+      assigneeId,
+      meetingId: data.meetingId ?? null,
+    },
   });
   await logActivity({
     actorId: actor.id,
@@ -310,11 +330,15 @@ export async function listTimeline(actor: Actor, scope: Scope, from: string, to:
 export async function getTaskDetail(actor: Actor, taskId: string) {
   const task = await db.task.findUnique({
     where: { id: taskId },
-    include: { ...listInclude, plan: { select: { id: true, title: true } } },
+    include: {
+      ...listInclude,
+      plan: { select: { id: true, title: true } },
+      meeting: { select: { id: true, title: true } },
+    },
   });
   if (!task || !canViewTask(actor, task)) return null;
   return {
-    task: { ...toTaskView(task), plan: task.plan },
+    task: { ...toTaskView(task), plan: task.plan, meeting: task.meeting },
     transitions: availableTransitions(actor, task),
     canEdit: canEditTask(actor, task),
   };

@@ -19,6 +19,19 @@ export const extractTasksSchema = z.object({ tasks: z.array(extractedTaskSchema)
 
 export type ExtractedTask = z.infer<typeof extractedTaskSchema>;
 
+// Never trust a malformed date or empty title from the model.
+function cleanTasks(tasks: ExtractedTask[]): ExtractedTask[] {
+  return tasks
+    .map((task) => ({
+      ...task,
+      title: task.title.trim().slice(0, 200),
+      dueDate: task.dueDate && isDateString(task.dueDate) ? task.dueDate : null,
+      assigneeName: task.assigneeName?.trim() || null,
+      project: task.project?.trim().slice(0, 60) || null,
+    }))
+    .filter((task) => task.title.length > 0);
+}
+
 export const EXTRACT_TASKS_SYSTEM = `You turn a manager's message into a list of tasks for a task tracker.
 The message may be in Russian, Uzbek (Latin or Cyrillic) or a mix of both, and may come from speech recognition, so expect missing punctuation and small recognition errors.
 
@@ -51,16 +64,7 @@ export async function extractTasks(
     today: ctx.today,
     call,
   });
-  // Never trust a malformed date from the model.
-  return result.tasks
-    .map((task) => ({
-      ...task,
-      title: task.title.trim().slice(0, 200),
-      dueDate: task.dueDate && isDateString(task.dueDate) ? task.dueDate : null,
-      assigneeName: task.assigneeName?.trim() || null,
-      project: task.project?.trim().slice(0, 60) || null,
-    }))
-    .filter((task) => task.title.length > 0);
+  return cleanTasks(result.tasks);
 }
 
 // ---------- interpretCommand ----------
@@ -152,4 +156,35 @@ export async function writeDigest(
     call,
   });
   return result.text.trim().slice(0, 3000);
+}
+
+// ---------- extractActionItems ----------
+
+export const EXTRACT_ACTION_ITEMS_SYSTEM = `You read the minutes (notes) of a team meeting and list the action items: concrete things a person agreed to do.
+The notes may be in Russian, Uzbek (Latin or Cyrillic) or a mix, and may come from speech recognition.
+
+Ignore discussion, opinions and decisions that need no action. For each action item return the same fields as a task:
+- title: a short imperative task title (3-10 words) in the language of the notes.
+- assigneeName: the responsible person in the nominative case, matched to "Team members" when possible; null if the note author takes it ("я", "беру на себя", "o'zim") or nobody is named.
+- dueDate: YYYY-MM-DD resolved with the calendar below; relative dates count from the meeting date given as "Today"; null if no deadline.
+- priority and project: as in the notes, otherwise null.
+
+Return an empty list if there are no action items. Do not invent items.`;
+
+export async function extractActionItems(
+  userId: string,
+  notes: string,
+  ctx: PromptContext,
+  call?: ModelCall,
+): Promise<ExtractedTask[]> {
+  const result = await runStructured({
+    userId,
+    fn: "extractActionItems",
+    system: EXTRACT_ACTION_ITEMS_SYSTEM,
+    prompt: `${contextBlock(ctx)}\n\nMeeting minutes:\n"""\n${notes}\n"""`,
+    schema: extractTasksSchema,
+    today: ctx.today,
+    call,
+  });
+  return cleanTasks(result.tasks);
 }

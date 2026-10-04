@@ -54,3 +54,51 @@ export function formatDateTime(date: Date, timeZone: string): string {
     minute: "2-digit",
   }).format(date);
 }
+
+// Offset of the timezone from UTC at the given moment, in minutes (Tashkent = +300).
+function timezoneOffsetMinutes(date: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(date);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+  const asUtc = Date.UTC(
+    get("year"),
+    get("month") - 1,
+    get("day"),
+    get("hour"),
+    get("minute"),
+    get("second"),
+  );
+  return Math.round((asUtc - date.getTime()) / 60_000);
+}
+
+// "2026-10-05T10:00" in the given timezone → the exact moment (Date, UTC inside).
+export function zonedLocalToUtc(local: string, timeZone: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(local);
+  if (!match) return null;
+  const [, y, mo, d, h, mi] = match.map(Number);
+  const guess = Date.UTC(y, mo - 1, d, h, mi);
+  // Two passes handle a daylight-saving change between the guess and the result.
+  let result = guess - timezoneOffsetMinutes(new Date(guess), timeZone) * 60_000;
+  result = guess - timezoneOffsetMinutes(new Date(result), timeZone) * 60_000;
+  return new Date(result);
+}
+
+// The moment as "YYYY-MM-DDTHH:mm" in the timezone (for <input type="datetime-local">).
+export function utcToZonedLocal(date: Date, timeZone: string): string {
+  const shifted = new Date(date.getTime() + timezoneOffsetMinutes(date, timeZone) * 60_000);
+  return shifted.toISOString().slice(0, 16);
+}
+
+export function formatTime(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("ru-RU", { timeZone, hour: "2-digit", minute: "2-digit" }).format(
+    date,
+  );
+}

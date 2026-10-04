@@ -3,6 +3,7 @@ import { formatDay, fromDateString } from "@/lib/dates";
 
 import { Prisma, type User } from "@/lib/generated/prisma/client";
 import { t } from "@/lib/i18n";
+import { formatTime } from "@/lib/time";
 import { deliverDeferredNotifications, notify } from "@/modules/core/notifications/service";
 import { getSettings } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
@@ -105,6 +106,38 @@ async function weeklyFor(user: User, weekStart: string, today: string) {
   });
 }
 
+export const MEETING_REMINDER_MINUTES = 15;
+
+// Participants get a reminder once, when the meeting starts within the next 15 minutes.
+async function meetingReminders(now: Date) {
+  const meetings = await db.meeting.findMany({
+    where: {
+      startsAt: { gt: now, lte: new Date(now.getTime() + MEETING_REMINDER_MINUTES * 60_000) },
+    },
+    include: { participants: true },
+  });
+  for (const meeting of meetings) {
+    for (const { userId } of meeting.participants) {
+      if (!(await claim(userId, "meeting_reminder", meeting.id))) continue;
+      const { timezone } = await getSettings(userId);
+      await notify(userId, {
+        type: "meeting_reminder",
+        title: t("notifications.events.meetingReminderTitle"),
+        body: [
+          t("notifications.events.meetingReminderBody", {
+            title: meeting.title,
+            time: formatTime(meeting.startsAt, timezone),
+          }),
+          meeting.link,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        link: `/meetings/${meeting.id}`,
+      });
+    }
+  }
+}
+
 export type TickDeps = { writeDigest?: DigestWriter };
 
 // One scheduler pass. Safe to run every minute: everything sent is claimed first.
@@ -127,6 +160,7 @@ export async function runSchedulerTick(now = new Date(), deps: TickDeps = {}) {
       console.error(`Scheduler failed for user ${user.id}`, error);
     }
   }
+  await meetingReminders(now);
   await deliverDeferredNotifications(now);
   await db.systemState.upsert({
     where: { key: LAST_TICK_KEY },

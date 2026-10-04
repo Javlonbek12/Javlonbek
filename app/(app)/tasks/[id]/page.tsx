@@ -143,6 +143,16 @@ export default async function TaskPage({ params, searchParams }: PageProps<"/tas
               <dd>{task.estimateMinutes / 60}</dd>
             </>
           )}
+          {task.meeting && (
+            <>
+              <dt className="text-muted-foreground">{t("nav.meetings")}</dt>
+              <dd>
+                <Link className="underline" href={`/meetings/${task.meeting.id}`}>
+                  {task.meeting.title}
+                </Link>
+              </dd>
+            </>
+          )}
           {task.plan && (
             <>
               <dt className="text-muted-foreground">{t("tasks.fields.plan")}</dt>

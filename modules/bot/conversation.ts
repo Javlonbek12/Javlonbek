@@ -1,8 +1,15 @@
 import { db } from "@/lib/db";
-import { addDays, addMonths, formatDay, isDateString, startOfMonth } from "@/lib/dates";
+import {
+  addDays,
+  addMonths,
+  formatDay,
+  isDateString,
+  startOfMonth,
+  todayInTimezone,
+} from "@/lib/dates";
 import { getEnv } from "@/lib/env";
 import { Prisma, type TaskStatus, type User } from "@/lib/generated/prisma/client";
-import { t, type TranslationKey } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
 import { parseUserDate } from "@/lib/parse-date";
 import {
   extractTasks,
@@ -14,21 +21,21 @@ import { AiError } from "@/modules/ai/run";
 import type { PromptContext } from "@/modules/ai/context";
 import { getSettings } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
-import { isApprover } from "@/modules/tasks/access";
+import { createProposedTasks } from "@/modules/tasks/batch";
 import { TaskError } from "@/modules/tasks/errors";
 import { parseTaskFilters } from "@/modules/tasks/filters";
 import { STATUS_CODES, statusButton } from "@/modules/tasks/notifications";
 import { completeTask, findTasksByQuery, setDueDate } from "@/modules/tasks/quick-actions";
 import {
   changeStatus,
-  createTask,
   getTodayOverview,
   listProjects,
   listTasks,
   type TaskView,
 } from "@/modules/tasks/service";
-import { todayInTimezone } from "@/lib/dates";
 import type { AudioInput, SpeechToText } from "@/modules/stt";
+
+export { resolveTasks };
 
 import {
   assigneeButtons,
@@ -39,7 +46,15 @@ import {
   type DraftPayload,
   type DraftTask,
 } from "./draft-card";
-import { matchPerson } from "./match";
+import { resolveTasks } from "./resolve";
+import { formatDateTime } from "@/lib/time";
+import { proposeActionItems, type ActionItemExtractor } from "@/modules/meetings/minutes";
+import {
+  MeetingError,
+  getMeetingDetail,
+  recentMeetingsForNotes,
+  saveNotes,
+} from "@/modules/meetings/service";
 import type { TelegramButton } from "./keyboard";
 
 // What the bot should answer. `edit` = replace the message the button belongs to.
@@ -55,6 +70,7 @@ export type BotReply = {
 export type ConversationDeps = {
   extract: (userId: string, text: string, ctx: PromptContext) => Promise<ExtractedTask[]>;
   interpret: (userId: string, text: string, ctx: PromptContext) => Promise<InterpretedCommand>;
+  extractActionItems?: ActionItemExtractor;
   now?: Date;
 };
 
@@ -128,53 +144,16 @@ async function cardReply(draftId: string, payload: DraftPayload, edit: boolean):
   };
 }
 
-export function resolveTasks(
-  extracted: ExtractedTask[],
-  people: {
-    id: string;
-    firstName: string;
-    lastName: string | null;
-    telegramUsername: string | null;
-  }[],
-  speakerId: string,
-): DraftTask[] {
-  return extracted.map((task) => {
-    const base = {
-      title: task.title,
-      dueDate: task.dueDate,
-      priority: task.priority,
-      project: task.project,
-      saidName: task.assigneeName,
-    };
-    if (!task.assigneeName)
-      return { ...base, assigneeId: null, unresolved: false, candidateIds: [] };
-    const match = matchPerson(task.assigneeName, people);
-    if (match.status === "matched") {
-      return {
-        ...base,
-        assigneeId: match.user.id === speakerId ? null : match.user.id,
-        unresolved: false,
-        candidateIds: [],
-      };
-    }
-    return {
-      ...base,
-      assigneeId: null,
-      unresolved: true,
-      candidateIds: match.status === "ambiguous" ? match.candidates.map((c) => c.id) : [],
-    };
-  });
-}
-
 async function startDraft(
   user: User,
   chatId: bigint,
   tasks: DraftTask[],
   prefix?: string,
+  meetingId?: string,
 ): Promise<BotReply> {
   if (tasks.length === 0)
     return { text: [prefix, t("bot.card.empty")].filter(Boolean).join("\n\n") };
-  const payload: DraftPayload = { tasks };
+  const payload: DraftPayload = { tasks, meetingId };
   const draft = await db.botDraft.create({
     data: { userId: user.id, chatId, payload: payload as unknown as Prisma.InputJsonValue },
   });
@@ -183,40 +162,11 @@ async function startDraft(
 }
 
 async function saveTasks(user: User, draftId: string, payload: DraftPayload): Promise<BotReply> {
-  let saved = 0;
-  let pending = 0;
-  const errors: string[] = [];
-  for (const task of payload.tasks) {
-    const personal = task.assigneeId === null;
-    try {
-      const created = await createTask(
-        user,
-        {
-          title: task.title,
-          description: null,
-          isPersonal: personal,
-          assigneeId: task.assigneeId,
-          startDate: null,
-          dueDate: task.dueDate,
-          priority: task.priority ?? "MEDIUM",
-          project: task.project,
-          planId: null,
-          estimateHours: null,
-        },
-        personal ? "draft" : isApprover(user.role) ? "approve" : "submit",
-      );
-      saved += 1;
-      if (created.status === "PENDING_APPROVAL") pending += 1;
-    } catch (error) {
-      if (!(error instanceof TaskError)) throw error;
-      errors.push(
-        t("bot.card.failed", {
-          title: task.title,
-          reason: t(`tasks.errors.${error.code}` as TranslationKey, { mb: 20 }),
-        }),
-      );
-    }
-  }
+  const { saved, pending, errors } = await createProposedTasks(
+    user,
+    payload.tasks,
+    payload.meetingId,
+  );
   await db.botDraft.delete({ where: { id: draftId } });
   const lines = [t("bot.card.saved", { count: saved })];
   if (pending > 0) lines.push(t("bot.card.savedPending", { count: pending }));
@@ -307,16 +257,54 @@ async function handleDraftCallback(user: User, parts: string[], now?: Date): Pro
   return cardReply(draftId, payload, true);
 }
 
-// A plain text message answering "type the new title / date".
+// Minutes sent after /notes: save them, then propose tasks from them.
+async function applyMeetingNotes(
+  user: User,
+  chatId: bigint,
+  draftId: string,
+  meetingId: string,
+  text: string,
+  deps: ConversationDeps,
+  prefix?: string,
+): Promise<BotReply> {
+  await db.botDraft.delete({ where: { id: draftId } });
+  let meeting;
+  try {
+    meeting = await saveNotes(user, meetingId, text);
+  } catch (error) {
+    if (!(error instanceof MeetingError)) throw error;
+    return { text: t(`meetings.errors.${error.code}`) };
+  }
+  const saved = [prefix, t("meetings.bot.saved", { title: meeting.title })]
+    .filter(Boolean)
+    .join("\n\n");
+  try {
+    const tasks = await proposeActionItems(user, meetingId, deps.extractActionItems);
+    if (tasks.length === 0) return { text: `${saved}\n${t("meetings.actions.none")}` };
+    return startDraft(user, chatId, tasks, saved, meetingId);
+  } catch (error) {
+    if (!(error instanceof AiError)) throw error;
+    return { text: `${saved}\n${t(`ai.errors.${error.code}`)}` };
+  }
+}
+
+// A plain text message answering "type the new title / date / the minutes".
 async function applyAwaitingText(
   user: User,
+  chatId: bigint,
   draftId: string,
   text: string,
-  now?: Date,
+  deps: ConversationDeps,
+  prefix?: string,
 ): Promise<BotReply | null> {
+  const now = deps.now;
   const draft = await loadDraft(user, draftId);
   if (!draft?.awaiting) return null;
-  const { kind, index } = draft.awaiting as { kind: "title" | "due"; index: number };
+  const awaiting = draft.awaiting as { kind: "title" | "due" | "notes"; index: number };
+  if (awaiting.kind === "notes" && draft.payload.meetingId) {
+    return applyMeetingNotes(user, chatId, draftId, draft.payload.meetingId, text, deps, prefix);
+  }
+  const { kind, index } = awaiting;
   const task = draft.payload.tasks[index];
   if (!task) return null;
   if (kind === "title") {
@@ -481,6 +469,7 @@ export async function handleCallback(
   user: User,
   data: string,
   deps: ConversationDeps = defaultDeps,
+  chatId: bigint = user.botChatId ?? user.telegramId,
 ): Promise<BotReply> {
   const parts = data.split(":");
   if (parts[0] === "d") return handleDraftCallback(user, parts, deps.now);
@@ -490,6 +479,7 @@ export async function handleCallback(
     return reschedule(user, parts[1], `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`);
   }
   if (parts[0] === "k" && parts[1]) return complete(user, parts[1]);
+  if (parts[0] === "m" && parts[1]) return waitForNotes(user, parts[1], chatId);
   return { text: t("bot.card.expired") };
 }
 
@@ -502,7 +492,7 @@ export async function handleText(
 ): Promise<BotReply> {
   const awaiting = await findAwaitingDraft(user);
   if (awaiting) {
-    const reply = await applyAwaitingText(user, awaiting.id, text, deps.now);
+    const reply = await applyAwaitingText(user, chatId, awaiting.id, text, deps, prefix);
     if (reply) return reply;
   }
 
@@ -579,4 +569,39 @@ export async function handleVoice(
 
 export async function rememberCardMessage(draftId: string, messageId: number) {
   await db.botDraft.updateMany({ where: { id: draftId }, data: { messageId } });
+}
+
+// ---------- meeting minutes (/notes) ----------
+
+export async function showMeetingsForNotes(user: User, now?: Date): Promise<BotReply> {
+  const meetings = await recentMeetingsForNotes(user, now);
+  if (meetings.length === 0) return { text: t("meetings.bot.none") };
+  const { timezone } = await getSettings(user.id);
+  return {
+    text: t("meetings.bot.choose"),
+    buttons: meetings.map((m) => [
+      {
+        text: `${formatDateTime(m.startsAt, timezone)} · ${m.title}`.slice(0, 60),
+        data: `m:${m.id}`,
+      },
+    ]),
+  };
+}
+
+async function waitForNotes(user: User, meetingId: string, chatId: bigint): Promise<BotReply> {
+  const detail = await getMeetingDetail(user, meetingId);
+  if (!detail) return { text: t("bot.actions.noRights") };
+  // Only one pending "send me the minutes" at a time.
+  await db.botDraft.deleteMany({
+    where: { userId: user.id, awaiting: { path: ["kind"], equals: "notes" } },
+  });
+  await db.botDraft.create({
+    data: {
+      userId: user.id,
+      chatId,
+      payload: { tasks: [], meetingId } as unknown as Prisma.InputJsonValue,
+      awaiting: { kind: "notes", index: 0 },
+    },
+  });
+  return { text: t("meetings.bot.waiting", { title: detail.meeting.title }), edit: true };
 }
