@@ -22,21 +22,33 @@ enum Role {
 }
 
 model User {
-  id               String   @id @default(cuid())
-  telegramId       BigInt   @unique
+  id               String    @id @default(cuid())
+  telegramId       BigInt    @unique
   telegramUsername String?
   firstName        String
   lastName         String?
   photoUrl         String?
-  role             Role     @default(MEMBER)
+  role             Role      @default(MEMBER)
   // Set when the user pressed /start in the bot; the bot can only message such users.
   botChatId        BigInt?
   invitedById      String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  // Employee card (stage 6).
+  position         String?
+  // Area of responsibility, e.g. "Ташкент, сеть Макро".
+  responsibility   String?
+  phone            String?
+  email            String?
+  startedAt        DateTime? @db.Date
+  managerId        String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   invitedBy      User?          @relation("UserInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
   invitedUsers   User[]         @relation("UserInvitedBy")
+  manager        User?          @relation("ManagerReports", fields: [managerId], references: [id], onDelete: SetNull)
+  reports        User[]         @relation("ManagerReports")
+  notesAbout     EmployeeNote[] @relation("NoteEmployee")
+  notesWritten   EmployeeNote[] @relation("NoteAuthor")
   settings       UserSettings?
   notifications  Notification[]
   invitesCreated Invite[]       @relation("InviteCreatedBy")
@@ -364,4 +376,30 @@ model MeetingNotes {
 
   meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
   author  User    @relation(fields: [authorId], references: [id])
+}
+
+// ============================================================
+// team: private notes about an employee (OWNER and the direct manager only)
+// ============================================================
+
+enum EmployeeNoteKind {
+  STRENGTH
+  GROWTH
+  ONE_ON_ONE
+  GOAL
+}
+
+model EmployeeNote {
+  id         String           @id @default(cuid())
+  employeeId String
+  authorId   String
+  kind       EmployeeNoteKind
+  text       String
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  employee User @relation("NoteEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+  author   User @relation("NoteAuthor", fields: [authorId], references: [id])
+
+  @@index([employeeId, kind])
 }

@@ -1,102 +1,116 @@
+import Link from "next/link";
+
+import { LoadChart } from "@/components/team/load-chart";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { CopyButton } from "@/components/copy-button";
 import { getEnv } from "@/lib/env";
 import { t } from "@/lib/i18n";
 import { formatDate } from "@/lib/time";
+import { cn } from "@/lib/utils";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { INVITE_TTL_DAYS, listActiveInvites } from "@/modules/core/invites/service";
-import { canChangeRole, canSendTestNotification, invitableRoles } from "@/modules/core/permissions";
+import { invitableRoles } from "@/modules/core/permissions";
 import { getSettings } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
-import { listUsers } from "@/modules/core/users/service";
+import { listTeamCards, TEAM_FILTERS, type TeamFilter } from "@/modules/team/service";
 
-import {
-  changeRoleAction,
-  createInviteAction,
-  revokeInviteAction,
-  sendTestNotificationAction,
-} from "../actions";
+import { createInviteAction, revokeInviteAction } from "../actions";
+
+const FILTER_LABELS = {
+  all: "team.filterAll",
+  mine: "team.filterMine",
+  overdue: "team.filterOverdue",
+} as const;
 
 export default async function TeamPage({ searchParams }: PageProps<"/team">) {
   const user = await requireUser();
-  const { notice } = await searchParams;
-  const [users, invites, settings] = await Promise.all([
-    listUsers(),
+  const params = await searchParams;
+  const filter = TEAM_FILTERS.find((f) => f === params.filter) ?? "all";
+  const search = typeof params.q === "string" ? params.q.slice(0, 100) : "";
+  const [cards, invites, settings] = await Promise.all([
+    listTeamCards(user, filter as TeamFilter, search),
     listActiveInvites(user),
     getSettings(user.id),
   ]);
   const { APP_URL, TELEGRAM_BOT_USERNAME } = getEnv();
   const tz = settings.timezone;
   const roles = invitableRoles(user.role);
+  const filterHref = (f: string) =>
+    `/team?${new URLSearchParams({ filter: f, ...(search ? { q: search } : {}) })}`;
 
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold">{t("team.title")}</h1>
-      {notice === "testSent" && (
-        <p role="status" className="bg-secondary rounded-md p-3 text-sm">
-          {t("team.testSent")}
-        </p>
-      )}
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-lg font-medium">{t("team.members")}</h2>
-        {users.map((member) => {
-          const isMe = member.id === user.id;
-          const assignable = (["MANAGER", "MEMBER"] as const).filter((role) =>
-            canChangeRole(user, member, role),
-          );
-          return (
-            <Card key={member.id} className="gap-3">
-              <div className="flex flex-wrap items-center gap-2">
+        <form className="flex gap-2">
+          <input type="hidden" name="filter" value={filter} />
+          <Input name="q" defaultValue={search} placeholder={t("team.search")} className="flex-1" />
+          <Button type="submit" variant="secondary">
+            {t("tasks.filters.apply")}
+          </Button>
+        </form>
+        <div className="flex flex-wrap gap-1 text-sm">
+          {TEAM_FILTERS.map((f) => (
+            <Link
+              key={f}
+              href={filterHref(f)}
+              className={cn(
+                "rounded-full border px-3 py-1",
+                f === filter ? "bg-primary text-primary-foreground" : "",
+              )}
+            >
+              {t(FILTER_LABELS[f])}
+            </Link>
+          ))}
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {cards.map(({ user: member, stats, manager }) => (
+            <Link
+              key={member.id}
+              href={`/team/${member.id}`}
+              className="bg-card hover:bg-accent/40 flex flex-col gap-2 rounded-xl border p-4 transition-colors"
+            >
+              <span className="flex flex-wrap items-center gap-2">
                 <span className="font-medium">{displayName(member)}</span>
-                {member.telegramUsername && (
-                  <span className="text-muted-foreground text-sm">@{member.telegramUsername}</span>
-                )}
                 <Badge variant={member.role === "OWNER" ? "default" : "secondary"}>
                   {t(`roles.${member.role}`)}
                 </Badge>
-                {isMe && <span className="text-muted-foreground text-xs">({t("common.you")})</span>}
-              </div>
-              <p className="text-muted-foreground text-xs">
-                {t("team.since", { date: formatDate(member.createdAt, tz) })} ·{" "}
-                {member.botChatId ? t("team.botLinked") : t("team.botNotLinked")}
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {assignable.length > 0 && (
-                  <form action={changeRoleAction} className="flex gap-2">
-                    <input type="hidden" name="userId" value={member.id} />
-                    <NativeSelect
-                      name="role"
-                      defaultValue={member.role}
-                      aria-label={t("team.changeRole")}
-                    >
-                      {assignable.map((role) => (
-                        <option key={role} value={role}>
-                          {t(`roles.${role}`)}
-                        </option>
-                      ))}
-                    </NativeSelect>
-                    <Button type="submit" variant="outline" size="sm">
-                      {t("team.changeRole")}
-                    </Button>
-                  </form>
+                {member.id === user.id && (
+                  <span className="text-muted-foreground text-xs">({t("common.you")})</span>
                 )}
-                {canSendTestNotification(user, member.id) && (
-                  <form action={sendTestNotificationAction}>
-                    <input type="hidden" name="userId" value={member.id} />
-                    <input type="hidden" name="back" value="/team" />
-                    <Button type="submit" variant="outline" size="sm">
-                      {t("team.sendTest")}
-                    </Button>
-                  </form>
-                )}
-              </div>
-            </Card>
-          );
-        })}
+              </span>
+              <span className="text-muted-foreground text-xs">
+                {member.position ?? t("team.noPosition")}
+                {member.responsibility && ` · ${member.responsibility}`}
+                {manager &&
+                  ` · ${t("team.profile.manager").toLowerCase()}: ${displayName(manager)}`}
+              </span>
+              {stats && (
+                <>
+                  <span className="flex gap-3 text-xs">
+                    <span>
+                      {t("team.stats.active")}: <b>{stats.active}</b>
+                    </span>
+                    <span className={cn(stats.overdue > 0 && "text-destructive")}>
+                      {t("team.stats.overdue")}: <b>{stats.overdue}</b>
+                    </span>
+                    {stats.onTime30.percent !== null && (
+                      <span>
+                        {t("team.stats.onTime30")}: <b>{stats.onTime30.percent}%</b>
+                      </span>
+                    )}
+                  </span>
+                  <LoadChart weeks={stats.load} compact />
+                </>
+              )}
+            </Link>
+          ))}
+        </div>
       </section>
 
       {roles.length > 0 && (

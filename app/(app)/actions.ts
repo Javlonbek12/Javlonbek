@@ -45,7 +45,7 @@ export async function changeRoleAction(formData: FormData) {
     idSchema.parse(formData.get("userId")),
     roleSchema.parse(formData.get("role")),
   );
-  revalidatePath("/team");
+  revalidatePath("/", "layout");
 }
 
 export async function sendTestNotificationAction(formData: FormData) {
@@ -53,7 +53,9 @@ export async function sendTestNotificationAction(formData: FormData) {
   const targetId = idSchema.parse(formData.get("userId"));
   await sendTestNotification(user, targetId);
   revalidatePath("/", "layout");
-  const back = formData.get("back") === "/team" ? "/team" : "/notifications";
+  const backValue = String(formData.get("back") ?? "");
+  // Only our own team pages are allowed as a return address.
+  const back = /^\/team(\/[A-Za-z0-9]{1,64})?$/.test(backValue) ? backValue : "/notifications";
   redirect(`${back}?notice=testSent`);
 }
 
