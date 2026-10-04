@@ -99,6 +99,7 @@
 | `npm run db:migrate` | Применить изменения схемы базы данных |
 | `npm run db:seed` | Заполнить базу тестовыми данными |
 | `npm run worker` | Фоновый процесс: дайджесты и напоминания (раз в минуту) |
+| `npm run watchdog` | Сторож: сообщает владельцу в Telegram, если сайт, планировщик или бот не работают |
 | `npm run bot:dev` | Запустить Telegram-бота на своём компьютере (long polling) |
 | `npm run bot:set-webhook` | На сервере: подключить бота через webhook |
 | `http://localhost:3000/api/health` | Проверка, что приложение и база работают |
@@ -111,7 +112,9 @@ components/   общие UI-компоненты (shadcn/ui)
 lib/          общие утилиты: i18n (тексты интерфейса), env, подключение к базе
 modules/      модули платформы: core (вход, роли, приглашения, уведомления), tasks, meetings, team, planograms, scheduler, ai, bot (Telegram)
 prisma/       схема базы данных, миграции, тестовые данные
-docs/         решения (DECISIONS.md), описание планограмм и др.
+docs/         решения (DECISIONS.md), установка на сервер (SETUP-SERVER.md), руководство сотрудника (USER-GUIDE.md)
+deploy/       настройки сервера: Caddy (HTTPS), шрифты
+scripts/      обновление сервера, бэкап и восстановление, webhook бота, сторож
 public/       иконки, service worker
 assets/       шрифты для PDF (DejaVu, свободная лицензия)
 tests/        интеграционные тесты (с настоящей базой данных)
@@ -120,3 +123,11 @@ tests/        интеграционные тесты (с настоящей б�
 ## Проверки на GitHub
 
 При каждом push GitHub Actions автоматически запускает lint, typecheck, тесты и сборку (файл `.github/workflows/ci.yml`). Результат виден на вкладке **Actions** репозитория.
+
+## Установка на сервер
+
+Пошаговая инструкция — [`docs/SETUP-SERVER.md`](docs/SETUP-SERVER.md): Ubuntu 24.04, Docker, домен с HTTPS,
+бот, ежедневные бэкапы, мониторинг. После настройки секретов `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`
+каждый push в `main` с зелёными проверками сам обновляет сервер (`.github/workflows/deploy.yml`).
+
+Руководство для сотрудников — [`docs/USER-GUIDE.md`](docs/USER-GUIDE.md).

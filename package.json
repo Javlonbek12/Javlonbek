@@ -19,7 +19,8 @@
     "bot:dev": "tsx modules/bot/polling.ts",
     "bot:set-webhook": "tsx scripts/set-webhook.ts",
     "test:ai": "RUN_AI_EVAL=1 vitest run tests/ai-live",
-    "worker": "tsx modules/scheduler/worker.ts"
+    "worker": "tsx modules/scheduler/worker.ts",
+    "watchdog": "tsx scripts/watchdog.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
