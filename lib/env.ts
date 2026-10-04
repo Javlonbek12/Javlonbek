@@ -19,9 +19,15 @@ const envSchema = z.object({
     .default("false")
     .transform((value) => value === "true"),
   DEFAULT_TIMEZONE: z.string().default("Asia/Tashkent"),
-  CLAUDE_MODEL: z.string().default("claude-haiku-4-5"),
+  ANTHROPIC_API_KEY: optional(z.string()),
+  CLAUDE_MODEL: optional(z.string()).transform((v) => v ?? "claude-haiku-4-5"),
   AI_DAILY_LIMIT: z.coerce.number().int().positive().default(200),
   STT_PROVIDER: z.enum(["whisper", "openai", "mock"]).default("mock"),
+  WHISPER_URL: optional(z.url()),
+  STT_API_URL: optional(z.url()),
+  STT_API_KEY: optional(z.string()),
+  // Model name sent to the speech-to-text server ("whisper-1" for OpenAI).
+  STT_MODEL: optional(z.string()),
   UPLOAD_DIR: z.string().default("./uploads"),
 });
 

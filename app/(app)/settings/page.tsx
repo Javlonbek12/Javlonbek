@@ -9,6 +9,9 @@ import { OPTIONAL_NOTIFICATION_TYPES } from "@/modules/core/notifications/types"
 import { getSettings } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
 
+import { AiUsageCard } from "@/components/ai-usage-card";
+import { todayInTimezone } from "@/lib/dates";
+
 import { saveSettingsAction } from "../actions";
 
 const TIMEZONES = ["Asia/Tashkent", "Asia/Samarkand", "Asia/Almaty", "Europe/Moscow", "UTC"];
@@ -120,6 +123,8 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
           {t("common.save")}
         </Button>
       </form>
+
+      {user.role === "OWNER" && <AiUsageCard today={todayInTimezone(settings.timezone)} />}
     </div>
   );
 }

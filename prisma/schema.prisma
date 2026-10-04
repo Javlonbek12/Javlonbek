@@ -48,6 +48,8 @@ model User {
   plansCreated  Plan[]
   comments      Comment[]
   attachments   TaskAttachment[]
+  aiUsage       AiUsage[]
+  botDrafts     BotDraft[]
 }
 
 model Invite {
@@ -236,4 +238,47 @@ model TaskAttachment {
 
   task       Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
   uploadedBy User @relation(fields: [uploadedById], references: [id])
+}
+
+// ============================================================
+// ai: usage log for every Claude call
+// ============================================================
+
+model AiUsage {
+  id           String   @id @default(cuid())
+  userId       String
+  // Prompt function name, e.g. "extractTasks".
+  function     String
+  model        String
+  inputTokens  Int
+  outputTokens Int
+  ok           Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+}
+
+// ============================================================
+// bot: confirmation cards waiting for the user's decision
+// ============================================================
+
+model BotDraft {
+  id        String   @id @default(cuid())
+  userId    String
+  chatId    BigInt
+  // Telegram message with the card, edited in place.
+  messageId Int?
+  // { tasks: [...], source: "text" | "voice" }
+  payload   Json
+  // What the next plain text message means, e.g. { kind: "title", index: 0 }.
+  awaiting  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, updatedAt])
 }

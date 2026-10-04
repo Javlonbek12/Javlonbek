@@ -3,7 +3,7 @@ import type { Role } from "@/lib/generated/prisma/client";
 
 export async function resetDb() {
   await db.$executeRawUnsafe(
-    'TRUNCATE "ActivityLog", "Notification", "UserSettings", "Invite", "TaskAttachment", "Comment", "TaskDependency", "Task", "Plan", "User" CASCADE',
+    'TRUNCATE "AiUsage", "BotDraft", "ActivityLog", "Notification", "UserSettings", "Invite", "TaskAttachment", "Comment", "TaskDependency", "Task", "Plan", "User" CASCADE',
   );
 }
 

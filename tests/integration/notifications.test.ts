@@ -35,6 +35,7 @@ describe("notify", () => {
     expect(telegramMock).toHaveBeenCalledWith(
       user.botChatId,
       "Тест\nТекст\n\nhttp://localhost:3000/team",
+      undefined,
     );
   });
 
@@ -108,5 +109,49 @@ describe("sendTestNotification", () => {
     await sendTestNotification(owner, member.id);
     const notification = await db.notification.findFirstOrThrow({ where: { userId: member.id } });
     expect(notification.body).toContain("Тестовый владелец");
+  });
+});
+
+describe("monthly AI usage summary", () => {
+  beforeEach(resetDb);
+
+  it("sums calls and tokens by user and function for the month", async () => {
+    const { getMonthlyUsage } = await import("@/modules/ai/run");
+    const user = await createTestUser("OWNER");
+    await db.aiUsage.createMany({
+      data: [
+        {
+          userId: user.id,
+          function: "extractTasks",
+          model: "m",
+          inputTokens: 100,
+          outputTokens: 10,
+          createdAt: new Date("2026-10-02T10:00:00Z"),
+        },
+        {
+          userId: user.id,
+          function: "extractTasks",
+          model: "m",
+          inputTokens: 50,
+          outputTokens: 5,
+          createdAt: new Date("2026-10-03T10:00:00Z"),
+        },
+        {
+          userId: user.id,
+          function: "extractTasks",
+          model: "m",
+          inputTokens: 999,
+          outputTokens: 9,
+          createdAt: new Date("2026-09-30T10:00:00Z"),
+        },
+      ],
+    });
+    const rows = await getMonthlyUsage(
+      new Date("2026-10-01T00:00:00Z"),
+      new Date("2026-11-01T00:00:00Z"),
+    );
+    expect(rows).toEqual([
+      expect.objectContaining({ fn: "extractTasks", calls: 2, inputTokens: 150, outputTokens: 15 }),
+    ]);
   });
 });

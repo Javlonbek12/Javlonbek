@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { getEnv } from "@/lib/env";
 import { t } from "@/lib/i18n";
-import { sendTelegramMessage } from "@/modules/bot/send";
+import { sendTelegramMessage, type TelegramButton } from "@/modules/bot/send";
 import { ForbiddenError } from "@/modules/core/errors";
 import { canSendTestNotification, type Actor } from "@/modules/core/permissions";
 import { getSettings } from "@/modules/core/settings/service";
@@ -15,10 +15,12 @@ export type NotificationEvent = {
   title: string;
   body?: string;
   link?: string;
+  // Inline buttons for the Telegram message (e.g. approve / return).
+  telegramButtons?: TelegramButton[][];
 };
 
 type Deps = {
-  sendTelegram: (chatId: bigint, text: string) => Promise<boolean>;
+  sendTelegram: (chatId: bigint, text: string, buttons?: TelegramButton[][]) => Promise<boolean>;
   now: Date;
 };
 
@@ -52,7 +54,11 @@ export async function notify(userId: string, event: NotificationEvent, deps?: Pa
     settings.quietHoursEnd,
   );
   if (user.botChatId && settings.telegramEnabled && !quiet) {
-    const sent = await sendTelegram(user.botChatId, formatTelegramText(event, getEnv().APP_URL));
+    const sent = await sendTelegram(
+      user.botChatId,
+      formatTelegramText(event, getEnv().APP_URL),
+      event.telegramButtons,
+    );
     if (sent) {
       return db.notification.update({
         where: { id: notification.id },

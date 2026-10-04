@@ -2,6 +2,7 @@ import type { TaskStatus } from "@/lib/generated/prisma/client";
 import { t } from "@/lib/i18n";
 import { notify } from "@/modules/core/notifications/service";
 import type { NotificationType } from "@/modules/core/notifications/types";
+import type { TelegramButton } from "@/modules/bot/keyboard";
 
 type TaskForNotice = {
   id: string;
@@ -11,7 +12,28 @@ type TaskForNotice = {
   assigneeId: string;
 };
 
-type Notice = { userId: string; type: NotificationType; title: string };
+type Notice = {
+  userId: string;
+  type: NotificationType;
+  title: string;
+  buttons?: TelegramButton[][];
+};
+
+// Callback data for status buttons in Telegram: t:<taskId>:<code>.
+export const STATUS_CODES = {
+  A: "APPROVED",
+  D: "DRAFT",
+  F: "DONE",
+  W: "IN_PROGRESS",
+} as const satisfies Record<string, TaskStatus>;
+
+export function statusButton(
+  text: string,
+  taskId: string,
+  code: keyof typeof STATUS_CODES,
+): TelegramButton {
+  return { text, data: `t:${taskId}:${code}` };
+}
 
 // Who should hear about a status change. Personal tasks never notify anyone.
 export function statusChangeRecipients(
@@ -82,6 +104,7 @@ export async function sendTaskNotices(notices: Notice[], task: TaskForNotice, ac
       title: notice.title,
       body: t("notifications.events.taskBody", { title: task.title, name: actorName }),
       link: `/tasks/${task.id}`,
+      telegramButtons: notice.buttons,
     });
   }
 }

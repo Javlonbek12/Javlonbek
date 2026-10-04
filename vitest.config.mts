@@ -15,7 +15,13 @@ export default defineConfig({
     globalSetup: ["./tests/global-setup.ts"],
     setupFiles: ["./vitest.setup.ts"],
     include: ["**/*.test.{ts,tsx}"],
-    exclude: ["node_modules/**", ".next/**", "e2e/**"],
+    // Live AI tests run only via `npm run test:ai` (they need an API key and cost money).
+    exclude: [
+      "node_modules/**",
+      ".next/**",
+      "e2e/**",
+      ...(process.env.RUN_AI_EVAL ? [] : ["tests/ai-live/**"]),
+    ],
     // Integration tests share one database, so test files run one after another.
     fileParallelism: false,
     env: {
@@ -28,6 +34,9 @@ export default defineConfig({
       ALLOW_DEV_LOGIN: "true",
       DEFAULT_TIMEZONE: "Asia/Tashkent",
       UPLOAD_DIR: "./.test-uploads",
+      // Only the live suite uses the real key from .env.
+      ANTHROPIC_API_KEY: process.env.RUN_AI_EVAL ? (process.env.ANTHROPIC_API_KEY ?? "") : "",
+      STT_PROVIDER: "mock",
     },
   },
 });
