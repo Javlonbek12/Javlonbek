@@ -9,6 +9,7 @@ name: Server
 #   backup  - make a backup now
 #   restart - restart all services
 #   demo-add / demo-remove - add or remove test tasks and test employees (after deploy)
+#   org-import / org-replace - load the org chart from the JSON in "data" (replace = drop the current one)
 # Secrets: VPS_HOST, VPS_USER (root), VPS_SSH_KEY; for setup also TELEGRAM_BOT_TOKEN,
 # TELEGRAM_BOT_USERNAME, ANTHROPIC_API_KEY. Variable (optional): DOMAIN. See docs/SETUP-SERVER.md.
 on:
@@ -17,12 +18,28 @@ on:
       action:
         description: What to do
         type: choice
-        options: [status, setup, deploy, logs, backup, restart, demo-add, demo-remove]
+        options:
+          [
+            status,
+            setup,
+            deploy,
+            logs,
+            backup,
+            restart,
+            demo-add,
+            demo-remove,
+            org-import,
+            org-replace,
+          ]
         default: status
       service:
         description: "For logs: app, worker, watchdog, caddy, postgres, whisper, migrate"
         type: string
         default: app
+      data:
+        description: "For org-import / org-replace: the org chart as JSON (see modules/org/import.ts)"
+        type: string
+        default: ""
   workflow_run:
     workflows: [CI]
     types: [completed]
@@ -76,6 +93,7 @@ jobs:
           TELEGRAM_BOT_USERNAME: ${{ secrets.TELEGRAM_BOT_USERNAME }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           DOMAIN: ${{ vars.DOMAIN }}
+          ORG_DATA: ${{ inputs.data }}
         run: |
           case "$ACTION" in
             status)
@@ -106,6 +124,9 @@ jobs:
               ssh vps 'cd ~/assistant && docker compose -f docker-compose.prod.yml run --rm -T app node --import tsx scripts/demo-data.ts add' ;;
             demo-remove)
               ssh vps 'cd ~/assistant && docker compose -f docker-compose.prod.yml run --rm -T app node --import tsx scripts/demo-data.ts remove' ;;
+            org-import | org-replace)
+              flag=""; [ "$ACTION" = "org-replace" ] && flag="--replace"
+              printf '%s' "$ORG_DATA" | ssh vps "cd ~/assistant && docker compose -f docker-compose.prod.yml run --rm -T app node --import tsx scripts/org-import.ts $flag" ;;
             restart)
               ssh vps 'cd ~/assistant && docker compose -f docker-compose.prod.yml restart && docker compose -f docker-compose.prod.yml ps' ;;
             *)
