@@ -8,7 +8,13 @@ import type { Actor } from "@/modules/core/permissions";
 import { displayName } from "@/modules/core/users/display-name";
 import { canEditTask, CLOSED_STATUSES, visibleTasksWhere } from "@/modules/tasks/access";
 
-import { milestones, projectStats, type ProjectTask } from "./progress";
+import {
+  milestones,
+  problemsByPriority,
+  projectRange,
+  projectStats,
+  type ProjectTask,
+} from "./progress";
 
 export class ProjectError extends Error {
   constructor(public readonly code: "forbidden" | "invalid" | "notFound" | "nameTaken") {
@@ -50,6 +56,7 @@ async function loadTasks(names: string[], timeZone: string): Promise<Map<string,
       title: row.title,
       code: row.code,
       status: row.status,
+      priority: row.priority,
       startDate: row.startDate ? toDateString(row.startDate) : null,
       dueDate: row.dueDate ? toDateString(row.dueDate) : null,
       completedOn: row.completedAt ? todayInTimezone(timeZone, row.completedAt) : null,
@@ -80,8 +87,11 @@ export async function listProjectCards(actor: Actor, today: string, timeZone: st
       id: project.id,
       name: project.name,
       team: project.team,
+      color: project.color,
       lead: project.lead ? displayName(project.lead) : null,
+      range: projectRange(own),
       stats: projectStats(own, today),
+      problems: problemsByPriority(own, today),
       next: milestones(own, today).next,
     };
   });
@@ -152,7 +162,9 @@ export async function createProject(actor: Actor, input: ProjectInput) {
   if (!parsed.success) throw new ProjectError("invalid");
   if (await db.project.findUnique({ where: { name: parsed.data.name } }))
     throw new ProjectError("nameTaken");
-  const project = await db.project.create({ data: { ...parsed.data, createdById: actor.id } });
+  const project = await db.project.create({
+    data: { ...parsed.data, createdById: actor.id, color: (await db.project.count()) % 8 },
+  });
   await logActivity({
     actorId: actor.id,
     action: "project.created",

@@ -6,18 +6,21 @@ export function ProgressBar({
   percent,
   planned,
   late,
+  color,
   className,
 }: {
   percent: number;
   planned?: number;
   late?: boolean;
+  // A CSS colour for the fill (e.g. the project's); green by default.
+  color?: string;
   className?: string;
 }) {
   return (
     <div className={cn("bg-muted relative h-2.5 w-full rounded-full", className)}>
       <div
-        className={cn("h-full rounded-full", late ? "bg-destructive" : "bg-emerald-500")}
-        style={{ width: `${percent}%` }}
+        className={cn("h-full rounded-full", late ? "bg-destructive" : !color && "bg-emerald-500")}
+        style={{ width: `${percent}%`, ...(color && !late ? { background: color } : {}) }}
       />
       {planned !== undefined && planned > 0 && (
         <div

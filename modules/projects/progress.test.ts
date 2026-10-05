@@ -6,6 +6,7 @@ import {
   byResponsible,
   milestones,
   phaseProgress,
+  problemsByPriority,
   projectRange,
   projectStats,
   type ProjectTask,
@@ -19,6 +20,7 @@ const task = (over: Partial<ProjectTask>): ProjectTask => ({
   title: `Тестовая задача ${n}`,
   code: null,
   status: "APPROVED",
+  priority: "MEDIUM",
   startDate: null,
   dueDate: null,
   completedOn: null,
@@ -48,6 +50,7 @@ describe("project progress", () => {
       overdue: 1,
       atRisk: 1,
       percent: 25,
+      plannedDone: 2,
       plannedPercent: 50,
       health: "late",
     });
@@ -135,6 +138,22 @@ describe("project progress", () => {
     expect(byResponsible(tasks, TODAY)).toEqual([
       { name: "Тестовая группа", total: 2, done: 1, overdue: 1 },
       { name: "Тестовый руководитель", total: 1, done: 0, overdue: 0 },
+    ]);
+  });
+
+  it("counts problems (overdue or at risk) by priority", () => {
+    const tasks = [
+      task({ priority: "HIGH", dueDate: "2026-10-01" }),
+      task({ priority: "HIGH", atRisk: true, dueDate: "2026-10-30" }),
+      task({ priority: "LOW", atRisk: true }),
+      task({ priority: "URGENT", dueDate: "2026-10-30" }),
+      task({ priority: "MEDIUM", status: "DONE", atRisk: true }),
+    ];
+    expect(problemsByPriority(tasks, TODAY)).toEqual([
+      { priority: "URGENT", count: 0 },
+      { priority: "HIGH", count: 2 },
+      { priority: "MEDIUM", count: 0 },
+      { priority: "LOW", count: 1 },
     ]);
   });
 });

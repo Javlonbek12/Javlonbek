@@ -1,5 +1,5 @@
 import { addDays, daysBetween, startOfWeek } from "@/lib/dates";
-import type { TaskStatus } from "@/lib/generated/prisma/client";
+import type { TaskPriority, TaskStatus } from "@/lib/generated/prisma/client";
 import { isOverdue } from "@/modules/tasks/today";
 
 // How a project is going, computed from its tasks. Pure functions: dates are "YYYY-MM-DD".
@@ -9,6 +9,7 @@ export type ProjectTask = {
   title: string;
   code: string | null;
   status: TaskStatus;
+  priority: TaskPriority;
   startDate: string | null;
   dueDate: string | null;
   // The day the task was closed as done.
@@ -57,6 +58,7 @@ export function projectStats(all: ProjectTask[], today: string) {
     overdue,
     atRisk,
     percent: percent(done, tasks.length),
+    plannedDone,
     plannedPercent: percent(plannedDone, tasks.length),
     health,
   };
@@ -199,4 +201,17 @@ export function ganttBar(
   if (!item.to) return null;
   const start = item.from ?? item.to;
   return { offset: daysBetween(chartFrom, start), length: daysBetween(start, item.to) + 1 };
+}
+
+export const PRIORITY_ORDER: TaskPriority[] = ["URGENT", "HIGH", "MEDIUM", "LOW"];
+
+// Problems (open tasks that are overdue or at risk) by priority, most important first.
+export function problemsByPriority(all: ProjectTask[], today: string) {
+  const problems = counted(all).filter(
+    (task) => !isDone(task) && (isOverdue(task, today) || task.atRisk),
+  );
+  return PRIORITY_ORDER.map((priority) => ({
+    priority,
+    count: problems.filter((task) => task.priority === priority).length,
+  }));
 }

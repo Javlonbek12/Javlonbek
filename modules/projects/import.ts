@@ -80,6 +80,7 @@ export async function importProject(input: unknown, now = new Date()) {
   const users = await db.user.findMany({ select: { id: true, firstName: true, lastName: true } });
   const leadId = plan.lead ? matchUser(plan.lead, users) : null;
   const assigneeId = leadId ?? owner.id;
+  const color = existing ? existing.color : (await db.project.count()) % 8;
 
   return db.$transaction(
     async (tx) => {
@@ -93,6 +94,7 @@ export async function importProject(input: unknown, now = new Date()) {
           team: plan.team ?? null,
           description: plan.description ?? null,
           leadId,
+          color,
           createdById: owner.id,
           phases: {
             create: plan.phases.map((phase, i) => ({

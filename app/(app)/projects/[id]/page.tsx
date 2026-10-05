@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { Ring } from "@/components/dashboard/ring";
 import { BurnUpChart } from "@/components/projects/burnup-chart";
 import { Gantt } from "@/components/projects/gantt";
 import { HealthBadge } from "@/components/projects/health-badge";
 import { Milestones } from "@/components/projects/milestones";
+import { projectColor } from "@/components/projects/portfolio";
 import { ProgressBar } from "@/components/projects/progress-bar";
 import { ProjectForm } from "@/components/projects/project-form";
 import { Button } from "@/components/ui/button";
@@ -91,6 +93,11 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
           ← {t("projects.title")}
         </Link>
         <div className="flex flex-wrap items-center gap-2">
+          <span
+            className="size-3.5 rounded-full"
+            style={{ background: projectColor(project.color) }}
+            aria-hidden
+          />
           <h1 className="text-2xl font-semibold">{project.name}</h1>
           <HealthBadge health={stats.health} />
         </div>
@@ -109,22 +116,22 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
       </div>
 
       <Card className="gap-4">
-        <div className="flex flex-col gap-2">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <span className="text-3xl font-semibold">{stats.percent}%</span>
+        <div className="flex items-center gap-4">
+          <Ring percent={stats.percent} color={projectColor(project.color)} size={104} />
+          <div className="flex min-w-0 flex-1 flex-col gap-2">
             <span className="text-muted-foreground text-sm">
               {t("projects.tasksCount", { done: stats.done, total: stats.total })}
             </span>
+            <ProgressBar
+              percent={stats.percent}
+              planned={stats.plannedPercent}
+              late={stats.health === "late"}
+              className="h-3"
+            />
+            <span className="text-muted-foreground text-xs">
+              {t("projects.planned", { percent: stats.plannedPercent })}
+            </span>
           </div>
-          <ProgressBar
-            percent={stats.percent}
-            planned={stats.plannedPercent}
-            late={stats.health === "late"}
-            className="h-3"
-          />
-          <span className="text-muted-foreground text-xs">
-            {t("projects.planned", { percent: stats.plannedPercent })}
-          </span>
         </div>
         <dl className="grid grid-cols-3 gap-2 text-center sm:grid-cols-5">
           {(
