@@ -10,6 +10,8 @@ import { t, type TranslationKey } from "@/lib/i18n";
 import { requireModule } from "@/modules/core/access/guard";
 import { getSettings } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
+import { getEnv } from "@/lib/env";
+import { activePlaceInvites, INVITE_TTL_DAYS } from "@/modules/core/invites/service";
 import { canEditOrg, getOrgTree, type OrgTreeNode } from "@/modules/org/service";
 
 // Flat list of nodes for the "reports to" picker, indented by depth.
@@ -52,9 +54,26 @@ export default async function StructurePage({ searchParams }: PageProps<"/team/s
   const editable = canEditOrg(user);
   const load =
     user.role === "OWNER" || user.role === "MANAGER" ? await loadByPerson(timezone) : undefined;
+  const { APP_URL, TELEGRAM_BOT_USERNAME } = getEnv();
+  const placeInvites = editable ? await activePlaceInvites() : new Map();
+  const invites = new Map(
+    [...placeInvites].map(([nodeId, invite]) => [
+      nodeId,
+      {
+        id: invite.id,
+        role: invite.role,
+        link: `${APP_URL}/invite/${invite.code}`,
+        botLink: TELEGRAM_BOT_USERNAME
+          ? `https://t.me/${TELEGRAM_BOT_USERNAME}?start=${invite.code}`
+          : null,
+      },
+    ]),
+  );
   const options = {
     people: users.map((u) => ({ id: u.id, name: displayName(u) })),
     nodes: flatten(tree),
+    invites,
+    inviteDays: INVITE_TTL_DAYS,
   };
 
   return (
@@ -81,7 +100,7 @@ export default async function StructurePage({ searchParams }: PageProps<"/team/s
             {editable ? t("team.org.emptyOwner") : t("team.org.empty")}
           </p>
         ) : view === "chart" ? (
-          <OrgChart roots={tree} load={load} />
+          <OrgChart roots={tree} load={load} invited={new Set(placeInvites.keys())} />
         ) : (
           <OrgTree nodes={tree} editable={editable} options={options} />
         )}

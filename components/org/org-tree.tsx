@@ -7,12 +7,78 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { t } from "@/lib/i18n";
 import type { OrgTreeNode } from "@/modules/org/service";
 
-import { deleteOrgNodeAction, saveOrgNodeAction } from "@/app/(app)/team/structure/actions";
+import {
+  deleteOrgNodeAction,
+  invitePlaceAction,
+  revokePlaceInviteAction,
+  saveOrgNodeAction,
+} from "@/app/(app)/team/structure/actions";
+import { CopyButton } from "@/components/copy-button";
 
 type Options = {
   people: { id: string; name: string }[];
   nodes: { id: string; name: string }[];
+  // Active invites to places, by node, with ready links.
+  invites?: Map<
+    string,
+    { id: string; role: "MANAGER" | "MEMBER" | "OWNER"; link: string; botLink: string | null }
+  >;
+  inviteDays?: number;
 };
+
+// For an empty place (someone outside the app or a vacancy): invite a person straight into it.
+function PlaceInvite({ node, options }: { node: OrgTreeNode; options: Options }) {
+  const invite = options.invites?.get(node.id);
+  if (invite) {
+    return (
+      <div className="bg-muted/40 mt-1 flex max-w-xl flex-col gap-1 rounded-lg p-2 text-xs">
+        <p className="font-medium">{t("team.org.invited", { role: t(`roles.${invite.role}`) })}</p>
+        <p className="break-all">
+          {t("team.org.inviteLink")}: {invite.link}
+        </p>
+        {invite.botLink && (
+          <p className="text-muted-foreground break-all">
+            {t("team.org.inviteBotLink")}: {invite.botLink}
+          </p>
+        )}
+        <div className="flex gap-2">
+          <CopyButton value={invite.link} />
+          <form action={revokePlaceInviteAction}>
+            <input type="hidden" name="inviteId" value={invite.id} />
+            <Button type="submit" size="sm" variant="ghost">
+              {t("team.org.inviteRevoke")}
+            </Button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <details className="text-sm">
+      <summary className="text-primary w-fit cursor-pointer text-xs font-medium hover:underline">
+        {t("team.org.invite")}
+      </summary>
+      <form
+        action={invitePlaceAction}
+        className="bg-muted/40 mt-1 flex max-w-xl flex-col gap-2 rounded-lg p-2"
+      >
+        <input type="hidden" name="nodeId" value={node.id} />
+        <p className="text-muted-foreground text-xs">
+          {t("team.org.inviteHint", { days: options.inviteDays ?? 7 })}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <NativeSelect name="role" defaultValue="MEMBER" aria-label={t("team.inviteRole")}>
+            <option value="MEMBER">{t("roles.MEMBER")}</option>
+            <option value="MANAGER">{t("roles.MANAGER")}</option>
+          </NativeSelect>
+          <Button type="submit" size="sm">
+            {t("team.org.inviteCreate")}
+          </Button>
+        </div>
+      </form>
+    </details>
+  );
+}
 
 // One form for adding and editing: units have a name and a type, positions a job title and a person.
 export function OrgNodeForm({
@@ -160,6 +226,9 @@ export function OrgTree({
             />
           )}
           <NodeBody node={node} />
+          {editable && node.kind === "POSITION" && !node.user && (
+            <PlaceInvite node={node} options={options} />
+          )}
           {editable && (
             <details className="text-sm">
               <summary className="text-muted-foreground w-fit cursor-pointer text-xs hover:underline">

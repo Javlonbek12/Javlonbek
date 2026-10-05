@@ -78,10 +78,13 @@ model Invite {
   usedAt      DateTime?
   usedById    String?   @unique
   revokedAt   DateTime?
+  // A place in the org chart: whoever joins with this invite takes it.
+  orgNodeId   String?
   createdAt   DateTime  @default(now())
 
-  createdBy User  @relation("InviteCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
-  usedBy    User? @relation("InviteUsedBy", fields: [usedById], references: [id], onDelete: SetNull)
+  createdBy User     @relation("InviteCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  usedBy    User?    @relation("InviteUsedBy", fields: [usedById], references: [id], onDelete: SetNull)
+  orgNode   OrgNode? @relation(fields: [orgNodeId], references: [id], onDelete: SetNull)
 }
 
 model Notification {
@@ -630,6 +633,7 @@ model OrgNode {
   user     User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
   parent   OrgNode?  @relation("OrgTree", fields: [parentId], references: [id], onDelete: SetNull)
   children OrgNode[] @relation("OrgTree")
+  invites  Invite[]
 
   @@index([parentId])
 }
