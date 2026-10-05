@@ -52,7 +52,7 @@ export default async function MeetingPage({ params, searchParams }: PageProps<"/
 
       <Card className="gap-3">
         <div className="flex items-start justify-between gap-2">
-          <h1 className="flex items-center gap-2 text-xl font-semibold">
+          <h1 className="flex items-center gap-2 text-xl font-medium">
             {meeting.title}
             {meeting.seriesId && (
               <Repeat className="text-muted-foreground size-4" aria-label={t("meetings.weekly")} />

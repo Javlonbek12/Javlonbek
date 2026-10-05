@@ -44,16 +44,16 @@ export default async function TodayPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <h1 className="text-2xl font-semibold md:text-3xl">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-[22px] font-medium md:text-[28px]">
             {t("home.greeting", { name: user.firstName })}
           </h1>
           <p className="text-muted-foreground text-sm">
             {formatDayLong(today)} · {t(`roles.${user.role}`)}
           </p>
         </div>
-        <div className="flex flex-wrap justify-end gap-2">
+        <div className="flex flex-wrap gap-2 md:justify-end">
           {showProjects && (
             <Button asChild size="sm" variant="outline" className="md:hidden">
               <Link href="/projects">{t("projects.open")}</Link>
@@ -70,7 +70,7 @@ export default async function TodayPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
         <StatRing
           value={stats.doneThisWeek}
           total={stats.weekPlan}

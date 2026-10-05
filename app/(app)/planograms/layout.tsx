@@ -6,7 +6,7 @@ export default async function PlanogramsLayout({ children }: LayoutProps<"/plano
   await requireModule("planograms");
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-semibold">{t("planograms.title")}</h1>
+      <h1 className="text-[22px] font-medium md:text-2xl">{t("planograms.title")}</h1>
       <PlanogramTabs />
       {children}
     </div>

@@ -54,7 +54,10 @@ export function Ring({
         y="50"
         textAnchor="middle"
         dominantBaseline="central"
-        className={cn("text-[19px] font-semibold", filled ? "fill-background" : "fill-foreground")}
+        className={cn(
+          "font-display text-[17px] font-semibold",
+          filled ? "fill-background" : "fill-foreground",
+        )}
       >
         {label ?? `${value}%`}
       </text>
@@ -75,17 +78,17 @@ export function StatRing({
   caption: string;
 }) {
   return (
-    <div className="bg-card flex items-center gap-3 rounded-xl border p-3">
+    <div className="bg-card shadow-card border-border/80 flex flex-col items-center gap-2 rounded-2xl border p-3 text-center sm:flex-row sm:gap-3 sm:text-left">
       <Ring
         percent={total ? Math.round((value / total) * 100) : 0}
         color={color}
-        size={52}
+        size={48}
         filled={false}
         label=""
       />
       <div className="flex min-w-0 flex-col">
-        <span className="text-muted-foreground truncate text-xs">{caption}</span>
-        <span className="text-xl font-semibold">
+        <span className="text-muted-foreground text-xs leading-tight sm:truncate">{caption}</span>
+        <span className="font-display text-xl font-semibold">
           {value}
           <span className="text-muted-foreground text-sm font-normal">/{total}</span>
         </span>

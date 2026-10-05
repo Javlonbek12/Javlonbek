@@ -20,7 +20,7 @@ function Tile({ label, value, note }: { label: string; value: string; note?: str
   return (
     <Card className="gap-1 p-4">
       <CardDescription className="text-xs">{label}</CardDescription>
-      <p className="text-2xl font-semibold tabular-nums">{value}</p>
+      <p className="font-display text-2xl font-semibold tabular-nums">{value}</p>
       {note && <p className="text-muted-foreground text-xs">{note}</p>}
     </Card>
   );
@@ -39,7 +39,7 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">{t("reports.title")}</h1>
+          <h1 className="text-[22px] font-medium md:text-2xl">{t("reports.title")}</h1>
           <p className="text-muted-foreground text-sm">
             {t("reports.subtitle", {
               from: formatReportDate(period.from),

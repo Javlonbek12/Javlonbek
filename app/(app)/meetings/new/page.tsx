@@ -18,7 +18,7 @@ export default async function NewMeetingPage({ searchParams }: PageProps<"/meeti
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-semibold">{t("meetings.newMeeting")}</h1>
+      <h1 className="text-[22px] font-medium md:text-2xl">{t("meetings.newMeeting")}</h1>
       {typeof error === "string" && (
         <p role="alert" className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
           {t(`meetings.errors.${error}` as TranslationKey)}

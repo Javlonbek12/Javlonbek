@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { DevLoginForm } from "@/components/dev-login-form";
+import { AuthShell } from "@/components/auth-shell";
 import { LoginError } from "@/components/login-error";
 import { TelegramLoginButton } from "@/components/telegram-login-button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
@@ -14,9 +15,9 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const { TELEGRAM_BOT_USERNAME, TELEGRAM_BOT_TOKEN, APP_URL } = getEnv();
 
   return (
-    <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-4 p-4">
+    <AuthShell>
       <Card>
-        <CardTitle className="text-2xl">{t("login.title")}</CardTitle>
+        <CardTitle className="font-display text-xl font-medium">{t("login.title")}</CardTitle>
         <CardDescription>{t("login.subtitle")}</CardDescription>
         <LoginError error={typeof error === "string" ? error : undefined} />
         {TELEGRAM_BOT_USERNAME && TELEGRAM_BOT_TOKEN ? (
@@ -29,6 +30,6 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
         )}
       </Card>
       {isDevLoginEnabled() && <DevLoginForm />}
-    </main>
+    </AuthShell>
   );
 }

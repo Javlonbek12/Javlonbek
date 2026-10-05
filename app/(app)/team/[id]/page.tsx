@@ -79,7 +79,7 @@ export default async function EmployeePage({ params, searchParams }: PageProps<"
       )}
 
       <div className="flex flex-wrap items-center gap-2">
-        <h1 className="text-2xl font-semibold">{displayName(user)}</h1>
+        <h1 className="text-[22px] font-medium md:text-2xl">{displayName(user)}</h1>
         <Badge variant={user.role === "OWNER" ? "default" : "secondary"}>
           {t(`roles.${user.role}`)}
         </Badge>

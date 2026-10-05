@@ -3,6 +3,9 @@ import type { Metadata, Viewport } from "next";
 import { ServiceWorkerRegister } from "@/components/service-worker-register";
 import { t } from "@/lib/i18n";
 
+import "@fontsource-variable/onest";
+import "@fontsource/unbounded/500.css";
+import "@fontsource/unbounded/600.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -19,7 +22,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#171717",
+  themeColor: "#1c2244",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

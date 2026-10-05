@@ -230,7 +230,7 @@ export function PlanEditor({
         </details>
         {groups.map(({ phase, tasks: own }) => (
           <div key={phase?.id ?? "none"} className="flex flex-col gap-1.5">
-            <span className="text-muted-foreground text-xs font-medium uppercase">
+            <span className="text-muted-foreground text-xs font-medium">
               {phase?.title ?? t("projects.phases.noPhase")}
             </span>
             {own.map((task) => {

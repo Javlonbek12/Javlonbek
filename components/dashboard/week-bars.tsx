@@ -11,7 +11,7 @@ export function WeekBars({ weeks }: { weeks: { start: string; count: number }[] 
         return (
           <div
             key={week.start}
-            className="flex h-full flex-1 flex-col items-center justify-end gap-1"
+            className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1"
             title={t("home.dashboard.weekTip", { date: formatDay(week.start), count: week.count })}
           >
             <span
@@ -28,8 +28,11 @@ export function WeekBars({ weeks }: { weeks: { start: string; count: number }[] 
                   : "var(--muted)",
               }}
             />
+            {/* Every other date, so labels fit on phones. */}
             <span className="text-muted-foreground text-[10px] whitespace-nowrap">
-              {formatDay(week.start).replace(/\.$/, "")}
+              {(weeks.length - 1 - i) % 2 === 0
+                ? formatDay(week.start).replace(/\.$/, "")
+                : "\u00a0"}
             </span>
           </div>
         );

@@ -108,7 +108,7 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
             style={{ background: projectColor(project.color) }}
             aria-hidden
           />
-          <h1 className="text-2xl font-semibold">{project.name}</h1>
+          <h1 className="text-[22px] font-medium md:text-2xl">{project.name}</h1>
           <HealthBadge health={stats.health} />
         </div>
         <p className="text-muted-foreground text-sm">
@@ -126,16 +126,16 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
       </div>
 
       {tabs.length > 1 && (
-        <nav className="flex gap-1 overflow-x-auto border-b text-sm">
+        <nav className="bg-secondary/70 inline-flex w-fit max-w-full gap-0.5 overflow-x-auto rounded-full p-1 text-sm">
           {tabs.map((key) => (
             <Link
               key={key}
               href={`/projects/${project.id}${key === "overview" ? "" : `?tab=${key}`}`}
               className={cn(
-                "-mb-px border-b-2 px-3 py-2 whitespace-nowrap",
+                "rounded-full px-3.5 py-1.5 whitespace-nowrap transition-colors",
                 key === tab
-                  ? "border-foreground font-medium"
-                  : "text-muted-foreground border-transparent",
+                  ? "bg-card text-foreground font-medium shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
               )}
             >
               {t(`projects.tabs.${key}`)}
@@ -207,7 +207,7 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
                 ] as const
               ).map(([key, value, color]) => (
                 <div key={key} className="bg-muted/50 rounded-lg px-1 py-2">
-                  <dd className={cn("text-xl font-semibold", color)}>{value}</dd>
+                  <dd className={cn("font-display text-xl font-semibold", color)}>{value}</dd>
                   <dt className="text-muted-foreground text-xs">{t(`projects.counts.${key}`)}</dt>
                 </div>
               ))}
@@ -233,7 +233,7 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
                     <div key={key} className="flex flex-col text-sm">
                       <span
                         className={cn(
-                          "text-xs font-medium uppercase",
+                          "text-xs font-medium",
                           key === "overdue" && "text-destructive",
                           key === "atRisk" && "text-amber-700 dark:text-amber-300",
                           (key === "dueSoon" || key === "blocked") && "text-muted-foreground",

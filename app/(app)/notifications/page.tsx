@@ -22,7 +22,7 @@ export default async function NotificationsPage({ searchParams }: PageProps<"/no
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-semibold">{t("notifications.title")}</h1>
+      <h1 className="text-[22px] font-medium md:text-2xl">{t("notifications.title")}</h1>
       {notice === "testSent" && (
         <p role="status" className="bg-secondary rounded-md p-3 text-sm">
           {t("team.testSent")}

@@ -24,7 +24,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-semibold">{t("settings.title")}</h1>
+      <h1 className="text-[22px] font-medium md:text-2xl">{t("settings.title")}</h1>
       {user.role === "OWNER" && (
         <Link href="/settings/roles" className="hover:bg-accent/50 rounded-xl border p-4">
           <p className="font-medium">{t("roleAccess.open")} →</p>

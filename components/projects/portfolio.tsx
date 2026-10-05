@@ -195,20 +195,20 @@ export function Portfolio({ cards }: { cards: Card[] }) {
             </div>
             <div className="grid grid-cols-[auto_1fr] gap-3 border-t p-3">
               <div className="flex flex-col gap-1">
-                <span className="text-muted-foreground text-[11px] font-medium uppercase">
+                <span className="text-muted-foreground text-xs font-medium">
                   {t("projects.board.rows.planFact")}
                 </span>
                 <PlanFact card={card} max={planMax} compact />
               </div>
               <div className="flex min-w-0 flex-col gap-1">
-                <span className="text-muted-foreground text-[11px] font-medium uppercase">
+                <span className="text-muted-foreground text-xs font-medium">
                   {t("projects.board.rows.problems")}
                 </span>
                 <Problems card={card} max={problemMax} />
               </div>
             </div>
             <div className="flex flex-col gap-1 border-t p-3">
-              <span className="text-muted-foreground text-[11px] font-medium uppercase">
+              <span className="text-muted-foreground text-xs font-medium">
                 {t("projects.board.rows.next")}
               </span>
               <Next card={card} />

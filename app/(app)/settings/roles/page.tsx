@@ -16,7 +16,7 @@ export default async function RolesPage({ searchParams }: PageProps<"/settings/r
 
   return (
     <form action={saveRolesAction} className="flex flex-col gap-4">
-      <h1 className="text-2xl font-semibold">{t("roleAccess.title")}</h1>
+      <h1 className="text-[22px] font-medium md:text-2xl">{t("roleAccess.title")}</h1>
       <p className="text-muted-foreground text-sm">{t("roleAccess.intro")}</p>
       {saved && (
         <p role="status" className="bg-secondary rounded-md p-3 text-sm">

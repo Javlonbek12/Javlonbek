@@ -26,7 +26,7 @@ export default async function ProjectsPage({ searchParams }: PageProps<"/project
 
   return (
     <div className="flex flex-col gap-4 [&>*]:min-w-0">
-      <h1 className="text-2xl font-semibold">{t("projects.title")}</h1>
+      <h1 className="text-[22px] font-medium md:text-2xl">{t("projects.title")}</h1>
       {typeof error === "string" && (
         <p role="alert" className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
           {t(`projects.errors.${error}` as TranslationKey)}
