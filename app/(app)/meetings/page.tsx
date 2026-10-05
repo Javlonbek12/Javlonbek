@@ -27,7 +27,7 @@ export default async function MeetingsPage({ searchParams }: PageProps<"/meeting
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-2">
-        <h1 className="text-2xl font-semibold">{t("meetings.title")}</h1>
+        <h1 className="text-[22px] font-medium md:text-2xl">{t("meetings.title")}</h1>
         <Button asChild size="sm">
           <Link href="/meetings/new">
             <Plus />

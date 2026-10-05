@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { syncPeople } from "@/modules/org/service";
+import { linkPeopleByName, syncPeople } from "@/modules/org/service";
 import type { Role } from "@/lib/generated/prisma/client";
 import { t } from "@/lib/i18n";
 import { logActivity } from "@/modules/core/activity/service";
@@ -104,7 +104,8 @@ export async function loginWithTelegram(
   );
 
   // Job title and manager follow the chart once the person is in it.
-  if (result.ok && result.created) await syncPeople();
+  // A new person whose name is written in the chart takes that place.
+  if (result.ok && result.created && !(await linkPeopleByName())) await syncPeople();
   if (result.ok && result.inviterId) {
     await notify(result.inviterId, {
       type: "invite_accepted",
@@ -138,6 +139,8 @@ export async function changeRole(actor: Actor, targetUserId: string, newRole: Ro
     entityId: target.id,
     details: { from: target.role, to: newRole },
   });
+  // Who can be a manager changed: managers in the chart follow.
+  await syncPeople();
   await notify(target.id, {
     type: "role_changed",
     title: t("notifications.events.roleChangedTitle"),

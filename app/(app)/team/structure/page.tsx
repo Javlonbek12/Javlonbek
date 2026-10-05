@@ -79,7 +79,7 @@ export default async function StructurePage({ searchParams }: PageProps<"/team/s
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-semibold">{t("team.org.title")}</h1>
+        <h1 className="text-[22px] font-medium md:text-2xl">{t("team.org.title")}</h1>
         <div className="flex gap-1">
           <Button asChild size="sm" variant={view === "chart" ? "default" : "outline"}>
             <Link href="/team/structure">{t("team.org.viewChart")}</Link>

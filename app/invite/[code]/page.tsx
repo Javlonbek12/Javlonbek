@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { DevLoginForm } from "@/components/dev-login-form";
+import { AuthShell } from "@/components/auth-shell";
 import { LoginError } from "@/components/login-error";
 import { TelegramLoginButton } from "@/components/telegram-login-button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
@@ -20,9 +21,9 @@ export default async function InvitePage({ params, searchParams }: PageProps<"/i
   const status = getInviteStatus(invite);
 
   return (
-    <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-4 p-4">
+    <AuthShell>
       <Card>
-        <CardTitle className="text-2xl">{t("invite.title")}</CardTitle>
+        <CardTitle className="font-display text-xl font-medium">{t("invite.title")}</CardTitle>
         {invite && status === "valid" ? (
           <>
             <CardDescription>
@@ -55,6 +56,6 @@ export default async function InvitePage({ params, searchParams }: PageProps<"/i
         )}
       </Card>
       {isDevLoginEnabled() && status === "valid" && <DevLoginForm inviteCode={code} />}
-    </main>
+    </AuthShell>
   );
 }

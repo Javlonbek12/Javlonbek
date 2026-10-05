@@ -6,6 +6,8 @@ import { logActivity } from "@/modules/core/activity/service";
 import type { Actor } from "@/modules/core/permissions";
 import { displayName } from "@/modules/core/users/display-name";
 
+import { matchUser } from "./match";
+
 // The org chart the owner draws: units (department, team, project team) and positions.
 // Positions linked to app users also set their job title and manager in the employee card.
 
@@ -146,6 +148,31 @@ export async function deleteOrgNode(actor: Actor, id: string) {
     entityType: "OrgNode",
     entityId: id,
   });
+}
+
+// Places written with a person's name ("not in the app") get that person once they join:
+// the name must match exactly one app user who has no place yet, and only one such place.
+export async function linkPeopleByName() {
+  const [nodes, users] = await Promise.all([
+    db.orgNode.findMany({ where: { kind: "POSITION" } }),
+    db.user.findMany({ select: { id: true, firstName: true, lastName: true } }),
+  ]);
+  const placed = new Set(nodes.map((n) => n.userId).filter(Boolean));
+  const free = users.filter((u) => !placed.has(u.id));
+  const claims = new Map<string, string[]>();
+  for (const node of nodes) {
+    if (node.userId || !node.personName) continue;
+    const userId = matchUser(node.personName, free);
+    if (userId) claims.set(userId, [...(claims.get(userId) ?? []), node.id]);
+  }
+  let linked = 0;
+  for (const [userId, nodeIds] of claims) {
+    if (nodeIds.length !== 1) continue;
+    await db.orgNode.update({ where: { id: nodeIds[0] }, data: { userId, personName: null } });
+    linked += 1;
+  }
+  if (linked) await syncPeople();
+  return linked;
 }
 
 // People placed in the chart get their job title from it, and as manager the nearest person

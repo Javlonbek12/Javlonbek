@@ -16,9 +16,12 @@ export function TaskRow({ task, today }: { task: TaskView; today: string }) {
   return (
     <Link
       href={`/tasks/${task.id}`}
-      className="bg-card hover:bg-accent/50 flex flex-col gap-1.5 rounded-lg border p-3 transition-colors"
+      className={cn(
+        "bg-card shadow-card hover:border-primary/30 border-border/80 flex flex-col gap-2 rounded-xl border p-3.5 transition-colors",
+        overdue && "border-l-destructive border-l-[3px]",
+      )}
     >
-      <span className="font-medium">{task.title}</span>
+      <span className="leading-snug font-medium">{task.title}</span>
       <span className="flex flex-wrap items-center gap-1.5 text-xs">
         <StatusBadge status={task.status} />
         <PriorityBadge priority={task.priority} />

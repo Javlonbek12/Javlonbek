@@ -24,7 +24,7 @@ export function TaskTabs() {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
-        <h1 className="text-2xl font-semibold">{t("tasks.title")}</h1>
+        <h1 className="text-[22px] font-medium md:text-2xl">{t("tasks.title")}</h1>
         <Button asChild size="sm">
           <Link href="/tasks/new">
             <Plus />
@@ -33,17 +33,17 @@ export function TaskTabs() {
         </Button>
       </div>
       <nav className="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
-        <ul className="flex gap-1 border-b">
+        <ul className="bg-secondary/70 inline-flex gap-0.5 rounded-full p-1">
           {TABS.map((tab) => (
             <li key={tab.href}>
               <Link
                 href={tab.href}
                 aria-current={active(tab.href) ? "page" : undefined}
                 className={cn(
-                  "-mb-px block border-b-2 px-3 py-2 text-sm whitespace-nowrap",
+                  "block rounded-full px-3.5 py-1.5 text-sm whitespace-nowrap transition-colors",
                   active(tab.href)
-                    ? "border-primary font-medium"
-                    : "text-muted-foreground border-transparent",
+                    ? "bg-card text-foreground font-medium shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
                 )}
               >
                 {t(tab.key)}

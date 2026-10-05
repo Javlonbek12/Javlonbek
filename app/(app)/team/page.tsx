@@ -46,7 +46,7 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-semibold">{t("team.title")}</h1>
+        <h1 className="text-[22px] font-medium md:text-2xl">{t("team.title")}</h1>
         {canUseModule(user, "structure") && (
           <Button asChild size="sm" variant="outline">
             <Link href="/team/structure">{t("team.org.open")}</Link>

@@ -57,5 +57,10 @@ export async function withAccess<T extends User>(
   return { ...user, access: await accessFor(user, config) };
 }
 
-export const canUseModule = (actor: { role: Role; access?: Access }, module: ConfigurableModule) =>
-  actor.role === "OWNER" || (actor.access?.modules.includes(module) ?? true);
+export const canUseModule = (
+  actor: {
+    role: Role;
+    access?: Pick<Access, "taskScope" | "teamIds"> & { modules: readonly string[] };
+  },
+  module: ConfigurableModule,
+) => actor.role === "OWNER" || (actor.access?.modules.includes(module) ?? true);

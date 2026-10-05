@@ -26,28 +26,50 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: "Onest Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Unbounded", "Onest Variable", ui-sans-serif, system-ui, sans-serif;
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-active: var(--sidebar-active);
+  --shadow-card: var(--shadow-card);
 }
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  /* "Team HQ": warm paper surface, white cards, deep ink-indigo for navigation and primary actions.
+     Bright colours are kept for data (projects, statuses). */
+  --radius: 0.875rem;
+  --background: oklch(0.975 0.006 85);
+  --foreground: oklch(0.22 0.03 268);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.22 0.03 268);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --popover-foreground: oklch(0.22 0.03 268);
+  --primary: oklch(0.34 0.11 268);
+  --primary-foreground: oklch(0.99 0.003 268);
+  --secondary: oklch(0.945 0.014 268);
+  --secondary-foreground: oklch(0.28 0.06 268);
+  --muted: oklch(0.955 0.007 85);
+  --muted-foreground: oklch(0.5 0.02 268);
+  --accent: oklch(0.94 0.02 268);
+  --accent-foreground: oklch(0.24 0.05 268);
+  --destructive: oklch(0.577 0.215 27.325);
+  --border: oklch(0.905 0.009 85);
+  --input: oklch(0.88 0.01 85);
+  --ring: oklch(0.55 0.13 268);
+  --sidebar: oklch(0.235 0.055 268);
+  --sidebar-foreground: oklch(0.86 0.02 268);
+  --sidebar-active: oklch(0.33 0.08 268);
+  --shadow-card:
+    0 1px 2px oklch(0.25 0.05 268 / 0.04), 0 6px 20px -10px oklch(0.25 0.05 268 / 0.12);
+  /* Project colours (identity), in fixed order; validated as a set for light and dark. */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #4a3aa7;
+  --series-8: #e34948;
 }
 
 .dark {
@@ -69,6 +91,14 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
+  --series-8: #e66767;
 }
 
 @layer base {
@@ -77,6 +107,16 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: var(--primary);
+  }
+  /* Page titles in the display face. */
+  h1 {
+    font-family: var(--font-display);
+    font-weight: 500;
+    letter-spacing: -0.015em;
   }
 }
 

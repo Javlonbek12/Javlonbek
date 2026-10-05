@@ -4,7 +4,7 @@ import { t } from "@/lib/i18n";
 export default function OfflinePage() {
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-      <h1 className="text-2xl font-semibold">{t("offline.title")}</h1>
+      <h1 className="text-[22px] font-medium md:text-2xl">{t("offline.title")}</h1>
       <p className="text-muted-foreground">{t("offline.message")}</p>
     </main>
   );
