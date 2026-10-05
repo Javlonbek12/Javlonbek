@@ -19,6 +19,7 @@ export function ProjectForm({
   canChangeLead,
   projectId,
   submit,
+  templates,
 }: {
   action: (form: FormData) => Promise<void>;
   values?: Values;
@@ -26,6 +27,8 @@ export function ProjectForm({
   canChangeLead: boolean;
   projectId?: string;
   submit: string;
+  // Offered when creating a project.
+  templates?: { key: string; name: string; description: string; anchor: string | null }[];
 }) {
   return (
     <form action={action} className="flex flex-col gap-3 text-sm">
@@ -34,6 +37,33 @@ export function ProjectForm({
         {t("projects.name")}
         <Input name="name" required maxLength={60} defaultValue={values?.name} />
       </label>
+      {templates && (
+        <>
+          <fieldset className="flex flex-col gap-2">
+            <legend className="mb-1">{t("projects.template")}</legend>
+            {templates.map((tpl, i) => (
+              <label key={tpl.key} className="flex items-start gap-2 rounded-lg border p-2.5">
+                <input
+                  type="radio"
+                  name="template"
+                  value={tpl.key}
+                  defaultChecked={i === 0}
+                  className="mt-1"
+                />
+                <span className="flex flex-col">
+                  <span className="font-medium">{tpl.name}</span>
+                  <span className="text-muted-foreground text-xs">{tpl.description}</span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+          <label className="flex flex-col gap-1">
+            {t("projects.anchorDate")}
+            <Input type="date" name="anchorDate" className="w-auto" />
+            <span className="text-muted-foreground text-xs">{t("projects.anchorHint")}</span>
+          </label>
+        </>
+      )}
       <label className="flex flex-col gap-1">
         {t("projects.team")}
         <Input name="team" maxLength={120} defaultValue={values?.team ?? ""} />

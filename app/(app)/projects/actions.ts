@@ -5,6 +5,13 @@ import { redirect } from "next/navigation";
 
 import { requireUser } from "@/modules/core/auth/current-user";
 import {
+  deletePhase,
+  savePhase,
+  savePlanSections,
+  saveProjectTask,
+  shiftProject,
+} from "@/modules/projects/plan";
+import {
   createProject,
   ProjectError,
   setTaskRisk,
@@ -27,7 +34,11 @@ export async function createProjectAction(form: FormData) {
   const actor = await requireUser();
   let target: string;
   try {
-    const project = await createProject(actor, fields(form));
+    const project = await createProject(actor, {
+      ...fields(form),
+      template: str(form, "template"),
+      anchorDate: str(form, "anchorDate"),
+    });
     target = `/projects/${project.id}`;
   } catch (error) {
     if (!(error instanceof ProjectError)) throw error;
@@ -63,4 +74,72 @@ export async function setTaskRiskAction(form: FormData) {
   revalidatePath("/projects", "layout");
   revalidatePath(`/tasks/${taskId}`);
   redirect(`/tasks/${taskId}`);
+}
+
+async function planAction(
+  form: FormData,
+  tab: string,
+  action: (projectId: string) => Promise<unknown>,
+) {
+  const projectId = str(form, "projectId");
+  let target = `/projects/${projectId}?tab=${tab}`;
+  try {
+    const result = await action(projectId);
+    if (typeof result === "number") target += `&shifted=${result}`;
+    if (tab === "plan") target += "&saved=1";
+  } catch (error) {
+    if (!(error instanceof ProjectError)) throw error;
+    target += `&error=${error.code}`;
+  }
+  revalidatePath("/projects", "layout");
+  revalidatePath("/tasks", "layout");
+  redirect(target);
+}
+
+export async function savePhaseAction(form: FormData) {
+  const actor = await requireUser();
+  await planAction(form, "setup", (projectId) =>
+    savePhase(actor, projectId, str(form, "phaseId") || null, {
+      title: str(form, "title"),
+      dueDate: str(form, "dueDate"),
+      sortOrder: str(form, "sortOrder") || "0",
+    }),
+  );
+}
+
+export async function deletePhaseAction(form: FormData) {
+  const actor = await requireUser();
+  await planAction(form, "setup", (projectId) =>
+    deletePhase(actor, projectId, str(form, "phaseId")),
+  );
+}
+
+export async function saveProjectTaskAction(form: FormData) {
+  const actor = await requireUser();
+  await planAction(form, "setup", (projectId) =>
+    saveProjectTask(actor, projectId, str(form, "taskId") || null, {
+      title: str(form, "title"),
+      phaseId: str(form, "phaseId"),
+      code: str(form, "code"),
+      responsible: str(form, "responsible"),
+      startDate: str(form, "startDate"),
+      dueDate: str(form, "dueDate"),
+      isMilestone: form.get("isMilestone") === "on",
+    }),
+  );
+}
+
+export async function shiftProjectAction(form: FormData) {
+  const actor = await requireUser();
+  await planAction(form, "setup", (projectId) =>
+    shiftProject(actor, projectId, str(form, "anchorDate")),
+  );
+}
+
+export async function savePlanSectionsAction(form: FormData) {
+  const actor = await requireUser();
+  const sections: Record<string, string> = {};
+  for (const [key, value] of form.entries())
+    if (key.startsWith("section.") && typeof value === "string") sections[key.slice(8)] = value;
+  await planAction(form, "plan", (projectId) => savePlanSections(actor, projectId, sections));
 }

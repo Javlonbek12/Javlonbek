@@ -7,6 +7,7 @@ import { requireUser } from "@/modules/core/auth/current-user";
 import { getSettings, getUserToday } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
 import { listProjectCards } from "@/modules/projects/service";
+import { TEMPLATES } from "@/modules/projects/templates";
 import { listAssignableUsers } from "@/modules/tasks/service";
 
 import { createProjectAction } from "./actions";
@@ -79,6 +80,7 @@ export default async function ProjectsPage({ searchParams }: PageProps<"/project
               users={users.map((u) => ({ id: u.id, name: displayName(u) }))}
               canChangeLead
               submit={t("projects.create")}
+              templates={TEMPLATES}
             />
           </div>
         </details>

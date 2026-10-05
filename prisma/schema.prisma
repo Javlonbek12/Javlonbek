@@ -656,18 +656,24 @@ model OrgNode {
 // ============================================================
 
 model Project {
-  id          String    @id @default(cuid())
-  name        String    @unique
-  description String?
+  id           String    @id @default(cuid())
+  name         String    @unique
+  description  String?
   // The team running it, e.g. "Marketing Execution".
-  team        String?
-  leadId      String?
-  createdById String
+  team         String?
+  leadId       String?
+  createdById  String
   // Its colour on dashboards: 0..7, a slot of the --series-N palette, kept for good.
-  color       Int       @default(0)
-  archived    Boolean   @default(false)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  color        Int       @default(0)
+  // The template it was created from (modules/projects/templates.ts), e.g. "launch".
+  template     String?
+  // The day the plan is counted from, e.g. the start of sales ("T") for a launch.
+  anchorDate   DateTime? @db.Date
+  // The written plan (e.g. the Launching Plan): { sectionKey: text }.
+  planSections Json?
+  archived     Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   lead      User?          @relation("ProjectLead", fields: [leadId], references: [id], onDelete: SetNull)
   createdBy User           @relation("ProjectCreator", fields: [createdById], references: [id])

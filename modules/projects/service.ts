@@ -1,13 +1,14 @@
 import { z } from "zod";
 
 import { db } from "@/lib/db";
-import { toDateString, todayInTimezone } from "@/lib/dates";
+import { fromDateString, isDateString, toDateString, todayInTimezone } from "@/lib/dates";
 import { logActivity } from "@/modules/core/activity/service";
 import { canUseModule } from "@/modules/core/access/actor";
 import type { Actor } from "@/modules/core/permissions";
 import { displayName } from "@/modules/core/users/display-name";
 import { canEditTask, CLOSED_STATUSES, visibleTasksWhere } from "@/modules/tasks/access";
 
+import { applyTemplate } from "./apply-template";
 import {
   milestones,
   problemsByPriority,
@@ -15,6 +16,7 @@ import {
   projectStats,
   type ProjectTask,
 } from "./progress";
+import { templateByKey } from "./templates";
 
 export class ProjectError extends Error {
   constructor(public readonly code: "forbidden" | "invalid" | "notFound" | "nameTaken") {
@@ -113,6 +115,7 @@ export async function getProject(actor: Actor, id: string, timeZone: string) {
     phases: project.phases.map((phase) => ({
       id: phase.id,
       title: phase.title,
+      sortOrder: phase.sortOrder,
       dueDate: phase.dueDate ? toDateString(phase.dueDate) : null,
     })),
     tasks,
@@ -154,22 +157,71 @@ const projectSchema = z.object({
     .nullish()
     .transform((v) => v || null),
 });
+
+const createSchema = projectSchema.extend({
+  template: z
+    .string()
+    .max(40)
+    .nullish()
+    .transform((v) => v || null),
+  anchorDate: z
+    .string()
+    .nullish()
+    .transform((v) => v || null)
+    .refine((v) => v === null || isDateString(v)),
+});
 export type ProjectInput = z.input<typeof projectSchema>;
 
-export async function createProject(actor: Actor, input: ProjectInput) {
+// From a template: its phases and tasks are created, dated from the anchor day (required then).
+export async function createProject(
+  actor: Actor,
+  input: z.input<typeof createSchema>,
+  now = new Date(),
+) {
   if (actor.role !== "OWNER") throw new ProjectError("forbidden");
-  const parsed = projectSchema.safeParse(input);
+  const parsed = createSchema.safeParse(input);
   if (!parsed.success) throw new ProjectError("invalid");
-  if (await db.project.findUnique({ where: { name: parsed.data.name } }))
+  const { template: key, anchorDate, ...fields } = parsed.data;
+  const template = templateByKey(key);
+  if (template?.anchor && !anchorDate) throw new ProjectError("invalid");
+  if (await db.project.findUnique({ where: { name: fields.name } }))
     throw new ProjectError("nameTaken");
-  const project = await db.project.create({
-    data: { ...parsed.data, createdById: actor.id, color: (await db.project.count()) % 8 },
-  });
+  if (fields.leadId && !(await db.user.findUnique({ where: { id: fields.leadId } })))
+    throw new ProjectError("invalid");
+  const color = (await db.project.count()) % 8;
+  const project = await db.$transaction(
+    async (tx) => {
+      const created = await tx.project.create({
+        data: {
+          ...fields,
+          createdById: actor.id,
+          color,
+          template: template?.key ?? null,
+          anchorDate: template?.anchor && anchorDate ? fromDateString(anchorDate) : null,
+        },
+      });
+      if (template?.anchor && anchorDate)
+        await applyTemplate(
+          tx,
+          created,
+          template,
+          anchorDate,
+          {
+            creatorId: actor.id,
+            assigneeId: fields.leadId ?? actor.id,
+          },
+          now,
+        );
+      return created;
+    },
+    { timeout: 30_000 },
+  );
   await logActivity({
     actorId: actor.id,
     action: "project.created",
     entityType: "Project",
     entityId: project.id,
+    details: { template: template?.key ?? null },
   });
   return project;
 }
