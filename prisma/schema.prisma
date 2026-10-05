@@ -49,6 +49,7 @@ model User {
   reports        User[]         @relation("ManagerReports")
   notesAbout     EmployeeNote[] @relation("NoteEmployee")
   notesWritten   EmployeeNote[] @relation("NoteAuthor")
+  orgNode        OrgNode?
   settings       UserSettings?
   notifications  Notification[]
   invitesCreated Invite[]       @relation("InviteCreatedBy")
@@ -595,4 +596,40 @@ model PlanogramRule {
   planogram Planogram @relation(fields: [planogramId], references: [id], onDelete: Cascade)
 
   @@unique([planogramId, kind])
+}
+
+// ============================================================
+// Org structure (drawn by the owner): units and positions in one tree.
+// ============================================================
+
+enum OrgNodeKind {
+  // A department / team / project team (bold name, type below).
+  UNIT
+  // A position: a person in the app, a person not in the app, or a vacancy.
+  POSITION
+}
+
+model OrgNode {
+  id         String      @id @default(cuid())
+  kind       OrgNodeKind
+  // UNIT: the unit's name.
+  name       String?
+  // UNIT: its type ("Project Team"); POSITION: the job title.
+  title      String?
+  // Small caption above a position, e.g. the team it leads ("Marketing Team").
+  label      String?
+  // POSITION: a user of the app...
+  userId     String?     @unique
+  // ...or the name of someone who doesn't use it. Both empty = vacancy.
+  personName String?
+  parentId   String?
+  sortOrder  Int         @default(0)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  user     User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  parent   OrgNode?  @relation("OrgTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children OrgNode[] @relation("OrgTree")
+
+  @@index([parentId])
 }

@@ -9,7 +9,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   return (
     <div className="flex flex-1 flex-col md:flex-row">
       <MobileHeader unreadCount={unreadCount} />
-      <AppNav role={user.role} unreadCount={unreadCount} />
+      <AppNav role={user.role} unreadCount={unreadCount} enabled={user.access.modules} />
       <main className="mx-auto w-full max-w-5xl min-w-0 flex-1 p-4 pb-24 md:p-8">{children}</main>
     </div>
   );

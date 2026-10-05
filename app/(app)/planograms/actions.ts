@@ -6,7 +6,7 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { createRateLimiter } from "@/lib/rate-limit";
-import { requireUser } from "@/modules/core/auth/current-user";
+import { requireModule } from "@/modules/core/access/guard";
 import { sendTelegramPhoto } from "@/modules/bot/send";
 import { getEnv } from "@/lib/env";
 import { PlanogramError } from "@/modules/planograms/errors";
@@ -41,7 +41,7 @@ import type { Rule } from "@/modules/planograms/validate";
 const allowAction = createRateLimiter({ limit: 120, windowMs: 60_000 });
 
 async function actor() {
-  const user = await requireUser();
+  const user = await requireModule("planograms");
   if (!allowAction(user.id)) throw new Error("Too many requests");
   return user;
 }

@@ -83,8 +83,14 @@ describe("full task cycle", () => {
   it("a MEMBER's team task needs a MANAGER to approve it", async () => {
     await createTestUser("OWNER");
     const manager = await createTestUser("MANAGER");
+    // By default a manager oversees only their own people (Settings → Roles).
+    const otherManager = await createTestUser("MANAGER");
     const member = await createTestUser("MEMBER");
     const colleague = await createTestUser("MEMBER");
+    await db.user.updateMany({
+      where: { id: { in: [member.id, colleague.id] } },
+      data: { managerId: manager.id },
+    });
 
     const task = await createTask(member, taskInput({ assigneeId: colleague.id }), "submit");
     await expect(changeStatus(member, task.id, "APPROVED")).rejects.toMatchObject({
@@ -93,6 +99,11 @@ describe("full task cycle", () => {
     expect(
       await db.notification.count({ where: { userId: manager.id, type: "task_pending_approval" } }),
     ).toBe(1);
+    expect(
+      await db.notification.count({
+        where: { userId: otherManager.id, type: "task_pending_approval" },
+      }),
+    ).toBe(0);
     await expect(changeStatus(manager, task.id, "APPROVED")).resolves.toMatchObject({
       status: "APPROVED",
     });

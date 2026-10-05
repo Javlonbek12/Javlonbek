@@ -1,6 +1,7 @@
 import { Bot, type Context } from "grammy";
 
 import { db } from "@/lib/db";
+import { withAccess } from "@/modules/core/access/actor";
 import { getEnv } from "@/lib/env";
 import type { User } from "@/lib/generated/prisma/client";
 import { t } from "@/lib/i18n";
@@ -26,7 +27,9 @@ const MAX_TELEGRAM_TEXT = 4000;
 
 async function currentUser(ctx: Context): Promise<User | null> {
   if (!ctx.from) return null;
-  return db.user.findUnique({ where: { telegramId: BigInt(ctx.from.id) } });
+  const user = await db.user.findUnique({ where: { telegramId: BigInt(ctx.from.id) } });
+  // The bot shows the same tasks as the site: role settings attached.
+  return user ? withAccess(user) : null;
 }
 
 async function send(ctx: Context, reply: BotReply) {

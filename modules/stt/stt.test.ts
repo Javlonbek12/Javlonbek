@@ -29,6 +29,45 @@ describe("OpenAiCompatibleStt", () => {
     );
   });
 
+  it("sends the hint and asks for the detected language", async () => {
+    const forms: FormData[] = [];
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      forms.push(init!.body as FormData);
+      return Response.json({ text: "Ertaga hisobot tayyorlash", language: "uz" });
+    });
+    const stt = new OpenAiCompatibleStt("https://x", "m", undefined, fetchMock as typeof fetch);
+    expect(await stt.transcribe(audio, { prompt: "Азиз, Тестовый сотрудник 1" })).toBe(
+      "Ertaga hisobot tayyorlash",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(forms[0].get("prompt")).toBe("Азиз, Тестовый сотрудник 1");
+    expect(forms[0].get("response_format")).toBe("verbose_json");
+    expect(forms[0].get("language")).toBeNull();
+  });
+
+  it("recognizes again as Uzbek when another language was detected", async () => {
+    const forms: FormData[] = [];
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const form = init!.body as FormData;
+      forms.push(form);
+      return form.get("language")
+        ? Response.json({ text: "Ertaga hisobot tayyorlash", language: "uz" })
+        : Response.json({ text: "ارتاگا حسابات", language: "fa" });
+    });
+    const stt = new OpenAiCompatibleStt("https://x", "m", undefined, fetchMock as typeof fetch);
+    expect(await stt.transcribe(audio)).toBe("Ertaga hisobot tayyorlash");
+    expect(forms[1].get("language")).toBe("uz");
+  });
+
+  it("keeps Russian (code or full name) without a second request", async () => {
+    for (const language of ["ru", "russian"]) {
+      const fetchMock = vi.fn(async () => Response.json({ text: "Подготовить отчёт", language }));
+      const stt = new OpenAiCompatibleStt("https://x", "m", undefined, fetchMock as typeof fetch);
+      expect(await stt.transcribe(audio)).toBe("Подготовить отчёт");
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    }
+  });
+
   it("throws a clear error on HTTP failure", async () => {
     const stt = new OpenAiCompatibleStt(
       "https://x",

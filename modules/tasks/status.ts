@@ -1,7 +1,7 @@
 import type { TaskStatus } from "@/lib/generated/prisma/client";
 import type { Actor } from "@/modules/core/permissions";
 
-import { isApprover, type TaskAccessInfo } from "./access";
+import { isApprover, oversees, type TaskAccessInfo } from "./access";
 
 // Team workflow: DRAFT → PENDING_APPROVAL → APPROVED → IN_PROGRESS → IN_REVIEW → DONE, plus CANCELLED.
 // Personal workflow skips approval: DRAFT → IN_PROGRESS → DONE.
@@ -28,7 +28,8 @@ function personalTransitions(actor: Actor, task: TaskAccessInfo): TaskStatus[] {
 }
 
 function teamTransitions(actor: Actor, task: TaskAccessInfo): TaskStatus[] {
-  const approver = isApprover(actor.role);
+  // Approving and accepting: for tasks the actor oversees (role settings may narrow a manager to their team).
+  const approver = isApprover(actor.role) && oversees(actor, task);
   const creator = task.creatorId === actor.id;
   const assignee = task.assigneeId === actor.id;
   const manages = creator || approver;

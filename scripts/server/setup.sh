@@ -3,6 +3,8 @@
 # .github/workflows/server.yml ("setup"), after the project files were copied to ~/assistant.
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
+# No command below may wait for keyboard input.
+exec < /dev/null
 
 APP="$HOME/assistant"
 PROVIDED="$HOME/.assistant-provided.env"
@@ -89,14 +91,19 @@ echo "Claude key: $( [ -n "$(get_kv ANTHROPIC_API_KEY)" ] && echo set || echo NO
 step "Build and start (first time 5-10 minutes)"
 chmod +x scripts/*.sh
 $COMPOSE build
+# The database may have been created earlier with another password (e.g. a manual install);
+# align it with .env. Local connections inside the container need no password.
+$COMPOSE up -d --wait postgres
+$COMPOSE exec -T postgres psql -U assistant -d postgres -q -v ON_ERROR_STOP=1 \
+  -c "ALTER USER assistant WITH PASSWORD '$(get_kv POSTGRES_PASSWORD)'"
 $COMPOSE run --rm migrate
 $COMPOSE up -d --remove-orphans
 docker image prune -f > /dev/null
 
 if [ "$(get_kv COMPOSE_PROFILES)" = "whisper" ]; then
-  step "Speech recognition model (about 500 MB, once)"
+  step "Speech recognition model (about 1.6 GB, once)"
   $COMPOSE exec -T whisper uv run --no-sync python -c \
-    "from faster_whisper import WhisperModel; WhisperModel('Systran/faster-whisper-small'); print('model ready')" \
+    "from faster_whisper import WhisperModel; WhisperModel('deepdml/faster-whisper-large-v3-turbo-ct2', compute_type='int8'); print('model ready')" \
     || echo "Model download failed; it will be downloaded on the first voice message."
 fi
 
@@ -126,3 +133,4 @@ step "Done"
 $COMPOSE ps
 echo
 echo "Site: https://$DOMAIN"
+echo "SETUP FINISHED"

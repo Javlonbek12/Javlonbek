@@ -25,6 +25,10 @@ export async function POST(request: Request) {
   }
   handler ??= webhookCallback(createBot(TELEGRAM_BOT_TOKEN), "std/http", {
     secretToken: TELEGRAM_WEBHOOK_SECRET,
+    // Voice recognition and AI can take longer than Telegram waits. Answer Telegram in time
+    // and let the bot finish in the background; otherwise Telegram resends the same message.
+    onTimeout: "return",
+    timeoutMilliseconds: 8_000,
   });
   return handler(request);
 }

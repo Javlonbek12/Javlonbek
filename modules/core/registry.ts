@@ -1,9 +1,11 @@
 import {
+  BarChart3,
   Bell,
   CalendarClock,
   House,
   LayoutGrid,
   ListTodo,
+  Network,
   Settings,
   Users,
   type LucideIcon,
@@ -36,12 +38,30 @@ export const MODULES: ModuleEntry[] = [
     roles: ALL_ROLES,
   },
   { id: "team", titleKey: "nav.team", href: "/team", icon: Users, roles: ALL_ROLES },
+  // On phones the structure opens from the "Команда" screen.
+  {
+    id: "structure",
+    titleKey: "nav.structure",
+    href: "/team/structure",
+    icon: Network,
+    roles: ALL_ROLES,
+    mobile: false,
+  },
   {
     id: "planograms",
     titleKey: "nav.planograms",
     href: "/planograms",
     icon: LayoutGrid,
     roles: ALL_ROLES,
+  },
+  // Management report: owner and managers; on phones it opens from the "Today" screen.
+  {
+    id: "reports",
+    titleKey: "nav.reports",
+    href: "/reports",
+    icon: BarChart3,
+    roles: ["OWNER", "MANAGER"],
+    mobile: false,
   },
   {
     id: "notifications",
@@ -62,6 +82,18 @@ export const MODULES: ModuleEntry[] = [
   },
 ];
 
-export function modulesForRole(role: Role, modules: ModuleEntry[] = MODULES): ModuleEntry[] {
-  return modules.filter((module) => module.roles.includes(role));
+// Sections the owner can switch on/off per role (Settings → Roles); the rest are always shown.
+const SWITCHABLE = new Set(["meetings", "team", "structure", "planograms", "reports"]);
+
+export function modulesForRole(
+  role: Role,
+  modules: ModuleEntry[] = MODULES,
+  // Sections enabled for this person by the role settings; undefined = all.
+  enabled?: string[],
+): ModuleEntry[] {
+  return modules.filter(
+    (module) =>
+      module.roles.includes(role) &&
+      (role === "OWNER" || !enabled || !SWITCHABLE.has(module.id) || enabled.includes(module.id)),
+  );
 }

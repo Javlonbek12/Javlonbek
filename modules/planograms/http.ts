@@ -1,3 +1,4 @@
+import { canUseModule } from "@/modules/core/access/actor";
 import { getUserFromRequest } from "@/modules/core/auth/request-user";
 
 const TYPES = {
@@ -22,6 +23,8 @@ export function fileResponse(body: Buffer, format: ExportFormat, fileName: strin
   });
 }
 
+// Signed-in user who may use planograms (role settings); null otherwise.
 export async function requireRequestUser(request: Request) {
-  return getUserFromRequest(request);
+  const user = await getUserFromRequest(request);
+  return user && canUseModule(user, "planograms") ? user : null;
 }

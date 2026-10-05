@@ -8,6 +8,7 @@ name: Server
 #   logs    - last 200 log lines of one service
 #   backup  - make a backup now
 #   restart - restart all services
+#   demo-add / demo-remove - add or remove test tasks and test employees (after deploy)
 # Secrets: VPS_HOST, VPS_USER (root), VPS_SSH_KEY; for setup also TELEGRAM_BOT_TOKEN,
 # TELEGRAM_BOT_USERNAME, ANTHROPIC_API_KEY. Variable (optional): DOMAIN. See docs/SETUP-SERVER.md.
 on:
@@ -16,7 +17,7 @@ on:
       action:
         description: What to do
         type: choice
-        options: [status, setup, deploy, logs, backup, restart]
+        options: [status, setup, deploy, logs, backup, restart, demo-add, demo-remove]
         default: status
       service:
         description: "For logs: app, worker, watchdog, caddy, postgres, whisper, migrate"
@@ -93,7 +94,7 @@ jobs:
                 echo "TELEGRAM_BOT_USERNAME=${TELEGRAM_BOT_USERNAME#@}"
                 echo "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY"
               } | ssh vps 'umask 077 && cat > ~/.assistant-provided.env'
-              ssh vps 'bash -s' < scripts/server/setup.sh ;;
+              ssh vps 'bash ~/assistant/scripts/server/setup.sh' ;;
             deploy)
               ssh vps 'cd ~/assistant && ./scripts/deploy.sh' ;;
             logs)
@@ -101,6 +102,10 @@ jobs:
               ssh vps "cd ~/assistant && docker compose -f docker-compose.prod.yml logs --tail 200 --timestamps $SERVICE" ;;
             backup)
               ssh vps '~/assistant/scripts/backup.sh' ;;
+            demo-add)
+              ssh vps 'cd ~/assistant && docker compose -f docker-compose.prod.yml run --rm -T app node --import tsx scripts/demo-data.ts add' ;;
+            demo-remove)
+              ssh vps 'cd ~/assistant && docker compose -f docker-compose.prod.yml run --rm -T app node --import tsx scripts/demo-data.ts remove' ;;
             restart)
               ssh vps 'cd ~/assistant && docker compose -f docker-compose.prod.yml restart && docker compose -f docker-compose.prod.yml ps' ;;
             *)

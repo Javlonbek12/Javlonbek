@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { cache } from "react";
 
 import { db } from "@/lib/db";
+import { withAccess } from "@/modules/core/access/actor";
 import { requireSessionSecret } from "@/lib/env";
 
 import { readSessionToken, SESSION_COOKIE } from "./session";
@@ -13,7 +14,9 @@ export const getCurrentUser = cache(async () => {
   if (!token) return null;
   const userId = readSessionToken(token, requireSessionSecret());
   if (!userId) return null;
-  return db.user.findUnique({ where: { id: userId } });
+  const user = await db.user.findUnique({ where: { id: userId } });
+  // With the role settings attached: menus, lists and approvals follow them.
+  return user ? withAccess(user) : null;
 });
 
 export async function requireUser() {
