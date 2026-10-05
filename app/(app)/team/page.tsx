@@ -44,7 +44,12 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-semibold">{t("team.title")}</h1>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-2xl font-semibold">{t("team.title")}</h1>
+        <Button asChild size="sm" variant="outline">
+          <Link href="/team/structure">{t("team.org.open")}</Link>
+        </Button>
+      </div>
 
       <section className="flex flex-col gap-3">
         <form className="flex gap-2">

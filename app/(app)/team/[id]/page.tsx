@@ -18,7 +18,10 @@ import { requireUser } from "@/modules/core/auth/current-user";
 import { canChangeRole, canSendTestNotification } from "@/modules/core/permissions";
 import { getSettings } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
+import { orgPathOf } from "@/modules/org/service";
+import { teamProfiles } from "@/modules/team/profile";
 import { getEmployeeCard, listManagerCandidates } from "@/modules/team/service";
+import { ProfileRadar } from "@/components/team/profile-radar";
 
 import { changeRoleAction, sendTestNotificationAction } from "../../actions";
 import { addNoteAction, deleteNoteAction, updateProfileAction } from "../actions";
@@ -39,10 +42,13 @@ export default async function EmployeePage({ params, searchParams }: PageProps<"
   const card = await getEmployeeCard(viewer, id);
   if (!card) notFound();
   const { user, manager, reports, stats, notes, editable } = card;
-  const [{ timezone }, managers] = await Promise.all([
+  const [{ timezone }, managers, orgPath] = await Promise.all([
     getSettings(viewer.id),
     listManagerCandidates(),
+    orgPathOf(user.id),
   ]);
+  // The radar is shown to the same people who may see the statistics.
+  const profiles = stats ? await teamProfiles(timezone) : null;
   const can = (field: (typeof editable)[number]) => editable.includes(field);
   const assignable = (["MANAGER", "MEMBER"] as const).filter((role) =>
     canChangeRole(viewer, user, role),
@@ -82,6 +88,14 @@ export default async function EmployeePage({ params, searchParams }: PageProps<"
         {user.position ?? t("team.noPosition")}
         {user.telegramUsername && ` · @${user.telegramUsername}`}
       </p>
+      {orgPath && (
+        <p className="text-muted-foreground -mt-3 text-xs">
+          {t("team.org.inStructure")}:{" "}
+          <Link href="/team/structure" className="underline">
+            {orgPath.length ? orgPath.join(" › ") : t("team.org.title")}
+          </Link>
+        </p>
+      )}
 
       {stats ? (
         <Card className="gap-3">
@@ -119,6 +133,30 @@ export default async function EmployeePage({ params, searchParams }: PageProps<"
         </Card>
       ) : (
         <p className="text-muted-foreground text-sm">{t("team.stats.hidden")}</p>
+      )}
+
+      {profiles && (
+        <Card className="gap-3">
+          <div>
+            <CardTitle>{t("team.profile360.title")}</CardTitle>
+            <CardDescription className="mt-1 text-xs">
+              {t("team.profile360.period")}
+            </CardDescription>
+          </div>
+          <ProfileRadar
+            name={displayName(user)}
+            person={
+              profiles.scores.get(user.id) ?? {
+                onTime: null,
+                output: null,
+                noOverdue: null,
+                speed: null,
+                firstTime: null,
+              }
+            }
+            team={profiles.team}
+          />
+        </Card>
       )}
 
       <Card className="gap-3">
