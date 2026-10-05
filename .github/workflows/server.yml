@@ -10,6 +10,7 @@ name: Server
 #   restart - restart all services
 #   demo-add / demo-remove - add or remove test tasks and test employees (after deploy)
 #   org-import / org-replace - load the org chart from the JSON in "data" (replace = drop the current one)
+#   project-import - load a project plan from the JSON in "data" (see modules/projects/import.ts)
 # Secrets: VPS_HOST, VPS_USER (root), VPS_SSH_KEY; for setup also TELEGRAM_BOT_TOKEN,
 # TELEGRAM_BOT_USERNAME, ANTHROPIC_API_KEY. Variable (optional): DOMAIN. See docs/SETUP-SERVER.md.
 on:
@@ -30,6 +31,7 @@ on:
             demo-remove,
             org-import,
             org-replace,
+            project-import,
           ]
         default: status
       service:
@@ -37,7 +39,7 @@ on:
         type: string
         default: app
       data:
-        description: "For org-import / org-replace: the org chart as JSON (see modules/org/import.ts)"
+        description: "For org-import / org-replace / project-import: the data as JSON"
         type: string
         default: ""
   workflow_run:
@@ -127,6 +129,8 @@ jobs:
             org-import | org-replace)
               flag=""; [ "$ACTION" = "org-replace" ] && flag="--replace"
               printf '%s' "$ORG_DATA" | ssh vps "cd ~/assistant && docker compose -f docker-compose.prod.yml run --rm -T app node --import tsx scripts/org-import.ts $flag" ;;
+            project-import)
+              printf '%s' "$ORG_DATA" | ssh vps "cd ~/assistant && docker compose -f docker-compose.prod.yml run --rm -T app node --import tsx scripts/project-import.ts" ;;
             restart)
               ssh vps 'cd ~/assistant && docker compose -f docker-compose.prod.yml restart && docker compose -f docker-compose.prod.yml ps' ;;
             *)

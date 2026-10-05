@@ -67,6 +67,8 @@ model User {
   meetingsCreated Meeting[]            @relation("MeetingCreator")
   meetings        MeetingParticipant[]
   meetingNotes    MeetingNotes[]
+  projectsLed     Project[]            @relation("ProjectLead")
+  projectsCreated Project[]            @relation("ProjectCreator")
 }
 
 model Invite {
@@ -181,6 +183,13 @@ model Task {
   planId          String?
   // Set when the task came from meeting minutes.
   meetingId       String?
+  // Project plan fields (see Project): phase, code from the plan ("T01"), who is responsible
+  // per the plan (a group or role, e.g. "HO / аналитика"), milestone and risk marks.
+  phaseId         String?
+  code            String?
+  responsible     String?
+  isMilestone     Boolean      @default(false)
+  atRisk          Boolean      @default(false)
   approvedAt      DateTime?
   completedAt     DateTime?
   createdAt       DateTime     @default(now())
@@ -190,6 +199,7 @@ model Task {
   assignee    User             @relation("TaskAssignee", fields: [assigneeId], references: [id])
   plan        Plan?            @relation(fields: [planId], references: [id], onDelete: SetNull)
   meeting     Meeting?         @relation(fields: [meetingId], references: [id], onDelete: SetNull)
+  phase       ProjectPhase?    @relation(fields: [phaseId], references: [id], onDelete: SetNull)
   // "blockedBy": tasks that must be closed before this one can be DONE.
   blockedBy   TaskDependency[] @relation("DependencyBlocked")
   blocks      TaskDependency[] @relation("DependencyBlocker")
@@ -199,6 +209,7 @@ model Task {
   @@index([assigneeId, status])
   @@index([creatorId])
   @@index([dueDate])
+  @@index([project])
 }
 
 model TaskDependency {
@@ -636,4 +647,41 @@ model OrgNode {
   invites  Invite[]
 
   @@index([parentId])
+}
+
+// ============================================================
+// Projects: a named project with a lead, phases and its tasks.
+// Tasks belong to a project by name (Task.project), so tasks created with that project name
+// in the usual form join it, and reports keep grouping by the same field.
+// ============================================================
+
+model Project {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  description String?
+  // The team running it, e.g. "Marketing Execution".
+  team        String?
+  leadId      String?
+  createdById String
+  archived    Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  lead      User?          @relation("ProjectLead", fields: [leadId], references: [id], onDelete: SetNull)
+  createdBy User           @relation("ProjectCreator", fields: [createdById], references: [id])
+  phases    ProjectPhase[]
+}
+
+model ProjectPhase {
+  id        String    @id @default(cuid())
+  projectId String
+  title     String
+  sortOrder Int       @default(0)
+  // The deadline set for the phase (its tasks may have their own dates).
+  dueDate   DateTime? @db.Date
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks   Task[]
+
+  @@index([projectId])
 }

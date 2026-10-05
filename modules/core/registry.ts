@@ -2,6 +2,7 @@ import {
   BarChart3,
   Bell,
   CalendarClock,
+  FolderKanban,
   House,
   LayoutGrid,
   ListTodo,
@@ -54,6 +55,15 @@ export const MODULES: ModuleEntry[] = [
     icon: LayoutGrid,
     roles: ALL_ROLES,
   },
+  // Projects: on phones they open from the "Tasks" screen.
+  {
+    id: "projects",
+    titleKey: "nav.projects",
+    href: "/projects",
+    icon: FolderKanban,
+    roles: ALL_ROLES,
+    mobile: false,
+  },
   // Management report: owner and managers; on phones it opens from the "Today" screen.
   {
     id: "reports",
@@ -83,7 +93,7 @@ export const MODULES: ModuleEntry[] = [
 ];
 
 // Sections the owner can switch on/off per role (Settings → Roles); the rest are always shown.
-const SWITCHABLE = new Set(["meetings", "team", "structure", "planograms", "reports"]);
+const SWITCHABLE = new Set(["meetings", "team", "structure", "planograms", "projects", "reports"]);
 
 export function modulesForRole(
   role: Role,

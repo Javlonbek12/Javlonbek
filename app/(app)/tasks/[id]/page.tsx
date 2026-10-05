@@ -20,6 +20,7 @@ import { isClosed } from "@/modules/tasks/access";
 import { listAttachments, MAX_FILE_MB } from "@/modules/tasks/attachment-service";
 import { listComments } from "@/modules/tasks/comment-service";
 import { getDependencies, listBlockerCandidates } from "@/modules/tasks/dependency-service";
+import { projectOfTask } from "@/modules/projects/service";
 import { getTaskDetail, getTaskHistory } from "@/modules/tasks/service";
 import { isOverdue } from "@/modules/tasks/today";
 import { todayInTimezone } from "@/lib/dates";
@@ -32,6 +33,7 @@ import {
   removeAttachmentAction,
   removeDependencyAction,
 } from "../actions";
+import { setTaskRiskAction } from "../../projects/actions";
 
 const FIELD_LABELS: Record<string, TranslationKey> = {
   title: "tasks.fields.title",
@@ -73,13 +75,14 @@ export default async function TaskPage({ params, searchParams }: PageProps<"/tas
   if (!detail) notFound();
   const { task, transitions, canEdit } = detail;
 
-  const [settings, deps, candidates, comments, attachments, history] = await Promise.all([
+  const [settings, deps, candidates, comments, attachments, history, project] = await Promise.all([
     getSettings(user.id),
     getDependencies(user, id),
     canEdit ? listBlockerCandidates(user, id) : Promise.resolve([]),
     listComments(id),
     listAttachments(id),
     getTaskHistory(id),
+    projectOfTask(task),
   ]);
   const tz = settings.timezone;
   const today = todayInTimezone(tz);
@@ -115,7 +118,11 @@ export default async function TaskPage({ params, searchParams }: PageProps<"/tas
           <StatusBadge status={task.status} />
           <PriorityBadge priority={task.priority} />
           {task.isPersonal && <Badge variant="outline">{t("tasks.fields.personalShort")}</Badge>}
-          {task.project && <Badge variant="secondary">{task.project}</Badge>}
+          {task.project && !project && <Badge variant="secondary">{task.project}</Badge>}
+          {task.isMilestone && <Badge variant="outline">◆ {t("projects.task.milestone")}</Badge>}
+          {task.atRisk && !isClosed(task.status) && (
+            <Badge className="bg-amber-500 text-white">{t("projects.risk.badge")}</Badge>
+          )}
         </div>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
           {!task.isPersonal && (
@@ -153,6 +160,29 @@ export default async function TaskPage({ params, searchParams }: PageProps<"/tas
               </dd>
             </>
           )}
+          {project && (
+            <>
+              <dt className="text-muted-foreground">{t("projects.task.project")}</dt>
+              <dd>
+                <Link className="underline" href={`/projects/${project.id}`}>
+                  {project.name}
+                </Link>
+                {project.phase && ` · ${project.phase}`}
+              </dd>
+            </>
+          )}
+          {task.code && (
+            <>
+              <dt className="text-muted-foreground">{t("projects.task.code")}</dt>
+              <dd>{task.code}</dd>
+            </>
+          )}
+          {task.responsible && (
+            <>
+              <dt className="text-muted-foreground">{t("projects.task.responsible")}</dt>
+              <dd>{task.responsible}</dd>
+            </>
+          )}
           {task.plan && (
             <>
               <dt className="text-muted-foreground">{t("tasks.fields.plan")}</dt>
@@ -165,7 +195,7 @@ export default async function TaskPage({ params, searchParams }: PageProps<"/tas
           )}
         </dl>
         {task.description && <p className="text-sm whitespace-pre-wrap">{task.description}</p>}
-        {transitions.length > 0 && (
+        {(transitions.length > 0 || (project && canEdit && !isClosed(task.status))) && (
           <div className="flex flex-wrap gap-2 border-t pt-3">
             {transitions.map((to) => (
               <form key={to} action={changeStatusAction}>
@@ -181,6 +211,15 @@ export default async function TaskPage({ params, searchParams }: PageProps<"/tas
                 </Button>
               </form>
             ))}
+            {project && canEdit && !isClosed(task.status) && (
+              <form action={setTaskRiskAction}>
+                {hidden}
+                <input type="hidden" name="atRisk" value={task.atRisk ? "0" : "1"} />
+                <Button type="submit" size="sm" variant="outline">
+                  {task.atRisk ? t("projects.risk.clear") : t("projects.risk.mark")}
+                </Button>
+              </form>
+            )}
           </div>
         )}
         {task.openBlockers > 0 && !isClosed(task.status) && (
