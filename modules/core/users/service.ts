@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { syncPeople } from "@/modules/org/service";
 import type { Role } from "@/lib/generated/prisma/client";
 import { t } from "@/lib/i18n";
 import { logActivity } from "@/modules/core/activity/service";
@@ -80,6 +81,13 @@ export async function loginWithTelegram(
         },
       });
       await tx.invite.update({ where: { id: invite.id }, data: { usedById: user.id } });
+      // An invite to a place in the org chart: the new person takes it (if still free).
+      if (invite.orgNodeId) {
+        await tx.orgNode.updateMany({
+          where: { id: invite.orgNodeId, userId: null },
+          data: { userId: user.id, personName: null },
+        });
+      }
       await logActivity(
         {
           actorId: user.id,
@@ -95,6 +103,8 @@ export async function loginWithTelegram(
     { isolationLevel: "Serializable" },
   );
 
+  // Job title and manager follow the chart once the person is in it.
+  if (result.ok && result.created) await syncPeople();
   if (result.ok && result.inviterId) {
     await notify(result.inviterId, {
       type: "invite_accepted",

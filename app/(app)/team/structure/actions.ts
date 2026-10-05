@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { requireUser } from "@/modules/core/auth/current-user";
+import { createInvite, revokeInvite } from "@/modules/core/invites/service";
+import { ForbiddenError } from "@/modules/core/errors";
 import { deleteOrgNode, OrgError, saveOrgNode } from "@/modules/org/service";
 
 const str = (form: FormData, key: string) => {
@@ -43,4 +45,25 @@ export async function saveOrgNodeAction(form: FormData) {
 export async function deleteOrgNodeAction(form: FormData) {
   const actor = await requireUser();
   await run(() => deleteOrgNode(actor, str(form, "nodeId")));
+}
+
+// An invite to one place in the chart: the person who joins with it is placed there.
+export async function invitePlaceAction(form: FormData) {
+  const actor = await requireUser();
+  const role = str(form, "role") === "MANAGER" ? "MANAGER" : "MEMBER";
+  try {
+    await createInvite(actor, role, new Date(), str(form, "nodeId"));
+  } catch (error) {
+    if (!(error instanceof ForbiddenError)) throw error;
+    redirect("/team/structure?view=list&error=forbidden");
+  }
+  revalidatePath("/team", "layout");
+  redirect("/team/structure?view=list");
+}
+
+export async function revokePlaceInviteAction(form: FormData) {
+  const actor = await requireUser();
+  await revokeInvite(actor, str(form, "inviteId"));
+  revalidatePath("/team", "layout");
+  redirect("/team/structure?view=list");
 }

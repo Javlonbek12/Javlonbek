@@ -27,13 +27,21 @@ export function generateInviteCode(): string {
   return randomBytes(9).toString("base64url");
 }
 
-export async function createInvite(actor: Actor, role: Role, now = new Date()) {
+// `orgNodeId`: an invite to a specific place in the org chart (owner only) — whoever joins
+// with it takes that place: job title and manager come from the chart.
+export async function createInvite(actor: Actor, role: Role, now = new Date(), orgNodeId?: string) {
   if (!canInvite(actor.role, role)) throw new ForbiddenError();
+  if (orgNodeId) {
+    if (actor.role !== "OWNER") throw new ForbiddenError();
+    const node = await db.orgNode.findUnique({ where: { id: orgNodeId } });
+    if (!node || node.kind !== "POSITION" || node.userId) throw new ForbiddenError();
+  }
   const invite = await db.invite.create({
     data: {
       code: generateInviteCode(),
       role,
       createdById: actor.id,
+      orgNodeId: orgNodeId ?? null,
       expiresAt: new Date(now.getTime() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000),
     },
   });
@@ -42,9 +50,21 @@ export async function createInvite(actor: Actor, role: Role, now = new Date()) {
     action: "invite.created",
     entityType: "Invite",
     entityId: invite.id,
-    details: { role },
+    details: { role, orgNodeId: orgNodeId ?? null },
   });
   return invite;
+}
+
+// Active invites to places in the org chart, by place.
+export async function activePlaceInvites(now = new Date()) {
+  const invites = await db.invite.findMany({
+    where: { orgNodeId: { not: null }, usedAt: null, revokedAt: null, expiresAt: { gt: now } },
+    orderBy: { createdAt: "desc" },
+  });
+  const byNode = new Map<string, (typeof invites)[number]>();
+  for (const invite of invites)
+    if (!byNode.has(invite.orgNodeId!)) byNode.set(invite.orgNodeId!, invite);
+  return byNode;
 }
 
 export async function revokeInvite(actor: Actor, inviteId: string, now = new Date()) {

@@ -23,7 +23,15 @@ function countPeople(node: OrgTreeNode): number {
   );
 }
 
-function NodeCard({ node, load }: { node: OrgTreeNode; load?: Map<string, PersonLoad> }) {
+function NodeCard({
+  node,
+  load,
+  invited,
+}: {
+  node: OrgTreeNode;
+  load?: Map<string, PersonLoad>;
+  invited?: Set<string>;
+}) {
   if (node.kind === "UNIT") {
     return (
       <div className="bg-muted/70 flex w-48 flex-col items-center gap-1 rounded-lg border px-3 py-2.5 text-center">
@@ -69,6 +77,11 @@ function NodeCard({ node, load }: { node: OrgTreeNode; load?: Map<string, Person
       {node.personName && !node.user && (
         <span className="text-muted-foreground text-[10px]">({t("team.org.notInApp")})</span>
       )}
+      {invited?.has(node.id) && (
+        <span className="rounded-full border px-2 py-0.5 text-[10px]">
+          {t("team.org.invitedBadge")}
+        </span>
+      )}
       {stats && (
         <span className="text-muted-foreground mt-0.5 text-[11px]">
           {t("team.org.active", { count: stats.active })}
@@ -103,13 +116,23 @@ function NodeCard({ node, load }: { node: OrgTreeNode; load?: Map<string, Person
   );
 }
 
-function Branch({ nodes, load }: { nodes: OrgTreeNode[]; load?: Map<string, PersonLoad> }) {
+function Branch({
+  nodes,
+  load,
+  invited,
+}: {
+  nodes: OrgTreeNode[];
+  load?: Map<string, PersonLoad>;
+  invited?: Set<string>;
+}) {
   return (
     <ul>
       {nodes.map((node) => (
         <li key={node.id}>
-          <NodeCard node={node} load={load} />
-          {node.children.length > 0 && <Branch nodes={node.children} load={load} />}
+          <NodeCard node={node} load={load} invited={invited} />
+          {node.children.length > 0 && (
+            <Branch nodes={node.children} load={load} invited={invited} />
+          )}
         </li>
       ))}
     </ul>
@@ -120,14 +143,17 @@ function Branch({ nodes, load }: { nodes: OrgTreeNode[]; load?: Map<string, Pers
 export function OrgChart({
   roots,
   load,
+  invited,
 }: {
   roots: OrgTreeNode[];
   load?: Map<string, PersonLoad>;
+  // Places with an open invite.
+  invited?: Set<string>;
 }) {
   return (
     <CenteredScroll className="overflow-x-auto pb-2">
       <div className="org-chart mx-auto w-max min-w-full px-2 py-4">
-        <Branch nodes={roots} load={load} />
+        <Branch nodes={roots} load={load} invited={invited} />
       </div>
     </CenteredScroll>
   );
