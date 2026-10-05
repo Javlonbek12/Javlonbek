@@ -1,9 +1,10 @@
 import { z } from "zod";
 
 import { db } from "@/lib/db";
-import { displayName } from "@/modules/core/users/display-name";
-
+import { matchUser } from "./match";
 import { saveOrgNode } from "./service";
+
+export { matchUser };
 
 // Loads a whole org chart at once (e.g. from a picture the owner sent), as nested JSON:
 // { "unit": "Marketing Department", "children": [ { "person": "Jo Hogwon", "title": "Director", "children": [...] } ] }
@@ -27,20 +28,6 @@ const nodeSchema: z.ZodType<ImportNode> = z.lazy(() =>
   }),
 );
 export const importSchema = z.array(nodeSchema).min(1);
-
-const norm = (value: string) => value.trim().toLowerCase().replace(/\s+/g, " ");
-
-// The app user a written name refers to: full name or first name, only if exactly one matches.
-export function matchUser(
-  name: string,
-  users: { id: string; firstName: string; lastName: string | null }[],
-) {
-  const target = norm(name);
-  const candidates = users.filter(
-    (u) => norm(displayName(u)) === target || norm(u.firstName) === target,
-  );
-  return candidates.length === 1 ? candidates[0].id : null;
-}
 
 export async function importOrgChart(input: unknown, options: { replace?: boolean } = {}) {
   const roots = importSchema.parse(input);
