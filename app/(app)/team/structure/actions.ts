@@ -12,12 +12,12 @@ const str = (form: FormData, key: string) => {
 };
 
 async function run(action: () => Promise<unknown>) {
-  let target = "/team/structure";
+  let target = "/team/structure?view=list";
   try {
     await action();
   } catch (error) {
     if (!(error instanceof OrgError)) throw error;
-    target += `?error=${error.code}`;
+    target += `&error=${error.code}`;
   }
   revalidatePath("/team", "layout");
   redirect(target);

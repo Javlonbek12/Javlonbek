@@ -5,6 +5,7 @@ import {
   House,
   LayoutGrid,
   ListTodo,
+  Network,
   Settings,
   Users,
   type LucideIcon,
@@ -37,6 +38,15 @@ export const MODULES: ModuleEntry[] = [
     roles: ALL_ROLES,
   },
   { id: "team", titleKey: "nav.team", href: "/team", icon: Users, roles: ALL_ROLES },
+  // On phones the structure opens from the "Команда" screen.
+  {
+    id: "structure",
+    titleKey: "nav.structure",
+    href: "/team/structure",
+    icon: Network,
+    roles: ALL_ROLES,
+    mobile: false,
+  },
   {
     id: "planograms",
     titleKey: "nav.planograms",

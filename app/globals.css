@@ -79,3 +79,73 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Org chart (Команда → Оргструктура → Схема): cards top-down joined by elbow lines. */
+.org-chart {
+  --org-line: color-mix(in oklch, var(--muted-foreground) 45%, transparent);
+}
+.org-chart ul {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  padding-top: 1.5rem;
+}
+.org-chart > ul {
+  padding-top: 0;
+}
+.org-chart li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.5rem 0.5rem 0;
+}
+.org-chart > ul > li {
+  padding-top: 0;
+}
+/* Horizontal line over the siblings and the drop to each child. */
+.org-chart li::before,
+.org-chart li::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 50%;
+  width: 50%;
+  height: 1.5rem;
+  border-top: 1px solid var(--org-line);
+}
+.org-chart li::after {
+  right: auto;
+  left: 50%;
+  border-left: 1px solid var(--org-line);
+}
+.org-chart li:only-child::before {
+  display: none;
+}
+.org-chart li:only-child::after {
+  border-top: 0;
+}
+.org-chart li:first-child::before,
+.org-chart li:last-child::after {
+  border: 0;
+}
+.org-chart li:last-child::before {
+  border-right: 1px solid var(--org-line);
+  border-top-right-radius: 0.5rem;
+}
+.org-chart li:first-child::after {
+  border-top-left-radius: 0.5rem;
+}
+.org-chart > ul > li::before,
+.org-chart > ul > li::after {
+  display: none;
+}
+/* The drop from a parent card to its children's line. */
+.org-chart ul ul::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: 1.5rem;
+  border-left: 1px solid var(--org-line);
+}

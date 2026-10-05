@@ -9,14 +9,23 @@ import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { modulesForRole } from "@/modules/core/registry";
 
-function isActive(pathname: string, href: string) {
-  return href === "/" ? pathname === "/" : pathname.startsWith(href);
+function matches(pathname: string, href: string) {
+  return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
+}
+
+// The most specific matching item is active (/team/structure → "Оргструктура", not "Команда").
+function activeHref(pathname: string, hrefs: string[]) {
+  return hrefs.filter((href) => matches(pathname, href)).sort((a, b) => b.length - a.length)[0];
 }
 
 // Bottom bar on phones, sidebar on desktop. Items come from the module registry.
 export function AppNav({ role, unreadCount }: { role: Role; unreadCount: number }) {
   const pathname = usePathname();
   const items = modulesForRole(role);
+  const current = activeHref(
+    pathname,
+    items.map((item) => item.href),
+  );
 
   return (
     <nav
@@ -26,7 +35,7 @@ export function AppNav({ role, unreadCount }: { role: Role; unreadCount: number 
       <div className="hidden px-4 py-5 text-lg font-semibold md:block">{t("app.name")}</div>
       <ul className="flex justify-around md:flex-col md:gap-1 md:px-2">
         {items.map(({ id, href, icon: Icon, titleKey, mobile }) => {
-          const active = isActive(pathname, href);
+          const active = href === current;
           const badge = id === "notifications" && unreadCount > 0 ? unreadCount : null;
           return (
             <li
