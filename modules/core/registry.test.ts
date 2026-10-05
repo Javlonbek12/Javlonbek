@@ -4,8 +4,10 @@ import { describe, expect, it } from "vitest";
 import { MODULES, modulesForRole, type ModuleEntry } from "./registry";
 
 describe("modulesForRole", () => {
-  it("shows the core modules to every role", () => {
-    for (const role of ["OWNER", "MANAGER", "MEMBER"] as const) {
+  it("shows the core modules to every role and reports to owners and managers only", () => {
+    const core = MODULES.filter((m) => m.id !== "reports").map((m) => m.id);
+    expect(modulesForRole("MEMBER").map((m) => m.id)).toEqual(core);
+    for (const role of ["OWNER", "MANAGER"] as const) {
       expect(modulesForRole(role).map((m) => m.id)).toEqual(MODULES.map((m) => m.id));
     }
   });

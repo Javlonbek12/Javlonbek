@@ -1,4 +1,5 @@
 import {
+  BarChart3,
   Bell,
   CalendarClock,
   House,
@@ -42,6 +43,15 @@ export const MODULES: ModuleEntry[] = [
     href: "/planograms",
     icon: LayoutGrid,
     roles: ALL_ROLES,
+  },
+  // Management report: owner and managers; on phones it opens from the "Today" screen.
+  {
+    id: "reports",
+    titleKey: "nav.reports",
+    href: "/reports",
+    icon: BarChart3,
+    roles: ["OWNER", "MANAGER"],
+    mobile: false,
   },
   {
     id: "notifications",

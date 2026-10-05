@@ -14,6 +14,7 @@ import { addDays } from "@/lib/dates";
 import { zonedLocalToUtc } from "@/lib/time";
 import { getSettings } from "@/modules/core/settings/service";
 import { listMeetingsBetween } from "@/modules/meetings/service";
+import { canSeeReports } from "@/modules/reports/access";
 
 // The "Today" screen: tasks due today, overdue tasks, tasks waiting for my decision.
 export default async function TodayPage() {
@@ -40,9 +41,16 @@ export default async function TodayPage() {
             {formatDayLong(today)} · {t(`roles.${user.role}`)}
           </p>
         </div>
-        <Button asChild size="sm">
-          <Link href="/tasks/new">{t("tasks.newTask")}</Link>
-        </Button>
+        <div className="flex flex-wrap justify-end gap-2">
+          {canSeeReports(user.role) && (
+            <Button asChild size="sm" variant="outline">
+              <Link href="/reports">{t("reports.open")}</Link>
+            </Button>
+          )}
+          <Button asChild size="sm">
+            <Link href="/tasks/new">{t("tasks.newTask")}</Link>
+          </Button>
+        </div>
       </div>
 
       {meetings.length > 0 && (
