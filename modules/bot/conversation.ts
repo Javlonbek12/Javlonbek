@@ -547,6 +547,21 @@ export async function handleText(
   return startDraft(user, chatId, resolveTasks(extracted, await team(), user.id), prefix);
 }
 
+// A hint for speech recognition: the team's names and common work words in both
+// languages, so names come out right and Uzbek is written in Latin letters.
+async function voicePrompt() {
+  const people = await db.user.findMany({
+    select: { firstName: true, lastName: true },
+    orderBy: { createdAt: "asc" },
+    take: 40,
+  });
+  const names = people.map((p) => [p.firstName, p.lastName].filter(Boolean).join(" ")).join(", ");
+  return `Задачи: отчёт, срок, завтра, до пятницы. Vazifa: hisobot, ertaga, juma kuni. ${names}`.slice(
+    0,
+    600,
+  );
+}
+
 export async function handleVoice(
   user: User,
   chatId: bigint,
@@ -558,7 +573,7 @@ export async function handleVoice(
   if (durationSeconds > MAX_VOICE_SECONDS) return { text: t("bot.voiceTooLong") };
   let text: string;
   try {
-    text = await stt.transcribe(audio);
+    text = await stt.transcribe(audio, { prompt: await voicePrompt() });
   } catch (error) {
     console.error("Speech recognition failed", error);
     return { text: t("bot.voiceFailed") };

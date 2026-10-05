@@ -101,9 +101,9 @@ $COMPOSE up -d --remove-orphans
 docker image prune -f > /dev/null
 
 if [ "$(get_kv COMPOSE_PROFILES)" = "whisper" ]; then
-  step "Speech recognition model (about 500 MB, once)"
+  step "Speech recognition model (about 1.6 GB, once)"
   $COMPOSE exec -T whisper uv run --no-sync python -c \
-    "from faster_whisper import WhisperModel; WhisperModel('Systran/faster-whisper-small'); print('model ready')" \
+    "from faster_whisper import WhisperModel; WhisperModel('deepdml/faster-whisper-large-v3-turbo-ct2', compute_type='int8'); print('model ready')" \
     || echo "Model download failed; it will be downloaded on the first voice message."
 fi
 

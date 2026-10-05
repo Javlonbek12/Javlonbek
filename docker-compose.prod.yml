@@ -78,7 +78,7 @@ services:
       migrate:
         condition: service_completed_successfully
 
-  # Own speech recognition (faster-whisper, model "small", CPU). Turned on by
+  # Own speech recognition (faster-whisper, model large-v3-turbo, CPU). Turned on by
   # COMPOSE_PROFILES=whisper in .env; without it use STT_PROVIDER=openai or mock.
   whisper:
     image: fedirz/faster-whisper-server:latest-cpu
@@ -88,8 +88,12 @@ services:
     command:
       ["uv", "run", "--no-sync", "uvicorn", "--factory", "faster_whisper_server.main:create_app"]
     environment:
-      WHISPER__MODEL: Systran/faster-whisper-small
+      # large-v3-turbo: much better with Uzbek than "small"; int8 is the fast mode on CPU.
+      WHISPER__MODEL: deepdml/faster-whisper-large-v3-turbo-ct2
       WHISPER__INFERENCE_DEVICE: cpu
+      WHISPER__COMPUTE_TYPE: int8
+      # Keep the model in memory (no 3-second reload after every pause).
+      WHISPER__TTL: "-1"
     volumes:
       - whisper-models:/root/.cache/huggingface
 

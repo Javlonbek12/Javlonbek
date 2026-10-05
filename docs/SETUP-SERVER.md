@@ -223,10 +223,10 @@ docker compose -f docker-compose.prod.yml ps
 у `migrate` — `Exited (0)` (это нормально: она сделала работу и завершилась).
 
 Если включено своё распознавание голоса (`COMPOSE_PROFILES=whisper`), один раз заранее скачайте
-модель (около 500 МБ, 1–3 минуты), чтобы первое голосовое не ждало загрузки:
+модель (около 1,6 ГБ, 2–5 минут), чтобы первое голосовое не ждало загрузки:
 
 ```bash
-docker compose -f docker-compose.prod.yml exec whisper uv run --no-sync python -c "from faster_whisper import WhisperModel; WhisperModel('Systran/faster-whisper-small')"
+docker compose -f docker-compose.prod.yml exec whisper uv run --no-sync python -c "from faster_whisper import WhisperModel; WhisperModel('deepdml/faster-whisper-large-v3-turbo-ct2', compute_type='int8')"
 ```
 
 Откройте в браузере `https://ваш-домен/api/health` — должно быть `{"status":"ok","database":"ok"}`.
