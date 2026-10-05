@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { withAccess } from "@/modules/core/access/actor";
 import { requireSessionSecret } from "@/lib/env";
 
 import { readSessionToken, SESSION_COOKIE } from "./session";
@@ -14,5 +15,6 @@ export async function getUserFromRequest(request: Request) {
   if (!token) return null;
   const userId = readSessionToken(decodeURIComponent(token), requireSessionSecret());
   if (!userId) return null;
-  return db.user.findUnique({ where: { id: userId } });
+  const user = await db.user.findUnique({ where: { id: userId } });
+  return user ? withAccess(user) : null;
 }

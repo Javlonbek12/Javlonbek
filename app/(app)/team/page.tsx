@@ -11,7 +11,8 @@ import { getEnv } from "@/lib/env";
 import { t } from "@/lib/i18n";
 import { formatDate } from "@/lib/time";
 import { cn } from "@/lib/utils";
-import { requireUser } from "@/modules/core/auth/current-user";
+import { requireModule } from "@/modules/core/access/guard";
+import { canUseModule } from "@/modules/core/access/actor";
 import { INVITE_TTL_DAYS, listActiveInvites } from "@/modules/core/invites/service";
 import { invitableRoles } from "@/modules/core/permissions";
 import { getSettings } from "@/modules/core/settings/service";
@@ -27,7 +28,7 @@ const FILTER_LABELS = {
 } as const;
 
 export default async function TeamPage({ searchParams }: PageProps<"/team">) {
-  const user = await requireUser();
+  const user = await requireModule("team");
   const params = await searchParams;
   const filter = TEAM_FILTERS.find((f) => f === params.filter) ?? "all";
   const search = typeof params.q === "string" ? params.q.slice(0, 100) : "";
@@ -46,9 +47,11 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">{t("team.title")}</h1>
-        <Button asChild size="sm" variant="outline">
-          <Link href="/team/structure">{t("team.org.open")}</Link>
-        </Button>
+        {canUseModule(user, "structure") && (
+          <Button asChild size="sm" variant="outline">
+            <Link href="/team/structure">{t("team.org.open")}</Link>
+          </Button>
+        )}
       </div>
 
       <section className="flex flex-col gap-3">

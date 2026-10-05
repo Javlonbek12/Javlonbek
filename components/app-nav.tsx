@@ -19,9 +19,17 @@ function activeHref(pathname: string, hrefs: string[]) {
 }
 
 // Bottom bar on phones, sidebar on desktop. Items come from the module registry.
-export function AppNav({ role, unreadCount }: { role: Role; unreadCount: number }) {
+export function AppNav({
+  role,
+  unreadCount,
+  enabled,
+}: {
+  role: Role;
+  unreadCount: number;
+  enabled?: string[];
+}) {
   const pathname = usePathname();
-  const items = modulesForRole(role);
+  const items = modulesForRole(role, undefined, enabled);
   const current = activeHref(
     pathname,
     items.map((item) => item.href),

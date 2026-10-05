@@ -1,6 +1,11 @@
 import type { Role } from "@/lib/generated/prisma/enums";
 
-export type Actor = { id: string; role: Role };
+// `access` (role settings) is attached at the entry points; without it the role's full rights apply.
+export type Actor = {
+  id: string;
+  role: Role;
+  access?: { taskScope: "all" | "team" | "own"; teamIds: string[]; modules: string[] };
+};
 
 // Roles that `actorRole` is allowed to invite. There is only one OWNER.
 export function invitableRoles(actorRole: Role): Role[] {

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { db } from "@/lib/db";
+import { DEFAULT_ROLE_CONFIG, saveRoleConfig } from "@/modules/core/access/config";
 import { notify } from "@/modules/core/notifications/service";
 import { updateSettings } from "@/modules/core/settings/service";
 import { digestTemplate } from "@/modules/scheduler/digest";
@@ -102,10 +103,15 @@ describe("scheduler", () => {
     expect(await count(owner.id, "overdue")).toBe(1);
   });
 
-  it("sends the Friday team summary to managers and the owner only", async () => {
+  it("sends the Friday team summary to the owner and to managers who see all team tasks", async () => {
     const owner = await createTestUser("OWNER");
     const manager = await createTestUser("MANAGER");
     const member = await createTestUser("MEMBER");
+    // The summary covers the whole team, so it needs the "all tasks" setting for managers.
+    await saveRoleConfig(owner, {
+      MANAGER: { modules: ["meetings"], taskScope: "all" },
+      MEMBER: { modules: [], taskScope: "own" },
+    });
     await createTask(owner, taskInput({ assigneeId: member.id, dueDate: "2026-09-30" }), "approve");
 
     await runSchedulerTick(new Date("2026-10-02T12:00:00Z"), { writeDigest }); // Friday 17:00
@@ -117,6 +123,12 @@ describe("scheduler", () => {
       where: { userId: owner.id, type: "weekly_summary" },
     });
     expect(summary.body).toContain("🔥 Просрочено сейчас: 1");
+
+    // With the default "own people" setting the manager gets no whole-team summary.
+    await saveRoleConfig(owner, DEFAULT_ROLE_CONFIG);
+    await runSchedulerTick(new Date("2026-10-09T12:00:00Z"), { writeDigest });
+    expect(await count(owner.id, "weekly_summary")).toBe(2);
+    expect(await count(manager.id, "weekly_summary")).toBe(1);
   });
 
   it("respects «turn off this type»", async () => {

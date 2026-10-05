@@ -1,4 +1,6 @@
 import { db } from "@/lib/db";
+import { type Access, withAccess } from "@/modules/core/access/actor";
+import { getRoleConfig } from "@/modules/core/access/config";
 import { formatDay, fromDateString } from "@/lib/dates";
 
 import { Prisma, type User } from "@/lib/generated/prisma/client";
@@ -7,7 +9,7 @@ import { formatTime } from "@/lib/time";
 import { deliverDeferredNotifications, notify } from "@/modules/core/notifications/service";
 import { getSettings } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
-import { CLOSED_STATUSES, isApprover } from "@/modules/tasks/access";
+import { CLOSED_STATUSES } from "@/modules/tasks/access";
 
 import { collectDigestData, defaultDigestWriter, isDigestEmpty, type DigestWriter } from "./digest";
 import { dueReminderDate, isDigestTime, localClock, overdueRange, weeklySummaryWeek } from "./plan";
@@ -97,7 +99,10 @@ async function overdueFor(user: User, range: { from: string; to: string }) {
 }
 
 async function weeklyFor(user: User, weekStart: string, today: string) {
-  if (!isApprover(user.role) || !(await claim(user.id, "weekly_summary", weekStart))) return;
+  // The summary covers the whole team: only for people who see all team tasks.
+  const scope = (user as User & { access?: Access }).access?.taskScope ?? "all";
+  const seesAll = user.role === "OWNER" || (user.role === "MANAGER" && scope === "all");
+  if (!seesAll || !(await claim(user.id, "weekly_summary", weekStart))) return;
   await notify(user.id, {
     type: "weekly_summary",
     title: t("notifications.events.weeklyTitle"),
@@ -143,8 +148,11 @@ export type TickDeps = { writeDigest?: DigestWriter };
 // One scheduler pass. Safe to run every minute: everything sent is claimed first.
 export async function runSchedulerTick(now = new Date(), deps: TickDeps = {}) {
   const writer = deps.writeDigest ?? defaultDigestWriter;
+  const config = await getRoleConfig();
   const users = await db.user.findMany();
-  for (const user of users) {
+  for (const plain of users) {
+    // Digests and summaries follow the role settings, like the site.
+    const user = await withAccess(plain, config);
     try {
       const settings = await getSettings(user.id);
       const clock = localClock(now, settings.timezone);

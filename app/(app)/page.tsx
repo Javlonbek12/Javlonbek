@@ -42,7 +42,7 @@ export default async function TodayPage() {
           </p>
         </div>
         <div className="flex flex-wrap justify-end gap-2">
-          {canSeeReports(user.role) && (
+          {canSeeReports(user) && (
             <Button asChild size="sm" variant="outline">
               <Link href="/reports">{t("reports.open")}</Link>
             </Button>

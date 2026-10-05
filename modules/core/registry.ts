@@ -82,6 +82,18 @@ export const MODULES: ModuleEntry[] = [
   },
 ];
 
-export function modulesForRole(role: Role, modules: ModuleEntry[] = MODULES): ModuleEntry[] {
-  return modules.filter((module) => module.roles.includes(role));
+// Sections the owner can switch on/off per role (Settings → Roles); the rest are always shown.
+const SWITCHABLE = new Set(["meetings", "team", "structure", "planograms", "reports"]);
+
+export function modulesForRole(
+  role: Role,
+  modules: ModuleEntry[] = MODULES,
+  // Sections enabled for this person by the role settings; undefined = all.
+  enabled?: string[],
+): ModuleEntry[] {
+  return modules.filter(
+    (module) =>
+      module.roles.includes(role) &&
+      (role === "OWNER" || !enabled || !SWITCHABLE.has(module.id) || enabled.includes(module.id)),
+  );
 }

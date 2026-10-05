@@ -17,7 +17,7 @@ const TYPES = {
 export async function GET(request: Request, { params }: RouteContext<"/api/reports/[format]">) {
   const user = await getUserFromRequest(request);
   if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
-  if (!canSeeReports(user.role)) return Response.json({ error: "forbidden" }, { status: 403 });
+  if (!canSeeReports(user)) return Response.json({ error: "forbidden" }, { status: 403 });
   const { format } = await params;
   if (format !== "pdf" && format !== "xlsx")
     return Response.json({ error: "format" }, { status: 400 });

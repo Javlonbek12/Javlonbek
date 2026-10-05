@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/card";
 import { db } from "@/lib/db";
 import { toDateString, todayInTimezone } from "@/lib/dates";
 import { t, type TranslationKey } from "@/lib/i18n";
-import { requireUser } from "@/modules/core/auth/current-user";
+import { requireModule } from "@/modules/core/access/guard";
 import { getSettings } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
 import { canEditOrg, getOrgTree, type OrgTreeNode } from "@/modules/org/service";
@@ -41,7 +41,7 @@ async function loadByPerson(timezone: string) {
 }
 
 export default async function StructurePage({ searchParams }: PageProps<"/team/structure">) {
-  const user = await requireUser();
+  const user = await requireModule("structure");
   const { error, view: viewParam } = await searchParams;
   const view = viewParam === "list" ? "list" : "chart";
   const [tree, users, { timezone }] = await Promise.all([

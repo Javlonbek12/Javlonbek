@@ -8,6 +8,8 @@ import { logActivity } from "@/modules/core/activity/service";
 import type { Actor } from "@/modules/core/permissions";
 import { displayName } from "@/modules/core/users/display-name";
 
+import { approverIdsFor } from "@/modules/core/access/approvers";
+
 import { canEditTask, canViewTask, CLOSED_STATUSES, isApprover, visibleTasksWhere } from "./access";
 import { TaskError } from "./errors";
 import { filtersWhere, scopeWhere, type Scope, type TaskFilters } from "./filters";
@@ -230,16 +232,12 @@ export async function changeStatus(actor: Actor, taskId: string, to: TaskStatus,
     details: { from: task.status, to },
   });
 
-  const approvers = await db.user.findMany({
-    where: { role: { in: ["OWNER", "MANAGER"] } },
-    select: { id: true },
-  });
   const notices = statusChangeRecipients(
     updated,
     task.status,
     to,
     actor.id,
-    approvers.map((a) => a.id),
+    await approverIdsFor(updated),
   );
   await sendTaskNotices(notices, updated, await actorName(actor.id));
   return updated;

@@ -28,7 +28,7 @@ function Tile({ label, value, note }: { label: string; value: string; note?: str
 
 export default async function ReportsPage({ searchParams }: PageProps<"/reports">) {
   const user = await requireUser();
-  if (!canSeeReports(user.role)) redirect("/");
+  if (!canSeeReports(user)) redirect("/");
   const { timezone } = await getSettings(user.id);
   const period = parsePeriod(await searchParams, todayInTimezone(timezone));
   const report = await buildReport(period, timezone);
