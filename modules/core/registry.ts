@@ -5,6 +5,7 @@ import {
   FolderKanban,
   House,
   LayoutGrid,
+  Megaphone,
   ListTodo,
   Network,
   Settings,
@@ -64,6 +65,15 @@ export const MODULES: ModuleEntry[] = [
     roles: ALL_ROLES,
     mobile: false,
   },
+  // Content plan for the company's bots: on phones it opens from the "Today" screen.
+  {
+    id: "content",
+    titleKey: "nav.content",
+    href: "/content",
+    icon: Megaphone,
+    roles: ALL_ROLES,
+    mobile: false,
+  },
   // Management report: owner and managers; on phones it opens from the "Today" screen.
   {
     id: "reports",
@@ -93,7 +103,15 @@ export const MODULES: ModuleEntry[] = [
 ];
 
 // Sections the owner can switch on/off per role (Settings → Roles); the rest are always shown.
-const SWITCHABLE = new Set(["meetings", "team", "structure", "planograms", "projects", "reports"]);
+const SWITCHABLE = new Set([
+  "meetings",
+  "team",
+  "structure",
+  "planograms",
+  "projects",
+  "content",
+  "reports",
+]);
 
 export function modulesForRole(
   role: Role,

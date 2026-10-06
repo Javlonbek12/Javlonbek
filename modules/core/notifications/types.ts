@@ -13,6 +13,10 @@ export const NOTIFICATION_TYPES = [
   "weekly_summary",
   "meeting_invite",
   "meeting_reminder",
+  "content_assigned",
+  "content_review",
+  "content_feedback",
+  "content_approved",
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];

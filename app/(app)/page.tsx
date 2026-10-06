@@ -21,6 +21,7 @@ import { projectColor } from "@/components/projects/portfolio";
 import { ProgressBar } from "@/components/projects/progress-bar";
 import { canOpenProjects, listProjectCards } from "@/modules/projects/service";
 import { getMyDashboard } from "@/modules/tasks/dashboard";
+import { canUseModule } from "@/modules/core/access/actor";
 import { canSeeReports } from "@/modules/reports/access";
 
 // The "Today" screen: tasks due today, overdue tasks, tasks waiting for my decision.
@@ -57,6 +58,11 @@ export default async function TodayPage() {
           {showProjects && (
             <Button asChild size="sm" variant="outline" className="md:hidden">
               <Link href="/projects">{t("projects.open")}</Link>
+            </Button>
+          )}
+          {canUseModule(user, "content") && (
+            <Button asChild size="sm" variant="outline" className="md:hidden">
+              <Link href="/content">{t("content.open")}</Link>
             </Button>
           )}
           {canSeeReports(user) && (
