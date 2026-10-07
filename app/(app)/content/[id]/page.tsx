@@ -1,4 +1,4 @@
-import { Download } from "lucide-react";
+import { Download, Send } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -23,6 +23,7 @@ import {
   approveContentAction,
   cancelContentAction,
   commentContentAction,
+  deliverPostAction,
   feedbackContentAction,
   markSentAction,
   saveContentAction,
@@ -36,7 +37,7 @@ export default async function ContentPostPage({
 }: PageProps<"/content/[id]">) {
   const user = await requireUser();
   const { id } = await params;
-  const { error, lang } = await searchParams;
+  const { error, lang, delivered } = await searchParams;
   const found = await getPost(user, id);
   if (!found) notFound();
   const { post, rights } = found;
@@ -82,6 +83,11 @@ export default async function ContentPostPage({
         )}
       </div>
 
+      {typeof delivered === "string" && (
+        <p className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm">
+          {t("content.telegram.done", { count: delivered })}
+        </p>
+      )}
       {typeof error === "string" && (
         <p role="alert" className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
           {t(`content.errors.${error}` as TranslationKey, { mb: MAX_IMAGE_MB })}
@@ -156,6 +162,20 @@ export default async function ContentPostPage({
             <Card className="gap-3 border-emerald-500/40">
               <CardTitle>{t("content.sending")}</CardTitle>
               <CardDescription>{t("content.sendingHint")}</CardDescription>
+              {rights.planner && (
+                <form action={deliverPostAction}>
+                  {hidden}
+                  <Button
+                    type="submit"
+                    variant="outline"
+                    size="sm"
+                    title={t("content.telegram.hint")}
+                  >
+                    <Send />
+                    {t("content.telegram.one")}
+                  </Button>
+                </form>
+              )}
               <ul className="flex flex-col gap-2">
                 {post.channels.map((c) => {
                   const sent = post.sentChannels.includes(c);

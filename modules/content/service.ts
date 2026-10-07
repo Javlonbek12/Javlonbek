@@ -26,7 +26,8 @@ export const MAX_IMAGE_MB = 20;
 
 export class ContentError extends Error {
   constructor(
-    public readonly code: "forbidden" | "invalid" | "notFound" | "image" | "empty" | "state",
+    public readonly code:
+      "forbidden" | "invalid" | "notFound" | "image" | "empty" | "state" | "noBot" | "nothingToday",
   ) {
     super(code);
     this.name = "ContentError";

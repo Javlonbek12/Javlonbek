@@ -18,6 +18,8 @@ import {
   submitForReview,
 } from "@/modules/content/service";
 import { importPlanXlsx } from "@/modules/content/excel";
+import { deliverToTelegram } from "@/modules/content/telegram";
+import { getUserToday } from "@/modules/core/settings/service";
 
 const str = (form: FormData, key: string) => {
   const value = form.get(key);
@@ -137,5 +139,34 @@ export async function importPlanAction(form: FormData) {
     target = `${back}${back.includes("?") ? "&" : "?"}error=import`;
   }
   revalidatePath("/content", "layout");
+  redirect(target);
+}
+
+export async function deliverTodayAction(form: FormData) {
+  const actor = await requireUser();
+  const back = str(form, "back") || "/content";
+  const sep = back.includes("?") ? "&" : "?";
+  let target: string;
+  try {
+    const count = await deliverToTelegram(actor, { date: await getUserToday(actor.id) });
+    target = `${back}${sep}delivered=${count}`;
+  } catch (error) {
+    if (!(error instanceof ContentError)) throw error;
+    target = `${back}${sep}error=${error.code}`;
+  }
+  redirect(target);
+}
+
+export async function deliverPostAction(form: FormData) {
+  const actor = await requireUser();
+  const id = str(form, "postId");
+  let target: string;
+  try {
+    const count = await deliverToTelegram(actor, { postId: id });
+    target = `/content/${id}?delivered=${count}`;
+  } catch (error) {
+    if (!(error instanceof ContentError)) throw error;
+    target = `/content/${id}?error=${error.code}`;
+  }
   redirect(target);
 }

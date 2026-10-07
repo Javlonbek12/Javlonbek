@@ -38,6 +38,7 @@ export async function sendTelegramPhoto(
   chatId: bigint,
   png: Buffer,
   caption: string,
+  fileName = "planogram.png",
 ): Promise<boolean> {
   const token = getEnv().TELEGRAM_BOT_TOKEN;
   if (!token) {
@@ -46,8 +47,8 @@ export async function sendTelegramPhoto(
   }
   api ??= new Api(token);
   try {
-    await api.sendPhoto(Number(chatId), new InputFile(png, "planogram.png"), {
-      caption: caption.slice(0, 1000),
+    await api.sendPhoto(Number(chatId), new InputFile(png, fileName), {
+      ...(caption ? { caption: caption.slice(0, 1024) } : {}),
     });
     return true;
   } catch (error) {

@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Download, Plus, Upload } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Plus, Send, Upload } from "lucide-react";
 import Link from "next/link";
 
 import { BOT_COLOR } from "@/components/content/bot-chip";
@@ -29,7 +29,7 @@ import {
   listPostsBetween,
 } from "@/modules/content/service";
 
-import { importPlanAction } from "./actions";
+import { deliverTodayAction, importPlanAction } from "./actions";
 
 type Post = Awaited<ReturnType<typeof listPostsBetween>>[number];
 const VIEWS = ["month", "week", "list"] as const;
@@ -148,12 +148,21 @@ export default async function ContentPage({ searchParams }: PageProps<"/content"
           <p className="text-muted-foreground text-sm">{t("content.flow")}</p>
         </div>
         {planner && (
-          <Button asChild>
-            <Link href={`/content/new?date=${today}`}>
-              <Plus />
-              {t("content.add")}
-            </Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <form action={deliverTodayAction}>
+              <input type="hidden" name="back" value={href({})} />
+              <Button type="submit" variant="outline" title={t("content.telegram.hint")}>
+                <Send />
+                {t("content.telegram.today")}
+              </Button>
+            </form>
+            <Button asChild>
+              <Link href={`/content/new?date=${today}`}>
+                <Plus />
+                {t("content.add")}
+              </Link>
+            </Button>
+          </div>
         )}
       </div>
 
@@ -179,6 +188,11 @@ export default async function ContentPage({ searchParams }: PageProps<"/content"
         )}
       </div>
 
+      {typeof params.delivered === "string" && (
+        <p className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm">
+          {t("content.telegram.done", { count: params.delivered })}
+        </p>
+      )}
       {imported && (
         <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm">
           <p>{t("content.excel.done", { created: imported[0] ?? 0, updated: imported[1] ?? 0 })}</p>
