@@ -17,6 +17,7 @@ import {
   savePlanItem,
   submitForReview,
 } from "@/modules/content/service";
+import { importPlanXlsx } from "@/modules/content/excel";
 
 const str = (form: FormData, key: string) => {
   const value = form.get(key);
@@ -115,4 +116,26 @@ export async function commentContentAction(form: FormData) {
   const actor = await requireUser();
   const id = str(form, "postId");
   await run(`/content/${id}`, () => addContentComment(actor, id, str(form, "body")));
+}
+
+export async function importPlanAction(form: FormData) {
+  const actor = await requireUser();
+  const file = form.get("file");
+  const back = str(form, "back") || "/content";
+  let target: string;
+  try {
+    if (!(file instanceof File) || file.size === 0 || file.size > 5 * 1024 * 1024)
+      throw new ContentError("invalid");
+    const result = await importPlanXlsx(actor, Buffer.from(await file.arrayBuffer()));
+    const query = new URLSearchParams({
+      imported: `${result.created}-${result.updated}`,
+      ...(result.errors.length ? { importErrors: result.errors.slice(0, 10).join("\n") } : {}),
+    });
+    target = `${back}${back.includes("?") ? "&" : "?"}${query}`;
+  } catch (error) {
+    if (!(error instanceof ContentError)) throw error;
+    target = `${back}${back.includes("?") ? "&" : "?"}error=import`;
+  }
+  revalidatePath("/content", "layout");
+  redirect(target);
 }
