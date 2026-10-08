@@ -1,43 +1,52 @@
 import { describe, expect, it } from "vitest";
 
-import { filtersWhere, parseTaskFilters } from "./filters";
+import { filtersWhere, parseTaskFilters, type TaskFilters } from "./filters";
 
 const actor = { id: "u1", role: "MEMBER" as const };
+const base: TaskFilters = {
+  scope: "mine",
+  status: "active",
+  due: "any",
+  priority: "any",
+  project: "",
+  q: "",
+  sort: "smart",
+};
 
 describe("parseTaskFilters", () => {
   it("uses defaults for missing or invalid values", () => {
-    expect(parseTaskFilters({})).toEqual({
-      scope: "mine",
-      status: "active",
-      due: "any",
-      project: "",
-    });
-    expect(parseTaskFilters({ scope: "hack", status: "WRONG" })).toMatchObject({
-      scope: "mine",
-      status: "active",
-    });
+    expect(parseTaskFilters({})).toEqual(base);
+    expect(
+      parseTaskFilters({ scope: "hack", status: "WRONG", sort: "random", priority: "x" }),
+    ).toMatchObject({ scope: "mine", status: "active", sort: "smart", priority: "any" });
   });
 
   it("accepts valid values", () => {
     expect(
-      parseTaskFilters({ scope: "team", status: "DONE", due: "overdue", project: "ESSE" }),
+      parseTaskFilters({
+        scope: "team",
+        status: "DONE",
+        due: "overdue",
+        priority: "important",
+        project: "ESSE",
+        q: " отчёт ",
+        sort: "priority",
+      }),
     ).toEqual({
       scope: "team",
       status: "DONE",
       due: "overdue",
+      priority: "important",
       project: "ESSE",
+      q: "отчёт",
+      sort: "priority",
     });
   });
 });
 
 describe("filtersWhere", () => {
   it("builds a database filter for 'my overdue tasks'", () => {
-    const where = filtersWhere(
-      { scope: "mine", status: "active", due: "overdue", project: "" },
-      actor,
-      "2026-10-02",
-    );
-    expect(where).toEqual({
+    expect(filtersWhere({ ...base, due: "overdue" }, actor, "2026-10-02")).toEqual({
       AND: [
         { assigneeId: "u1" },
         { status: { notIn: ["DONE", "CANCELLED"] } },
@@ -47,5 +56,14 @@ describe("filtersWhere", () => {
         },
       ],
     });
+  });
+
+  it("adds search, importance; leaves quick filters out when counting", () => {
+    const filters = { ...base, q: "отчёт", priority: "important" as const, due: "today" as const };
+    const full = filtersWhere(filters, actor, "2026-10-02");
+    expect(full.AND).toContainEqual({ title: { contains: "отчёт", mode: "insensitive" } });
+    expect(full.AND).toContainEqual({ priority: { in: ["HIGH", "URGENT"] } });
+    const counting = filtersWhere(filters, actor, "2026-10-02", { quick: false });
+    expect(counting.AND).toHaveLength(3);
   });
 });
