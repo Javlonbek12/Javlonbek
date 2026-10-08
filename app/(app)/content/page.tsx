@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getUserToday } from "@/modules/core/settings/service";
 import {
+  canAddContent,
   canPlanContent,
   CHANNELS,
   contentAttention,
@@ -119,6 +120,7 @@ export default async function ContentPage({ searchParams }: PageProps<"/content"
   ]);
   const byDay = groupByDay(posts);
   const planner = canPlanContent(user);
+  const canAdd = canAddContent(user);
   const href = (next: { view?: View; month?: string; week?: string; bot?: string | null }) => {
     const query = new URLSearchParams();
     const v = next.view ?? view;
@@ -147,15 +149,17 @@ export default async function ContentPage({ searchParams }: PageProps<"/content"
           <h1 className="text-[22px] font-medium md:text-2xl">{t("content.title")}</h1>
           <p className="text-muted-foreground text-sm">{t("content.flow")}</p>
         </div>
-        {planner && (
+        {canAdd && (
           <div className="flex flex-wrap gap-2">
-            <form action={deliverTodayAction}>
-              <input type="hidden" name="back" value={href({})} />
-              <Button type="submit" variant="outline" title={t("content.telegram.hint")}>
-                <Send />
-                {t("content.telegram.today")}
-              </Button>
-            </form>
+            {planner && (
+              <form action={deliverTodayAction}>
+                <input type="hidden" name="back" value={href({})} />
+                <Button type="submit" variant="outline" title={t("content.telegram.hint")}>
+                  <Send />
+                  {t("content.telegram.today")}
+                </Button>
+              </form>
+            )}
             <Button asChild>
               <Link href={`/content/new?date=${today}`}>
                 <Plus />
@@ -302,7 +306,7 @@ export default async function ContentPage({ searchParams }: PageProps<"/content"
           </div>
         </div>
 
-        {view === "week" && <WeekView start={week} posts={posts} today={today} planner={planner} />}
+        {view === "week" && <WeekView start={week} posts={posts} today={today} planner={canAdd} />}
         {view === "list" && <ListView posts={posts} today={today} />}
         {view === "month" && (
           <>
@@ -339,7 +343,7 @@ export default async function ContentPage({ searchParams }: PageProps<"/content"
                           >
                             {Number(dayValue.slice(8))}
                           </span>
-                          {planner && (
+                          {canAdd && (
                             <Link
                               href={`/content/new?date=${dayValue}`}
                               aria-label={t("content.add")}

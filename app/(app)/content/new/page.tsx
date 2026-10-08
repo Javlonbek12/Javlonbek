@@ -7,16 +7,17 @@ import { t, type TranslationKey } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getUserToday } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
-import { canPlanContent, listContentAuthors } from "@/modules/content/service";
+import { canAddContent, canPlanContent, listContentAuthors } from "@/modules/content/service";
 
 import { createPlanItemAction } from "../actions";
 
 export default async function NewContentPage({ searchParams }: PageProps<"/content/new">) {
   const user = await requireUser();
-  if (!canPlanContent(user)) redirect("/content");
+  if (!canAddContent(user)) redirect("/content");
+  const planner = canPlanContent(user);
   const { date, error } = await searchParams;
   const today = await getUserToday(user.id);
-  const users = await listContentAuthors();
+  const users = planner ? await listContentAuthors() : [];
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-[22px] font-medium md:text-2xl">{t("content.newTitle")}</h1>
@@ -34,6 +35,7 @@ export default async function NewContentPage({ searchParams }: PageProps<"/conte
           }}
           users={users.map((u) => ({ id: u.id, name: displayName(u) }))}
           submit={t("content.actions.create")}
+          showAuthor={planner}
         />
       </Card>
     </div>

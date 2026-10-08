@@ -9,7 +9,7 @@ import { formatDay, fromDateString, isDateString, toDateString } from "@/lib/dat
 import { getEnv } from "@/lib/env";
 import type { ContentChannel, ContentStatus } from "@/lib/generated/prisma/enums";
 import { t } from "@/lib/i18n";
-import { canUseModule } from "@/modules/core/access/actor";
+import { canUseModule, withAccess } from "@/modules/core/access/actor";
 import { logActivity } from "@/modules/core/activity/service";
 import { notify } from "@/modules/core/notifications/service";
 import type { Actor } from "@/modules/core/permissions";
@@ -34,31 +34,37 @@ export class ContentError extends Error {
   }
 }
 
+// Anyone with the section can add a post to the plan (they become its author);
+// planners also assign authors, review, approve and mark sending.
+export const canAddContent = (actor: Actor) => canUseModule(actor, "content");
+
 export const canPlanContent = (actor: Actor) =>
   actor.role === "OWNER" || (actor.role === "MANAGER" && canUseModule(actor, "content"));
 
 const EDITABLE_BY_AUTHOR: ContentStatus[] = ["PLANNED", "DRAFT", "CHANGES"];
 
-type PostRow = { authorId: string | null; status: ContentStatus };
+type PostRow = { authorId: string | null; createdById: string; status: ContentStatus };
 
 export function contentRights(actor: Actor, post: PostRow) {
   const planner = canPlanContent(actor);
   const author = post.authorId === actor.id;
+  const creator = post.createdById === actor.id;
   const closed = post.status === "SENT" || post.status === "CANCELLED";
   return {
-    view: planner || author,
+    view: planner || author || creator,
     planner,
     // Upload the visual and texts.
     editContent: !closed && (planner || (author && EDITABLE_BY_AUTHOR.includes(post.status))),
     submit: (planner || author) && (post.status === "DRAFT" || post.status === "CHANGES"),
     review: planner && post.status === "REVIEW",
     send: planner && post.status === "APPROVED",
-    editPlan: planner && !closed,
+    // Planners always; whoever added the post, until it goes for review.
+    editPlan: (planner && !closed) || (creator && EDITABLE_BY_AUTHOR.includes(post.status)),
   };
 }
 
 function visibleWhere(actor: Actor) {
-  return canPlanContent(actor) ? {} : { authorId: actor.id };
+  return canPlanContent(actor) ? {} : { OR: [{ authorId: actor.id }, { createdById: actor.id }] };
 }
 
 const include = {
@@ -165,10 +171,15 @@ const day = (date: Date) => formatDay(toDateString(date));
 
 // A plan item: topic, date, bots, author. Only planners.
 export async function savePlanItem(actor: Actor, id: string | null, input: PlanInput) {
-  if (!canPlanContent(actor)) throw new ContentError("forbidden");
+  if (!canAddContent(actor)) throw new ContentError("forbidden");
   const parsed = planSchema.safeParse(input);
   if (!parsed.success) throw new ContentError("invalid");
   const { publishDate, ...rest } = parsed.data;
+  // An employee's own post: they are the author (a planner may reassign it later).
+  if (!canPlanContent(actor)) {
+    const existing = id ? await db.contentPost.findUnique({ where: { id } }) : null;
+    rest.authorId = existing ? existing.authorId : actor.id;
+  }
   if (rest.authorId && !(await db.user.findUnique({ where: { id: rest.authorId } })))
     throw new ContentError("invalid");
   const data = { ...rest, publishDate: fromDateString(publishDate) };
@@ -273,8 +284,8 @@ export async function submitForReview(actor: Actor, id: string) {
   await db.contentPost.update({ where: { id }, data: { status: "REVIEW" } });
   await log(actor, "content.submitted", id);
   const actorRow = await db.user.findUnique({ where: { id: actor.id } });
-  if (post.createdById !== actor.id) {
-    await notify(post.createdById, {
+  for (const reviewer of await reviewersOf(post, actor)) {
+    await notify(reviewer, {
       type: "content_review",
       title: t("notifications.events.contentReviewTitle"),
       body: t("notifications.events.contentReviewBody", {
@@ -285,6 +296,19 @@ export async function submitForReview(actor: Actor, id: string) {
       link: `/content/${id}`,
     });
   }
+}
+
+// Who reviews a post: the planner who put it in the plan; for a post an employee added
+// themselves — the owner and the managers who have the section.
+async function reviewersOf(post: { createdById: string }, actor: Actor) {
+  const creator = await db.user.findUnique({ where: { id: post.createdById } });
+  if (creator && creator.id !== actor.id && canPlanContent(await withAccess(creator)))
+    return [creator.id];
+  const candidates = await db.user.findMany({ where: { role: { in: ["OWNER", "MANAGER"] } } });
+  const ids: string[] = [];
+  for (const user of candidates)
+    if (user.id !== actor.id && canPlanContent(await withAccess(user))) ids.push(user.id);
+  return ids;
 }
 
 export async function returnWithFeedback(actor: Actor, id: string, feedback: string) {

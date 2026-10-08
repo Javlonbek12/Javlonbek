@@ -42,7 +42,7 @@ export default async function ContentPostPage({
   if (!found) notFound();
   const { post, rights } = found;
   const { timezone } = await getSettings(user.id);
-  const users = rights.editPlan ? await listContentAuthors() : [];
+  const users = rights.editPlan && rights.planner ? await listContentAuthors() : [];
   const language = lang === "uz" ? "uz" : "ru";
   const imageUrl = post.imagePath
     ? `/api/content/${post.id}/image?v=${post.updatedAt.getTime()}`
@@ -307,6 +307,7 @@ export default async function ContentPostPage({
               values={{ ...post, publishDate: date }}
               users={users.map((u) => ({ id: u.id, name: displayName(u) }))}
               submit={t("content.actions.save")}
+              showAuthor={rights.planner}
             />
             <form action={cancelContentAction} className="border-t pt-3">
               {hidden}

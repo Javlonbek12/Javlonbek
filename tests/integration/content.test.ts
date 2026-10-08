@@ -97,7 +97,7 @@ describe("content plan", () => {
     ).rejects.toMatchObject({ code: "image" });
   });
 
-  it("authors see only their posts; others nothing; members can't plan", async () => {
+  it("authors see only their posts; others nothing", async () => {
     const { owner, author, other, post } = await setup();
     expect(await getPost(author, post.id)).not.toBeNull();
     expect(await getPost(other, post.id)).toBeNull();
@@ -105,13 +105,46 @@ describe("content plan", () => {
     expect(await listPostsBetween(owner, "2026-10-01", "2026-10-31", "PARTNER")).toHaveLength(1);
     expect(await listPostsBetween(owner, "2026-10-01", "2026-10-31", "RESEARCH")).toHaveLength(0);
     await expect(
-      savePlanItem(author, null, { title: "x", channels: ["PARTNER"], publishDate: "2026-10-11" }),
-    ).rejects.toBeInstanceOf(ContentError);
-    await expect(
       savePlanItem(owner, null, { title: "x", channels: [], publishDate: "2026-10-11" }),
     ).rejects.toBeInstanceOf(ContentError);
     const attention = await contentAttention(author, "2026-10-12");
     expect(attention.prepare).toHaveLength(1);
     expect(attention.lateCount).toBe(1);
+  });
+
+  it("an employee adds a post for themselves; planners get it for review", async () => {
+    const owner = await withAccess(await createTestUser("OWNER"));
+    const member = await withAccess(await createTestUser("MEMBER"));
+    const other = await withAccess(await createTestUser("MEMBER"));
+    const post = await savePlanItem(member, null, {
+      title: "Тестовая идея сотрудника",
+      channels: ["CONNECT"],
+      publishDate: "2026-10-12",
+      authorId: other.id, // ignored: the employee is the author
+    });
+    expect(post).toMatchObject({ authorId: member.id, createdById: member.id });
+    expect(await getPost(other, post.id)).toBeNull();
+    expect(await listPostsBetween(owner, "2026-10-01", "2026-10-31")).toHaveLength(1);
+
+    // Until review the employee may change the plan of their post.
+    await savePlanItem(member, post.id, {
+      title: "Тестовая идея (исправлено)",
+      channels: ["CONNECT", "PARTNER"],
+      publishDate: "2026-10-13",
+    });
+    await saveContent(member, post.id, { textRu: "Тест", textUz: "Test" });
+    await submitForReview(member, post.id);
+    expect(
+      await db.notification.findFirst({ where: { userId: owner.id, type: "content_review" } }),
+    ).not.toBeNull();
+    await expect(
+      savePlanItem(member, post.id, {
+        title: "x",
+        channels: ["CONNECT"],
+        publishDate: "2026-10-13",
+      }),
+    ).rejects.toBeInstanceOf(ContentError);
+    await expect(approvePost(member, post.id)).rejects.toBeInstanceOf(ContentError);
+    await approvePost(owner, post.id);
   });
 });

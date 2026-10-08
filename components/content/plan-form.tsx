@@ -24,12 +24,15 @@ export function PlanForm({
   users,
   postId,
   submit,
+  showAuthor = true,
 }: {
   action: (form: FormData) => Promise<void>;
   values: Partial<Values>;
   users: { id: string; name: string }[];
   postId?: string;
   submit: string;
+  // Employees add posts for themselves: no author to choose.
+  showAuthor?: boolean;
 }) {
   return (
     <form action={action} className="flex flex-col gap-3 text-sm">
@@ -67,17 +70,19 @@ export function PlanForm({
           {t("content.fields.time")}
           <Input type="time" name="publishTime" defaultValue={values.publishTime ?? ""} />
         </label>
-        <label className="flex flex-col gap-1">
-          {t("content.fields.author")}
-          <NativeSelect name="authorId" defaultValue={values.authorId ?? ""}>
-            <option value="">{t("content.fields.noAuthor")}</option>
-            {users.map((user) => (
-              <option key={user.id} value={user.id}>
-                {user.name}
-              </option>
-            ))}
-          </NativeSelect>
-        </label>
+        {showAuthor && (
+          <label className="flex flex-col gap-1">
+            {t("content.fields.author")}
+            <NativeSelect name="authorId" defaultValue={values.authorId ?? ""}>
+              <option value="">{t("content.fields.noAuthor")}</option>
+              {users.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.name}
+                </option>
+              ))}
+            </NativeSelect>
+          </label>
+        )}
       </div>
       <label className="flex flex-col gap-1">
         {t("content.fields.brief")}
