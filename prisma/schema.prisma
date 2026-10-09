@@ -56,22 +56,23 @@ model User {
   inviteUsed     Invite?        @relation("InviteUsedBy")
   activity       ActivityLog[]
 
-  tasksCreated    Task[]               @relation("TaskCreator")
-  tasksAssigned   Task[]               @relation("TaskAssignee")
-  plansCreated    Plan[]
-  comments        Comment[]
-  attachments     TaskAttachment[]
-  aiUsage         AiUsage[]
-  botDrafts       BotDraft[]
-  scheduledSends  ScheduledSend[]
-  meetingsCreated Meeting[]            @relation("MeetingCreator")
-  meetings        MeetingParticipant[]
-  meetingNotes    MeetingNotes[]
-  projectsLed     Project[]            @relation("ProjectLead")
-  contentAuthored ContentPost[]        @relation("ContentAuthor")
-  contentCreated  ContentPost[]        @relation("ContentCreator")
-  contentComments ContentComment[]
-  projectsCreated Project[]            @relation("ProjectCreator")
+  tasksCreated       Task[]               @relation("TaskCreator")
+  tasksAssigned      Task[]               @relation("TaskAssignee")
+  taskDeleteRequests Task[]               @relation("TaskDeleteRequester")
+  plansCreated       Plan[]
+  comments           Comment[]
+  attachments        TaskAttachment[]
+  aiUsage            AiUsage[]
+  botDrafts          BotDraft[]
+  scheduledSends     ScheduledSend[]
+  meetingsCreated    Meeting[]            @relation("MeetingCreator")
+  meetings           MeetingParticipant[]
+  meetingNotes       MeetingNotes[]
+  projectsLed        Project[]            @relation("ProjectLead")
+  contentAuthored    ContentPost[]        @relation("ContentAuthor")
+  contentCreated     ContentPost[]        @relation("ContentCreator")
+  contentComments    ContentComment[]
+  projectsCreated    Project[]            @relation("ProjectCreator")
 }
 
 model Invite {
@@ -169,50 +170,56 @@ enum PlanLevel {
 }
 
 model Task {
-  id              String       @id @default(cuid())
-  title           String
-  description     String?
+  id                  String       @id @default(cuid())
+  title               String
+  description         String?
   // Personal tasks are visible only to their author and skip approval.
-  isPersonal      Boolean      @default(false)
-  creatorId       String
-  assigneeId      String
-  status          TaskStatus   @default(DRAFT)
-  priority        TaskPriority @default(MEDIUM)
-  project         String?
+  isPersonal          Boolean      @default(false)
+  creatorId           String
+  assigneeId          String
+  status              TaskStatus   @default(DRAFT)
+  priority            TaskPriority @default(MEDIUM)
+  project             String?
   // Calendar dates (no time of day). startDate is optional and used by the timeline.
-  startDate       DateTime?    @db.Date
-  dueDate         DateTime?    @db.Date
-  estimateMinutes Int?
-  planId          String?
+  startDate           DateTime?    @db.Date
+  dueDate             DateTime?    @db.Date
+  estimateMinutes     Int?
+  planId              String?
   // Set when the task came from meeting minutes.
-  meetingId       String?
+  meetingId           String?
   // Project plan fields (see Project): phase, code from the plan ("T01"), who is responsible
   // per the plan (a group or role, e.g. "HO / аналитика"), milestone and risk marks.
-  phaseId         String?
-  code            String?
-  responsible     String?
-  isMilestone     Boolean      @default(false)
-  atRisk          Boolean      @default(false)
-  approvedAt      DateTime?
-  completedAt     DateTime?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  phaseId             String?
+  code                String?
+  responsible         String?
+  isMilestone         Boolean      @default(false)
+  atRisk              Boolean      @default(false)
+  approvedAt          DateTime?
+  completedAt         DateTime?
+  // A deletion request (the task already had progress): waits for whoever oversees the task.
+  deleteRequestedById String?
+  deleteRequestedAt   DateTime?
+  deleteReason        String?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
 
-  creator     User             @relation("TaskCreator", fields: [creatorId], references: [id])
-  assignee    User             @relation("TaskAssignee", fields: [assigneeId], references: [id])
-  plan        Plan?            @relation(fields: [planId], references: [id], onDelete: SetNull)
-  meeting     Meeting?         @relation(fields: [meetingId], references: [id], onDelete: SetNull)
-  phase       ProjectPhase?    @relation(fields: [phaseId], references: [id], onDelete: SetNull)
+  creator           User             @relation("TaskCreator", fields: [creatorId], references: [id])
+  deleteRequestedBy User?            @relation("TaskDeleteRequester", fields: [deleteRequestedById], references: [id], onDelete: SetNull)
+  assignee          User             @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  plan              Plan?            @relation(fields: [planId], references: [id], onDelete: SetNull)
+  meeting           Meeting?         @relation(fields: [meetingId], references: [id], onDelete: SetNull)
+  phase             ProjectPhase?    @relation(fields: [phaseId], references: [id], onDelete: SetNull)
   // "blockedBy": tasks that must be closed before this one can be DONE.
-  blockedBy   TaskDependency[] @relation("DependencyBlocked")
-  blocks      TaskDependency[] @relation("DependencyBlocker")
-  comments    Comment[]
-  attachments TaskAttachment[]
+  blockedBy         TaskDependency[] @relation("DependencyBlocked")
+  blocks            TaskDependency[] @relation("DependencyBlocker")
+  comments          Comment[]
+  attachments       TaskAttachment[]
 
   @@index([assigneeId, status])
   @@index([creatorId])
   @@index([dueDate])
   @@index([project])
+  @@index([deleteRequestedAt])
 }
 
 model TaskDependency {

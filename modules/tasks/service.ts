@@ -357,11 +357,17 @@ export async function getTaskDetail(actor: Actor, taskId: string) {
       ...listInclude,
       plan: { select: { id: true, title: true } },
       meeting: { select: { id: true, title: true } },
+      deleteRequestedBy: { select: { id: true, firstName: true, lastName: true } },
     },
   });
   if (!task || !canViewTask(actor, task)) return null;
   return {
-    task: { ...toTaskView(task), plan: task.plan, meeting: task.meeting },
+    task: {
+      ...toTaskView(task),
+      plan: task.plan,
+      meeting: task.meeting,
+      deleteRequestedBy: task.deleteRequestedBy,
+    },
     transitions: availableTransitions(actor, task),
     canEdit: canEditTask(actor, task),
   };

@@ -1,4 +1,12 @@
-export type TaskErrorCode = "forbidden" | "blocked" | "invalid" | "cycle" | "plan" | "fileTooLarge";
+export type TaskErrorCode =
+  | "forbidden"
+  | "blocked"
+  | "invalid"
+  | "cycle"
+  | "plan"
+  | "fileTooLarge"
+  | "requested"
+  | "noApprover";
 
 // A task action that can't be done; `code` maps to tasks.errors.* in the i18n dictionary.
 export class TaskError extends Error {

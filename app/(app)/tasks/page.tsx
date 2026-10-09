@@ -46,7 +46,8 @@ function hrefWith(filters: TaskFilters, change: Partial<TaskFilters>) {
 
 export default async function TaskListPage({ searchParams }: PageProps<"/tasks">) {
   const user = await requireUser();
-  const filters = parseTaskFilters(await searchParams);
+  const params = await searchParams;
+  const filters = parseTaskFilters(params);
   const today = await getUserToday(user.id);
   const [tasks, projects, counts] = await Promise.all([
     listTasks(user, filters, today),
@@ -64,6 +65,11 @@ export default async function TaskListPage({ searchParams }: PageProps<"/tasks">
 
   return (
     <div className="flex flex-col gap-4">
+      {params.deleted === "1" && (
+        <p className="rounded-md bg-emerald-500/10 p-3 text-sm text-emerald-800 dark:text-emerald-300">
+          {t("tasks.remove.done")}
+        </p>
+      )}
       {/* A plain GET form: filters live in the URL and work without JavaScript. */}
       <form className="flex flex-col gap-2">
         <input type="hidden" name="due" value={filters.due} />
