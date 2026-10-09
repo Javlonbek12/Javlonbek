@@ -4,12 +4,14 @@ import { notFound } from "next/navigation";
 
 import { BotChip, ContentStatusBadge } from "@/components/content/bot-chip";
 import { PlanForm } from "@/components/content/plan-form";
+import { BRAND_COLOR, TOPIC_COLOR } from "@/components/content/analytics-charts";
 import { PostPreview } from "@/components/content/post-preview";
 import { DeleteButton } from "@/components/content/views";
 import { CopyButton } from "@/components/copy-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDayLong, toDateString } from "@/lib/dates";
 import { t, type TranslationKey } from "@/lib/i18n";
@@ -19,6 +21,7 @@ import { requireUser } from "@/modules/core/auth/current-user";
 import { getSettings } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
 import { getPost, listContentAuthors, MAX_IMAGE_MB } from "@/modules/content/service";
+import { BRANDS, TOPICS } from "@/modules/content/tagging";
 
 import {
   approveContentAction,
@@ -28,6 +31,7 @@ import {
   feedbackContentAction,
   markSentAction,
   saveContentAction,
+  setTagsAction,
   submitContentAction,
   updatePlanItemAction,
 } from "../actions";
@@ -82,6 +86,72 @@ export default async function ContentPostPage({
           {" · "}
           {t("content.fields.createdBy")}: {displayName(post.createdBy)}
         </p>
+        <div className="flex flex-wrap items-center gap-1.5 text-sm">
+          {post.topic ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium">
+              <span
+                className="size-2 rounded-full"
+                style={{ background: TOPIC_COLOR[post.topic] }}
+              />
+              {t(`content.topics.${post.topic}`)}
+            </span>
+          ) : null}
+          {post.brand && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium">
+              <span className="size-2 rounded-sm" style={{ background: BRAND_COLOR[post.brand] }} />
+              {t(`content.brands.${post.brand}`)}
+            </span>
+          )}
+          <span className="text-muted-foreground text-xs">
+            {post.tagPending && post.tagSource !== "manual"
+              ? t("content.tags.pending")
+              : post.tagSource === "ai"
+                ? t("content.tags.byAi")
+                : post.tagSource === "keywords"
+                  ? t("content.tags.byKeywords")
+                  : post.tagSource === "manual"
+                    ? t("content.tags.manual")
+                    : ""}
+          </span>
+          {(rights.planner || rights.editPlan) && (
+            <details className="relative">
+              <summary className="text-primary cursor-pointer list-none text-xs underline [&::-webkit-details-marker]:hidden">
+                {t("content.tags.edit")}
+              </summary>
+              <form
+                action={setTagsAction}
+                className="bg-card shadow-card absolute left-0 z-30 mt-1 flex w-72 flex-col gap-2 rounded-xl border p-3 text-sm"
+              >
+                {hidden}
+                <label className="flex flex-col gap-1">
+                  {t("content.tags.topic")}
+                  <NativeSelect name="topic" defaultValue={post.topic ?? "COMPANY_NEWS"}>
+                    {TOPICS.map((topic) => (
+                      <option key={topic} value={topic}>
+                        {t(`content.topics.${topic}`)}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </label>
+                <label className="flex flex-col gap-1">
+                  {t("content.tags.brand")}
+                  <NativeSelect name="brand" defaultValue={post.brand ?? "GENERAL"}>
+                    {BRANDS.map((brand) => (
+                      <option key={brand} value={brand}>
+                        {t(`content.brands.${brand}`)}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </label>
+                <div>
+                  <Button type="submit" size="sm">
+                    {t("content.tags.save")}
+                  </Button>
+                </div>
+              </form>
+            </details>
+          )}
+        </div>
         {post.brief && (
           <p className="bg-secondary/60 rounded-xl px-3 py-2 text-sm whitespace-pre-wrap">
             {post.brief}

@@ -6,6 +6,7 @@ import {
   House,
   LayoutGrid,
   Megaphone,
+  PieChart,
   ListTodo,
   Network,
   Settings,
@@ -22,6 +23,8 @@ export type ModuleEntry = {
   href: string;
   icon: LucideIcon;
   roles: Role[];
+  // The role-settings section that switches it (default: its own id).
+  access?: string;
   // false = not in the phone's bottom bar (shown elsewhere, e.g. the bell in the header).
   mobile?: boolean;
 };
@@ -74,6 +77,15 @@ export const MODULES: ModuleEntry[] = [
     roles: ALL_ROLES,
     mobile: false,
   },
+  {
+    id: "contentAnalytics",
+    titleKey: "nav.contentAnalytics",
+    href: "/content-analytics",
+    icon: PieChart,
+    roles: ALL_ROLES,
+    mobile: false,
+    access: "content",
+  },
   // Management report: owner and managers; on phones it opens from the "Today" screen.
   {
     id: "reports",
@@ -122,6 +134,9 @@ export function modulesForRole(
   return modules.filter(
     (module) =>
       module.roles.includes(role) &&
-      (role === "OWNER" || !enabled || !SWITCHABLE.has(module.id) || enabled.includes(module.id)),
+      (role === "OWNER" ||
+        !enabled ||
+        !SWITCHABLE.has(module.access ?? module.id) ||
+        enabled.includes(module.access ?? module.id)),
   );
 }

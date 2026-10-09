@@ -16,6 +16,8 @@ import type { Actor } from "@/modules/core/permissions";
 import { displayName } from "@/modules/core/users/display-name";
 import { safeFileName } from "@/modules/tasks/attachment-service";
 
+import { BRANDS, TOPICS } from "./tagging";
+
 // Content plan for the company's Telegram bots. Planners (owner, managers with the section on)
 // put topics on dates and choose bots and authors; an author uploads the visual and texts RU / UZ
 // and sends for review; a planner returns it with feedback or approves it; then it is sent to
@@ -185,7 +187,8 @@ export async function savePlanItem(actor: Actor, id: string | null, input: PlanI
   }
   if (rest.authorId && !(await db.user.findUnique({ where: { id: rest.authorId } })))
     throw new ContentError("invalid");
-  const data = { ...rest, publishDate: fromDateString(publishDate) };
+  // Changed wording: topic and brand are re-checked in the background.
+  const data = { ...rest, publishDate: fromDateString(publishDate), tagPending: true };
   let post;
   let previousAuthor: string | null = null;
   if (id) {
@@ -276,7 +279,7 @@ export async function saveContent(
     data.imageName = safeFileName(image.name);
   }
   const status: ContentStatus = post.status === "PLANNED" ? "DRAFT" : post.status;
-  await db.contentPost.update({ where: { id }, data: { ...data, status } });
+  await db.contentPost.update({ where: { id }, data: { ...data, status, tagPending: true } });
   await log(actor, "content.uploaded", id);
 }
 
@@ -381,6 +384,21 @@ export async function cancelPost(actor: Actor, id: string) {
   if (!rights.editPlan) throw new ContentError("forbidden");
   await db.contentPost.update({ where: { id }, data: { status: "CANCELLED" } });
   await log(actor, "content.cancelled", id);
+}
+
+const tagsSchema = z.object({ topic: z.enum(TOPICS), brand: z.enum(BRANDS) });
+
+// Topic and brand set by hand: kept as they are from now on.
+export async function setContentTags(actor: Actor, id: string, input: z.input<typeof tagsSchema>) {
+  const { rights } = await load(actor, id);
+  if (!rights.planner && !rights.editPlan) throw new ContentError("forbidden");
+  const parsed = tagsSchema.safeParse(input);
+  if (!parsed.success) throw new ContentError("invalid");
+  await db.contentPost.update({
+    where: { id },
+    data: { ...parsed.data, tagSource: "manual", tagPending: false },
+  });
+  await log(actor, "content.tagged", id);
 }
 
 // Deletes the post for good, with its comments and visual.

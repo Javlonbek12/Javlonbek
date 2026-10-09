@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import type { ContentChannel } from "@/lib/generated/prisma/enums";
+import type { ContentBrand, ContentChannel, ContentTopic } from "@/lib/generated/prisma/enums";
 import { requireUser } from "@/modules/core/auth/current-user";
 import {
   addContentComment,
@@ -16,6 +16,7 @@ import {
   returnWithFeedback,
   saveContent,
   savePlanItem,
+  setContentTags,
   submitForReview,
 } from "@/modules/content/service";
 import { importPlanXlsx } from "@/modules/content/excel";
@@ -186,4 +187,15 @@ export async function deleteContentAction(form: FormData) {
   }
   revalidatePath("/content", "layout");
   redirect(target);
+}
+
+export async function setTagsAction(form: FormData) {
+  const actor = await requireUser();
+  const id = str(form, "postId");
+  await run(`/content/${id}`, () =>
+    setContentTags(actor, id, {
+      topic: str(form, "topic") as ContentTopic,
+      brand: str(form, "brand") as ContentBrand,
+    }),
+  );
 }

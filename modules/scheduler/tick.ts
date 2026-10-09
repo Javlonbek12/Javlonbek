@@ -9,6 +9,7 @@ import { formatTime } from "@/lib/time";
 import { deliverDeferredNotifications, notify } from "@/modules/core/notifications/service";
 import { getSettings } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
+import { tagPendingContent } from "@/modules/content/tagging";
 import { CLOSED_STATUSES } from "@/modules/tasks/access";
 
 import { collectDigestData, defaultDigestWriter, isDigestEmpty, type DigestWriter } from "./digest";
@@ -169,6 +170,11 @@ export async function runSchedulerTick(now = new Date(), deps: TickDeps = {}) {
     }
   }
   await meetingReminders(now);
+  try {
+    await tagPendingContent();
+  } catch (error) {
+    console.error("Content tagging failed", error);
+  }
   await deliverDeferredNotifications(now);
   await db.systemState.upsert({
     where: { key: LAST_TICK_KEY },

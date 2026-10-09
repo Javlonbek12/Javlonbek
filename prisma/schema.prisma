@@ -724,6 +724,27 @@ enum ContentStatus {
   CANCELLED
 }
 
+// What a post is about, for the content analytics. Set by AI (or keywords), or by hand.
+enum ContentTopic {
+  PRICES
+  NEW_PRODUCTS
+  PROMO
+  TRAINING
+  RESEARCH
+  MOTIVATION
+  COMPANY_NEWS
+  SERVICE
+}
+
+enum ContentBrand {
+  ESSE
+  BOHEM
+  PINE
+  BLOOMING
+  SIMPLE
+  GENERAL
+}
+
 model ContentPost {
   id           String           @id @default(cuid())
   // Topic, e.g. "Новые цены ESSE Super Slim".
@@ -743,6 +764,12 @@ model ContentPost {
   imagePath    String?
   imageName    String?
   sentChannels ContentChannel[]
+  topic        ContentTopic?
+  brand        ContentBrand?
+  // "ai", "keywords" or "manual" (set by hand: never changed automatically).
+  tagSource    String?
+  // Waiting for (re)tagging by the background worker.
+  tagPending   Boolean          @default(true)
   approvedAt   DateTime?
   sentAt       DateTime?
   createdAt    DateTime         @default(now())
@@ -754,6 +781,7 @@ model ContentPost {
 
   @@index([publishDate])
   @@index([authorId, status])
+  @@index([tagPending])
 }
 
 model ContentComment {
