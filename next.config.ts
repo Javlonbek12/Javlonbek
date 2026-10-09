@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Content-plan visuals (up to 20 MB) are uploaded through a server action.
+  // Excel plans are uploaded through server actions (post files go through an API route).
   experimental: { serverActions: { bodySizeLimit: "21mb" } },
   async headers() {
     return [

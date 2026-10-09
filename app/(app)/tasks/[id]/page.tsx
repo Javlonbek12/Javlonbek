@@ -263,20 +263,42 @@ export default async function TaskPage({ params, searchParams }: PageProps<"/tas
         {task.description && <p className="text-sm whitespace-pre-wrap">{task.description}</p>}
         {(transitions.length > 0 || (project && canEdit && !isClosed(task.status))) && (
           <div className="flex flex-wrap gap-2 border-t pt-3">
-            {transitions.map((to) => (
-              <form key={to} action={changeStatusAction}>
-                {hidden}
-                <input type="hidden" name="to" value={to} />
-                <Button
-                  type="submit"
-                  size="sm"
-                  variant={to === "CANCELLED" || to === "DRAFT" ? "ghost" : "default"}
-                  disabled={to === "DONE" && task.openBlockers > 0}
-                >
-                  {t(`tasks.action.${to}`)}
-                </Button>
-              </form>
-            ))}
+            {transitions.map((to) => {
+              // The creator takes their task back from approval to change it.
+              const withdraw =
+                to === "DRAFT" && task.status === "PENDING_APPROVAL" && task.creatorId === user.id;
+              // The assignee takes their work back from review.
+              const unsubmit =
+                to === "IN_PROGRESS" &&
+                task.status === "IN_REVIEW" &&
+                task.assigneeId === user.id &&
+                task.creatorId !== user.id;
+              return (
+                <form key={to} action={changeStatusAction}>
+                  {hidden}
+                  <input type="hidden" name="to" value={to} />
+                  {withdraw && <input type="hidden" name="then" value="edit" />}
+                  <Button
+                    type="submit"
+                    size="sm"
+                    variant={
+                      withdraw || unsubmit
+                        ? "outline"
+                        : to === "CANCELLED" || to === "DRAFT"
+                          ? "ghost"
+                          : "default"
+                    }
+                    disabled={to === "DONE" && task.openBlockers > 0}
+                  >
+                    {withdraw
+                      ? t("tasks.withdraw.approval")
+                      : unsubmit
+                        ? t("tasks.withdraw.review")
+                        : t(`tasks.action.${to}`)}
+                  </Button>
+                </form>
+              );
+            })}
             {project && canEdit && !isClosed(task.status) && (
               <form action={setTaskRiskAction}>
                 {hidden}

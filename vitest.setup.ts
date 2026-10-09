@@ -9,4 +9,5 @@ afterEach(() => cleanup());
 vi.mock("@/modules/bot/send", () => ({
   sendTelegramMessage: vi.fn(async () => true),
   sendTelegramPhoto: vi.fn(async () => true),
+  sendTelegramMedia: vi.fn(async () => true),
 }));

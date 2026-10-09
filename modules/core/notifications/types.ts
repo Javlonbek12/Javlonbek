@@ -17,6 +17,7 @@ export const NOTIFICATION_TYPES = [
   "content_review",
   "content_feedback",
   "content_approved",
+  "content_legal",
   "task_delete_request",
 ] as const;
 

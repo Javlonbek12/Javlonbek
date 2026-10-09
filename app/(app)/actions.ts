@@ -23,7 +23,7 @@ async function actor() {
   return user;
 }
 
-const roleSchema = z.enum(["OWNER", "MANAGER", "MEMBER"]);
+const roleSchema = z.enum(["OWNER", "MANAGER", "MEMBER", "LAWYER"]);
 const idSchema = z.string().min(1).max(64);
 
 export async function createInviteAction(formData: FormData) {

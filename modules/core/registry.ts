@@ -29,7 +29,7 @@ export type ModuleEntry = {
   mobile?: boolean;
 };
 
-const ALL_ROLES: Role[] = ["OWNER", "MANAGER", "MEMBER"];
+const ALL_ROLES: Role[] = ["OWNER", "MANAGER", "MEMBER", "LAWYER"];
 
 // Every module registers itself here: name, icon, link and which roles see it.
 export const MODULES: ModuleEntry[] = [

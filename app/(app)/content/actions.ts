@@ -9,6 +9,9 @@ import {
   addContentComment,
   approvePost,
   cancelPost,
+  legalApprove,
+  movePost,
+  withdrawPost,
   CHANNELS,
   ContentError,
   deleteContentPost,
@@ -20,6 +23,7 @@ import {
   submitForReview,
 } from "@/modules/content/service";
 import { importPlanXlsx } from "@/modules/content/excel";
+import { copyPostFiles, LANGS, movePostFile, removePostFile } from "@/modules/content/files";
 import { deliverToTelegram } from "@/modules/content/telegram";
 import { getUserToday } from "@/modules/core/settings/service";
 
@@ -29,7 +33,8 @@ const str = (form: FormData, key: string) => {
 };
 
 async function run(target: string, action: () => Promise<unknown>) {
-  let url = target;
+  const [path, hash] = target.split("#");
+  let url = path!;
   try {
     await action();
   } catch (error) {
@@ -37,7 +42,7 @@ async function run(target: string, action: () => Promise<unknown>) {
     url += `${url.includes("?") ? "&" : "?"}error=${error.code}`;
   }
   revalidatePath("/content", "layout");
-  redirect(url);
+  redirect(hash ? `${url}#${hash}` : url);
 }
 
 const planFields = (form: FormData) => ({
@@ -74,15 +79,58 @@ export async function updatePlanItemAction(form: FormData) {
 export async function saveContentAction(form: FormData) {
   const actor = await requireUser();
   const id = str(form, "postId");
-  const image = form.get("image");
   await run(`/content/${id}`, () =>
-    saveContent(
-      actor,
-      id,
-      { textRu: str(form, "textRu"), textUz: str(form, "textUz") },
-      image instanceof File ? image : null,
-    ),
+    saveContent(actor, id, { textRu: str(form, "textRu"), textUz: str(form, "textUz") }),
   );
+}
+
+export async function withdrawContentAction(form: FormData) {
+  const actor = await requireUser();
+  const id = str(form, "postId");
+  await run(`/content/${id}`, () => withdrawPost(actor, id));
+}
+
+export async function legalApproveAction(form: FormData) {
+  const actor = await requireUser();
+  const id = str(form, "postId");
+  await run(`/content/${id}`, () => legalApprove(actor, id));
+}
+
+export async function removeFileAction(form: FormData) {
+  const actor = await requireUser();
+  const id = str(form, "postId");
+  await run(`/content/${id}#files`, () => removePostFile(actor, str(form, "fileId")));
+}
+
+export async function moveFileAction(form: FormData) {
+  const actor = await requireUser();
+  const id = str(form, "postId");
+  const direction = str(form, "direction") === "up" ? "up" : "down";
+  await run(`/content/${id}#files`, () => movePostFile(actor, str(form, "fileId"), direction));
+}
+
+export async function copyFilesAction(form: FormData) {
+  const actor = await requireUser();
+  const id = str(form, "postId");
+  const to = LANGS.find((l) => l === str(form, "to"));
+  const from = LANGS.find((l) => l !== to);
+  await run(`/content/${id}#files`, async () => {
+    if (!to || !from) throw new ContentError("invalid");
+    await copyPostFiles(actor, id, from, to);
+  });
+}
+
+// Dragging a post to another day in the calendar: returns the result instead of redirecting.
+export async function movePostAction(id: string, date: string): Promise<{ ok: boolean }> {
+  const actor = await requireUser();
+  try {
+    await movePost(actor, id, date);
+  } catch (error) {
+    if (!(error instanceof ContentError)) throw error;
+    return { ok: false };
+  }
+  revalidatePath("/content", "layout");
+  return { ok: true };
 }
 
 export async function submitContentAction(form: FormData) {

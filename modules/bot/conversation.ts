@@ -1,4 +1,5 @@
-import { ContentError, MAX_IMAGE_MB } from "@/modules/content/service";
+import { MAX_FILE_MB, MAX_FILES_PER_LANG } from "@/modules/content/files";
+import { ContentError } from "@/modules/content/service";
 import { handleSentButton } from "@/modules/content/telegram";
 import { db } from "@/lib/db";
 import {
@@ -487,7 +488,9 @@ export async function handleCallback(
       return { ...(await handleSentButton(user, parts[1], parts[2])), edit: true };
     } catch (error) {
       if (!(error instanceof ContentError)) throw error;
-      return { text: t(`content.errors.${error.code}`, { mb: MAX_IMAGE_MB }) };
+      return {
+        text: t(`content.errors.${error.code}`, { mb: MAX_FILE_MB, max: MAX_FILES_PER_LANG }),
+      };
     }
   }
   return { text: t("bot.card.expired") };

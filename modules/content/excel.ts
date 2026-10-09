@@ -32,7 +32,7 @@ const COLUMNS = [
   { key: "brief", header: "Задание", width: 40 },
   { key: "textRu", header: "Текст RU", width: 50 },
   { key: "textUz", header: "Текст UZ", width: 50 },
-  { key: "image", header: "Визуал", width: 10 },
+  { key: "image", header: "Файлы", width: 10 },
   { key: "link", header: "Ссылка", width: 40 },
 ] as const;
 type Key = (typeof COLUMNS)[number]["key"];
@@ -69,7 +69,7 @@ export async function exportPlanXlsx(
       brief: post.brief ?? "",
       textRu: post.textRu ?? "",
       textUz: post.textUz ?? "",
-      image: post.imagePath ? "есть" : "",
+      image: post.files.length ? String(post.files.length) : "",
       link: `${appUrl}/content/${post.id}`,
     } satisfies Record<Key, string>);
   }

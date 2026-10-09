@@ -21,7 +21,12 @@ type Options = {
   // Active invites to places, by node, with ready links.
   invites?: Map<
     string,
-    { id: string; role: "MANAGER" | "MEMBER" | "OWNER"; link: string; botLink: string | null }
+    {
+      id: string;
+      role: "MANAGER" | "MEMBER" | "OWNER" | "LAWYER";
+      link: string;
+      botLink: string | null;
+    }
   >;
   inviteDays?: number;
 };
@@ -70,6 +75,7 @@ function PlaceInvite({ node, options }: { node: OrgTreeNode; options: Options })
           <NativeSelect name="role" defaultValue="MEMBER" aria-label={t("team.inviteRole")}>
             <option value="MEMBER">{t("roles.MEMBER")}</option>
             <option value="MANAGER">{t("roles.MANAGER")}</option>
+            <option value="LAWYER">{t("roles.LAWYER")}</option>
           </NativeSelect>
           <Button type="submit" size="sm">
             {t("team.org.inviteCreate")}

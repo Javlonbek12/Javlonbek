@@ -6,7 +6,8 @@ import { getEnv } from "@/lib/env";
 import type { User } from "@/lib/generated/prisma/client";
 import { t } from "@/lib/i18n";
 import { createRateLimiter } from "@/lib/rate-limit";
-import { ContentError, MAX_IMAGE_MB } from "@/modules/content/service";
+import { MAX_FILE_MB, MAX_FILES_PER_LANG } from "@/modules/content/files";
+import { ContentError } from "@/modules/content/service";
 import { deliverToTelegram } from "@/modules/content/telegram";
 import { getUserToday } from "@/modules/core/settings/service";
 import { createSpeechToText, type SpeechToText } from "@/modules/stt";
@@ -126,7 +127,7 @@ export function createBot(
       await ctx.reply(
         error.code === "nothingToday"
           ? t("content.telegram.botEmpty")
-          : t(`content.errors.${error.code}`, { mb: MAX_IMAGE_MB }),
+          : t(`content.errors.${error.code}`, { mb: MAX_FILE_MB, max: MAX_FILES_PER_LANG }),
       );
     }
   });

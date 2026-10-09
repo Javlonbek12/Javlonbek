@@ -1,4 +1,4 @@
-import { ImageOff } from "lucide-react";
+import { FileText, ImageOff } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { t } from "@/lib/i18n";
@@ -23,21 +23,55 @@ function linkify(text: string): ReactNode[] {
   );
 }
 
-// One message as Telegram draws it: the picture on top, the text under it, the time in the corner.
+export type PreviewFile = { id: string; kind: "PHOTO" | "VIDEO" | "FILE"; name?: string };
+
+const fileUrl = (id: string) => `/api/content/files/${id}`;
+
+// Photos and videos as a Telegram album: one wide, two side by side, more in a grid.
+function Album({ media }: { media: PreviewFile[] }) {
+  return (
+    <div
+      className={cn(
+        "grid gap-0.5",
+        media.length > 1 && "grid-cols-2",
+        media.length > 4 && "grid-cols-3",
+      )}
+    >
+      {media.map((m, i) => {
+        const wide = media.length > 1 && media.length % 2 === 1 && i === 0 && media.length <= 4;
+        const box = cn(
+          "block w-full bg-neutral-200 object-cover",
+          media.length === 1 ? "max-h-[460px]" : "aspect-square",
+          wide && "col-span-2 aspect-[2/1]",
+        );
+        return m.kind === "VIDEO" ? (
+          <video key={m.id} src={fileUrl(m.id)} className={box} controls preload="metadata" />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element -- private image from our API
+          <img key={m.id} src={fileUrl(m.id)} alt="" className={box} />
+        );
+      })}
+    </div>
+  );
+}
+
+// One message as Telegram draws it: the album on top, documents, the text, the time in the corner.
 export function TelegramBubble({
-  imageUrl,
+  files,
   text,
   time,
   sender,
   className,
 }: {
-  imageUrl: string | null;
+  files: PreviewFile[];
   text: string | null;
   time: string | null;
   // Shown above the message, like a sender name.
   sender?: { name: string; color: string };
   className?: string;
 }) {
+  const media = files.filter((f) => f.kind !== "FILE");
+  const documents = files.filter((f) => f.kind === "FILE");
   return (
     <div
       className={cn(
@@ -50,18 +84,32 @@ export function TelegramBubble({
           {sender.name}
         </div>
       )}
-      {imageUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element -- private image from our API
-        <img
-          src={imageUrl}
-          alt=""
-          className={cn("block max-h-[460px] w-full object-cover", sender && "mt-1.5")}
-        />
-      ) : (
+      {media.length > 0 ? (
+        <div className={cn(sender && "mt-1.5")}>
+          <Album media={media} />
+        </div>
+      ) : documents.length === 0 ? (
         <div className="flex h-32 flex-col items-center justify-center gap-1.5 bg-neutral-100 text-xs text-neutral-500">
           <ImageOff className="size-5" />
           {t("content.preview.noImage")}
         </div>
+      ) : null}
+      {documents.length > 0 && (
+        <ul className="flex flex-col gap-1.5 px-3 pt-2">
+          {documents.map((d) => (
+            <li key={d.id}>
+              <a
+                href={`${fileUrl(d.id)}?download=1`}
+                className="flex items-center gap-2.5 text-[14px] hover:underline"
+              >
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#3fa3e8] text-white">
+                  <FileText className="size-4" />
+                </span>
+                <span className="min-w-0 truncate">{d.name ?? "file"}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
       )}
       <div className="px-3 pt-1.5 pb-2">
         <p className="break-words whitespace-pre-wrap">
@@ -97,17 +145,17 @@ export function TelegramChat({ children, className }: { children: ReactNode; cla
 
 // The post page: one message in a chat.
 export function PostPreview({
-  imageUrl,
+  files,
   text,
   time,
 }: {
-  imageUrl: string | null;
+  files: PreviewFile[];
   text: string | null;
   time: string | null;
 }) {
   return (
     <TelegramChat>
-      <TelegramBubble imageUrl={imageUrl} text={text} time={time} className="mx-auto" />
+      <TelegramBubble files={files} text={text} time={time} className="mx-auto" />
     </TelegramChat>
   );
 }

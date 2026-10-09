@@ -19,6 +19,8 @@ enum Role {
   OWNER
   MANAGER
   MEMBER
+  // Like a member, plus the legal check of every content post.
+  LAWYER
 }
 
 model User {
@@ -723,6 +725,8 @@ enum ContentStatus {
   DRAFT
   // Sent for review.
   REVIEW
+  // Approved by a planner, checked by the lawyer.
+  LEGAL_REVIEW
   // Returned with feedback.
   CHANGES
   APPROVED
@@ -745,6 +749,36 @@ model ContentSection {
   createdAt   DateTime @default(now())
 
   posts ContentPost[]
+}
+
+enum ContentLang {
+  RU
+  UZ
+}
+
+enum ContentFileKind {
+  PHOTO
+  VIDEO
+  FILE
+}
+
+// Visuals and files of a post, separately for each language (up to 10 each).
+// Stored under UPLOAD_DIR/content/<postId>/.
+model ContentFile {
+  id        String          @id @default(cuid())
+  postId    String
+  lang      ContentLang
+  kind      ContentFileKind
+  path      String
+  name      String
+  mime      String
+  size      Int
+  sortOrder Int             @default(0)
+  createdAt DateTime        @default(now())
+
+  post ContentPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId, lang, sortOrder])
 }
 
 enum ContentBrand {
@@ -771,9 +805,6 @@ model ContentPost {
   createdById  String
   textRu       String?
   textUz       String?
-  // The visual: a file under UPLOAD_DIR/content/.
-  imagePath    String?
-  imageName    String?
   sentChannels ContentChannel[]
   // The section (ContentSection.id).
   topic        String?
@@ -791,6 +822,7 @@ model ContentPost {
   section   ContentSection?  @relation(fields: [topic], references: [id], onDelete: SetNull)
   createdBy User             @relation("ContentCreator", fields: [createdById], references: [id])
   comments  ContentComment[]
+  files     ContentFile[]
 
   @@index([publishDate])
   @@index([authorId, status])

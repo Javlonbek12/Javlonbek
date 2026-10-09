@@ -1,17 +1,25 @@
-import { readFile } from "node:fs/promises";
+import path from "node:path";
 
 import { db } from "@/lib/db";
+import { getEnv } from "@/lib/env";
 import { fromDateString } from "@/lib/dates";
 import type { ContentChannel, ContentPost } from "@/lib/generated/prisma/client";
 import { t } from "@/lib/i18n";
-import { sendTelegramMessage, sendTelegramPhoto, type TelegramButton } from "@/modules/bot/send";
+import {
+  sendTelegramMedia,
+  sendTelegramMessage,
+  type MediaItem,
+  type TelegramButton,
+} from "@/modules/bot/send";
 import type { Actor } from "@/modules/core/permissions";
 
-import { canPlanContent, ContentError, getContentImage, markSent } from "./service";
+import { listPostFiles } from "./files";
+import { canPlanContent, ContentError, markSent } from "./service";
 
 // Sends approved posts to the user's chat with the Assistant bot, one after another, ready to
-// forward into the company bots: a header with "sent to …" buttons, then the visual with the
-// Russian text, then the visual with the Uzbek text.
+// forward into the company bots: a header with "sent to …" buttons, then the Russian version
+// (photos and videos as an album with the text as its caption, other files as documents), then
+// the Uzbek one.
 
 export const CAPTION_LIMIT = 1024;
 const CODE: Record<ContentChannel, string> = { PARTNER: "P", CONNECT: "C", RESEARCH: "R" };
@@ -22,9 +30,9 @@ const BY_CODE = Object.fromEntries(Object.entries(CODE).map(([k, v]) => [v, k]))
 
 export type Sender = {
   message: (chatId: bigint, text: string, buttons?: TelegramButton[][]) => Promise<boolean>;
-  photo: (chatId: bigint, image: Buffer, caption: string, fileName: string) => Promise<boolean>;
+  media: (chatId: bigint, items: MediaItem[], caption: string) => Promise<boolean>;
 };
-const telegram: Sender = { message: sendTelegramMessage, photo: sendTelegramPhoto };
+const telegram: Sender = { message: sendTelegramMessage, media: sendTelegramMedia };
 
 const channelNames = (channels: ContentChannel[]) =>
   channels.map((c) => t(`content.channels.${c}`)).join(", ");
@@ -48,27 +56,34 @@ export function postHeader(post: ContentPost, index?: { n: number; of: number })
 
 async function deliverOne(
   chatId: bigint,
-  actor: Actor,
   post: ContentPost,
   index: { n: number; of: number },
   send: Sender,
 ) {
   const header = postHeader(post, index);
   if (!(await send.message(chatId, header.text, header.buttons))) return false;
-  const image = await getContentImage(actor, post.id);
-  const picture = image ? await readFile(image.absolutePath).catch(() => null) : null;
+  const root = path.resolve(getEnv().UPLOAD_DIR);
+  const files = await listPostFiles(post.id);
   // Russian first, then Uzbek.
-  for (const text of [post.textRu, post.textUz]) {
-    if (!text && !picture) continue;
+  for (const [lang, text] of [
+    ["RU", post.textRu],
+    ["UZ", post.textUz],
+  ] as const) {
+    const own = files
+      .filter((f) => f.lang === lang)
+      .map((f) => ({ kind: f.kind, path: path.join(root, f.path), name: f.name }));
+    const album = own.filter((f) => f.kind !== "FILE");
+    const documents = own.filter((f) => f.kind === "FILE");
     const body = text ?? "";
-    if (picture) {
-      // A caption holds 1024 characters; a longer text goes right after the picture.
-      const fits = body.length <= CAPTION_LIMIT;
-      await send.photo(chatId, picture, fits ? body : "", image!.name);
-      if (!fits) await send.message(chatId, body);
-    } else {
-      await send.message(chatId, body);
+    // A caption holds 1024 characters; a longer text goes right after the files.
+    const fits = body.length <= CAPTION_LIMIT;
+    let captioned = !body;
+    for (const group of [album, documents]) {
+      if (!group.length) continue;
+      await send.media(chatId, group, !captioned && fits ? body : "");
+      if (fits) captioned = true;
     }
+    if (!captioned) await send.message(chatId, body);
   }
   return true;
 }
@@ -92,7 +107,7 @@ export async function deliverToTelegram(
   if (!posts.length) throw new ContentError("nothingToday");
   let delivered = 0;
   for (const [i, post] of posts.entries())
-    if (await deliverOne(user.botChatId, actor, post, { n: i + 1, of: posts.length }, send))
+    if (await deliverOne(user.botChatId, post, { n: i + 1, of: posts.length }, send))
       delivered += 1;
   return delivered;
 }

@@ -107,7 +107,7 @@ export async function updateTaskAction(
 }
 
 // Runs a task action from the task card and comes back with ?error=<code> on failure.
-async function onTaskPage(taskId: string, run: () => Promise<unknown>) {
+async function onTaskPage(taskId: string, run: () => Promise<unknown>, then = "") {
   let error: string | null = null;
   try {
     await run();
@@ -116,14 +116,16 @@ async function onTaskPage(taskId: string, run: () => Promise<unknown>) {
     error = e.code;
   }
   revalidatePath("/", "layout");
-  redirect(`/tasks/${encodeURIComponent(taskId)}${error ? `?error=${error}` : ""}`);
+  redirect(`/tasks/${encodeURIComponent(taskId)}${error ? `?error=${error}` : then}`);
 }
 
 export async function changeStatusAction(formData: FormData) {
   const user = await actor();
   const taskId = idSchema.parse(str(formData, "taskId"));
   const to = statusSchema.parse(str(formData, "to"));
-  await onTaskPage(taskId, () => changeStatus(user, taskId, to));
+  // "Withdraw and edit": back to draft, then straight to the edit form.
+  const then = str(formData, "then") === "edit" ? "/edit" : "";
+  await onTaskPage(taskId, () => changeStatus(user, taskId, to), then);
 }
 
 // For the kanban board: returns the result instead of redirecting.

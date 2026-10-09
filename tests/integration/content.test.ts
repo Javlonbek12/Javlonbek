@@ -10,7 +10,6 @@ import {
   ContentError,
   deleteContentPost,
   contentAttention,
-  getContentImage,
   getPost,
   listPostsBetween,
   markSent,
@@ -19,6 +18,7 @@ import {
   savePlanItem,
   submitForReview,
 } from "@/modules/content/service";
+import { addPostFile, getPostFile } from "@/modules/content/files";
 import { createTestUser, resetDb } from "@/tests/helpers/db";
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
@@ -50,15 +50,12 @@ describe("content plan", () => {
     });
 
     await expect(submitForReview(author, post.id)).rejects.toBeInstanceOf(ContentError);
-    await saveContent(
-      author,
-      post.id,
-      { textRu: "Тестовый текст", textUz: "Test matn" },
-      new File([PNG], "тест.png", { type: "image/png" }),
-    );
+    await saveContent(author, post.id, { textRu: "Тестовый текст", textUz: "Test matn" });
+    const file = await addPostFile(author, post.id, "RU", new File([PNG], "тест.png"));
     const draft = await db.contentPost.findUniqueOrThrow({ where: { id: post.id } });
-    expect(draft).toMatchObject({ status: "DRAFT", textUz: "Test matn", imageName: "тест.png" });
-    expect((await getContentImage(author, post.id))?.absolutePath).toMatch(/content/);
+    expect(draft).toMatchObject({ status: "DRAFT", textUz: "Test matn" });
+    expect(file).toMatchObject({ kind: "PHOTO", name: "тест.png", lang: "RU" });
+    expect((await getPostFile(author, file.id))?.absolutePath).toMatch(/content/);
 
     await submitForReview(author, post.id);
     expect(await db.notification.findFirst({ where: { userId: owner.id } })).toMatchObject({
@@ -94,11 +91,29 @@ describe("content plan", () => {
     });
   });
 
-  it("only images are accepted as the visual", async () => {
+  it("files: the kind comes from the bytes, up to 10 per language", async () => {
     const { author, post } = await setup();
+    // Named .png but not a picture: stored as a plain file (downloaded, never shown inline).
+    expect(
+      await addPostFile(
+        author,
+        post.id,
+        "UZ",
+        new File(["<html>"], "x.png", { type: "image/png" }),
+      ),
+    ).toMatchObject({ kind: "FILE", mime: "application/octet-stream" });
+    const mp4 = Buffer.from([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d]);
+    expect(await addPostFile(author, post.id, "UZ", new File([mp4], "v.mp4"))).toMatchObject({
+      kind: "VIDEO",
+      mime: "video/mp4",
+    });
+    for (let i = 0; i < 8; i++)
+      await addPostFile(author, post.id, "UZ", new File([PNG], `p${i}.png`));
     await expect(
-      saveContent(author, post.id, {}, new File(["<html>"], "x.png", { type: "image/png" })),
-    ).rejects.toMatchObject({ code: "image" });
+      addPostFile(author, post.id, "UZ", new File([PNG], "11.png")),
+    ).rejects.toMatchObject({ code: "tooMany" });
+    // Russian has its own ten.
+    await addPostFile(author, post.id, "RU", new File([PNG], "ru.png"));
   });
 
   it("everyone with the section sees the whole plan; without it — only their own posts", async () => {
@@ -174,8 +189,9 @@ describe("content plan", () => {
       channels: ["PARTNER"],
       publishDate: "2026-10-11",
     });
-    await saveContent(other, own.id, { textRu: "Тест" }, new File([PNG], "v.png"));
-    const image = await getContentImage(other, own.id);
+    await saveContent(other, own.id, { textRu: "Тест" });
+    const file = await addPostFile(other, own.id, "RU", new File([PNG], "v.png"));
+    const image = await getPostFile(other, file.id);
     await deleteContentPost(other, own.id);
     expect(await db.contentPost.findUnique({ where: { id: own.id } })).toBeNull();
     await expect(access(image!.absolutePath)).rejects.toThrow();

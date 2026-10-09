@@ -1,12 +1,12 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import path from "node:path";
 
 import { z } from "zod";
 
 import { db } from "@/lib/db";
-import { formatDay, fromDateString, isDateString, toDateString } from "@/lib/dates";
 import { getEnv } from "@/lib/env";
+import { formatDay, fromDateString, isDateString, toDateString } from "@/lib/dates";
+import type { Prisma } from "@/lib/generated/prisma/client";
 import type { ContentChannel, ContentStatus } from "@/lib/generated/prisma/enums";
 import { t } from "@/lib/i18n";
 import { canUseModule, withAccess } from "@/modules/core/access/actor";
@@ -14,22 +14,29 @@ import { logActivity } from "@/modules/core/activity/service";
 import { notify } from "@/modules/core/notifications/service";
 import type { Actor } from "@/modules/core/permissions";
 import { displayName } from "@/modules/core/users/display-name";
-import { safeFileName } from "@/modules/tasks/attachment-service";
 
 import { BRANDS } from "./tagging";
 
 // Content plan for the company's Telegram bots. Planners (owner, managers with the section on)
-// put topics on dates and choose bots and authors; an author uploads the visual and texts RU / UZ
-// and sends for review; a planner returns it with feedback or approves it; then it is sent to
-// each bot by hand and marked sent here.
+// put topics on dates and choose bots and authors; an author uploads files and texts RU / UZ
+// and sends for review; a planner returns it with feedback or approves it; then the lawyer checks
+// it (returns or approves); then it is sent to each bot by hand and marked sent here.
+// The author can take a post back from review to change it.
 
 export const CHANNELS = ["PARTNER", "CONNECT", "RESEARCH"] as const satisfies ContentChannel[];
-export const MAX_IMAGE_MB = 20;
 
 export class ContentError extends Error {
   constructor(
     public readonly code:
-      "forbidden" | "invalid" | "notFound" | "image" | "empty" | "state" | "noBot" | "nothingToday",
+      | "forbidden"
+      | "invalid"
+      | "notFound"
+      | "image"
+      | "tooMany"
+      | "empty"
+      | "state"
+      | "noBot"
+      | "nothingToday",
   ) {
     super(code);
     this.name = "ContentError";
@@ -44,6 +51,8 @@ export const canPlanContent = (actor: Actor) =>
   actor.role === "OWNER" || (actor.role === "MANAGER" && canUseModule(actor, "content"));
 
 const EDITABLE_BY_AUTHOR: ContentStatus[] = ["PLANNED", "DRAFT", "CHANGES"];
+// Waiting for a check (planner or lawyer): the author may take the post back.
+const IN_CHECK: ContentStatus[] = ["REVIEW", "LEGAL_REVIEW"];
 
 type PostRow = { authorId: string | null; createdById: string; status: ContentStatus };
 
@@ -59,7 +68,11 @@ export function contentRights(actor: Actor, post: PostRow) {
     // Upload the visual and texts.
     editContent: !closed && (planner || (author && EDITABLE_BY_AUTHOR.includes(post.status))),
     submit: (planner || author) && (post.status === "DRAFT" || post.status === "CHANGES"),
+    // Take the post back from review to change it.
+    withdraw: (author || creator) && IN_CHECK.includes(post.status),
     review: planner && post.status === "REVIEW",
+    // The lawyer's check, after a planner approved the post.
+    legal: actor.role === "LAWYER" && post.status === "LEGAL_REVIEW",
     send: planner && post.status === "APPROVED",
     // Planners always; whoever added the post, until it goes for review.
     editPlan: (planner && !closed) || (creator && EDITABLE_BY_AUTHOR.includes(post.status)),
@@ -75,7 +88,11 @@ function visibleWhere(actor: Actor) {
 const include = {
   author: { select: { id: true, firstName: true, lastName: true } },
   createdBy: { select: { id: true, firstName: true, lastName: true } },
-} as const;
+  files: {
+    select: { id: true, kind: true, lang: true, name: true, size: true },
+    orderBy: [{ lang: "asc" }, { sortOrder: "asc" }, { createdAt: "asc" }],
+  },
+} satisfies Prisma.ContentPostInclude;
 
 export async function listPostsBetween(
   actor: Actor,
@@ -97,10 +114,11 @@ export async function listPostsBetween(
 // What needs someone now: to review (planners), to prepare (my posts), to send soon (planners).
 export async function contentAttention(actor: Actor, today: string) {
   const planner = canPlanContent(actor);
+  const lawyer = actor.role === "LAWYER";
   const [review, prepare, toSend] = await Promise.all([
-    planner
+    planner || lawyer
       ? db.contentPost.findMany({
-          where: { status: "REVIEW" },
+          where: { status: lawyer ? "LEGAL_REVIEW" : "REVIEW" },
           include,
           orderBy: { publishDate: "asc" },
         })
@@ -229,64 +247,29 @@ const contentSchema = z.object({
     .transform((v) => v || null),
 });
 
-const IMAGE_TYPES: Record<string, { ext: string; magic: (b: Buffer) => boolean }> = {
-  "image/png": {
-    ext: "png",
-    magic: (b) => b.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47])),
-  },
-  "image/jpeg": { ext: "jpg", magic: (b) => b[0] === 0xff && b[1] === 0xd8 },
-  "image/webp": {
-    ext: "webp",
-    magic: (b) => b.subarray(0, 4).toString() === "RIFF" && b.subarray(8, 12).toString() === "WEBP",
-  },
-  "image/gif": { ext: "gif", magic: (b) => b.subarray(0, 3).toString() === "GIF" },
-};
-
-export function imageType(buffer: Buffer) {
-  return Object.entries(IMAGE_TYPES).find(([, type]) => type.magic(buffer))?.[0] ?? null;
-}
-
-const uploadRoot = () => path.resolve(getEnv().UPLOAD_DIR);
-
-// The visual and texts. A planned post becomes a draft once something is uploaded.
-export async function saveContent(
-  actor: Actor,
-  id: string,
-  input: z.input<typeof contentSchema>,
-  image?: File | null,
-) {
+// The texts. A planned post becomes a draft once something is written (files: see files.ts).
+export async function saveContent(actor: Actor, id: string, input: z.input<typeof contentSchema>) {
   const { post, rights } = await load(actor, id);
   if (!rights.editContent) throw new ContentError("forbidden");
   const parsed = contentSchema.safeParse(input);
   if (!parsed.success) throw new ContentError("invalid");
-  const data: {
-    textRu: string | null;
-    textUz: string | null;
-    imagePath?: string;
-    imageName?: string;
-  } = parsed.data;
-  if (image && image.size > 0) {
-    if (image.size > MAX_IMAGE_MB * 1024 * 1024) throw new ContentError("image");
-    const buffer = Buffer.from(await image.arrayBuffer());
-    const type = imageType(buffer);
-    if (!type) throw new ContentError("image");
-    const relative = path.join("content", id, `${randomUUID()}.${IMAGE_TYPES[type].ext}`);
-    const absolute = path.join(uploadRoot(), relative);
-    await mkdir(path.dirname(absolute), { recursive: true });
-    await writeFile(absolute, buffer);
-    if (post.imagePath) await rm(path.join(uploadRoot(), post.imagePath), { force: true });
-    data.imagePath = relative;
-    data.imageName = safeFileName(image.name);
-  }
   const status: ContentStatus = post.status === "PLANNED" ? "DRAFT" : post.status;
-  await db.contentPost.update({ where: { id }, data: { ...data, status, tagPending: true } });
+  await db.contentPost.update({
+    where: { id },
+    data: { ...parsed.data, status, tagPending: true },
+  });
   await log(actor, "content.uploaded", id);
 }
+
+const isEmpty = async (post: { id: string; textRu: string | null; textUz: string | null }) =>
+  !post.textRu &&
+  !post.textUz &&
+  (await db.contentFile.count({ where: { postId: post.id } })) === 0;
 
 export async function submitForReview(actor: Actor, id: string) {
   const { post, rights } = await load(actor, id);
   if (!rights.submit) throw new ContentError("state");
-  if (!post.imagePath && !post.textRu && !post.textUz) throw new ContentError("empty");
+  if (await isEmpty(post)) throw new ContentError("empty");
   await db.contentPost.update({ where: { id }, data: { status: "REVIEW" } });
   await log(actor, "content.submitted", id);
   const actorRow = await db.user.findUnique({ where: { id: actor.id } });
@@ -317,9 +300,18 @@ async function reviewersOf(post: { createdById: string }, actor: Actor) {
   return ids;
 }
 
+// The author takes the post back from review (planner's or lawyer's) to change it.
+export async function withdrawPost(actor: Actor, id: string) {
+  const { rights } = await load(actor, id);
+  if (!rights.withdraw) throw new ContentError("state");
+  await db.contentPost.update({ where: { id }, data: { status: "DRAFT" } });
+  await log(actor, "content.withdrawn", id);
+}
+
+// Returned by the planner (review) or by the lawyer (legal check).
 export async function returnWithFeedback(actor: Actor, id: string, feedback: string) {
   const { post, rights } = await load(actor, id);
-  if (!rights.review) throw new ContentError("state");
+  if (!rights.review && !rights.legal) throw new ContentError("state");
   const body = feedback.trim().slice(0, 4000);
   if (!body) throw new ContentError("invalid");
   await db.$transaction([
@@ -340,14 +332,66 @@ export async function returnWithFeedback(actor: Actor, id: string, feedback: str
   }
 }
 
+// Every post passes the lawyer once somebody has the role; without a lawyer the step is skipped.
+const lawyerIds = async () =>
+  (await db.user.findMany({ where: { role: "LAWYER" }, select: { id: true } })).map((u) => u.id);
+
+export const hasLawyer = async () => (await db.user.count({ where: { role: "LAWYER" } })) > 0;
+
+// A planner approves; the post then goes to the lawyer (or straight to approved without one).
 export async function approvePost(actor: Actor, id: string, now = new Date()) {
   const { post, rights } = await load(actor, id);
   // A planner may also approve a draft they finished themselves.
   if (!rights.planner || !["REVIEW", "DRAFT", "CHANGES"].includes(post.status))
     throw new ContentError("state");
-  if (!post.imagePath && !post.textRu && !post.textUz) throw new ContentError("empty");
-  await db.contentPost.update({ where: { id }, data: { status: "APPROVED", approvedAt: now } });
-  await log(actor, "content.approved", id);
+  if (await isEmpty(post)) throw new ContentError("empty");
+  const lawyers = (await lawyerIds()).filter((lawyer) => lawyer !== actor.id);
+  if (!lawyers.length) return finalApprove(actor, post, now);
+  await db.contentPost.update({ where: { id }, data: { status: "LEGAL_REVIEW" } });
+  await log(actor, "content.to_legal", id);
+  for (const lawyer of lawyers) {
+    await notify(lawyer, {
+      type: "content_legal",
+      title: t("notifications.events.contentLegalTitle"),
+      body: t("notifications.events.contentLegalBody", {
+        title: post.title,
+        date: day(post.publishDate),
+      }),
+      link: `/content/${id}`,
+    });
+  }
+}
+
+// The lawyer approves: the post is ready to send.
+export async function legalApprove(actor: Actor, id: string, now = new Date()) {
+  const { post, rights } = await load(actor, id);
+  if (!rights.legal) throw new ContentError("state");
+  await finalApprove(actor, post, now);
+  // The planners learn the post can be sent.
+  for (const reviewer of await reviewersOf(post, actor)) {
+    if (reviewer === post.authorId) continue;
+    await notify(reviewer, {
+      type: "content_approved",
+      title: t("notifications.events.contentLegalApprovedTitle"),
+      body: t("notifications.events.contentApprovedBody", {
+        title: post.title,
+        date: day(post.publishDate),
+      }),
+      link: `/content/${id}`,
+    });
+  }
+}
+
+async function finalApprove(
+  actor: Actor,
+  post: { id: string; title: string; authorId: string | null; publishDate: Date },
+  now: Date,
+) {
+  await db.contentPost.update({
+    where: { id: post.id },
+    data: { status: "APPROVED", approvedAt: now },
+  });
+  await log(actor, "content.approved", post.id);
   if (post.authorId && post.authorId !== actor.id) {
     await notify(post.authorId, {
       type: "content_approved",
@@ -356,9 +400,19 @@ export async function approvePost(actor: Actor, id: string, now = new Date()) {
         title: post.title,
         date: day(post.publishDate),
       }),
-      link: `/content/${id}`,
+      link: `/content/${post.id}`,
     });
   }
+}
+
+// Moves the post to another day (dragging it in the calendar).
+export async function movePost(actor: Actor, id: string, date: string) {
+  const { post, rights } = await load(actor, id);
+  if (!rights.editPlan) throw new ContentError("forbidden");
+  if (!isDateString(date)) throw new ContentError("invalid");
+  if (toDateString(post.publishDate) === date) return;
+  await db.contentPost.update({ where: { id }, data: { publishDate: fromDateString(date) } });
+  await log(actor, "content.moved", id, { from: toDateString(post.publishDate), to: date });
 }
 
 // Sent to one bot; when every planned bot got it, the post is sent.
@@ -408,11 +462,10 @@ export async function deleteContentPost(actor: Actor, id: string) {
   const { post, rights } = await load(actor, id);
   if (!rights.remove) throw new ContentError("forbidden");
   await db.contentPost.delete({ where: { id } });
-  if (post.imagePath)
-    await rm(path.join(uploadRoot(), path.dirname(post.imagePath)), {
-      recursive: true,
-      force: true,
-    });
+  await rm(path.join(path.resolve(getEnv().UPLOAD_DIR), "content", id), {
+    recursive: true,
+    force: true,
+  });
   await log(actor, "content.deleted", id, { title: post.title });
 }
 
@@ -421,13 +474,6 @@ export async function addContentComment(actor: Actor, id: string, body: string) 
   const text = body.trim().slice(0, 4000);
   if (!text) throw new ContentError("invalid");
   await db.contentComment.create({ data: { postId: id, authorId: actor.id, body: text } });
-}
-
-// The visual's file, for those who can see the post.
-export async function getContentImage(actor: Actor, id: string) {
-  const post = await db.contentPost.findUnique({ where: { id } });
-  if (!post?.imagePath || !contentRights(actor, post).view) return null;
-  return { absolutePath: path.join(uploadRoot(), post.imagePath), name: post.imageName ?? "image" };
 }
 
 export async function listContentAuthors() {

@@ -50,7 +50,8 @@ export async function deleteOrgNodeAction(form: FormData) {
 // An invite to one place in the chart: the person who joins with it is placed there.
 export async function invitePlaceAction(form: FormData) {
   const actor = await requireUser();
-  const role = str(form, "role") === "MANAGER" ? "MANAGER" : "MEMBER";
+  const chosen = str(form, "role");
+  const role = chosen === "MANAGER" || chosen === "LAWYER" ? chosen : "MEMBER";
   try {
     await createInvite(actor, role, new Date(), str(form, "nodeId"));
   } catch (error) {

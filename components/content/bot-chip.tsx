@@ -36,6 +36,7 @@ const STATUS_STYLE: Record<ContentStatus, string> = {
   PLANNED: "bg-muted text-muted-foreground",
   DRAFT: "bg-blue-500/12 text-blue-700",
   REVIEW: "bg-amber-500/15 text-amber-700",
+  LEGAL_REVIEW: "bg-violet-500/15 text-violet-700",
   CHANGES: "bg-destructive/12 text-destructive",
   APPROVED: "bg-emerald-500/15 text-emerald-700",
   SENT: "bg-emerald-600 text-white",

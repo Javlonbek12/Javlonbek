@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { withAccess } from "@/modules/core/access/actor";
 import { approvePost, ContentError, saveContent, savePlanItem } from "@/modules/content/service";
 import { deliverToTelegram, handleSentButton, type Sender } from "@/modules/content/telegram";
+import { addPostFile } from "@/modules/content/files";
 import { createTestUser, resetDb } from "@/tests/helpers/db";
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
@@ -15,8 +16,8 @@ function fakeSender() {
       log.push(`msg:${text.split("\n")[0]}${buttons?.length ? ` [${buttons.length} btn]` : ""}`);
       return true;
     },
-    photo: async (_chat, _image, caption) => {
-      log.push(`photo:${caption.slice(0, 20)}`);
+    media: async (_chat, items, caption) => {
+      log.push(`${items.map((i) => i.kind.toLowerCase()).join("+")}:${caption.slice(0, 20)}`);
       return true;
     },
   };
@@ -39,7 +40,12 @@ describe("content plan to Telegram", () => {
       publishDate: "2026-10-07",
       publishTime: time,
     });
-    await saveContent(owner, post.id, texts, image ? new File([PNG], "v.png") : null);
+    await saveContent(owner, post.id, texts);
+    if (image) {
+      await addPostFile(owner, post.id, "RU", new File([PNG], "v.png"));
+      await addPostFile(owner, post.id, "RU", new File(["%PDF-1.4"], "price.pdf"));
+      await addPostFile(owner, post.id, "UZ", new File([PNG], "v-uz.png"));
+    }
     await approvePost(owner, post.id);
     return post;
   }
@@ -72,9 +78,11 @@ describe("content plan to Telegram", () => {
     expect(await deliverToTelegram(owner, { date: "2026-10-07" }, sender)).toBe(2);
     expect(log).toEqual([
       "msg:📌 1/2 · 09:00 · Тестовый утренний [2 btn]",
-      // RU text is too long for a caption: picture first, then the text.
+      // RU text is too long for a caption: the photo and the PDF first, then the text.
       "photo:",
+      "file:",
       `msg:${long}`,
+      // UZ: its own picture, the text as the caption.
       "photo:Ertalab UZ",
       "msg:📌 2/2 · 18:00 · Тестовый вечерний [2 btn]",
       "msg:Вечер RU",

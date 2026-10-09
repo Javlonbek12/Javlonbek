@@ -1,4 +1,4 @@
-import { Api, InputFile } from "grammy";
+import { Api, InputFile, InputMediaBuilder } from "grammy";
 
 import { getEnv } from "@/lib/env";
 
@@ -53,6 +53,60 @@ export async function sendTelegramPhoto(
     return true;
   } catch (error) {
     console.error("Failed to send Telegram photo", error);
+    return false;
+  }
+}
+
+export type MediaItem = { kind: "PHOTO" | "VIDEO" | "FILE"; path: string; name: string };
+
+// Sends files from disk: one as a photo / video / document, several as an album (Telegram groups
+// photos with videos, documents only with documents — the caller passes one kind of group).
+// The caption goes under the first item.
+export async function sendTelegramMedia(
+  chatId: bigint,
+  items: MediaItem[],
+  caption: string,
+): Promise<boolean> {
+  const token = getEnv().TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    console.warn("TELEGRAM_BOT_TOKEN is not set; Telegram media skipped.");
+    return false;
+  }
+  if (!items.length) return true;
+  api ??= new Api(token);
+  const chat = Number(chatId);
+  const options = caption ? { caption: caption.slice(0, 1024) } : {};
+  try {
+    if (items.length === 1) {
+      const [item] = items as [MediaItem];
+      const file = new InputFile(item.path, item.name);
+      if (item.kind === "PHOTO") await api.sendPhoto(chat, file, options);
+      else if (item.kind === "VIDEO") await api.sendVideo(chat, file, options);
+      else await api.sendDocument(chat, file, options);
+      return true;
+    }
+    const list = items.slice(0, 10);
+    const file = (item: MediaItem) => new InputFile(item.path, item.name);
+    const extra = (i: number) => (i === 0 ? options : {});
+    if (list.every((item) => item.kind === "FILE"))
+      await api.sendMediaGroup(
+        chat,
+        list.map((item, i) => InputMediaBuilder.document(file(item), extra(i))),
+      );
+    else
+      await api.sendMediaGroup(
+        chat,
+        list
+          .filter((item) => item.kind !== "FILE")
+          .map((item, i) =>
+            item.kind === "PHOTO"
+              ? InputMediaBuilder.photo(file(item), extra(i))
+              : InputMediaBuilder.video(file(item), extra(i)),
+          ),
+      );
+    return true;
+  } catch (error) {
+    console.error("Failed to send Telegram media", error);
     return false;
   }
 }

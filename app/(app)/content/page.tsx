@@ -2,6 +2,7 @@ import { ChevronLeft, ChevronRight, Download, Plus, Send, Upload } from "lucide-
 import Link from "next/link";
 
 import { BOT_COLOR } from "@/components/content/bot-chip";
+import { DraggablePost, DropDay } from "@/components/content/drag";
 import { DayList, groupByDay, ListView, PreviewView, WeekView } from "@/components/content/views";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -120,8 +121,11 @@ export default async function ContentPage({ searchParams }: PageProps<"/content"
     contentAttention(user, today),
   ]);
   const byDay = groupByDay(posts);
+  // Posts this person may drag to another day.
+  const movable = new Set(posts.filter((p) => contentRights(user, p).editPlan).map((p) => p.id));
   const lang = params.lang === "uz" ? "uz" : "ru";
   const planner = canPlanContent(user);
+  const lawyer = user.role === "LAWYER";
   const canAdd = canAddContent(user);
   const href = (next: { view?: View; month?: string; week?: string; bot?: string | null }) => {
     const query = new URLSearchParams();
@@ -172,12 +176,17 @@ export default async function ContentPage({ searchParams }: PageProps<"/content"
         )}
       </div>
 
-      <div className={cn("grid gap-3", planner ? "sm:grid-cols-3" : "sm:grid-cols-1")}>
-        {planner && (
+      <div
+        className={cn(
+          "grid gap-3",
+          planner ? "sm:grid-cols-3" : lawyer ? "sm:grid-cols-2" : "sm:grid-cols-1",
+        )}
+      >
+        {(planner || lawyer) && (
           <AttentionCard
-            title={t("content.attention.review")}
+            title={t(lawyer ? "content.attention.legal" : "content.attention.review")}
             posts={attention.review}
-            tone="text-amber-600"
+            tone={lawyer ? "text-violet-600" : "text-amber-600"}
           />
         )}
         <AttentionCard
@@ -217,7 +226,7 @@ export default async function ContentPage({ searchParams }: PageProps<"/content"
       )}
       {typeof params.error === "string" && (
         <p role="alert" className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
-          {t(`content.errors.${params.error}` as TranslationKey, { mb: 20 })}
+          {t(`content.errors.${params.error}` as TranslationKey, { mb: 50, max: 10 })}
         </p>
       )}
 
@@ -313,7 +322,12 @@ export default async function ContentPage({ searchParams }: PageProps<"/content"
           </div>
         </div>
 
-        {view === "week" && <WeekView start={week} posts={posts} today={today} planner={canAdd} />}
+        {(view === "week" || view === "month") && movable.size > 0 && (
+          <p className="text-muted-foreground hidden text-xs md:block">{t("content.dragHint")}</p>
+        )}
+        {view === "week" && (
+          <WeekView start={week} posts={posts} today={today} planner={canAdd} movable={movable} />
+        )}
         {view === "list" && (
           <ListView
             posts={posts}
@@ -346,8 +360,10 @@ export default async function ContentPage({ searchParams }: PageProps<"/content"
                     const inMonth = dayValue.startsWith(month.slice(0, 7));
                     const list = byDay.get(dayValue) ?? [];
                     return (
-                      <div
+                      <DropDay
                         key={dayValue}
+                        date={dayValue}
+                        errorText={t("content.errors.move")}
                         className={cn(
                           "group flex min-h-28 min-w-0 flex-col gap-1 border-r p-1.5 last:border-r-0",
                           !inMonth && "bg-muted/40",
@@ -375,14 +391,21 @@ export default async function ContentPage({ searchParams }: PageProps<"/content"
                           )}
                         </div>
                         {list.slice(0, 4).map((post) => (
-                          <PostChip key={post.id} post={post} />
+                          <DraggablePost
+                            key={post.id}
+                            id={post.id}
+                            date={dayValue}
+                            enabled={movable.has(post.id)}
+                          >
+                            <PostChip post={post} />
+                          </DraggablePost>
                         ))}
                         {list.length > 4 && (
                           <span className="text-muted-foreground px-1 text-[11px]">
                             {t("content.month.more", { count: list.length - 4 })}
                           </span>
                         )}
-                      </div>
+                      </DropDay>
                     );
                   })}
                 </div>

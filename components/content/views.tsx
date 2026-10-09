@@ -10,6 +10,7 @@ import { displayName } from "@/modules/core/users/display-name";
 import type { listPostsBetween } from "@/modules/content/service";
 
 import { BOT_COLOR, BotChip, ContentStatusBadge } from "./bot-chip";
+import { DraggablePost, DropDay } from "./drag";
 import { TelegramBubble, TelegramChat } from "./post-preview";
 
 export type Post = Awaited<ReturnType<typeof listPostsBetween>>[number];
@@ -18,14 +19,18 @@ const STATUS_EDGE: Record<Post["status"], string> = {
   PLANNED: "border-l-muted-foreground/30",
   DRAFT: "border-l-blue-500",
   REVIEW: "border-l-amber-500",
+  LEGAL_REVIEW: "border-l-violet-500",
   CHANGES: "border-l-destructive",
   APPROVED: "border-l-emerald-500",
   SENT: "border-l-emerald-700",
   CANCELLED: "border-l-muted",
 };
 
-const imageOf = (post: Post) =>
-  post.imagePath ? `/api/content/${post.id}/image?v=${post.updatedAt.getTime()}` : null;
+// The thumbnail: the first photo (Russian first).
+const imageOf = (post: Post) => {
+  const photo = post.files.find((f) => f.kind === "PHOTO");
+  return photo ? `/api/content/files/${photo.id}` : null;
+};
 
 const weekdayShort = new Intl.DateTimeFormat("ru-RU", { weekday: "short", timeZone: "UTC" });
 
@@ -85,11 +90,14 @@ export function WeekView({
   posts,
   today,
   planner,
+  movable,
 }: {
   start: string;
   posts: Post[];
   today: string;
   planner: boolean;
+  // Posts this person may drag to another day.
+  movable: Set<string>;
 }) {
   const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
   const byDay = groupByDay(posts);
@@ -149,11 +157,23 @@ export function WeekView({
             {days.map((d) => {
               const list = (byDay.get(d) ?? []).filter((p) => hourOf(p) === row.hour);
               return (
-                <div key={d} className="flex min-h-12 min-w-0 flex-col gap-1 border-l p-1">
+                <DropDay
+                  key={d}
+                  date={d}
+                  errorText={t("content.errors.move")}
+                  className="flex min-h-12 min-w-0 flex-col gap-1 border-l p-1"
+                >
                   {list.map((post) => (
-                    <WeekCard key={post.id} post={post} />
+                    <DraggablePost
+                      key={post.id}
+                      id={post.id}
+                      date={d}
+                      enabled={movable.has(post.id)}
+                    >
+                      <WeekCard post={post} />
+                    </DraggablePost>
                   ))}
-                </div>
+                </DropDay>
               );
             })}
           </div>
@@ -288,7 +308,7 @@ export function ListView({
                     </td>
                     <td className="px-3 py-2.5 text-xs whitespace-nowrap">
                       {[
-                        post.imagePath && t("content.list.visual"),
+                        post.files.length > 0 && `${t("content.list.visual")} ${post.files.length}`,
                         post.textRu && "RU",
                         post.textUz && "UZ",
                       ]
@@ -364,7 +384,7 @@ export function PreviewView({
                 {list.map((post) => (
                   <div key={post.id} className="flex flex-col gap-1">
                     <TelegramBubble
-                      imageUrl={imageOf(post)}
+                      files={post.files.filter((f) => f.lang === (lang === "uz" ? "UZ" : "RU"))}
                       text={lang === "uz" ? post.textUz : post.textRu}
                       time={post.publishTime}
                       sender={{

@@ -28,8 +28,8 @@ export default async function RolesPage({ searchParams }: PageProps<"/settings/r
           {t("roleAccess.error")}
         </p>
       )}
-      <div className="grid gap-4 md:grid-cols-2">
-        {(["MANAGER", "MEMBER"] as const).map((role) => (
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {(["MANAGER", "MEMBER", "LAWYER"] as const).map((role) => (
           <Card key={role} className="gap-4">
             <CardTitle>{t(`roleAccess.roleNames.${role}`)}</CardTitle>
             <fieldset className="flex flex-col gap-2">
@@ -40,7 +40,11 @@ export default async function RolesPage({ searchParams }: PageProps<"/settings/r
                     <input
                       type="checkbox"
                       name={`${role}.${module}`}
-                      defaultChecked={config[role].modules.includes(module)}
+                      defaultChecked={
+                        config[role].modules.includes(module) ||
+                        (role === "LAWYER" && module === "content")
+                      }
+                      disabled={role === "LAWYER" && module === "content"}
                       className="size-4"
                     />
                     {t(`roleAccess.modules.${module}`)}
@@ -65,8 +69,11 @@ export default async function RolesPage({ searchParams }: PageProps<"/settings/r
                 ))
               ) : (
                 <>
-                  <input type="hidden" name="MEMBER.taskScope" value="own" />
+                  <input type="hidden" name={`${role}.taskScope`} value="own" />
                   <CardDescription>{t("roleAccess.memberScope")}</CardDescription>
+                  {role === "LAWYER" && (
+                    <CardDescription>{t("roleAccess.lawyerNote")}</CardDescription>
+                  )}
                 </>
               )}
             </fieldset>

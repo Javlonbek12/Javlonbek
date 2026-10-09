@@ -5,12 +5,12 @@ import { notFound } from "next/navigation";
 import { BotChip, ContentStatusBadge } from "@/components/content/bot-chip";
 import { PlanForm } from "@/components/content/plan-form";
 import { BRAND_COLOR, sectionMeta } from "@/components/content/analytics-charts";
+import { FileUpload } from "@/components/content/file-upload";
 import { PostPreview } from "@/components/content/post-preview";
 import { DeleteButton } from "@/components/content/views";
 import { CopyButton } from "@/components/copy-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDayLong, toDateString } from "@/lib/dates";
@@ -20,7 +20,8 @@ import { cn } from "@/lib/utils";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getSettings } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
-import { getPost, listContentAuthors, MAX_IMAGE_MB } from "@/modules/content/service";
+import { MAX_FILE_MB, MAX_FILES_PER_LANG } from "@/modules/content/files";
+import { getPost, hasLawyer, listContentAuthors } from "@/modules/content/service";
 import { listSections } from "@/modules/content/sections";
 import { BRANDS } from "@/modules/content/tagging";
 
@@ -28,6 +29,11 @@ import {
   approveContentAction,
   cancelContentAction,
   commentContentAction,
+  copyFilesAction,
+  legalApproveAction,
+  moveFileAction,
+  removeFileAction,
+  withdrawContentAction,
   deliverPostAction,
   feedbackContentAction,
   markSentAction,
@@ -52,9 +58,9 @@ export default async function ContentPostPage({
   const sections = await listSections();
   const meta = sectionMeta(sections);
   const language = lang === "uz" ? "uz" : "ru";
-  const imageUrl = post.imagePath
-    ? `/api/content/${post.id}/image?v=${post.updatedAt.getTime()}`
-    : null;
+  const filesOf = (l: "RU" | "UZ") => post.files.filter((f) => f.lang === l);
+  const shown = filesOf(language === "uz" ? "UZ" : "RU");
+  const lawyerStep = rights.review || rights.planner ? await hasLawyer() : false;
   const date = toDateString(post.publishDate);
   const hidden = <input type="hidden" name="postId" value={post.id} />;
 
@@ -171,7 +177,10 @@ export default async function ContentPostPage({
       )}
       {typeof error === "string" && (
         <p role="alert" className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
-          {t(`content.errors.${error}` as TranslationKey, { mb: MAX_IMAGE_MB })}
+          {t(`content.errors.${error}` as TranslationKey, {
+            mb: MAX_FILE_MB,
+            max: MAX_FILES_PER_LANG,
+          })}
         </p>
       )}
 
@@ -195,31 +204,62 @@ export default async function ContentPostPage({
             </div>
           </div>
           <PostPreview
-            imageUrl={imageUrl}
+            files={shown}
             text={language === "uz" ? post.textUz : post.textRu}
             time={post.publishTime}
           />
           <div className="flex flex-wrap gap-2">
             {post.textRu && <CopyButton value={post.textRu} label={t("content.actions.copyRu")} />}
             {post.textUz && <CopyButton value={post.textUz} label={t("content.actions.copyUz")} />}
-            {imageUrl && (
-              <Button asChild variant="outline" size="sm">
-                <a href={`/api/content/${post.id}/image?download=1`}>
-                  <Download />
-                  {t("content.actions.download")}
-                </a>
-              </Button>
-            )}
           </div>
+          {shown.length > 0 && (
+            <ul className="flex flex-col gap-1 text-sm">
+              {shown.map((f) => (
+                <li key={f.id}>
+                  <a
+                    href={`/api/content/files/${f.id}?download=1`}
+                    className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5"
+                  >
+                    <Download className="size-3.5" />
+                    {f.name}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
         </Card>
 
         <div className="flex flex-col gap-4 [&>*]:min-w-0">
-          {(rights.review || (rights.planner && ["DRAFT", "CHANGES"].includes(post.status))) && (
-            <Card className="gap-3 border-amber-500/40">
-              <CardTitle>{t("content.status.REVIEW")}</CardTitle>
-              <form action={approveContentAction}>
+          {rights.withdraw && (
+            <Card className="gap-2">
+              <CardDescription>{t("content.actions.withdrawHint")}</CardDescription>
+              <form action={withdrawContentAction}>
                 {hidden}
-                <Button type="submit">{t("content.actions.approve")}</Button>
+                <Button type="submit" variant="outline" size="sm">
+                  {t("content.actions.withdraw")}
+                </Button>
+              </form>
+            </Card>
+          )}
+
+          {(rights.review ||
+            rights.legal ||
+            (rights.planner && ["DRAFT", "CHANGES"].includes(post.status))) && (
+            <Card
+              className={cn("gap-3", rights.legal ? "border-violet-500/40" : "border-amber-500/40")}
+            >
+              <CardTitle>
+                {t(rights.legal ? "content.status.LEGAL_REVIEW" : "content.status.REVIEW")}
+              </CardTitle>
+              <form action={rights.legal ? legalApproveAction : approveContentAction}>
+                {hidden}
+                <Button type="submit">
+                  {rights.legal
+                    ? t("content.actions.legalApprove")
+                    : lawyerStep
+                      ? t("content.actions.approveToLegal")
+                      : t("content.actions.approve")}
+                </Button>
               </form>
               <form action={feedbackContentAction} className="flex flex-col gap-2">
                 {hidden}
@@ -290,20 +330,112 @@ export default async function ContentPostPage({
           {rights.editContent && (
             <Card className="gap-3">
               <CardTitle>{t("content.materials")}</CardTitle>
-              <form action={saveContentAction} className="flex flex-col gap-3 text-sm">
+              <div id="files" className="flex scroll-mt-20 flex-col gap-3 text-sm">
+                <span className="text-muted-foreground text-xs">
+                  {t("content.fields.filesHint", { mb: MAX_FILE_MB, max: MAX_FILES_PER_LANG })}
+                </span>
+                {(["RU", "UZ"] as const).map((l) => {
+                  const list = filesOf(l);
+                  const other = l === "RU" ? "UZ" : "RU";
+                  return (
+                    <div key={l} className="flex flex-col gap-2 rounded-xl border p-3">
+                      <span className="font-medium">
+                        {t("content.fields.files")} {l}{" "}
+                        <span className="text-muted-foreground font-normal">
+                          {list.length}/{MAX_FILES_PER_LANG}
+                        </span>
+                      </span>
+                      {list.length > 0 && (
+                        <ul className="flex flex-col gap-1.5">
+                          {list.map((f, i) => (
+                            <li key={f.id} className="flex items-center gap-2">
+                              {f.kind === "PHOTO" ? (
+                                // eslint-disable-next-line @next/next/no-img-element -- private image from our API
+                                <img
+                                  src={`/api/content/files/${f.id}`}
+                                  alt=""
+                                  className="size-10 shrink-0 rounded-md object-cover"
+                                />
+                              ) : (
+                                <span className="bg-muted text-muted-foreground flex size-10 shrink-0 items-center justify-center rounded-md text-[10px] font-semibold uppercase">
+                                  {f.kind === "VIDEO"
+                                    ? "▶"
+                                    : (f.name.split(".").pop() ?? "").slice(0, 4)}
+                                </span>
+                              )}
+                              <span className="flex min-w-0 flex-1 flex-col">
+                                <span className="truncate">{f.name}</span>
+                                <span className="text-muted-foreground text-xs">
+                                  {t(`content.fileKinds.${f.kind}`)}
+                                  {f.size > 0 &&
+                                    ` · ${
+                                      f.size < 1024 * 1024
+                                        ? `${Math.ceil(f.size / 1024)} КБ`
+                                        : `${(f.size / 1024 / 1024).toFixed(1)} МБ`
+                                    }`}
+                                </span>
+                              </span>
+                              {(["up", "down"] as const).map((direction) =>
+                                (direction === "up" ? i > 0 : i < list.length - 1) ? (
+                                  <form key={direction} action={moveFileAction}>
+                                    {hidden}
+                                    <input type="hidden" name="fileId" value={f.id} />
+                                    <input type="hidden" name="direction" value={direction} />
+                                    <Button
+                                      type="submit"
+                                      variant="ghost"
+                                      size="sm"
+                                      aria-label={t(`content.actions.${direction}`)}
+                                    >
+                                      {direction === "up" ? "↑" : "↓"}
+                                    </Button>
+                                  </form>
+                                ) : null,
+                              )}
+                              <form action={removeFileAction}>
+                                {hidden}
+                                <input type="hidden" name="fileId" value={f.id} />
+                                <Button
+                                  type="submit"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-destructive"
+                                  aria-label={t("content.actions.removeFile")}
+                                >
+                                  ✕
+                                </Button>
+                              </form>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <div className="flex flex-wrap items-start gap-2">
+                        <FileUpload
+                          postId={post.id}
+                          lang={l}
+                          label={t("content.actions.uploadFiles")}
+                          progressLabel={t("content.actions.uploading")}
+                          left={MAX_FILES_PER_LANG - list.length}
+                        />
+                        {filesOf(other).length > 0 && (
+                          <form action={copyFilesAction}>
+                            {hidden}
+                            <input type="hidden" name="to" value={l} />
+                            <Button type="submit" variant="ghost" size="sm">
+                              {t("content.actions.copyFiles", { from: other })}
+                            </Button>
+                          </form>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <form
+                action={saveContentAction}
+                className="flex flex-col gap-3 border-t pt-3 text-sm"
+              >
                 {hidden}
-                <label className="flex flex-col gap-1">
-                  {t("content.fields.image")}
-                  <Input
-                    type="file"
-                    name="image"
-                    accept="image/png,image/jpeg,image/webp,image/gif"
-                    className="h-auto py-1.5"
-                  />
-                  <span className="text-muted-foreground text-xs">
-                    {t("content.fields.imageHint", { mb: MAX_IMAGE_MB })}
-                  </span>
-                </label>
                 <label className="flex flex-col gap-1">
                   {t("content.fields.textRu")}
                   <Textarea
