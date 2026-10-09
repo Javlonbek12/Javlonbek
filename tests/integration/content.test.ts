@@ -1,3 +1,5 @@
+import { access } from "node:fs/promises";
+
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { db } from "@/lib/db";
@@ -5,6 +7,7 @@ import { withAccess } from "@/modules/core/access/actor";
 import {
   approvePost,
   ContentError,
+  deleteContentPost,
   contentAttention,
   getContentImage,
   getPost,
@@ -146,5 +149,24 @@ describe("content plan", () => {
     ).rejects.toBeInstanceOf(ContentError);
     await expect(approvePost(member, post.id)).rejects.toBeInstanceOf(ContentError);
     await approvePost(owner, post.id);
+  });
+
+  it("deletes: planners any post, an employee only their own until review", async () => {
+    const { owner, author, other, post } = await setup();
+    // The author was assigned the post by the owner: not theirs to delete.
+    await expect(deleteContentPost(author, post.id)).rejects.toBeInstanceOf(ContentError);
+    const own = await savePlanItem(other, null, {
+      title: "Тестовый свой пост",
+      channels: ["PARTNER"],
+      publishDate: "2026-10-11",
+    });
+    await saveContent(other, own.id, { textRu: "Тест" }, new File([PNG], "v.png"));
+    const image = await getContentImage(other, own.id);
+    await deleteContentPost(other, own.id);
+    expect(await db.contentPost.findUnique({ where: { id: own.id } })).toBeNull();
+    await expect(access(image!.absolutePath)).rejects.toThrow();
+
+    await deleteContentPost(owner, post.id);
+    expect(await db.contentPost.count()).toBe(0);
   });
 });

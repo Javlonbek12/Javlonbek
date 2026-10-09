@@ -1,13 +1,16 @@
-import { Plus } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 
 import { addDays, formatDay, fromDateString, toDateString } from "@/lib/dates";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { deleteContentAction } from "@/app/(app)/content/actions";
+import { Button } from "@/components/ui/button";
 import { displayName } from "@/modules/core/users/display-name";
 import type { listPostsBetween } from "@/modules/content/service";
 
 import { BOT_COLOR, BotChip, ContentStatusBadge } from "./bot-chip";
+import { TelegramBubble, TelegramChat } from "./post-preview";
 
 export type Post = Awaited<ReturnType<typeof listPostsBetween>>[number];
 
@@ -221,7 +224,18 @@ export function DayList({
 }
 
 // List: everything in the period as a table (cards on phones).
-export function ListView({ posts, today }: { posts: Post[]; today: string }) {
+export function ListView({
+  posts,
+  today,
+  deletable,
+  back,
+}: {
+  posts: Post[];
+  today: string;
+  // Posts this person may delete.
+  deletable: Set<string>;
+  back: string;
+}) {
   const byDay = groupByDay(posts);
   return (
     <>
@@ -238,6 +252,7 @@ export function ListView({ posts, today }: { posts: Post[]; today: string }) {
                 <th className="px-3 py-2.5 font-medium">{t("content.list.author")}</th>
                 <th className="px-3 py-2.5 font-medium">{t("content.list.materials")}</th>
                 <th className="px-3 py-2.5 font-medium">{t("content.list.status")}</th>
+                <th className="w-10" />
               </tr>
             </thead>
             <tbody>
@@ -283,6 +298,11 @@ export function ListView({ posts, today }: { posts: Post[]; today: string }) {
                     <td className="px-3 py-2.5">
                       <ContentStatusBadge status={post.status} />
                     </td>
+                    <td className="px-2 py-2.5">
+                      {deletable.has(post.id) && (
+                        <DeleteButton postId={post.id} back={back} compact />
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -294,5 +314,117 @@ export function ListView({ posts, today }: { posts: Post[]; today: string }) {
         <DayList days={[...byDay.keys()]} byDay={byDay} today={today} />
       </div>
     </>
+  );
+}
+
+const dayLong = new Intl.DateTimeFormat("ru-RU", {
+  day: "numeric",
+  month: "long",
+  timeZone: "UTC",
+});
+
+// Preview: the period as a Telegram chat — date separators, every post as a message with its
+// picture and text (RU or UZ); status, bots and a link under each message.
+export function PreviewView({
+  posts,
+  lang,
+  langHref,
+}: {
+  posts: Post[];
+  lang: "ru" | "uz";
+  langHref: (lang: "ru" | "uz") => string;
+}) {
+  const byDay = groupByDay(posts);
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="bg-secondary/70 inline-flex w-fit gap-0.5 rounded-full p-1 text-xs">
+        {(["ru", "uz"] as const).map((l) => (
+          <Link
+            key={l}
+            href={langHref(l)}
+            className={cn(
+              "rounded-full px-3 py-1 font-medium",
+              lang === l ? "bg-card shadow-sm" : "text-muted-foreground",
+            )}
+          >
+            {l.toUpperCase()}
+          </Link>
+        ))}
+      </div>
+      {posts.length === 0 ? (
+        <p className="text-muted-foreground text-sm">{t("content.list.empty")}</p>
+      ) : (
+        <TelegramChat className="mx-auto w-full max-w-xl">
+          <div className="flex flex-col gap-3">
+            {[...byDay.entries()].map(([d, list]) => (
+              <div key={d} className="flex flex-col gap-2.5">
+                <span className="mx-auto rounded-full bg-black/25 px-3 py-0.5 text-[13px] font-medium text-white">
+                  {dayLong.format(fromDateString(d))}
+                </span>
+                {list.map((post) => (
+                  <div key={post.id} className="flex flex-col gap-1">
+                    <TelegramBubble
+                      imageUrl={imageOf(post)}
+                      text={lang === "uz" ? post.textUz : post.textRu}
+                      time={post.publishTime}
+                      sender={{
+                        name: post.channels.map((c) => t(`content.channels.${c}`)).join(" · "),
+                        color: BOT_COLOR[post.channels[0] ?? "PARTNER"],
+                      }}
+                    />
+                    <div className="flex flex-wrap items-center gap-1.5 pl-1">
+                      <ContentStatusBadge status={post.status} />
+                      <Link
+                        href={`/content/${post.id}`}
+                        className="rounded-full bg-white/80 px-2.5 py-0.5 text-xs font-medium text-neutral-800 hover:bg-white"
+                      >
+                        {post.title} →
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </TelegramChat>
+      )}
+    </div>
+  );
+}
+
+// Delete with a confirmation step (no script needed: the button opens a small panel).
+export function DeleteButton({
+  postId,
+  back,
+  compact,
+}: {
+  postId: string;
+  back: string;
+  compact?: boolean;
+}) {
+  return (
+    <details className="relative">
+      <summary
+        className={cn(
+          "text-muted-foreground hover:text-destructive hover:bg-destructive/10 flex cursor-pointer list-none items-center gap-1.5 rounded-full text-sm [&::-webkit-details-marker]:hidden",
+          compact ? "size-8 justify-center" : "w-fit px-3 py-1.5",
+        )}
+        aria-label={t("content.remove.button")}
+      >
+        <Trash2 className="size-4" />
+        {!compact && t("content.remove.button")}
+      </summary>
+      <div className="bg-card shadow-card absolute right-0 z-30 mt-1 flex w-64 flex-col gap-2 rounded-xl border p-3 text-sm">
+        <span className="font-medium">{t("content.remove.title")}</span>
+        <span className="text-muted-foreground text-xs">{t("content.remove.confirm")}</span>
+        <form action={deleteContentAction}>
+          <input type="hidden" name="postId" value={postId} />
+          <input type="hidden" name="back" value={back} />
+          <Button type="submit" variant="destructive" size="sm">
+            {t("content.remove.yes")}
+          </Button>
+        </form>
+      </div>
+    </details>
   );
 }

@@ -2,7 +2,7 @@ import { ChevronLeft, ChevronRight, Download, Plus, Send, Upload } from "lucide-
 import Link from "next/link";
 
 import { BOT_COLOR } from "@/components/content/bot-chip";
-import { DayList, groupByDay, ListView, WeekView } from "@/components/content/views";
+import { DayList, groupByDay, ListView, PreviewView, WeekView } from "@/components/content/views";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -27,13 +27,14 @@ import {
   canPlanContent,
   CHANNELS,
   contentAttention,
+  contentRights,
   listPostsBetween,
 } from "@/modules/content/service";
 
 import { deliverTodayAction, importPlanAction } from "./actions";
 
 type Post = Awaited<ReturnType<typeof listPostsBetween>>[number];
-const VIEWS = ["month", "week", "list"] as const;
+const VIEWS = ["month", "week", "list", "preview"] as const;
 type View = (typeof VIEWS)[number];
 
 function PostChip({ post }: { post: Post }) {
@@ -111,7 +112,7 @@ export default async function ContentPage({ searchParams }: PageProps<"/content"
   const [from, to] =
     view === "week"
       ? [week, addDays(week, 6)]
-      : view === "list"
+      : view === "list" || view === "preview"
         ? [month, addDays(addMonths(month, 1), -1)]
         : [weeks[0]![0]!, weeks.at(-1)![6]!];
   const [posts, attention] = await Promise.all([
@@ -119,6 +120,7 @@ export default async function ContentPage({ searchParams }: PageProps<"/content"
     contentAttention(user, today),
   ]);
   const byDay = groupByDay(posts);
+  const lang = params.lang === "uz" ? "uz" : "ru";
   const planner = canPlanContent(user);
   const canAdd = canAddContent(user);
   const href = (next: { view?: View; month?: string; week?: string; bot?: string | null }) => {
@@ -192,6 +194,11 @@ export default async function ContentPage({ searchParams }: PageProps<"/content"
         )}
       </div>
 
+      {params.deleted === "1" && (
+        <p className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm">
+          {t("content.remove.done")}
+        </p>
+      )}
       {typeof params.delivered === "string" && (
         <p className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm">
           {t("content.telegram.done", { count: params.delivered })}
@@ -307,7 +314,21 @@ export default async function ContentPage({ searchParams }: PageProps<"/content"
         </div>
 
         {view === "week" && <WeekView start={week} posts={posts} today={today} planner={canAdd} />}
-        {view === "list" && <ListView posts={posts} today={today} />}
+        {view === "list" && (
+          <ListView
+            posts={posts}
+            today={today}
+            deletable={new Set(posts.filter((p) => contentRights(user, p).remove).map((p) => p.id))}
+            back={href({})}
+          />
+        )}
+        {view === "preview" && (
+          <PreviewView
+            posts={posts.filter((p) => p.status !== "CANCELLED")}
+            lang={lang}
+            langHref={(l) => `${href({})}${l === "uz" ? "&lang=uz" : ""}`}
+          />
+        )}
         {view === "month" && (
           <>
             {/* Larger screens: the month as a calendar. */}

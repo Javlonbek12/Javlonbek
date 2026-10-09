@@ -60,6 +60,8 @@ export function contentRights(actor: Actor, post: PostRow) {
     send: planner && post.status === "APPROVED",
     // Planners always; whoever added the post, until it goes for review.
     editPlan: (planner && !closed) || (creator && EDITABLE_BY_AUTHOR.includes(post.status)),
+    // Planners any post; whoever added it, until it goes for review.
+    remove: planner || (creator && EDITABLE_BY_AUTHOR.includes(post.status)),
   };
 }
 
@@ -378,6 +380,19 @@ export async function cancelPost(actor: Actor, id: string) {
   if (!rights.editPlan) throw new ContentError("forbidden");
   await db.contentPost.update({ where: { id }, data: { status: "CANCELLED" } });
   await log(actor, "content.cancelled", id);
+}
+
+// Deletes the post for good, with its comments and visual.
+export async function deleteContentPost(actor: Actor, id: string) {
+  const { post, rights } = await load(actor, id);
+  if (!rights.remove) throw new ContentError("forbidden");
+  await db.contentPost.delete({ where: { id } });
+  if (post.imagePath)
+    await rm(path.join(uploadRoot(), path.dirname(post.imagePath)), {
+      recursive: true,
+      force: true,
+    });
+  await log(actor, "content.deleted", id, { title: post.title });
 }
 
 export async function addContentComment(actor: Actor, id: string, body: string) {

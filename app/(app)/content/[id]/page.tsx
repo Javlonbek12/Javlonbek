@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { BotChip, ContentStatusBadge } from "@/components/content/bot-chip";
 import { PlanForm } from "@/components/content/plan-form";
 import { PostPreview } from "@/components/content/post-preview";
+import { DeleteButton } from "@/components/content/views";
 import { CopyButton } from "@/components/copy-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
@@ -59,7 +60,12 @@ export default async function ContentPostPage({
         >
           ← {t("content.title")}
         </Link>
-        <h1 className="text-[22px] font-medium md:text-2xl">{post.title}</h1>
+        <div className="flex items-start justify-between gap-2">
+          <h1 className="text-[22px] font-medium md:text-2xl">{post.title}</h1>
+          {rights.remove && (
+            <DeleteButton postId={post.id} back={`/content?month=${date.slice(0, 7)}`} />
+          )}
+        </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <ContentStatusBadge status={post.status} />
           <span className="text-muted-foreground text-sm">

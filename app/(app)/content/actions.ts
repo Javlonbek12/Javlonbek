@@ -11,6 +11,7 @@ import {
   cancelPost,
   CHANNELS,
   ContentError,
+  deleteContentPost,
   markSent,
   returnWithFeedback,
   saveContent,
@@ -168,5 +169,21 @@ export async function deliverPostAction(form: FormData) {
     if (!(error instanceof ContentError)) throw error;
     target = `/content/${id}?error=${error.code}`;
   }
+  redirect(target);
+}
+
+export async function deleteContentAction(form: FormData) {
+  const actor = await requireUser();
+  const id = str(form, "postId");
+  const back = str(form, "back") || "/content";
+  const sep = back.includes("?") ? "&" : "?";
+  let target = `${back}${sep}deleted=1`;
+  try {
+    await deleteContentPost(actor, id);
+  } catch (error) {
+    if (!(error instanceof ContentError)) throw error;
+    target = `/content/${id}?error=${error.code}`;
+  }
+  revalidatePath("/content", "layout");
   redirect(target);
 }
