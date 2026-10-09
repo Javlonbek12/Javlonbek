@@ -51,7 +51,8 @@ export function contentRights(actor: Actor, post: PostRow) {
   const creator = post.createdById === actor.id;
   const closed = post.status === "SENT" || post.status === "CANCELLED";
   return {
-    view: planner || author || creator,
+    // The whole plan is visible to everyone with the section; changing it follows the rights below.
+    view: planner || author || creator || canAddContent(actor),
     planner,
     // Upload the visual and texts.
     editContent: !closed && (planner || (author && EDITABLE_BY_AUTHOR.includes(post.status))),
@@ -66,7 +67,7 @@ export function contentRights(actor: Actor, post: PostRow) {
 }
 
 function visibleWhere(actor: Actor) {
-  return canPlanContent(actor) ? {} : { OR: [{ authorId: actor.id }, { createdById: actor.id }] };
+  return canAddContent(actor) ? {} : { OR: [{ authorId: actor.id }, { createdById: actor.id }] };
 }
 
 const include = {

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { db } from "@/lib/db";
 import { withAccess } from "@/modules/core/access/actor";
+import { saveRoleConfig } from "@/modules/core/access/config";
 import {
   approvePost,
   ContentError,
@@ -100,11 +101,24 @@ describe("content plan", () => {
     ).rejects.toMatchObject({ code: "image" });
   });
 
-  it("authors see only their posts; others nothing", async () => {
+  it("everyone with the section sees the whole plan; without it — only their own posts", async () => {
     const { owner, author, other, post } = await setup();
     expect(await getPost(author, post.id)).not.toBeNull();
-    expect(await getPost(other, post.id)).toBeNull();
-    expect(await listPostsBetween(other, "2026-10-01", "2026-10-31")).toHaveLength(0);
+    // Another employee sees the post but can't change it.
+    const seen = await getPost(other, post.id);
+    expect(seen?.rights).toMatchObject({
+      view: true,
+      editContent: false,
+      editPlan: false,
+      remove: false,
+    });
+    expect(await listPostsBetween(other, "2026-10-01", "2026-10-31")).toHaveLength(1);
+    // With the section switched off for employees: nothing.
+    await saveRoleConfig(owner, {
+      MANAGER: { modules: ["content"], taskScope: "team" },
+      MEMBER: { modules: [], taskScope: "own" },
+    });
+    expect(await getPost(await withAccess(other), post.id)).toBeNull();
     expect(await listPostsBetween(owner, "2026-10-01", "2026-10-31", "PARTNER")).toHaveLength(1);
     expect(await listPostsBetween(owner, "2026-10-01", "2026-10-31", "RESEARCH")).toHaveLength(0);
     await expect(
@@ -126,7 +140,7 @@ describe("content plan", () => {
       authorId: other.id, // ignored: the employee is the author
     });
     expect(post).toMatchObject({ authorId: member.id, createdById: member.id });
-    expect(await getPost(other, post.id)).toBeNull();
+    expect((await getPost(other, post.id))?.rights.editPlan).toBe(false);
     expect(await listPostsBetween(owner, "2026-10-01", "2026-10-31")).toHaveLength(1);
 
     // Until review the employee may change the plan of their post.
