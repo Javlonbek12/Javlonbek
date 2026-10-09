@@ -90,7 +90,10 @@ jobs:
       - name: Copy the code to the server
         if: steps.connect.outputs.ready == 'true' && (env.ACTION == 'setup' || env.ACTION == 'deploy')
         run: |
-          git archive --format=tar HEAD | ssh vps 'mkdir -p ~/assistant && tar -x -C ~/assistant'
+          # The code folders come only from git: clear them first, so deleted files don't linger
+          # (.env and other server-only files at the top level stay).
+          ssh vps 'mkdir -p ~/assistant && cd ~/assistant && rm -rf app assets components deploy docker docs lib modules prisma public scripts tests'
+          git archive --format=tar HEAD | ssh vps 'tar -x -C ~/assistant'
           ssh vps "echo '$(git log -1 --format='%h %cs %s' | tr -d "'")' > ~/assistant/REVISION"
 
       - name: Run
