@@ -11,7 +11,9 @@ import {
   DEFAULT_TARGETS,
   type AnalyticsPost,
 } from "./analytics";
-import { tagByKeywords } from "./tagging";
+import { BUILT_IN_SECTIONS, tagByKeywords } from "./tagging";
+
+const topics = BUILT_IN_SECTIONS;
 
 let n = 0;
 const post = (over: Partial<AnalyticsPost>): AnalyticsPost => ({
@@ -48,6 +50,19 @@ describe("content tagging by keywords", () => {
       "COMPANY_NEWS",
     );
   });
+
+  it("matches a team's own section by the words of its name", () => {
+    const sections = [
+      ...BUILT_IN_SECTIONS.map((id) => ({ id, name: id, description: null })),
+      { id: "own", name: "Мерчандайзинг", description: null },
+    ];
+    expect(
+      tagByKeywords(
+        { title: "Правила мерчандайзинга", brief: null, textRu: null, textUz: null },
+        sections,
+      ).topic,
+    ).toBe("own");
+  });
 });
 
 describe("content analytics", () => {
@@ -66,17 +81,17 @@ describe("content analytics", () => {
       post({ topic: "TRAINING", brand: "PINE", publishDate: "2026-09-30", channels: ["CONNECT"] }),
       post({ topic: null, brand: null }),
     ];
-    const lines = storylines(posts, weeks);
+    const lines = storylines(posts, weeks, topics);
     const prices = lines.find((l) => l.topic === "PRICES")!;
     expect(prices.weeks.map((w) => w.length)).toEqual([1, 1, 0]);
     expect(prices.silentWeeks).toBe(1);
     expect(lines.find((l) => l.topic === "PROMO")!.silentWeeks).toBe(3);
 
-    expect(topicShares(posts).slice(0, 2)).toEqual([
+    expect(topicShares(posts, topics).slice(0, 2)).toEqual([
       { topic: "PRICES", count: 2, percent: 67 },
       { topic: "TRAINING", count: 1, percent: 33 },
     ]);
-    expect(topicByBot(posts).find((r) => r.topic === "PRICES")!.bots).toEqual({
+    expect(topicByBot(posts, topics).find((r) => r.topic === "PRICES")!.bots).toEqual({
       PARTNER: 2,
       CONNECT: 1,
       RESEARCH: 0,
@@ -84,7 +99,7 @@ describe("content analytics", () => {
     const brands = brandsByMonth(posts, ["2026-09-01", "2026-10-01"]);
     expect(brands.totals).toMatchObject({ ESSE: 2, PINE: 1 });
     expect(brands.months[1]!.brands.ESSE).toBe(1);
-    const gaps = planVsFact(posts, DEFAULT_TARGETS);
+    const gaps = planVsFact(posts, DEFAULT_TARGETS, topics);
     expect(gaps.find((g) => g.topic === "PRICES")).toEqual({
       topic: "PRICES",
       target: 15,

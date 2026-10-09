@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { formatDay, formatMonth, fromDateString } from "@/lib/dates";
-import type { ContentBrand, ContentChannel, ContentTopic } from "@/lib/generated/prisma/enums";
+import type { ContentBrand, ContentChannel } from "@/lib/generated/prisma/enums";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type {
@@ -13,14 +13,18 @@ import type {
 } from "@/modules/content/analytics";
 import { squarify } from "@/modules/content/analytics";
 import { CHANNELS } from "@/modules/content/service";
-import { BRANDS, TOPICS } from "@/modules/content/tagging";
+import { BRANDS } from "@/modules/content/tagging";
 
 import { BOT_COLOR } from "./bot-chip";
 
-// Every topic and brand keeps its colour everywhere (fixed order, validated palette).
-export const TOPIC_COLOR = Object.fromEntries(
-  TOPICS.map((topic, i) => [topic, `var(--series-${i + 1})`]),
-) as Record<ContentTopic, string>;
+// Name and colour of every section. A section keeps its colour everywhere: the colour follows
+// its place among all sections (archived ones included), so archiving one repaints nothing.
+export type SectionMeta = Record<string, { name: string; color: string }>;
+export const sectionMeta = (all: { id: string; name: string }[]): SectionMeta =>
+  Object.fromEntries(
+    all.map((s, i) => [s.id, { name: s.name, color: `var(--series-${(i % 8) + 1})` }]),
+  );
+const NONE = { name: "—", color: "var(--muted-foreground)" };
 export const BRAND_COLOR: Record<ContentBrand, string> = {
   ESSE: "var(--series-1)",
   BOHEM: "var(--series-2)",
@@ -32,11 +36,12 @@ export const BRAND_COLOR: Record<ContentBrand, string> = {
 
 const monthShort = new Intl.DateTimeFormat("ru-RU", { month: "short", timeZone: "UTC" });
 
-function TopicLabel({ topic }: { topic: ContentTopic }) {
+function TopicLabel({ topic, meta }: { topic: string; meta: SectionMeta }) {
+  const m = meta[topic] ?? NONE;
   return (
     <span className="flex min-w-0 items-center gap-2">
-      <span className="size-2.5 shrink-0 rounded-full" style={{ background: TOPIC_COLOR[topic] }} />
-      <span className="truncate">{t(`content.topics.${topic}`)}</span>
+      <span className="size-2.5 shrink-0 rounded-full" style={{ background: m.color }} />
+      <span className="truncate">{m.name}</span>
     </span>
   );
 }
@@ -45,9 +50,11 @@ function TopicLabel({ topic }: { topic: ContentTopic }) {
 export function Storylines({
   lines,
   weeks,
+  meta,
 }: {
   lines: ReturnType<typeof storylines>;
   weeks: string[];
+  meta: SectionMeta;
 }) {
   const months = weeks
     .map((w, i) => ({ i, key: w.slice(0, 7), label: monthShort.format(fromDateString(w)) }))
@@ -77,7 +84,7 @@ export function Storylines({
             style={gridStyle}
           >
             <div className="bg-card sticky left-0 z-10 flex items-center justify-between gap-1 py-2 pr-2 text-[13px]">
-              <TopicLabel topic={line.topic} />
+              <TopicLabel topic={line.topic} meta={meta} />
               <span className="text-muted-foreground tabular-nums">{line.total}</span>
             </div>
             {line.weeks.map((posts, i) => (
@@ -96,7 +103,7 @@ export function Storylines({
                 {/* The lane itself: a thin line in the topic's colour. */}
                 <span
                   className="absolute inset-x-0 top-1/2 h-px opacity-25"
-                  style={{ background: TOPIC_COLOR[line.topic] }}
+                  style={{ background: (meta[line.topic] ?? NONE).color }}
                 />
                 {posts.length > 0 && (
                   <span className="relative flex -space-x-1">
@@ -137,7 +144,13 @@ export function Storylines({
 }
 
 // 2. Focus: a treemap of topics by share of posts.
-export function FocusMap({ shares }: { shares: ReturnType<typeof topicShares> }) {
+export function FocusMap({
+  shares,
+  meta,
+}: {
+  shares: ReturnType<typeof topicShares>;
+  meta: SectionMeta;
+}) {
   const W = 640;
   const H = 300;
   const rects = squarify(
@@ -156,7 +169,7 @@ export function FocusMap({ shares }: { shares: ReturnType<typeof topicShares> })
         {rects.map((r) => {
           const big = r.w > 70 && r.h > 44;
           // Fit the name into the tile (about 7 px per letter at this size).
-          const name = t(`content.topics.${r.topic}`);
+          const { name, color } = meta[r.topic] ?? NONE;
           const fit = Math.max(3, Math.floor((r.w - 20) / 7));
           const label = name.length > fit ? `${name.slice(0, fit - 1)}…` : name;
           return (
@@ -167,9 +180,9 @@ export function FocusMap({ shares }: { shares: ReturnType<typeof topicShares> })
                 width={Math.max(0, r.w - 2)}
                 height={Math.max(0, r.h - 2)}
                 rx="8"
-                fill={TOPIC_COLOR[r.topic]}
+                fill={color}
               >
-                <title>{`${t(`content.topics.${r.topic}`)}: ${r.count} (${r.percent}%)`}</title>
+                <title>{`${name}: ${r.count} (${r.percent}%)`}</title>
               </rect>
               {big && (
                 <>
@@ -192,7 +205,7 @@ export function FocusMap({ shares }: { shares: ReturnType<typeof topicShares> })
       <ul className="grid grid-cols-1 gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
         {shares.map((s) => (
           <li key={s.topic} className="flex items-center justify-between gap-2">
-            <TopicLabel topic={s.topic} />
+            <TopicLabel topic={s.topic} meta={meta} />
             <span className="text-muted-foreground tabular-nums">
               {s.count} · {s.percent}%
             </span>
@@ -204,7 +217,13 @@ export function FocusMap({ shares }: { shares: ReturnType<typeof topicShares> })
 }
 
 // 3. Topics × bots: a heat table.
-export function TopicBotMatrix({ rows }: { rows: ReturnType<typeof topicByBot> }) {
+export function TopicBotMatrix({
+  rows,
+  meta,
+}: {
+  rows: ReturnType<typeof topicByBot>;
+  meta: SectionMeta;
+}) {
   const max = Math.max(1, ...rows.flatMap((r) => CHANNELS.map((c) => r.bots[c])));
   return (
     <div className="overflow-x-auto">
@@ -226,7 +245,7 @@ export function TopicBotMatrix({ rows }: { rows: ReturnType<typeof topicByBot> }
           {rows.map((row) => (
             <tr key={row.topic}>
               <td className="py-1 pr-2 text-[13px]">
-                <TopicLabel topic={row.topic} />
+                <TopicLabel topic={row.topic} meta={meta} />
               </td>
               {CHANNELS.map((c: ContentChannel) => {
                 const v = row.bots[c];
@@ -335,7 +354,13 @@ export function BrandsChart({ data }: { data: ReturnType<typeof brandsByMonth> }
 }
 
 // 5. Plan vs fact: the wanted share against the real one, gaps over 5 points highlighted.
-export function PlanFact({ rows }: { rows: ReturnType<typeof planVsFact> }) {
+export function PlanFact({
+  rows,
+  meta,
+}: {
+  rows: ReturnType<typeof planVsFact>;
+  meta: SectionMeta;
+}) {
   const max = Math.max(1, ...rows.flatMap((r) => [r.target, r.actual]));
   return (
     <div className="flex flex-col gap-2.5">
@@ -354,7 +379,7 @@ export function PlanFact({ rows }: { rows: ReturnType<typeof planVsFact> }) {
           key={r.topic}
           className="grid grid-cols-[minmax(0,7rem)_minmax(0,1fr)_4.5rem] items-center gap-3 text-[13px] sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)_4.5rem]"
         >
-          <TopicLabel topic={r.topic} />
+          <TopicLabel topic={r.topic} meta={meta} />
           <div className="flex flex-col gap-1">
             <div
               className="border-muted-foreground/50 h-2.5 rounded-sm border border-dashed"
@@ -365,7 +390,7 @@ export function PlanFact({ rows }: { rows: ReturnType<typeof planVsFact> }) {
               className="h-2.5 rounded-sm"
               style={{
                 width: `${Math.max(1, (r.actual / max) * 100)}%`,
-                background: TOPIC_COLOR[r.topic],
+                background: (meta[r.topic] ?? NONE).color,
               }}
               title={`${t("content.analytics.plan.actual")}: ${r.actual}%`}
             />

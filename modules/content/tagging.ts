@@ -3,7 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { todayInTimezone } from "@/lib/dates";
 import { getEnv } from "@/lib/env";
-import type { ContentBrand, ContentTopic } from "@/lib/generated/prisma/enums";
+import type { ContentBrand } from "@/lib/generated/prisma/enums";
 import { isAiConfigured } from "@/modules/ai/client";
 import { AiError, runStructured, type ModelCall } from "@/modules/ai/run";
 
@@ -11,7 +11,8 @@ import { AiError, runStructured, type ModelCall } from "@/modules/ai/run";
 // changed posts: by AI when it is configured, otherwise (or if AI fails) by keywords.
 // A topic or brand set by hand is never changed automatically.
 
-export const TOPICS = [
+// The eight built-in sections (their ids); more can be added on the analytics page.
+export const BUILT_IN_SECTIONS = [
   "PRICES",
   "NEW_PRODUCTS",
   "PROMO",
@@ -20,7 +21,9 @@ export const TOPICS = [
   "MOTIVATION",
   "COMPANY_NEWS",
   "SERVICE",
-] as const satisfies ContentTopic[];
+] as const;
+
+export type Section = { id: string; name: string; description: string | null };
 
 export const BRANDS = [
   "ESSE",
@@ -47,7 +50,7 @@ const BRAND_WORDS: [ContentBrand, RegExp][] = [
   ["SIMPLE", /\bsimple\b|симпл/i],
 ];
 
-const TOPIC_WORDS: [ContentTopic, RegExp][] = [
+const TOPIC_WORDS: [string, RegExp][] = [
   ["PRICES", /цен|прайс|\brsp\b|\bdsp\b|narx|стоимост/i],
   ["NEW_PRODUCTS", /новинк|новый вкус|запуск|launch|yangi mahsulot|новый формат/i],
   ["PROMO", /акци|бонус|скидк|механик|\d+\s*\+\s*\d+|aksiya|chegirma|подар/i],
@@ -58,41 +61,82 @@ const TOPIC_WORDS: [ContentTopic, RegExp][] = [
   ["COMPANY_NEWS", /поздрав|праздник|новост|компани|bayram|tabrik/i],
 ];
 
-// The keyword guess: the first matching brand (or general) and topic (or company news).
-export function tagByKeywords(post: PostText): { topic: ContentTopic; brand: ContentBrand } {
+// Words of a section's name (4+ letters, without endings) to look for in a post.
+const nameWords = (name: string) =>
+  name
+    .toLowerCase()
+    .split(/[^\p{L}]+/u)
+    .filter((w) => w.length >= 4)
+    .map((w) => w.slice(0, Math.max(4, w.length - 2)));
+
+// The keyword guess: the first matching brand (or general) and section (built-in words first,
+// then the words of the sections' names; otherwise company news, if it exists).
+export function tagByKeywords(
+  post: PostText,
+  sections: Section[] = BUILT_IN_SECTIONS.map((id) => ({ id, name: id, description: null })),
+): { topic: string | null; brand: ContentBrand } {
   const text = fullText(post);
+  const lower = text.toLowerCase();
   const brands = BRAND_WORDS.filter(([, re]) => re.test(text)).map(([b]) => b);
+  const ids = new Set(sections.map((s) => s.id));
+  const builtIn = TOPIC_WORDS.find(([id, re]) => ids.has(id) && re.test(text))?.[0];
+  const custom = sections.find(
+    (s) =>
+      !TOPIC_WORDS.some(([id]) => id === s.id) && nameWords(s.name).some((w) => lower.includes(w)),
+  )?.id;
   return {
     brand: brands.length === 1 ? brands[0]! : "GENERAL",
-    topic: TOPIC_WORDS.find(([, re]) => re.test(text))?.[0] ?? "COMPANY_NEWS",
+    topic:
+      custom ?? builtIn ?? (ids.has("COMPANY_NEWS") ? "COMPANY_NEWS" : (sections[0]?.id ?? null)),
   };
 }
 
-const tagSchema = z.object({ topic: z.enum(TOPICS), brand: z.enum(BRANDS) });
+export async function activeSections(): Promise<Section[]> {
+  return db.contentSection.findMany({
+    where: { archived: false },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    select: { id: true, name: true, description: true },
+  });
+}
 
-const TAG_SYSTEM = `You label posts that a tobacco company (KT&G, Uzbekistan) sends to its partner and field-team Telegram bots. The text may be Russian, Uzbek (Latin) or both.
-Return exactly one topic and one brand.
-Topics:
-- PRICES: new or changed prices, price lists, RSP/DSP.
-- NEW_PRODUCTS: launches, new SKUs, new formats or flavours.
-- PROMO: trade promotions and mechanics (e.g. 10+1), bonuses, discounts, gifts for buying.
-- TRAINING: how-to, instructions, training videos, product knowledge.
-- RESEARCH: surveys, questionnaires, requests for feedback or data.
-- MOTIVATION: contests, ratings, prizes and motivation for the team or partners.
-- COMPANY_NEWS: greetings, holidays, company news and announcements.
-- SERVICE: support, ordering, delivery, how to contact, service changes.
+// The prompt lists the current sections, so AI uses the ones the team added.
+const tagSystem = (
+  sections: Section[],
+) => `You label posts that a tobacco company (KT&G, Uzbekistan) sends to its partner and field-team Telegram bots. The text may be Russian, Uzbek (Latin) or both.
+Return exactly one section (by its id) and one brand.
+Sections:
+${sections.map((s) => `- ${s.id}: ${s.name}${s.description ? ` — ${s.description}` : ""}`).join("\n")}
 Brands: ESSE, BOHEM, PINE, BLOOMING, SIMPLE — the one brand the post is mainly about; GENERAL if it is about several brands or none.`;
 
-export async function tagByAi(post: PostText & { createdById: string }, call?: ModelCall) {
+export async function tagByAi(
+  post: PostText & { createdById: string },
+  sections: Section[],
+  call?: ModelCall,
+) {
+  const ids = sections.map((s) => s.id) as [string, ...string[]];
   return runStructured({
     userId: post.createdById,
     fn: "tagContent",
-    system: TAG_SYSTEM,
+    system: tagSystem(sections),
     prompt: `Post:\n"""\n${fullText(post).slice(0, 6000)}\n"""`,
-    schema: tagSchema,
+    schema: z.object({ topic: z.enum(ids), brand: z.enum(BRANDS) }),
     today: todayInTimezone(getEnv().DEFAULT_TIMEZONE),
     call,
   });
+}
+
+// Sends posts back for tagging (e.g. after sections changed); hand-set ones stay as they are.
+export async function retagPosts(from?: string, to?: string) {
+  const { count } = await db.contentPost.updateMany({
+    where: {
+      tagSource: { not: "manual" },
+      ...(from && to
+        ? { publishDate: { gte: new Date(`${from}T00:00:00Z`), lte: new Date(`${to}T00:00:00Z`) } }
+        : {}),
+    },
+    data: { tagPending: true },
+  });
+  return count;
 }
 
 // Tags up to `limit` waiting posts (the scheduler calls this every minute).
@@ -102,13 +146,15 @@ export async function tagPendingContent(limit = 10, call?: ModelCall) {
     orderBy: { updatedAt: "asc" },
     take: limit,
   });
+  if (!posts.length) return 0;
+  const sections = await activeSections();
   let tagged = 0;
   for (const post of posts) {
-    let tag = tagByKeywords(post);
+    let tag = tagByKeywords(post, sections);
     let source = "keywords";
-    if (post.tagSource !== "manual" && (call || isAiConfigured())) {
+    if (post.tagSource !== "manual" && sections.length && (call || isAiConfigured())) {
       try {
-        tag = await tagByAi(post, call);
+        tag = await tagByAi(post, sections, call);
         source = "ai";
       } catch (error) {
         if (!(error instanceof AiError)) throw error;

@@ -16,7 +16,7 @@ import type { Actor } from "@/modules/core/permissions";
 import { displayName } from "@/modules/core/users/display-name";
 import { safeFileName } from "@/modules/tasks/attachment-service";
 
-import { BRANDS, TOPICS } from "./tagging";
+import { BRANDS } from "./tagging";
 
 // Content plan for the company's Telegram bots. Planners (owner, managers with the section on)
 // put topics on dates and choose bots and authors; an author uploads the visual and texts RU / UZ
@@ -386,7 +386,7 @@ export async function cancelPost(actor: Actor, id: string) {
   await log(actor, "content.cancelled", id);
 }
 
-const tagsSchema = z.object({ topic: z.enum(TOPICS), brand: z.enum(BRANDS) });
+const tagsSchema = z.object({ topic: z.string().min(1), brand: z.enum(BRANDS) });
 
 // Topic and brand set by hand: kept as they are from now on.
 export async function setContentTags(actor: Actor, id: string, input: z.input<typeof tagsSchema>) {
@@ -394,6 +394,8 @@ export async function setContentTags(actor: Actor, id: string, input: z.input<ty
   if (!rights.planner && !rights.editPlan) throw new ContentError("forbidden");
   const parsed = tagsSchema.safeParse(input);
   if (!parsed.success) throw new ContentError("invalid");
+  const section = await db.contentSection.findUnique({ where: { id: parsed.data.topic } });
+  if (!section || section.archived) throw new ContentError("invalid");
   await db.contentPost.update({
     where: { id },
     data: { ...parsed.data, tagSource: "manual", tagPending: false },

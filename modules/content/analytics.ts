@@ -9,12 +9,12 @@ import {
   startOfWeek,
   toDateString,
 } from "@/lib/dates";
-import type { ContentBrand, ContentChannel, ContentTopic } from "@/lib/generated/prisma/enums";
+import type { ContentBrand, ContentChannel } from "@/lib/generated/prisma/enums";
 import { logActivity } from "@/modules/core/activity/service";
 import type { Actor } from "@/modules/core/permissions";
 
 import { canAddContent, canPlanContent, CHANNELS, ContentError } from "./service";
-import { BRANDS, TOPICS } from "./tagging";
+import { BRANDS } from "./tagging";
 
 // Content analytics: what the plan focuses on and which topics it develops over time.
 
@@ -27,7 +27,7 @@ export type AnalyticsPost = {
   publishDate: string;
   publishTime: string | null;
   channels: ContentChannel[];
-  topic: ContentTopic | null;
+  topic: string | null;
   brand: ContentBrand | null;
   status: string;
 };
@@ -76,9 +76,11 @@ const count = <K extends string>(keys: readonly K[], values: (K | null)[]) =>
     number
   >;
 
+// Every function takes `topics`: the ids of the sections to show, in their order.
+
 // 1. Storylines: for every topic, its posts by week.
-export function storylines(posts: AnalyticsPost[], weeks: string[]) {
-  return TOPICS.map((topic) => {
+export function storylines(posts: AnalyticsPost[], weeks: string[], topics: readonly string[]) {
+  return topics.map((topic) => {
     const own = posts.filter((p) => p.topic === topic);
     return {
       topic,
@@ -101,22 +103,24 @@ export function storylines(posts: AnalyticsPost[], weeks: string[]) {
 }
 
 // 2. Focus: share of every topic.
-export function topicShares(posts: AnalyticsPost[]) {
-  const tagged = posts.filter((p) => p.topic);
+export function topicShares(posts: AnalyticsPost[], topics: readonly string[]) {
+  const tagged = posts.filter((p) => p.topic && topics.includes(p.topic));
   const counts = count(
-    TOPICS,
+    topics,
     tagged.map((p) => p.topic),
   );
-  return TOPICS.map((topic) => ({
-    topic,
-    count: counts[topic],
-    percent: tagged.length ? Math.round((counts[topic] / tagged.length) * 100) : 0,
-  })).sort((a, b) => b.count - a.count);
+  return topics
+    .map((topic) => ({
+      topic,
+      count: counts[topic],
+      percent: tagged.length ? Math.round((counts[topic] / tagged.length) * 100) : 0,
+    }))
+    .sort((a, b) => b.count - a.count);
 }
 
 // 3. Topics × bots: how many posts of each topic went (or go) to each bot.
-export function topicByBot(posts: AnalyticsPost[]) {
-  return TOPICS.map((topic) => ({
+export function topicByBot(posts: AnalyticsPost[], topics: readonly string[]) {
+  return topics.map((topic) => ({
     topic,
     bots: Object.fromEntries(
       CHANNELS.map((c) => [
@@ -146,13 +150,17 @@ export function brandsByMonth(posts: AnalyticsPost[], months: string[]) {
 }
 
 // 5. Plan vs fact: the wanted share of every topic against the real one (percentage points).
-export function planVsFact(posts: AnalyticsPost[], targets: Record<ContentTopic, number>) {
-  const shares = Object.fromEntries(topicShares(posts).map((s) => [s.topic, s.percent]));
-  return TOPICS.map((topic) => ({
+export function planVsFact(
+  posts: AnalyticsPost[],
+  targets: Record<string, number>,
+  topics: readonly string[],
+) {
+  const shares = Object.fromEntries(topicShares(posts, topics).map((s) => [s.topic, s.percent]));
+  return topics.map((topic) => ({
     topic,
-    target: targets[topic],
+    target: targets[topic] ?? 0,
     actual: shares[topic] ?? 0,
-    gap: (shares[topic] ?? 0) - targets[topic],
+    gap: (shares[topic] ?? 0) - (targets[topic] ?? 0),
   }));
 }
 
@@ -204,9 +212,10 @@ export function squarify<T extends { value: number }>(items: T[], w: number, h: 
   return out;
 }
 
-// The wanted mix of topics (percent), set by planners.
+// The wanted mix of sections (percent by section id), set by planners.
 const TARGETS_KEY = "content.targets";
-export const DEFAULT_TARGETS: Record<ContentTopic, number> = {
+// Defaults for the built-in sections; a new section starts at 0.
+export const DEFAULT_TARGETS: Record<string, number> = {
   PRICES: 15,
   NEW_PRODUCTS: 15,
   PROMO: 15,
@@ -216,31 +225,40 @@ export const DEFAULT_TARGETS: Record<ContentTopic, number> = {
   COMPANY_NEWS: 10,
   SERVICE: 5,
 };
-const targetsSchema = z
-  .object(
-    Object.fromEntries(TOPICS.map((t) => [t, z.coerce.number().int().min(0).max(100)])) as Record<
-      ContentTopic,
-      z.ZodCoercedNumber
-    >,
-  )
-  .refine((v) => Object.values(v).reduce((s: number, n) => s + (n as number), 0) === 100);
+const percent = z.coerce.number().int().min(0).max(100);
 
-export async function getContentTargets(): Promise<Record<ContentTopic, number>> {
+// The targets of the given sections (missing ones are 0).
+export async function getContentTargets(
+  topics: readonly string[],
+): Promise<Record<string, number>> {
   const row = await db.systemState.findUnique({ where: { key: TARGETS_KEY } });
-  if (!row) return DEFAULT_TARGETS;
-  try {
-    const parsed = targetsSchema.safeParse(JSON.parse(row.value));
-    return parsed.success ? (parsed.data as Record<ContentTopic, number>) : DEFAULT_TARGETS;
-  } catch {
-    return DEFAULT_TARGETS;
+  let stored: Record<string, number> = DEFAULT_TARGETS;
+  if (row) {
+    try {
+      const parsed = z.record(z.string(), percent).safeParse(JSON.parse(row.value));
+      if (parsed.success) stored = parsed.data;
+    } catch {
+      // Broken value: fall back to the defaults.
+    }
   }
+  return Object.fromEntries(topics.map((t) => [t, stored[t] ?? 0]));
 }
 
-export async function saveContentTargets(actor: Actor, input: Record<string, unknown>) {
+// Saves the targets of the active sections; together they must make 100%.
+export async function saveContentTargets(
+  actor: Actor,
+  input: Record<string, unknown>,
+  topics: readonly string[],
+) {
   if (!canPlanContent(actor)) throw new ContentError("forbidden");
-  const parsed = targetsSchema.safeParse(input);
-  if (!parsed.success) throw new ContentError("invalid");
-  const value = JSON.stringify(parsed.data);
+  const values: Record<string, number> = {};
+  for (const t of topics) {
+    const parsed = percent.safeParse(input[t] ?? 0);
+    if (!parsed.success) throw new ContentError("invalid");
+    values[t] = parsed.data;
+  }
+  if (Object.values(values).reduce((s, n) => s + n, 0) !== 100) throw new ContentError("invalid");
+  const value = JSON.stringify(values);
   await db.systemState.upsert({
     where: { key: TARGETS_KEY },
     create: { key: TARGETS_KEY, value },

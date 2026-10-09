@@ -724,16 +724,20 @@ enum ContentStatus {
   CANCELLED
 }
 
-// What a post is about, for the content analytics. Set by AI (or keywords), or by hand.
-enum ContentTopic {
-  PRICES
-  NEW_PRODUCTS
-  PROMO
-  TRAINING
-  RESEARCH
-  MOTIVATION
-  COMPANY_NEWS
-  SERVICE
+// Sections (topics) of the content plan, for the analytics. The owner and managers add,
+// rename, order and hide them; AI puts every post into one of the active sections.
+// The first eight keep their old codes as ids (PRICES, NEW_PRODUCTS, ...).
+model ContentSection {
+  id          String   @id @default(cuid())
+  name        String
+  // What belongs here: shown to the AI that sorts posts.
+  description String?
+  sortOrder   Int      @default(0)
+  // Hidden: no new posts go here; old ones keep it.
+  archived    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  posts ContentPost[]
 }
 
 enum ContentBrand {
@@ -764,7 +768,8 @@ model ContentPost {
   imagePath    String?
   imageName    String?
   sentChannels ContentChannel[]
-  topic        ContentTopic?
+  // The section (ContentSection.id).
+  topic        String?
   brand        ContentBrand?
   // "ai", "keywords" or "manual" (set by hand: never changed automatically).
   tagSource    String?
@@ -776,6 +781,7 @@ model ContentPost {
   updatedAt    DateTime         @updatedAt
 
   author    User?            @relation("ContentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  section   ContentSection?  @relation(fields: [topic], references: [id], onDelete: SetNull)
   createdBy User             @relation("ContentCreator", fields: [createdById], references: [id])
   comments  ContentComment[]
 

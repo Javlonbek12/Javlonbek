@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 
 import { BotChip, ContentStatusBadge } from "@/components/content/bot-chip";
 import { PlanForm } from "@/components/content/plan-form";
-import { BRAND_COLOR, TOPIC_COLOR } from "@/components/content/analytics-charts";
+import { BRAND_COLOR, sectionMeta } from "@/components/content/analytics-charts";
 import { PostPreview } from "@/components/content/post-preview";
 import { DeleteButton } from "@/components/content/views";
 import { CopyButton } from "@/components/copy-button";
@@ -21,7 +21,8 @@ import { requireUser } from "@/modules/core/auth/current-user";
 import { getSettings } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
 import { getPost, listContentAuthors, MAX_IMAGE_MB } from "@/modules/content/service";
-import { BRANDS, TOPICS } from "@/modules/content/tagging";
+import { listSections } from "@/modules/content/sections";
+import { BRANDS } from "@/modules/content/tagging";
 
 import {
   approveContentAction,
@@ -48,6 +49,8 @@ export default async function ContentPostPage({
   const { post, rights } = found;
   const { timezone } = await getSettings(user.id);
   const users = rights.editPlan && rights.planner ? await listContentAuthors() : [];
+  const sections = await listSections();
+  const meta = sectionMeta(sections);
   const language = lang === "uz" ? "uz" : "ru";
   const imageUrl = post.imagePath
     ? `/api/content/${post.id}/image?v=${post.updatedAt.getTime()}`
@@ -91,9 +94,9 @@ export default async function ContentPostPage({
             <span className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium">
               <span
                 className="size-2 rounded-full"
-                style={{ background: TOPIC_COLOR[post.topic] }}
+                style={{ background: meta[post.topic]?.color }}
               />
-              {t(`content.topics.${post.topic}`)}
+              {meta[post.topic]?.name ?? "—"}
             </span>
           ) : null}
           {post.brand && (
@@ -125,12 +128,14 @@ export default async function ContentPostPage({
                 {hidden}
                 <label className="flex flex-col gap-1">
                   {t("content.tags.topic")}
-                  <NativeSelect name="topic" defaultValue={post.topic ?? "COMPANY_NEWS"}>
-                    {TOPICS.map((topic) => (
-                      <option key={topic} value={topic}>
-                        {t(`content.topics.${topic}`)}
-                      </option>
-                    ))}
+                  <NativeSelect name="topic" defaultValue={post.topic ?? undefined}>
+                    {sections
+                      .filter((s) => !s.archived || s.id === post.topic)
+                      .map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
                   </NativeSelect>
                 </label>
                 <label className="flex flex-col gap-1">

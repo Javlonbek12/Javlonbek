@@ -7,6 +7,13 @@ import {
   saveContentTargets,
   DEFAULT_TARGETS,
 } from "@/modules/content/analytics";
+import {
+  deleteSection,
+  listSections,
+  retagContent,
+  saveSection,
+  setSectionArchived,
+} from "@/modules/content/sections";
 import { ContentError, saveContent, savePlanItem, setContentTags } from "@/modules/content/service";
 import { tagPendingContent } from "@/modules/content/tagging";
 import { createTestUser, resetDb } from "@/tests/helpers/db";
@@ -64,13 +71,82 @@ describe("content tagging", () => {
   it("only planners set the wanted mix, which must add up to 100%", async () => {
     const owner = await withAccess(await createTestUser("OWNER"));
     const member = await withAccess(await createTestUser("MEMBER"));
-    expect(await getContentTargets()).toEqual(DEFAULT_TARGETS);
+    const ids = Object.keys(DEFAULT_TARGETS);
+    expect(await getContentTargets(ids)).toEqual(DEFAULT_TARGETS);
     const mix = { ...DEFAULT_TARGETS, PRICES: 25, TRAINING: 10 };
-    await saveContentTargets(owner, mix);
-    expect(await getContentTargets()).toEqual(mix);
-    await expect(saveContentTargets(owner, { ...mix, PRICES: 50 })).rejects.toBeInstanceOf(
+    await saveContentTargets(owner, mix, ids);
+    expect(await getContentTargets(ids)).toEqual(mix);
+    // A new section starts at 0.
+    expect(await getContentTargets([...ids, "own"])).toEqual({ ...mix, own: 0 });
+    await expect(saveContentTargets(owner, { ...mix, PRICES: 50 }, ids)).rejects.toBeInstanceOf(
       ContentError,
     );
-    await expect(saveContentTargets(member, mix)).rejects.toBeInstanceOf(ContentError);
+    await expect(saveContentTargets(member, mix, ids)).rejects.toBeInstanceOf(ContentError);
+  });
+
+  it("planners add their own sections; AI gets them; archived ones are not offered", async () => {
+    const owner = await withAccess(await createTestUser("OWNER"));
+    const member = await withAccess(await createTestUser("MEMBER"));
+    await expect(
+      saveSection(member, null, { name: "Тестовый раздел", description: "", sortOrder: 8 }),
+    ).rejects.toBeInstanceOf(ContentError);
+    const id = await saveSection(owner, null, {
+      name: "Тестовый раздел",
+      description: "О тестовом",
+      sortOrder: 8,
+    });
+    // The same name twice is refused (any case).
+    await expect(
+      saveSection(owner, null, { name: "тестовый РАЗДЕЛ", description: "", sortOrder: 9 }),
+    ).rejects.toBeInstanceOf(ContentError);
+
+    const post = await savePlanItem(owner, null, {
+      title: "Тестовый пост",
+      channels: ["PARTNER"],
+      publishDate: "2026-10-10",
+    });
+    let prompt = "";
+    const call = async (request: { system: string }) => {
+      prompt = request.system;
+      return { output: { topic: id, brand: "GENERAL" }, inputTokens: 1, outputTokens: 1 };
+    };
+    expect(await tagPendingContent(10, call as never)).toBe(1);
+    expect(prompt).toContain(`${id}: Тестовый раздел — О тестовом`);
+    expect(await db.contentPost.findUniqueOrThrow({ where: { id: post.id } })).toMatchObject({
+      topic: id,
+    });
+
+    // A section with posts can't be deleted, only archived; an archived one can't be set by hand.
+    await expect(deleteSection(owner, id)).rejects.toBeInstanceOf(ContentError);
+    await setSectionArchived(owner, id, true);
+    await expect(
+      setContentTags(owner, post.id, { topic: id, brand: "GENERAL" }),
+    ).rejects.toBeInstanceOf(ContentError);
+    await tagPendingContent(10, call as never);
+    expect((await listSections()).find((s) => s.id === id)).toMatchObject({
+      archived: true,
+      posts: 1,
+    });
+
+    // Re-tagging sends posts back to AI, but not the hand-set ones.
+    await setContentTags(owner, post.id, { topic: "PRICES", brand: "ESSE" });
+    const other = await savePlanItem(owner, null, {
+      title: "Тестовый пост 2",
+      channels: ["PARTNER"],
+      publishDate: "2026-10-12",
+    });
+    await tagPendingContent(10, call as never).catch(() => 0);
+    expect(await retagContent(owner, "2026-10-01", "2026-10-31")).toBe(1);
+    expect(await db.contentPost.findUniqueOrThrow({ where: { id: other.id } })).toMatchObject({
+      tagPending: true,
+    });
+
+    const empty = await saveSection(owner, null, {
+      name: "Пустой тестовый",
+      description: "",
+      sortOrder: 9,
+    });
+    await deleteSection(owner, empty);
+    expect((await listSections()).some((s) => s.id === empty)).toBe(false);
   });
 });

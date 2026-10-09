@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import type { ContentBrand, ContentChannel, ContentTopic } from "@/lib/generated/prisma/enums";
+import type { ContentBrand, ContentChannel } from "@/lib/generated/prisma/enums";
 import { requireUser } from "@/modules/core/auth/current-user";
 import {
   addContentComment,
@@ -194,7 +194,7 @@ export async function setTagsAction(form: FormData) {
   const id = str(form, "postId");
   await run(`/content/${id}`, () =>
     setContentTags(actor, id, {
-      topic: str(form, "topic") as ContentTopic,
+      topic: str(form, "topic"),
       brand: str(form, "brand") as ContentBrand,
     }),
   );
