@@ -19,6 +19,8 @@ enum Role {
   OWNER
   MANAGER
   MEMBER
+  // Like a member, plus the legal check of every content post.
+  LAWYER
 }
 
 model User {
@@ -56,19 +58,23 @@ model User {
   inviteUsed     Invite?        @relation("InviteUsedBy")
   activity       ActivityLog[]
 
-  tasksCreated    Task[]               @relation("TaskCreator")
-  tasksAssigned   Task[]               @relation("TaskAssignee")
-  plansCreated    Plan[]
-  comments        Comment[]
-  attachments     TaskAttachment[]
-  aiUsage         AiUsage[]
-  botDrafts       BotDraft[]
-  scheduledSends  ScheduledSend[]
-  meetingsCreated Meeting[]            @relation("MeetingCreator")
-  meetings        MeetingParticipant[]
-  meetingNotes    MeetingNotes[]
-  projectsLed     Project[]            @relation("ProjectLead")
-  projectsCreated Project[]            @relation("ProjectCreator")
+  tasksCreated       Task[]               @relation("TaskCreator")
+  tasksAssigned      Task[]               @relation("TaskAssignee")
+  taskDeleteRequests Task[]               @relation("TaskDeleteRequester")
+  plansCreated       Plan[]
+  comments           Comment[]
+  attachments        TaskAttachment[]
+  aiUsage            AiUsage[]
+  botDrafts          BotDraft[]
+  scheduledSends     ScheduledSend[]
+  meetingsCreated    Meeting[]            @relation("MeetingCreator")
+  meetings           MeetingParticipant[]
+  meetingNotes       MeetingNotes[]
+  projectsLed        Project[]            @relation("ProjectLead")
+  contentAuthored    ContentPost[]        @relation("ContentAuthor")
+  contentCreated     ContentPost[]        @relation("ContentCreator")
+  contentComments    ContentComment[]
+  projectsCreated    Project[]            @relation("ProjectCreator")
 }
 
 model Invite {
@@ -166,50 +172,56 @@ enum PlanLevel {
 }
 
 model Task {
-  id              String       @id @default(cuid())
-  title           String
-  description     String?
+  id                  String       @id @default(cuid())
+  title               String
+  description         String?
   // Personal tasks are visible only to their author and skip approval.
-  isPersonal      Boolean      @default(false)
-  creatorId       String
-  assigneeId      String
-  status          TaskStatus   @default(DRAFT)
-  priority        TaskPriority @default(MEDIUM)
-  project         String?
+  isPersonal          Boolean      @default(false)
+  creatorId           String
+  assigneeId          String
+  status              TaskStatus   @default(DRAFT)
+  priority            TaskPriority @default(MEDIUM)
+  project             String?
   // Calendar dates (no time of day). startDate is optional and used by the timeline.
-  startDate       DateTime?    @db.Date
-  dueDate         DateTime?    @db.Date
-  estimateMinutes Int?
-  planId          String?
+  startDate           DateTime?    @db.Date
+  dueDate             DateTime?    @db.Date
+  estimateMinutes     Int?
+  planId              String?
   // Set when the task came from meeting minutes.
-  meetingId       String?
+  meetingId           String?
   // Project plan fields (see Project): phase, code from the plan ("T01"), who is responsible
   // per the plan (a group or role, e.g. "HO / аналитика"), milestone and risk marks.
-  phaseId         String?
-  code            String?
-  responsible     String?
-  isMilestone     Boolean      @default(false)
-  atRisk          Boolean      @default(false)
-  approvedAt      DateTime?
-  completedAt     DateTime?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  phaseId             String?
+  code                String?
+  responsible         String?
+  isMilestone         Boolean      @default(false)
+  atRisk              Boolean      @default(false)
+  approvedAt          DateTime?
+  completedAt         DateTime?
+  // A deletion request (the task already had progress): waits for whoever oversees the task.
+  deleteRequestedById String?
+  deleteRequestedAt   DateTime?
+  deleteReason        String?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
 
-  creator     User             @relation("TaskCreator", fields: [creatorId], references: [id])
-  assignee    User             @relation("TaskAssignee", fields: [assigneeId], references: [id])
-  plan        Plan?            @relation(fields: [planId], references: [id], onDelete: SetNull)
-  meeting     Meeting?         @relation(fields: [meetingId], references: [id], onDelete: SetNull)
-  phase       ProjectPhase?    @relation(fields: [phaseId], references: [id], onDelete: SetNull)
+  creator           User             @relation("TaskCreator", fields: [creatorId], references: [id])
+  deleteRequestedBy User?            @relation("TaskDeleteRequester", fields: [deleteRequestedById], references: [id], onDelete: SetNull)
+  assignee          User             @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  plan              Plan?            @relation(fields: [planId], references: [id], onDelete: SetNull)
+  meeting           Meeting?         @relation(fields: [meetingId], references: [id], onDelete: SetNull)
+  phase             ProjectPhase?    @relation(fields: [phaseId], references: [id], onDelete: SetNull)
   // "blockedBy": tasks that must be closed before this one can be DONE.
-  blockedBy   TaskDependency[] @relation("DependencyBlocked")
-  blocks      TaskDependency[] @relation("DependencyBlocker")
-  comments    Comment[]
-  attachments TaskAttachment[]
+  blockedBy         TaskDependency[] @relation("DependencyBlocked")
+  blocks            TaskDependency[] @relation("DependencyBlocker")
+  comments          Comment[]
+  attachments       TaskAttachment[]
 
   @@index([assigneeId, status])
   @@index([creatorId])
   @@index([dueDate])
   @@index([project])
+  @@index([deleteRequestedAt])
 }
 
 model TaskDependency {
@@ -692,4 +704,142 @@ model ProjectPhase {
   tasks   Task[]
 
   @@index([projectId])
+}
+
+// ============================================================
+// Content plan: posts for the company's Telegram bots, by date. An author uploads the visual and
+// texts (RU + UZ), a reviewer gives feedback or approves, then someone sends it to each bot and
+// marks it sent.
+// ============================================================
+
+enum ContentChannel {
+  PARTNER
+  CONNECT
+  RESEARCH
+}
+
+enum ContentStatus {
+  // Planned: a topic and a date, nothing uploaded yet.
+  PLANNED
+  // The author is working on it (something uploaded).
+  DRAFT
+  // Sent for review.
+  REVIEW
+  // Approved by a planner, checked by the lawyer.
+  LEGAL_REVIEW
+  // Returned with feedback.
+  CHANGES
+  APPROVED
+  // Sent to every bot it is planned for.
+  SENT
+  CANCELLED
+}
+
+// Sections (topics) of the content plan, for the analytics. The owner and managers add,
+// rename, order and hide them; AI puts every post into one of the active sections.
+// The first eight keep their old codes as ids (PRICES, NEW_PRODUCTS, ...).
+model ContentSection {
+  id          String   @id @default(cuid())
+  name        String
+  // What belongs here: shown to the AI that sorts posts.
+  description String?
+  sortOrder   Int      @default(0)
+  // Hidden: no new posts go here; old ones keep it.
+  archived    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  posts ContentPost[]
+}
+
+enum ContentLang {
+  RU
+  UZ
+}
+
+enum ContentFileKind {
+  PHOTO
+  VIDEO
+  FILE
+}
+
+// Visuals and files of a post, separately for each language (up to 10 each).
+// Stored under UPLOAD_DIR/content/<postId>/.
+model ContentFile {
+  id        String          @id @default(cuid())
+  postId    String
+  lang      ContentLang
+  kind      ContentFileKind
+  path      String
+  name      String
+  mime      String
+  size      Int
+  sortOrder Int             @default(0)
+  createdAt DateTime        @default(now())
+
+  post ContentPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId, lang, sortOrder])
+}
+
+enum ContentBrand {
+  ESSE
+  BOHEM
+  PINE
+  BLOOMING
+  SIMPLE
+  GENERAL
+}
+
+model ContentPost {
+  id           String           @id @default(cuid())
+  // Topic, e.g. "Новые цены ESSE Super Slim".
+  title        String
+  // What is needed: the brief for the author.
+  brief        String?
+  channels     ContentChannel[]
+  publishDate  DateTime         @db.Date
+  // "HH:MM", optional.
+  publishTime  String?
+  status       ContentStatus    @default(PLANNED)
+  authorId     String?
+  createdById  String
+  textRu       String?
+  textUz       String?
+  sentChannels ContentChannel[]
+  // The section (ContentSection.id).
+  topic        String?
+  brand        ContentBrand?
+  // "ai", "keywords" or "manual" (set by hand: never changed automatically).
+  tagSource    String?
+  // Waiting for (re)tagging by the background worker.
+  tagPending   Boolean          @default(true)
+  approvedAt   DateTime?
+  sentAt       DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  author    User?            @relation("ContentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  section   ContentSection?  @relation(fields: [topic], references: [id], onDelete: SetNull)
+  createdBy User             @relation("ContentCreator", fields: [createdById], references: [id])
+  comments  ContentComment[]
+  files     ContentFile[]
+
+  @@index([publishDate])
+  @@index([authorId, status])
+  @@index([tagPending])
+}
+
+model ContentComment {
+  id         String   @id @default(cuid())
+  postId     String
+  authorId   String
+  body       String
+  // true = feedback that returned the post for changes.
+  isFeedback Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  post   ContentPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author User        @relation(fields: [authorId], references: [id])
+
+  @@index([postId])
 }

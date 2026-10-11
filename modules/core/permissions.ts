@@ -9,7 +9,7 @@ export type Actor = {
 
 // Roles that `actorRole` is allowed to invite. There is only one OWNER.
 export function invitableRoles(actorRole: Role): Role[] {
-  if (actorRole === "OWNER") return ["MANAGER", "MEMBER"];
+  if (actorRole === "OWNER") return ["MANAGER", "MEMBER", "LAWYER"];
   if (actorRole === "MANAGER") return ["MEMBER"];
   return [];
 }

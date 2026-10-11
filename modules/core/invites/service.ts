@@ -84,7 +84,7 @@ export async function revokeInvite(actor: Actor, inviteId: string, now = new Dat
 
 // Active invites the actor may see: OWNER sees all, MANAGER own, MEMBER none.
 export async function listActiveInvites(actor: Actor, now = new Date()) {
-  if (actor.role === "MEMBER") return [];
+  if (actor.role !== "OWNER" && actor.role !== "MANAGER") return [];
   return db.invite.findMany({
     where: {
       usedAt: null,

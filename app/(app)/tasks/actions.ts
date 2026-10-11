@@ -10,6 +10,11 @@ import { requireUser } from "@/modules/core/auth/current-user";
 import { addLinkAttachment, removeAttachment } from "@/modules/tasks/attachment-service";
 import { addComment } from "@/modules/tasks/comment-service";
 import { addDependency, removeDependency } from "@/modules/tasks/dependency-service";
+import {
+  deleteTask,
+  requestTaskDeletion,
+  resolveTaskDeletion,
+} from "@/modules/tasks/delete-service";
 import { TaskError } from "@/modules/tasks/errors";
 import { createPlan } from "@/modules/tasks/plan-service";
 import {
@@ -102,7 +107,7 @@ export async function updateTaskAction(
 }
 
 // Runs a task action from the task card and comes back with ?error=<code> on failure.
-async function onTaskPage(taskId: string, run: () => Promise<unknown>) {
+async function onTaskPage(taskId: string, run: () => Promise<unknown>, then = "") {
   let error: string | null = null;
   try {
     await run();
@@ -111,14 +116,16 @@ async function onTaskPage(taskId: string, run: () => Promise<unknown>) {
     error = e.code;
   }
   revalidatePath("/", "layout");
-  redirect(`/tasks/${encodeURIComponent(taskId)}${error ? `?error=${error}` : ""}`);
+  redirect(`/tasks/${encodeURIComponent(taskId)}${error ? `?error=${error}` : then}`);
 }
 
 export async function changeStatusAction(formData: FormData) {
   const user = await actor();
   const taskId = idSchema.parse(str(formData, "taskId"));
   const to = statusSchema.parse(str(formData, "to"));
-  await onTaskPage(taskId, () => changeStatus(user, taskId, to));
+  // "Withdraw and edit": back to draft, then straight to the edit form.
+  const then = str(formData, "then") === "edit" ? "/edit" : "";
+  await onTaskPage(taskId, () => changeStatus(user, taskId, to), then);
 }
 
 // For the kanban board: returns the result instead of redirecting.
@@ -195,4 +202,52 @@ export async function createPlanAction(formData: FormData) {
   }
   revalidatePath("/tasks/plans");
   redirect(planId ? `/tasks/plans/${planId}` : `/tasks/plans?error=${error}`);
+}
+
+// Deletion: right away (own untouched task, or as the overseer), or as a request up the hierarchy.
+async function runDelete(
+  taskId: string,
+  change: () => Promise<unknown>,
+  done: string,
+  gone: boolean,
+) {
+  let target = gone ? `/tasks?deleted=1` : `/tasks/${taskId}?notice=${done}`;
+  try {
+    await change();
+  } catch (error) {
+    if (!(error instanceof TaskError)) throw error;
+    target = `/tasks/${taskId}?error=${error.code}`;
+  }
+  revalidatePath("/tasks", "layout");
+  revalidatePath("/");
+  redirect(target);
+}
+
+export async function deleteTaskAction(formData: FormData) {
+  const user = await actor();
+  const taskId = idSchema.parse(str(formData, "taskId"));
+  await runDelete(taskId, () => deleteTask(user, taskId), "", true);
+}
+
+export async function requestDeleteTaskAction(formData: FormData) {
+  const user = await actor();
+  const taskId = idSchema.parse(str(formData, "taskId"));
+  await runDelete(
+    taskId,
+    () => requestTaskDeletion(user, taskId, str(formData, "reason")),
+    "sent",
+    false,
+  );
+}
+
+export async function resolveDeleteTaskAction(formData: FormData) {
+  const user = await actor();
+  const taskId = idSchema.parse(str(formData, "taskId"));
+  const decision = str(formData, "decision");
+  await runDelete(
+    taskId,
+    () => resolveTaskDeletion(user, taskId, decision === "approve"),
+    decision === "withdraw" ? "withdrawn" : "rejected",
+    decision === "approve",
+  );
 }

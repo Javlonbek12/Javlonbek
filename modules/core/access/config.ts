@@ -14,6 +14,7 @@ export const CONFIGURABLE_MODULES = [
   "structure",
   "planograms",
   "projects",
+  "content",
   "reports",
 ] as const;
 export type ConfigurableModule = (typeof CONFIGURABLE_MODULES)[number];
@@ -26,13 +27,22 @@ const roleSchema = z.object({
   modules: z.array(z.enum(CONFIGURABLE_MODULES)),
   taskScope: z.enum(TASK_SCOPES),
 });
-const configSchema = z.object({ MANAGER: roleSchema, MEMBER: roleSchema });
+const LAWYER_DEFAULT = { modules: ["meetings", "content"], taskScope: "own" } satisfies z.infer<
+  typeof roleSchema
+>;
+// The lawyer's settings were added later: configs saved before get the default.
+const configSchema = z.object({
+  MANAGER: roleSchema,
+  MEMBER: roleSchema,
+  LAWYER: roleSchema.default(LAWYER_DEFAULT),
+});
 export type RoleConfig = z.infer<typeof configSchema>;
 
 // Default: only the owner sees everything; others see their tasks and meetings.
 export const DEFAULT_ROLE_CONFIG: RoleConfig = {
-  MANAGER: { modules: ["meetings", "projects"], taskScope: "team" },
-  MEMBER: { modules: ["meetings"], taskScope: "own" },
+  MANAGER: { modules: ["meetings", "projects", "content"], taskScope: "team" },
+  MEMBER: { modules: ["meetings", "content"], taskScope: "own" },
+  LAWYER: LAWYER_DEFAULT,
 };
 
 const KEY = "roles.config";
@@ -59,8 +69,18 @@ export async function saveRoleConfig(actor: Actor, input: unknown) {
   if (actor.role !== "OWNER") throw new RoleConfigError("forbidden");
   const parsed = configSchema.safeParse(input);
   if (!parsed.success) throw new RoleConfigError("invalid");
-  // Employees only ever see their own tasks.
-  const config = { ...parsed.data, MEMBER: { ...parsed.data.MEMBER, taskScope: "own" as const } };
+  // Employees and the lawyer only ever see their own tasks; the lawyer always has the content plan.
+  const lawyerModules = parsed.data.LAWYER.modules.filter((m) => m !== "reports");
+  const config = {
+    ...parsed.data,
+    MEMBER: { ...parsed.data.MEMBER, taskScope: "own" as const },
+    LAWYER: {
+      modules: lawyerModules.includes("content")
+        ? lawyerModules
+        : [...lawyerModules, "content" as const],
+      taskScope: "own" as const,
+    },
+  };
   const value = JSON.stringify(config);
   await db.systemState.upsert({
     where: { key: KEY },
@@ -78,9 +98,13 @@ export async function saveRoleConfig(actor: Actor, input: unknown) {
 }
 
 export function roleModules(role: Role, config: RoleConfig): ConfigurableModule[] {
-  return role === "OWNER" ? [...CONFIGURABLE_MODULES] : config[role].modules;
+  if (role === "OWNER") return [...CONFIGURABLE_MODULES];
+  // The lawyer checks every post, so the content plan is always on.
+  if (role === "LAWYER") return [...new Set([...config.LAWYER.modules, "content" as const])];
+  return config[role].modules;
 }
 
 export function roleTaskScope(role: Role, config: RoleConfig): TaskScope {
-  return role === "OWNER" ? "all" : config[role].taskScope;
+  if (role === "OWNER") return "all";
+  return role === "MANAGER" ? config.MANAGER.taskScope : "own";
 }

@@ -12,8 +12,9 @@ import { approverIdsFor } from "@/modules/core/access/approvers";
 
 import { canEditTask, canViewTask, CLOSED_STATUSES, isApprover, visibleTasksWhere } from "./access";
 import { TaskError } from "./errors";
-import { filtersWhere, scopeWhere, type Scope, type TaskFilters } from "./filters";
+import { filtersWhere, scopeWhere, type Scope, type TaskFilters, type TaskSort } from "./filters";
 import { sendTaskNotices, statusChangeRecipients } from "./notifications";
+import { quickCounts, smartSort } from "./sort";
 import { visiblePlansWhere } from "./plan-service";
 import { availableTransitions, checkTransition } from "./status";
 import { canViewMeeting } from "@/modules/meetings/access";
@@ -264,14 +265,38 @@ export function toTaskView(task: TaskWithPeople) {
 
 export type TaskView = ReturnType<typeof toTaskView>;
 
+const ORDER_BY: Record<TaskSort, Prisma.TaskOrderByWithRelationInput[]> = {
+  smart: [{ dueDate: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
+  due: [{ dueDate: { sort: "asc", nulls: "last" } }, { priority: "desc" }],
+  priority: [{ priority: "desc" }, { dueDate: { sort: "asc", nulls: "last" } }],
+  created: [{ createdAt: "desc" }],
+  updated: [{ updatedAt: "desc" }],
+};
+
 export async function listTasks(actor: Actor, filters: TaskFilters, today: string) {
   const tasks = await db.task.findMany({
     where: { AND: [visibleTasksWhere(actor), filtersWhere(filters, actor, today)] },
     include: listInclude,
-    orderBy: [{ dueDate: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
+    orderBy: ORDER_BY[filters.sort],
     take: 500,
   });
-  return tasks.map(toTaskView);
+  const views = tasks.map(toTaskView);
+  return filters.sort === "smart" ? smartSort(views, today) : views;
+}
+
+// How many tasks each quick filter (overdue, today, important...) would show.
+export async function countQuickFilters(actor: Actor, filters: TaskFilters, today: string) {
+  const rows = await db.task.findMany({
+    where: {
+      AND: [visibleTasksWhere(actor), filtersWhere(filters, actor, today, { quick: false })],
+    },
+    select: { status: true, priority: true, dueDate: true, createdAt: true },
+    take: 2000,
+  });
+  return quickCounts(
+    rows.map((r) => ({ ...r, dueDate: r.dueDate ? toDateString(r.dueDate) : null })),
+    today,
+  );
 }
 
 // Tasks shown in the calendar and timeline: personal ones, and team ones once approved.
@@ -332,11 +357,17 @@ export async function getTaskDetail(actor: Actor, taskId: string) {
       ...listInclude,
       plan: { select: { id: true, title: true } },
       meeting: { select: { id: true, title: true } },
+      deleteRequestedBy: { select: { id: true, firstName: true, lastName: true } },
     },
   });
   if (!task || !canViewTask(actor, task)) return null;
   return {
-    task: { ...toTaskView(task), plan: task.plan, meeting: task.meeting },
+    task: {
+      ...toTaskView(task),
+      plan: task.plan,
+      meeting: task.meeting,
+      deleteRequestedBy: task.deleteRequestedBy,
+    },
     transitions: availableTransitions(actor, task),
     canEdit: canEditTask(actor, task),
   };

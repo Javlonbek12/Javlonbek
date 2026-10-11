@@ -50,7 +50,7 @@ export default async function EmployeePage({ params, searchParams }: PageProps<"
   // The radar is shown to the same people who may see the statistics.
   const profiles = stats ? await teamProfiles(timezone) : null;
   const can = (field: (typeof editable)[number]) => editable.includes(field);
-  const assignable = (["MANAGER", "MEMBER"] as const).filter((role) =>
+  const assignable = (["MANAGER", "MEMBER", "LAWYER"] as const).filter((role) =>
     canChangeRole(viewer, user, role),
   );
   const hidden = <input type="hidden" name="employeeId" value={user.id} />;

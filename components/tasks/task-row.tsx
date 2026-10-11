@@ -32,6 +32,11 @@ export function TaskRow({ task, today }: { task: TaskView; today: string }) {
             {t("tasks.blocked")}
           </Badge>
         )}
+        {task.deleteRequestedAt && (
+          <Badge variant="outline" className="border-destructive text-destructive">
+            {t("tasks.remove.badge")}
+          </Badge>
+        )}
         {task.project && <Badge variant="secondary">{task.project}</Badge>}
       </span>
       <span className="text-muted-foreground flex flex-wrap gap-x-3 text-xs">

@@ -13,8 +13,8 @@ const manager = { id: "manager", role: "MANAGER" as const };
 const member = { id: "member", role: "MEMBER" as const };
 
 describe("invites", () => {
-  it("OWNER invites managers and members, but not another owner", () => {
-    expect(invitableRoles("OWNER")).toEqual(["MANAGER", "MEMBER"]);
+  it("OWNER invites managers, members and lawyers, but not another owner", () => {
+    expect(invitableRoles("OWNER")).toEqual(["MANAGER", "MEMBER", "LAWYER"]);
     expect(canInvite("OWNER", "OWNER")).toBe(false);
   });
 

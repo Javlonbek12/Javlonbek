@@ -1,3 +1,6 @@
+import { MAX_FILE_MB, MAX_FILES_PER_LANG } from "@/modules/content/files";
+import { ContentError } from "@/modules/content/service";
+import { handleSentButton } from "@/modules/content/telegram";
 import { db } from "@/lib/db";
 import {
   addDays,
@@ -480,6 +483,16 @@ export async function handleCallback(
   }
   if (parts[0] === "k" && parts[1]) return complete(user, parts[1]);
   if (parts[0] === "m" && parts[1]) return waitForNotes(user, parts[1], chatId);
+  if (parts[0] === "cs" && parts[1] && parts[2]) {
+    try {
+      return { ...(await handleSentButton(user, parts[1], parts[2])), edit: true };
+    } catch (error) {
+      if (!(error instanceof ContentError)) throw error;
+      return {
+        text: t(`content.errors.${error.code}`, { mb: MAX_FILE_MB, max: MAX_FILES_PER_LANG }),
+      };
+    }
+  }
   return { text: t("bot.card.expired") };
 }
 

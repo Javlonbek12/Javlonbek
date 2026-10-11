@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { PriorityBadge, StatusBadge } from "@/components/tasks/task-badges";
+import { TaskDeleteControl } from "@/components/tasks/task-delete";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -16,7 +17,8 @@ import { cn } from "@/lib/utils";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getSettings } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
-import { isClosed } from "@/modules/tasks/access";
+import { isClosed, oversees } from "@/modules/tasks/access";
+import { getDeleteMode } from "@/modules/tasks/delete-service";
 import { listAttachments, MAX_FILE_MB } from "@/modules/tasks/attachment-service";
 import { listComments } from "@/modules/tasks/comment-service";
 import { getDependencies, listBlockerCandidates } from "@/modules/tasks/dependency-service";
@@ -32,6 +34,7 @@ import {
   changeStatusAction,
   removeAttachmentAction,
   removeDependencyAction,
+  resolveDeleteTaskAction,
 } from "../actions";
 import { setTaskRiskAction } from "../../projects/actions";
 
@@ -70,20 +73,31 @@ function formatSize(bytes: number) {
 export default async function TaskPage({ params, searchParams }: PageProps<"/tasks/[id]">) {
   const user = await requireUser();
   const { id } = await params;
-  const { error } = await searchParams;
+  const { error, notice } = await searchParams;
   const detail = await getTaskDetail(user, id);
   if (!detail) notFound();
   const { task, transitions, canEdit } = detail;
 
-  const [settings, deps, candidates, comments, attachments, history, project] = await Promise.all([
-    getSettings(user.id),
-    getDependencies(user, id),
-    canEdit ? listBlockerCandidates(user, id) : Promise.resolve([]),
-    listComments(id),
-    listAttachments(id),
-    getTaskHistory(id),
-    projectOfTask(task),
-  ]);
+  const [settings, deps, candidates, comments, attachments, history, project, deleteMode] =
+    await Promise.all([
+      getSettings(user.id),
+      getDependencies(user, id),
+      canEdit ? listBlockerCandidates(user, id) : Promise.resolve([]),
+      listComments(id),
+      listAttachments(id),
+      getTaskHistory(id),
+      projectOfTask(task),
+      getDeleteMode(user, id),
+    ]);
+  const NOTICES = ["sent", "rejected", "withdrawn"] as const;
+  const shownNotice = NOTICES.find((n) => n === notice);
+  const deleteRequest = task.deleteRequestedAt
+    ? {
+        name: task.deleteRequestedBy ? displayName(task.deleteRequestedBy) : "—",
+        own: task.deleteRequestedById === user.id,
+        canDecide: !task.isPersonal && oversees(user, task),
+      }
+    : null;
   const tz = settings.timezone;
   const today = todayInTimezone(tz);
   const overdue = isOverdue(task, today);
@@ -100,6 +114,58 @@ export default async function TaskPage({ params, searchParams }: PageProps<"/tas
         <p role="alert" className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
           {t(`tasks.errors.${error}` as TranslationKey, { mb: MAX_FILE_MB })}
         </p>
+      )}
+
+      {shownNotice && (
+        <p className="rounded-md bg-emerald-500/10 p-3 text-sm text-emerald-800 dark:text-emerald-300">
+          {t(`tasks.remove.${shownNotice}`)}
+        </p>
+      )}
+      {deleteRequest && task.deleteRequestedAt && (
+        <div className="border-destructive/30 bg-destructive/5 flex flex-col gap-2 rounded-xl border p-3 text-sm">
+          <span className="font-medium">
+            {t("tasks.remove.pending", {
+              name: deleteRequest.name,
+              date: formatDateTime(task.deleteRequestedAt, tz),
+            })}
+          </span>
+          {task.deleteReason && (
+            <span className="text-muted-foreground">
+              {t("tasks.remove.pendingReason", { reason: task.deleteReason })}
+            </span>
+          )}
+          <div className="flex flex-wrap gap-2">
+            {deleteRequest.canDecide && (
+              <>
+                <form action={resolveDeleteTaskAction}>
+                  {hidden}
+                  <input type="hidden" name="decision" value="approve" />
+                  <Button type="submit" size="sm" variant="destructive">
+                    {t("tasks.remove.approve")}
+                  </Button>
+                </form>
+                {!deleteRequest.own && (
+                  <form action={resolveDeleteTaskAction}>
+                    {hidden}
+                    <input type="hidden" name="decision" value="reject" />
+                    <Button type="submit" size="sm" variant="outline">
+                      {t("tasks.remove.reject")}
+                    </Button>
+                  </form>
+                )}
+              </>
+            )}
+            {deleteRequest.own && (
+              <form action={resolveDeleteTaskAction}>
+                {hidden}
+                <input type="hidden" name="decision" value="withdraw" />
+                <Button type="submit" size="sm" variant="outline">
+                  {t("tasks.remove.withdraw")}
+                </Button>
+              </form>
+            )}
+          </div>
+        </div>
       )}
 
       <Card className="gap-3">
@@ -197,20 +263,42 @@ export default async function TaskPage({ params, searchParams }: PageProps<"/tas
         {task.description && <p className="text-sm whitespace-pre-wrap">{task.description}</p>}
         {(transitions.length > 0 || (project && canEdit && !isClosed(task.status))) && (
           <div className="flex flex-wrap gap-2 border-t pt-3">
-            {transitions.map((to) => (
-              <form key={to} action={changeStatusAction}>
-                {hidden}
-                <input type="hidden" name="to" value={to} />
-                <Button
-                  type="submit"
-                  size="sm"
-                  variant={to === "CANCELLED" || to === "DRAFT" ? "ghost" : "default"}
-                  disabled={to === "DONE" && task.openBlockers > 0}
-                >
-                  {t(`tasks.action.${to}`)}
-                </Button>
-              </form>
-            ))}
+            {transitions.map((to) => {
+              // The creator takes their task back from approval to change it.
+              const withdraw =
+                to === "DRAFT" && task.status === "PENDING_APPROVAL" && task.creatorId === user.id;
+              // The assignee takes their work back from review.
+              const unsubmit =
+                to === "IN_PROGRESS" &&
+                task.status === "IN_REVIEW" &&
+                task.assigneeId === user.id &&
+                task.creatorId !== user.id;
+              return (
+                <form key={to} action={changeStatusAction}>
+                  {hidden}
+                  <input type="hidden" name="to" value={to} />
+                  {withdraw && <input type="hidden" name="then" value="edit" />}
+                  <Button
+                    type="submit"
+                    size="sm"
+                    variant={
+                      withdraw || unsubmit
+                        ? "outline"
+                        : to === "CANCELLED" || to === "DRAFT"
+                          ? "ghost"
+                          : "default"
+                    }
+                    disabled={to === "DONE" && task.openBlockers > 0}
+                  >
+                    {withdraw
+                      ? t("tasks.withdraw.approval")
+                      : unsubmit
+                        ? t("tasks.withdraw.review")
+                        : t(`tasks.action.${to}`)}
+                  </Button>
+                </form>
+              );
+            })}
             {project && canEdit && !isClosed(task.status) && (
               <form action={setTaskRiskAction}>
                 {hidden}
@@ -228,6 +316,11 @@ export default async function TaskPage({ params, searchParams }: PageProps<"/tas
             {t("tasks.dependencies.openBlockers", { count: task.openBlockers })}
           </p>
         )}
+        <TaskDeleteControl
+          taskId={task.id}
+          mode={deleteMode}
+          requested={task.deleteRequestedAt !== null}
+        />
       </Card>
 
       <Card className="gap-3">

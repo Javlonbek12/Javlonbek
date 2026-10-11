@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Excel plans are uploaded through server actions (post files go through an API route).
+  experimental: { serverActions: { bodySizeLimit: "21mb" } },
   async headers() {
     return [
       {

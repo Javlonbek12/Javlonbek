@@ -5,6 +5,8 @@ import {
   FolderKanban,
   House,
   LayoutGrid,
+  Megaphone,
+  PieChart,
   ListTodo,
   Network,
   Settings,
@@ -21,11 +23,13 @@ export type ModuleEntry = {
   href: string;
   icon: LucideIcon;
   roles: Role[];
+  // The role-settings section that switches it (default: its own id).
+  access?: string;
   // false = not in the phone's bottom bar (shown elsewhere, e.g. the bell in the header).
   mobile?: boolean;
 };
 
-const ALL_ROLES: Role[] = ["OWNER", "MANAGER", "MEMBER"];
+const ALL_ROLES: Role[] = ["OWNER", "MANAGER", "MEMBER", "LAWYER"];
 
 // Every module registers itself here: name, icon, link and which roles see it.
 export const MODULES: ModuleEntry[] = [
@@ -64,6 +68,24 @@ export const MODULES: ModuleEntry[] = [
     roles: ALL_ROLES,
     mobile: false,
   },
+  // Content plan for the company's bots: on phones it opens from the "Today" screen.
+  {
+    id: "content",
+    titleKey: "nav.content",
+    href: "/content",
+    icon: Megaphone,
+    roles: ALL_ROLES,
+    mobile: false,
+  },
+  {
+    id: "contentAnalytics",
+    titleKey: "nav.contentAnalytics",
+    href: "/content-analytics",
+    icon: PieChart,
+    roles: ALL_ROLES,
+    mobile: false,
+    access: "content",
+  },
   // Management report: owner and managers; on phones it opens from the "Today" screen.
   {
     id: "reports",
@@ -93,7 +115,15 @@ export const MODULES: ModuleEntry[] = [
 ];
 
 // Sections the owner can switch on/off per role (Settings → Roles); the rest are always shown.
-const SWITCHABLE = new Set(["meetings", "team", "structure", "planograms", "projects", "reports"]);
+const SWITCHABLE = new Set([
+  "meetings",
+  "team",
+  "structure",
+  "planograms",
+  "projects",
+  "content",
+  "reports",
+]);
 
 export function modulesForRole(
   role: Role,
@@ -104,6 +134,9 @@ export function modulesForRole(
   return modules.filter(
     (module) =>
       module.roles.includes(role) &&
-      (role === "OWNER" || !enabled || !SWITCHABLE.has(module.id) || enabled.includes(module.id)),
+      (role === "OWNER" ||
+        !enabled ||
+        !SWITCHABLE.has(module.access ?? module.id) ||
+        enabled.includes(module.access ?? module.id)),
   );
 }

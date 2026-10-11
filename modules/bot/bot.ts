@@ -6,6 +6,10 @@ import { getEnv } from "@/lib/env";
 import type { User } from "@/lib/generated/prisma/client";
 import { t } from "@/lib/i18n";
 import { createRateLimiter } from "@/lib/rate-limit";
+import { MAX_FILE_MB, MAX_FILES_PER_LANG } from "@/modules/content/files";
+import { ContentError } from "@/modules/content/service";
+import { deliverToTelegram } from "@/modules/content/telegram";
+import { getUserToday } from "@/modules/core/settings/service";
 import { createSpeechToText, type SpeechToText } from "@/modules/stt";
 
 import {
@@ -111,6 +115,22 @@ export function createBot(
   });
 
   bot.command("notes", async (ctx) => send(ctx, await showMeetingsForNotes(ctx.user!, deps.now)));
+
+  // Today's approved content-plan posts, one by one, ready to forward into the company bots.
+  bot.command("content", async (ctx) => {
+    try {
+      await deliverToTelegram(ctx.user!, {
+        date: await getUserToday(ctx.user!.id, deps.now ?? new Date()),
+      });
+    } catch (error) {
+      if (!(error instanceof ContentError)) throw error;
+      await ctx.reply(
+        error.code === "nothingToday"
+          ? t("content.telegram.botEmpty")
+          : t(`content.errors.${error.code}`, { mb: MAX_FILE_MB, max: MAX_FILES_PER_LANG }),
+      );
+    }
+  });
 
   for (const kind of ["today", "week", "overdue", "pending"] as const) {
     bot.command(kind, async (ctx) => send(ctx, await showList(ctx.user!, kind, deps.now)));

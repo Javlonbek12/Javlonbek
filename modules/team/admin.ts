@@ -40,7 +40,9 @@ export async function teamReport() {
 }
 
 const fixSchema = z.object({
-  roles: z.array(z.object({ user: z.string(), role: z.enum(["MANAGER", "MEMBER"]) })).default([]),
+  roles: z
+    .array(z.object({ user: z.string(), role: z.enum(["MANAGER", "MEMBER", "LAWYER"]) }))
+    .default([]),
   // A place by the person written on it (or its job title) → an app user.
   places: z.array(z.object({ place: z.string(), user: z.string() })).default([]),
   leads: z
