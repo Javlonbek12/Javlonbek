@@ -1,6 +1,11 @@
+import { rm } from "node:fs/promises";
+import path from "node:path";
+
 import { z } from "zod";
 
 import { db } from "@/lib/db";
+import { getEnv } from "@/lib/env";
+import { generateInviteCode, INVITE_TTL_DAYS } from "@/modules/core/invites/service";
 import { withAccess } from "@/modules/core/access/actor";
 import { changeRole } from "@/modules/core/users/service";
 import { displayName } from "@/modules/core/users/display-name";
@@ -50,7 +55,67 @@ const fixSchema = z.object({
       z.object({ project: z.string(), user: z.string(), moveTasks: z.boolean().default(true) }),
     )
     .default([]),
+  // Removes a user for good with everything they made or were given (see deleteUserCompletely).
+  deleteUsers: z.array(z.object({ user: z.string() })).default([]),
+  // Puts a place under another place (both by job title or person written on it).
+  parents: z.array(z.object({ place: z.string(), parent: z.string() })).default([]),
+  // An invite to a place, with any role (OWNER too: a second owner with full rights).
+  placeInvites: z
+    .array(z.object({ place: z.string(), role: z.enum(["OWNER", "MANAGER", "MEMBER", "LAWYER"]) }))
+    .default([]),
 });
+
+// A place by its job title or the person written on it; exactly one must match.
+async function findPlace(name: string) {
+  const nodes = await db.orgNode.findMany({ where: { kind: "POSITION" } });
+  const matches = nodes.filter(
+    (n) =>
+      (n.personName && normName(n.personName) === normName(name)) ||
+      (n.title && normName(n.title) === normName(name)),
+  );
+  if (matches.length !== 1) throw new Error(`No single place "${name}" in the org chart.`);
+  return matches[0]!;
+}
+
+// Deletes the user and everything that is theirs: tasks they created or were given (with
+// comments and files), their comments and files elsewhere, plans, meetings, notes, content posts
+// they added. Projects they created stay and pass to the owner.
+export async function deleteUserCompletely(userId: string, ownerId: string) {
+  if (userId === ownerId) throw new Error("The owner can't be deleted.");
+  const root = path.resolve(getEnv().UPLOAD_DIR);
+  const tasks = await db.task.findMany({
+    where: { OR: [{ creatorId: userId }, { assigneeId: userId }] },
+    select: { id: true },
+  });
+  const posts = await db.contentPost.findMany({
+    where: { createdById: userId },
+    select: { id: true },
+  });
+  const files = await db.taskAttachment.findMany({
+    where: { uploadedById: userId, filePath: { not: null } },
+    select: { filePath: true },
+  });
+  const taskIds = tasks.map((t) => t.id);
+  const counts = await db.$transaction([
+    db.task.deleteMany({ where: { id: { in: taskIds } } }),
+    db.comment.deleteMany({ where: { authorId: userId } }),
+    db.taskAttachment.deleteMany({ where: { uploadedById: userId } }),
+    db.plan.deleteMany({ where: { createdById: userId } }),
+    db.meetingNotes.deleteMany({ where: { authorId: userId } }),
+    db.meeting.deleteMany({ where: { createdById: userId } }),
+    db.employeeNote.deleteMany({ where: { authorId: userId } }),
+    db.contentComment.deleteMany({ where: { authorId: userId } }),
+    db.contentPost.deleteMany({ where: { createdById: userId } }),
+    db.project.updateMany({ where: { createdById: userId }, data: { createdById: ownerId } }),
+    db.user.delete({ where: { id: userId } }),
+  ]);
+  for (const id of taskIds)
+    await rm(path.join(root, "tasks", id), { recursive: true, force: true });
+  for (const f of files) await rm(path.join(root, f.filePath!), { force: true });
+  for (const p of posts)
+    await rm(path.join(root, "content", p.id), { recursive: true, force: true });
+  return { tasks: counts[0].count, posts: counts[8].count, meetings: counts[5].count };
+}
 
 export async function teamFix(input: unknown) {
   const fix = fixSchema.parse(input);
@@ -77,20 +142,52 @@ export async function teamFix(input: unknown) {
     await changeRole(actor, find(user), role);
     log.push(`role: ${user} → ${role}`);
   }
+  for (const { user } of fix.deleteUsers) {
+    const userId = find(user);
+    const removed = await deleteUserCompletely(userId, owner.id);
+    log.push(
+      `deleted: ${user} (tasks ${removed.tasks}, posts ${removed.posts}, meetings ${removed.meetings})`,
+    );
+  }
   for (const { place, user } of fix.places) {
     const userId = find(user);
-    const nodes = await db.orgNode.findMany({ where: { kind: "POSITION" } });
-    const matches = nodes.filter(
-      (n) =>
-        (n.personName && normName(n.personName) === normName(place)) ||
-        (n.title && normName(n.title) === normName(place)),
-    );
-    if (matches.length !== 1) throw new Error(`No single place "${place}" in the org chart.`);
+    const node = await findPlace(place);
     await db.$transaction([
       db.orgNode.updateMany({ where: { userId }, data: { userId: null } }),
-      db.orgNode.update({ where: { id: matches[0].id }, data: { userId, personName: null } }),
+      db.orgNode.update({ where: { id: node.id }, data: { userId, personName: null } }),
     ]);
     log.push(`place: ${place} → ${user}`);
+  }
+  for (const { place, parent } of fix.parents) {
+    const node = await findPlace(place);
+    const above = await findPlace(parent);
+    if (node.id === above.id) throw new Error(`"${place}" can't be under itself.`);
+    // No loops: the new parent must not be below the place.
+    for (let p = above.parentId; p;) {
+      if (p === node.id) throw new Error(`"${parent}" is below "${place}".`);
+      p = (await db.orgNode.findUnique({ where: { id: p } }))?.parentId ?? null;
+    }
+    await db.orgNode.update({ where: { id: node.id }, data: { parentId: above.id } });
+    log.push(`parent: ${place} → under ${parent}`);
+  }
+  for (const { place, role } of fix.placeInvites) {
+    const node = await findPlace(place);
+    if (node.userId) throw new Error(`"${place}" is already taken in the app.`);
+    await db.invite.updateMany({
+      where: { orgNodeId: node.id, usedAt: null, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    await db.invite.create({
+      data: {
+        code: generateInviteCode(),
+        role,
+        createdById: owner.id,
+        orgNodeId: node.id,
+        expiresAt: new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000),
+      },
+    });
+    // The link is not printed here: the owner copies it from the org chart page.
+    log.push(`invite: ${place} as ${role} (link on the org chart page)`);
   }
   const linked = await linkPeopleByName();
   if (linked) log.push(`linked by name: ${linked}`);
