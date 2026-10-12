@@ -9,7 +9,8 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import type { TaskFormState } from "@/app/(app)/tasks/actions";
-import { t, type TranslationKey } from "@/lib/i18n";
+import { type TranslationKey } from "@/lib/i18n";
+import { useT } from "@/components/locale-provider";
 
 type Option = { id: string; label: string; isPersonal?: boolean };
 
@@ -36,6 +37,7 @@ export function TaskForm({
   plans,
   projects,
 }: TaskFormProps) {
+  const t = useT();
   const [state, formAction, pending] = useActionState(action, { error: null, values: initial });
   const values = state.values;
   const [isPersonal, setIsPersonal] = useState(values.isPersonal === "on");

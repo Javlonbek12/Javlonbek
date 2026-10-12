@@ -5,6 +5,7 @@ import "dotenv/config";
 import { Api } from "grammy";
 
 import { getEnv } from "@/lib/env";
+import { BOT_COMMANDS } from "@/modules/bot/commands";
 
 const env = getEnv();
 if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_WEBHOOK_SECRET) {
@@ -17,15 +18,8 @@ async function main(token: string, secret: string) {
   const api = new Api(token);
   await api.setWebhook(url, { secret_token: secret });
   // The menu of commands next to the message field.
-  await api.setMyCommands([
-    { command: "today", description: "Задачи на сегодня и просроченные" },
-    { command: "week", description: "Задачи на 7 дней" },
-    { command: "overdue", description: "Просроченные" },
-    { command: "pending", description: "Ждут моего решения" },
-    { command: "content", description: "Контент на сегодня — для пересылки в ботов" },
-    { command: "notes", description: "Прислать итоги встречи" },
-    { command: "help", description: "Справка" },
-  ]);
+  await api.setMyCommands(BOT_COMMANDS.ru);
+  await api.setMyCommands(BOT_COMMANDS.en, { language_code: "en" });
   console.log(`Webhook set to ${url}; commands updated.`);
 }
 

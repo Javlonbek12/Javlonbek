@@ -15,7 +15,8 @@ type TaskForNotice = {
 type Notice = {
   userId: string;
   type: NotificationType;
-  title: string;
+  // Made when sending, in the recipient's language.
+  title: () => string;
   buttons?: TelegramButton[][];
 };
 
@@ -45,28 +46,27 @@ export function statusChangeRecipients(
 ): Notice[] {
   if (task.isPersonal) return [];
   const notices: Notice[] = [];
-  const statusTitle = t("notifications.events.taskStatusTitle", {
-    status: t(`tasks.status.${to}`),
-  });
+  const statusTitle = () =>
+    t("notifications.events.taskStatusTitle", { status: t(`tasks.status.${to}`) });
 
   if (to === "PENDING_APPROVAL") {
     for (const id of approverIds) {
       notices.push({
         userId: id,
         type: "task_pending_approval",
-        title: t("notifications.events.taskPendingTitle"),
+        title: () => t("notifications.events.taskPendingTitle"),
       });
     }
   } else if (to === "APPROVED") {
     notices.push({
       userId: task.assigneeId,
       type: "task_assigned",
-      title: t("notifications.events.taskAssignedTitle"),
+      title: () => t("notifications.events.taskAssignedTitle"),
     });
     notices.push({
       userId: task.creatorId,
       type: "task_status",
-      title: t("notifications.events.taskApprovedTitle"),
+      title: () => t("notifications.events.taskApprovedTitle"),
     });
   } else if (to === "IN_REVIEW") {
     const reviewers = task.creatorId === task.assigneeId ? approverIds : [task.creatorId];
@@ -74,7 +74,7 @@ export function statusChangeRecipients(
       notices.push({
         userId: id,
         type: "task_status",
-        title: t("notifications.events.taskReviewTitle"),
+        title: () => t("notifications.events.taskReviewTitle"),
       });
     }
   } else if (to === "DRAFT" && from === "PENDING_APPROVAL") {
@@ -99,12 +99,12 @@ export function statusChangeRecipients(
 
 export async function sendTaskNotices(notices: Notice[], task: TaskForNotice, actorName: string) {
   for (const notice of notices) {
-    await notify(notice.userId, {
+    await notify(notice.userId, () => ({
       type: notice.type,
-      title: notice.title,
+      title: notice.title(),
       body: t("notifications.events.taskBody", { title: task.title, name: actorName }),
       link: `/tasks/${task.id}`,
       telegramButtons: notice.buttons,
-    });
+    }));
   }
 }

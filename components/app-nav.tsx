@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import type { Role } from "@/lib/generated/prisma/enums";
-import { t } from "@/lib/i18n";
+import { useT } from "@/components/locale-provider";
 import { cn } from "@/lib/utils";
 import { modulesForRole } from "@/modules/core/registry";
 
@@ -43,6 +43,7 @@ export function AppNav({
   unreadCount: number;
   enabled?: string[];
 }) {
+  const t = useT();
   const pathname = usePathname();
   const items = modulesForRole(role, undefined, enabled);
   const current = activeHref(
@@ -105,6 +106,7 @@ export function AppNav({
 
 // Phone-only top bar: app name and the notifications bell.
 export function MobileHeader({ unreadCount }: { unreadCount: number }) {
+  const t = useT();
   return (
     <header className="bg-sidebar text-sidebar-foreground sticky top-0 z-20 flex items-center justify-between px-4 py-2.5 md:hidden">
       <span className="flex items-center gap-2">

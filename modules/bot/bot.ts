@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { withAccess } from "@/modules/core/access/actor";
 import { getEnv } from "@/lib/env";
 import type { User } from "@/lib/generated/prisma/client";
-import { t } from "@/lib/i18n";
+import { t, isLocale } from "@/lib/i18n";
 import { createRateLimiter } from "@/lib/rate-limit";
 import { MAX_FILE_MB, MAX_FILES_PER_LANG } from "@/modules/content/files";
 import { ContentError } from "@/modules/content/service";
@@ -25,6 +25,7 @@ import {
 } from "./conversation";
 import { inlineKeyboard } from "./keyboard";
 import { handleStart } from "./start";
+import { withLocale } from "@/lib/i18n/server";
 
 const allowMessage = createRateLimiter({ limit: 20, windowMs: 60_000 });
 const MAX_TELEGRAM_TEXT = 4000;
@@ -73,6 +74,17 @@ export function createBot(
   config?: ConstructorParameters<typeof Bot>[1],
 ): Bot {
   const bot = new Bot(token, config);
+
+  // Everything the bot says comes in the person's language (Russian for unknown people).
+  bot.use(async (ctx, next) => {
+    const settings = ctx.from
+      ? await db.userSettings.findFirst({
+          where: { user: { telegramId: BigInt(ctx.from.id) } },
+          select: { locale: true },
+        })
+      : null;
+    await withLocale(isLocale(settings?.locale) ? settings.locale : "ru", () => next());
+  });
 
   // The bot works only in private chats and limits how often one user can write.
   bot.use(async (ctx, next) => {

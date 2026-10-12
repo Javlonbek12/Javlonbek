@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { formatDay, formatMonth, fromDateString } from "@/lib/dates";
 import type { ContentBrand, ContentChannel } from "@/lib/generated/prisma/enums";
-import { t } from "@/lib/i18n";
+import { t, dateFormat } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type {
   brandsByMonth,
@@ -34,7 +34,9 @@ export const BRAND_COLOR: Record<ContentBrand, string> = {
   GENERAL: "var(--muted-foreground)",
 };
 
-const monthShort = new Intl.DateTimeFormat("ru-RU", { month: "short", timeZone: "UTC" });
+const monthShort = {
+  format: (date: Date) => dateFormat({ month: "short", timeZone: "UTC" }).format(date),
+};
 
 function TopicLabel({ topic, meta }: { topic: string; meta: SectionMeta }) {
   const m = meta[topic] ?? NONE;

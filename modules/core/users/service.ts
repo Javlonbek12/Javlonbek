@@ -107,12 +107,12 @@ export async function loginWithTelegram(
   // A new person whose name is written in the chart takes that place.
   if (result.ok && result.created && !(await linkPeopleByName())) await syncPeople();
   if (result.ok && result.inviterId) {
-    await notify(result.inviterId, {
+    await notify(result.inviterId, () => ({
       type: "invite_accepted",
       title: t("notifications.events.inviteAcceptedTitle"),
       body: t("notifications.events.inviteAcceptedBody", { name: displayName(result.user) }),
       link: "/team",
-    });
+    }));
   }
   if (!result.ok) return result;
   return { ok: true, user: result.user, created: result.created };
@@ -141,9 +141,9 @@ export async function changeRole(actor: Actor, targetUserId: string, newRole: Ro
   });
   // Who can be a manager changed: managers in the chart follow.
   await syncPeople();
-  await notify(target.id, {
+  await notify(target.id, () => ({
     type: "role_changed",
     title: t("notifications.events.roleChangedTitle"),
     body: t("notifications.events.roleChangedBody", { role: t(`roles.${newRole}`) }),
-  });
+  }));
 }

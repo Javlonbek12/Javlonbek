@@ -8,11 +8,12 @@ import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { getEnv, isDevLoginEnabled } from "@/lib/env";
 import { t } from "@/lib/i18n";
 import { formatDate } from "@/lib/time";
-import { getCurrentUser } from "@/modules/core/auth/current-user";
+import { getCurrentUser, getViewerLocale } from "@/modules/core/auth/current-user";
 import { findInviteByCode, getInviteStatus } from "@/modules/core/invites/service";
 
 export default async function InvitePage({ params, searchParams }: PageProps<"/invite/[code]">) {
   if (await getCurrentUser()) redirect("/");
+  await getViewerLocale();
   const { code } = await params;
   const { error } = await searchParams;
   const { TELEGRAM_BOT_USERNAME, TELEGRAM_BOT_TOKEN, APP_URL, DEFAULT_TIMEZONE } = getEnv();

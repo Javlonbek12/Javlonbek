@@ -1,3 +1,5 @@
+import { dateFormat } from "@/lib/i18n";
+
 // Minutes from midnight (0..1439) of `date` in the given IANA timezone.
 export function minutesOfDayInTimezone(date: Date, timeZone: string): number {
   const parts = new Intl.DateTimeFormat("en-GB", {
@@ -37,21 +39,17 @@ export function formatTimeOfDay(minutes: number): string {
 }
 
 export function formatDate(date: Date, timeZone: string): string {
-  return new Intl.DateTimeFormat("ru-RU", {
-    timeZone,
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).format(date);
+  return dateFormat({ timeZone, day: "numeric", month: "long", year: "numeric" }).format(date);
 }
 
 export function formatDateTime(date: Date, timeZone: string): string {
-  return new Intl.DateTimeFormat("ru-RU", {
+  return dateFormat({
     timeZone,
     day: "numeric",
     month: "short",
     hour: "2-digit",
     minute: "2-digit",
+    hourCycle: "h23",
   }).format(date);
 }
 
@@ -98,7 +96,7 @@ export function utcToZonedLocal(date: Date, timeZone: string): string {
 }
 
 export function formatTime(date: Date, timeZone: string): string {
-  return new Intl.DateTimeFormat("ru-RU", { timeZone, hour: "2-digit", minute: "2-digit" }).format(
+  return dateFormat({ timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(
     date,
   );
 }

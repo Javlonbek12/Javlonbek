@@ -1,4 +1,4 @@
-// All Russian UI strings live here. Add uz.ts / en.ts with the same keys later.
+// All Russian UI strings live here; en.ts has the same keys in English.
 // Placeholders like {name} are filled by t(key, { name: "..." }).
 export const ru = {
   app: {
@@ -1465,6 +1465,9 @@ export const ru = {
     quietFrom: "С",
     quietTo: "До",
     types: "Какие уведомления получать",
+    language: "Язык",
+    languageHint: "Язык сайта, бота и уведомлений.",
+    languages: { ru: "Русский", en: "English" },
   },
   bot: {
     welcomeNew: "Добро пожаловать в Assistant, {name}! Ваша роль: {role}.",

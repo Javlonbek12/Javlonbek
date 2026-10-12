@@ -56,9 +56,13 @@ export async function findProblems(deps: WatchdogDeps): Promise<Map<Check, strin
   return problems;
 }
 
+// Technical alerts go to the first owner only (who runs the system), not to a second owner.
 async function notifyOwners(text: string) {
-  const owners = await db.user.findMany({ where: { role: "OWNER", botChatId: { not: null } } });
-  for (const owner of owners) await sendTelegramMessage(owner.botChatId!, text);
+  const owner = await db.user.findFirst({
+    where: { role: "OWNER", botChatId: { not: null } },
+    orderBy: { createdAt: "asc" },
+  });
+  if (owner) await sendTelegramMessage(owner.botChatId!, text);
 }
 
 // One watchdog round. Only changes are reported (no message every 5 minutes while

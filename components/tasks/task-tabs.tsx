@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
-import { t } from "@/lib/i18n";
+import { useT } from "@/components/locale-provider";
 import { cn } from "@/lib/utils";
 
 const TABS = [
@@ -17,6 +17,7 @@ const TABS = [
 ] as const;
 
 export function TaskTabs() {
+  const t = useT();
   const pathname = usePathname();
   const active = (href: string) =>
     href === "/tasks" ? pathname === "/tasks" : pathname.startsWith(href);

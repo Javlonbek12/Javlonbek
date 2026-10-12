@@ -1,4 +1,4 @@
-import { t } from "@/lib/i18n";
+import { t, dateFormat } from "@/lib/i18n";
 
 import type { Report } from "./data";
 
@@ -30,12 +30,10 @@ export function changeNote(
     : `${change.startsWith("+") ? "▲" : "▼"} ${change}`;
 }
 
-const reportDate = new Intl.DateTimeFormat("ru-RU", {
-  day: "numeric",
-  month: "long",
-  year: "numeric",
-  timeZone: "UTC",
-});
+const reportDate = {
+  format: (date: Date) =>
+    dateFormat({ day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(date),
+};
 
 // "1 октября 2026 г." for report headers.
 export const formatReportDate = (value: string) =>

@@ -112,7 +112,7 @@ export async function createMeeting(actor: Actor, input: MeetingInput) {
   const author = await db.user.findUniqueOrThrow({ where: { id: actor.id } });
   for (const userId of participantIds.filter((id) => id !== actor.id)) {
     const { timezone: theirTz } = await getSettings(userId);
-    await notify(userId, {
+    await notify(userId, () => ({
       type: "meeting_invite",
       title: t("notifications.events.meetingInviteTitle"),
       body: t("notifications.events.meetingInviteBody", {
@@ -122,7 +122,7 @@ export async function createMeeting(actor: Actor, input: MeetingInput) {
         name: displayName(author),
       }),
       link: `/meetings/${first.id}`,
-    });
+    }));
   }
   return first;
 }

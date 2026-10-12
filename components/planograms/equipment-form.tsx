@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
-import { t } from "@/lib/i18n";
+import { useT } from "@/components/locale-provider";
 import type { Geometry, Shelf } from "@/modules/planograms/geometry";
 
 type Props = {
@@ -21,6 +21,7 @@ type Props = {
 
 // Equipment constructor: shelves with slot counts, offsets and grouping, plus a live preview.
 export function EquipmentForm(props: Props) {
+  const t = useT();
   const [header, setHeader] = useState<Geometry["header"]>(props.geometry.header);
   const [shelves, setShelves] = useState<Shelf[]>(props.geometry.shelves);
   const update = (index: number, patch: Partial<Shelf>) =>

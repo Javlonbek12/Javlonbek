@@ -35,7 +35,7 @@ export async function addComment(actor: Actor, taskId: string, body: string) {
   });
   for (const user of recipients) {
     if (!canViewTask(user, task)) continue;
-    await notify(user.id, {
+    await notify(user.id, () => ({
       type: "task_comment",
       title: t("notifications.events.taskCommentTitle"),
       body: t("notifications.events.taskCommentBody", {
@@ -44,7 +44,7 @@ export async function addComment(actor: Actor, taskId: string, body: string) {
         text: text.data.length > 200 ? `${text.data.slice(0, 200)}…` : text.data,
       }),
       link: `/tasks/${taskId}`,
-    });
+    }));
   }
   return comment;
 }

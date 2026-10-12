@@ -2,7 +2,7 @@ import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 
 import { addDays, daysBetween, formatDay, fromDateString } from "@/lib/dates";
-import { t } from "@/lib/i18n";
+import { t, dateFormat } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { ganttBar, type PhaseState, type ProjectTask } from "@/modules/projects/progress";
 import { isOverdue } from "@/modules/tasks/today";
@@ -17,7 +17,9 @@ type Phase = {
 };
 
 const ROW = "h-8";
-const monthShort = new Intl.DateTimeFormat("ru-RU", { month: "short", timeZone: "UTC" });
+const monthShort = {
+  format: (date: Date) => dateFormat({ month: "short", timeZone: "UTC" }).format(date),
+};
 
 function taskColor(task: ProjectTask, today: string) {
   if (task.status === "DONE") return "bg-emerald-500";

@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { t } from "@/lib/i18n";
+import { t, LOCALES } from "@/lib/i18n";
 import { formatTimeOfDay } from "@/lib/time";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { OPTIONAL_NOTIFICATION_TYPES } from "@/modules/core/notifications/types";
@@ -56,6 +56,24 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
       </Card>
 
       <form action={saveSettingsAction} className="flex flex-col gap-4">
+        <Card>
+          <CardTitle>{t("settings.language")}</CardTitle>
+          <CardDescription>{t("settings.languageHint")}</CardDescription>
+          <div className="flex flex-wrap gap-4">
+            {LOCALES.map((l) => (
+              <Label key={l}>
+                <input
+                  type="radio"
+                  name="locale"
+                  value={l}
+                  defaultChecked={settings.locale === l}
+                  className="size-4"
+                />
+                {t(`settings.languages.${l}`)}
+              </Label>
+            ))}
+          </div>
+        </Card>
         <Card>
           <Label className="flex-col items-start">
             {t("settings.timezone")}
