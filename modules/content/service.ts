@@ -219,7 +219,7 @@ export async function savePlanItem(actor: Actor, id: string | null, input: PlanI
   }
   await log(actor, id ? "content.updated" : "content.planned", post.id);
   if (post.authorId && post.authorId !== actor.id && post.authorId !== previousAuthor) {
-    await notify(post.authorId, {
+    await notify(post.authorId, () => ({
       type: "content_assigned",
       title: t("notifications.events.contentAssignedTitle"),
       body: t("notifications.events.contentAssignedBody", {
@@ -227,7 +227,7 @@ export async function savePlanItem(actor: Actor, id: string | null, input: PlanI
         date: day(post.publishDate),
       }),
       link: `/content/${post.id}`,
-    });
+    }));
   }
   return post;
 }
@@ -274,7 +274,7 @@ export async function submitForReview(actor: Actor, id: string) {
   await log(actor, "content.submitted", id);
   const actorRow = await db.user.findUnique({ where: { id: actor.id } });
   for (const reviewer of await reviewersOf(post, actor)) {
-    await notify(reviewer, {
+    await notify(reviewer, () => ({
       type: "content_review",
       title: t("notifications.events.contentReviewTitle"),
       body: t("notifications.events.contentReviewBody", {
@@ -283,7 +283,7 @@ export async function submitForReview(actor: Actor, id: string) {
         date: day(post.publishDate),
       }),
       link: `/content/${id}`,
-    });
+    }));
   }
 }
 
@@ -320,7 +320,7 @@ export async function returnWithFeedback(actor: Actor, id: string, feedback: str
   ]);
   await log(actor, "content.returned", id);
   if (post.authorId && post.authorId !== actor.id) {
-    await notify(post.authorId, {
+    await notify(post.authorId, () => ({
       type: "content_feedback",
       title: t("notifications.events.contentFeedbackTitle"),
       body: t("notifications.events.contentFeedbackBody", {
@@ -328,7 +328,7 @@ export async function returnWithFeedback(actor: Actor, id: string, feedback: str
         feedback: body.length > 300 ? `${body.slice(0, 297)}…` : body,
       }),
       link: `/content/${id}`,
-    });
+    }));
   }
 }
 
@@ -350,7 +350,7 @@ export async function approvePost(actor: Actor, id: string, now = new Date()) {
   await db.contentPost.update({ where: { id }, data: { status: "LEGAL_REVIEW" } });
   await log(actor, "content.to_legal", id);
   for (const lawyer of lawyers) {
-    await notify(lawyer, {
+    await notify(lawyer, () => ({
       type: "content_legal",
       title: t("notifications.events.contentLegalTitle"),
       body: t("notifications.events.contentLegalBody", {
@@ -358,7 +358,7 @@ export async function approvePost(actor: Actor, id: string, now = new Date()) {
         date: day(post.publishDate),
       }),
       link: `/content/${id}`,
-    });
+    }));
   }
 }
 
@@ -370,7 +370,7 @@ export async function legalApprove(actor: Actor, id: string, now = new Date()) {
   // The planners learn the post can be sent.
   for (const reviewer of await reviewersOf(post, actor)) {
     if (reviewer === post.authorId) continue;
-    await notify(reviewer, {
+    await notify(reviewer, () => ({
       type: "content_approved",
       title: t("notifications.events.contentLegalApprovedTitle"),
       body: t("notifications.events.contentApprovedBody", {
@@ -378,7 +378,7 @@ export async function legalApprove(actor: Actor, id: string, now = new Date()) {
         date: day(post.publishDate),
       }),
       link: `/content/${id}`,
-    });
+    }));
   }
 }
 
@@ -393,7 +393,7 @@ async function finalApprove(
   });
   await log(actor, "content.approved", post.id);
   if (post.authorId && post.authorId !== actor.id) {
-    await notify(post.authorId, {
+    await notify(post.authorId, () => ({
       type: "content_approved",
       title: t("notifications.events.contentApprovedTitle"),
       body: t("notifications.events.contentApprovedBody", {
@@ -401,7 +401,7 @@ async function finalApprove(
         date: day(post.publishDate),
       }),
       link: `/content/${post.id}`,
-    });
+    }));
   }
 }
 

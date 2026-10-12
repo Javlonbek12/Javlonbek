@@ -1,12 +1,14 @@
 import { daysBetween, formatDay, fromDateString } from "@/lib/dates";
-import { t } from "@/lib/i18n";
+import { t, dateFormat } from "@/lib/i18n";
 
 type Week = { start: string; planned: number; actual: number | null };
 
 const W = 640;
 const H = 220;
 const PAD = { left: 34, right: 12, top: 12, bottom: 26 };
-const monthShort = new Intl.DateTimeFormat("ru-RU", { month: "short", timeZone: "UTC" });
+const monthShort = {
+  format: (date: Date) => dateFormat({ month: "short", timeZone: "UTC" }).format(date),
+};
 
 // "Plan vs fact": tasks that should be done by each week's end (dashed) and tasks actually done (solid).
 // The gap between the lines is how far the project is behind.

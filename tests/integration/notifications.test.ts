@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { db } from "@/lib/db";
+import { t } from "@/lib/i18n";
 import { ForbiddenError } from "@/modules/core/errors";
 import {
   countUnread,
@@ -38,6 +39,17 @@ describe("notify", () => {
       "Тест\nТекст\n\nhttp://localhost:3000/team",
       undefined,
     );
+  });
+
+  it("writes the notification in the recipient's language", async () => {
+    const user = await createTestUser("MEMBER");
+    await updateSettings(user.id, { ...baseSettings, locale: "en" });
+    const notification = await notify(user.id, () => ({
+      type: "role_changed",
+      title: t("notifications.events.roleChangedTitle"),
+      body: t("notifications.events.roleChangedBody", { role: t("roles.MANAGER") }),
+    }));
+    expect(notification).toMatchObject({ title: "Your role changed", body: "New role: Manager." });
   });
 
   it("does not send to Telegram if the user has not linked the bot", async () => {

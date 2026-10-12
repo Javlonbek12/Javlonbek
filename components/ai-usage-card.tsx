@@ -1,10 +1,10 @@
 import { Card, CardTitle } from "@/components/ui/card";
 import { addMonths, formatMonth, fromDateString, startOfMonth } from "@/lib/dates";
-import { t } from "@/lib/i18n";
+import { t, intlLocale } from "@/lib/i18n";
 import { getMonthlyUsage } from "@/modules/ai/run";
 import { displayName } from "@/modules/core/users/display-name";
 
-const nf = new Intl.NumberFormat("ru-RU");
+const nf = { format: (n: number) => new Intl.NumberFormat(intlLocale()).format(n) };
 
 // OWNER-only: AI usage for the current month, by person and prompt function.
 export async function AiUsageCard({ today }: { today: string }) {

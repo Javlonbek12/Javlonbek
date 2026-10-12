@@ -16,7 +16,8 @@ import { useState, useTransition } from "react";
 import { moveTaskAction } from "@/app/(app)/tasks/actions";
 import type { TaskStatus } from "@/lib/generated/prisma/enums";
 import { formatDay } from "@/lib/dates";
-import { t, type TranslationKey } from "@/lib/i18n";
+import { type TranslationKey } from "@/lib/i18n";
+import { useT, useLocale } from "@/components/locale-provider";
 import { cn } from "@/lib/utils";
 
 export type KanbanCard = {
@@ -32,6 +33,8 @@ export type KanbanCard = {
 };
 
 function Card({ card }: { card: KanbanCard }) {
+  const t = useT();
+  const locale = useLocale();
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: card.id,
   });
@@ -57,7 +60,7 @@ function Card({ card }: { card: KanbanCard }) {
         <span>{card.assigneeName}</span>
         {card.dueDate && (
           <span className={cn(card.overdue && "text-destructive font-medium")}>
-            {formatDay(card.dueDate)}
+            {formatDay(card.dueDate, locale)}
           </span>
         )}
         {card.blocked && <span className="text-destructive">{t("tasks.blocked")}</span>}
@@ -75,6 +78,7 @@ function Column({
   cards: KanbanCard[];
   highlight: boolean;
 }) {
+  const t = useT();
   const { setNodeRef, isOver } = useDroppable({ id: status });
   return (
     <section
@@ -103,6 +107,7 @@ export function KanbanBoard({
   columns: TaskStatus[];
   initialCards: KanbanCard[];
 }) {
+  const t = useT();
   const [cards, setCards] = useState(initialCards);
   const [dragging, setDragging] = useState<KanbanCard | null>(null);
   const [message, setMessage] = useState<string | null>(null);

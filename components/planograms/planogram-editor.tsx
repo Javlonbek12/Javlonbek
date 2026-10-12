@@ -15,7 +15,7 @@ import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
-import { t } from "@/lib/i18n";
+import { useT } from "@/components/locale-provider";
 import { cn } from "@/lib/utils";
 import { describeChange, describeViolation } from "@/modules/planograms/describe";
 import { diffLayouts } from "@/modules/planograms/diff";
@@ -118,6 +118,7 @@ function Cell({
 }
 
 export function PlanogramEditor(props: Props) {
+  const t = useT();
   const { geometry, skus, posms, rules } = props;
   const [state, setState] = useState({
     layout: props.initialLayout,

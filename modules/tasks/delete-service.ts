@@ -86,11 +86,11 @@ async function removeForGood(actor: Actor, task: Task) {
   people.delete(actor.id);
   for (const userId of people) {
     if (!userId) continue;
-    await notify(userId, {
+    await notify(userId, () => ({
       type: "task_status",
       title: t("notifications.events.taskDeletedTitle"),
       body: t("notifications.events.taskDeletedBody", { name, title: task.title }),
-    });
+    }));
   }
 }
 
@@ -122,14 +122,14 @@ export async function requestTaskDeletion(actor: Actor, taskId: string, reason: 
   });
   const name = await nameOf(actor.id);
   for (const userId of approvers) {
-    await notify(userId, {
+    await notify(userId, () => ({
       type: "task_delete_request",
       title: t("notifications.events.taskDeleteRequestTitle"),
       body:
         t("notifications.events.taskDeleteRequestBody", { name, title: task.title }) +
         (text ? `\n${text}` : ""),
       link: `/tasks/${taskId}`,
-    });
+    }));
   }
 }
 
@@ -153,7 +153,7 @@ export async function resolveTaskDeletion(actor: Actor, taskId: string, approve:
     entityId: taskId,
   });
   if (task.deleteRequestedById && !own) {
-    await notify(task.deleteRequestedById, {
+    await notify(task.deleteRequestedById, async () => ({
       type: "task_status",
       title: t("notifications.events.taskDeleteRejectedTitle"),
       body: t("notifications.events.taskDeleteRejectedBody", {
@@ -161,6 +161,6 @@ export async function resolveTaskDeletion(actor: Actor, taskId: string, approve:
         title: task.title,
       }),
       link: `/tasks/${taskId}`,
-    });
+    }));
   }
 }

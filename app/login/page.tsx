@@ -7,10 +7,11 @@ import { TelegramLoginButton } from "@/components/telegram-login-button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { getEnv, isDevLoginEnabled } from "@/lib/env";
 import { t } from "@/lib/i18n";
-import { getCurrentUser } from "@/modules/core/auth/current-user";
+import { getCurrentUser, getViewerLocale } from "@/modules/core/auth/current-user";
 
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   if (await getCurrentUser()) redirect("/");
+  await getViewerLocale();
   const { error } = await searchParams;
   const { TELEGRAM_BOT_USERNAME, TELEGRAM_BOT_TOKEN, APP_URL } = getEnv();
 

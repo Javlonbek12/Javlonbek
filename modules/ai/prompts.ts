@@ -4,6 +4,7 @@ import { isDateString } from "@/lib/dates";
 
 import { contextBlock, type PromptContext } from "./context";
 import { runStructured, type ModelCall } from "./run";
+import { currentLocale } from "@/lib/i18n";
 
 // ---------- extractTasks ----------
 
@@ -128,7 +129,9 @@ export async function interpretCommand(
 
 export const digestSchema = z.object({ text: z.string() });
 
-export const WRITE_DIGEST_SYSTEM = `You write a short morning digest for a busy trade-marketing manager, in Russian, for a Telegram message.
+// The digest is written in the reader's language (the current one, see lib/i18n).
+export const writeDigestSystem = (language: string) =>
+  `You write a short morning digest for a busy trade-marketing manager, in ${language}, for a Telegram message.
 You get JSON with the person's tasks: dueToday, overdue, waitingForDecision (tasks they must approve or accept), dueTomorrow.
 Write at most 8 short lines: start with what is overdue (most urgent first), then today's tasks, then what waits for their decision, then a one-line heads-up about tomorrow if anything is due.
 Mention task titles exactly as given, with assignee names where present. Plain text with a few emojis, no Markdown, no greeting (it is added separately), no invented facts.`;
@@ -149,7 +152,7 @@ export async function writeDigest(
   const result = await runStructured({
     userId,
     fn: "writeDigest",
-    system: WRITE_DIGEST_SYSTEM,
+    system: writeDigestSystem(currentLocale() === "en" ? "English" : "Russian"),
     prompt: `Today: ${today}\n\n${JSON.stringify(data)}`,
     schema: digestSchema,
     today,

@@ -2,7 +2,7 @@ import { Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 
 import { addDays, formatDay, fromDateString, toDateString } from "@/lib/dates";
-import { t } from "@/lib/i18n";
+import { t, dateFormat } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { deleteContentAction } from "@/app/(app)/content/actions";
 import { Button } from "@/components/ui/button";
@@ -32,7 +32,9 @@ const imageOf = (post: Post) => {
   return photo ? `/api/content/files/${photo.id}` : null;
 };
 
-const weekdayShort = new Intl.DateTimeFormat("ru-RU", { weekday: "short", timeZone: "UTC" });
+const weekdayShort = {
+  format: (date: Date) => dateFormat({ weekday: "short", timeZone: "UTC" }).format(date),
+};
 
 export function groupByDay(posts: Post[]) {
   const byDay = new Map<string, Post[]>();
@@ -337,11 +339,10 @@ export function ListView({
   );
 }
 
-const dayLong = new Intl.DateTimeFormat("ru-RU", {
-  day: "numeric",
-  month: "long",
-  timeZone: "UTC",
-});
+const dayLong = {
+  format: (date: Date) =>
+    dateFormat({ day: "numeric", month: "long", timeZone: "UTC" }).format(date),
+};
 
 // Preview: the period as a Telegram chat — date separators, every post as a message with its
 // picture and text (RU or UZ); status, bots and a link under each message.

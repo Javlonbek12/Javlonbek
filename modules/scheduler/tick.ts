@@ -41,12 +41,12 @@ async function digestFor(user: User, today: string, writer: DigestWriter) {
   if (!(await claim(user.id, "digest", today))) return;
   const data = await collectDigestData(user, today);
   if (isDigestEmpty(data)) return;
-  await notify(user.id, {
+  await notify(user.id, async () => ({
     type: "digest",
     title: t("notifications.events.digestTitle", { name: user.firstName }),
     body: await writer(user, today, data),
     link: "/",
-  });
+  }));
 }
 
 async function dueRemindersFor(user: User, dueDate: string) {
@@ -56,7 +56,7 @@ async function dueRemindersFor(user: User, dueDate: string) {
   });
   for (const task of tasks) {
     if (!(await claim(user.id, "due_reminder", `${task.id}:${dueDate}`))) continue;
-    await notify(user.id, {
+    await notify(user.id, () => ({
       type: "due_reminder",
       title: t("notifications.events.dueReminderTitle"),
       body: t("notifications.events.dueReminderBody", {
@@ -64,7 +64,7 @@ async function dueRemindersFor(user: User, dueDate: string) {
         date: formatDay(dueDate),
       }),
       link: `/tasks/${task.id}`,
-    });
+    }));
   }
 }
 
@@ -86,7 +86,7 @@ async function overdueFor(user: User, range: { from: string; to: string }) {
   for (const task of tasks) {
     const due = task.dueDate!.toISOString().slice(0, 10);
     if (!(await claim(user.id, "overdue", `${task.id}:${due}`))) continue;
-    await notify(user.id, {
+    await notify(user.id, () => ({
       type: "overdue",
       title: t("notifications.events.overdueTitle"),
       body: t("notifications.events.overdueBody", {
@@ -95,7 +95,7 @@ async function overdueFor(user: User, range: { from: string; to: string }) {
         name: displayName(task.assignee),
       }),
       link: `/tasks/${task.id}`,
-    });
+    }));
   }
 }
 
@@ -104,12 +104,12 @@ async function weeklyFor(user: User, weekStart: string, today: string) {
   const scope = (user as User & { access?: Access }).access?.taskScope ?? "all";
   const seesAll = user.role === "OWNER" || (user.role === "MANAGER" && scope === "all");
   if (!seesAll || !(await claim(user.id, "weekly_summary", weekStart))) return;
-  await notify(user.id, {
+  await notify(user.id, async () => ({
     type: "weekly_summary",
     title: t("notifications.events.weeklyTitle"),
     body: await weeklySummaryText(weekStart, today),
     link: "/tasks?scope=team",
-  });
+  }));
 }
 
 export const MEETING_REMINDER_MINUTES = 15;
@@ -126,7 +126,7 @@ async function meetingReminders(now: Date) {
     for (const { userId } of meeting.participants) {
       if (!(await claim(userId, "meeting_reminder", meeting.id))) continue;
       const { timezone } = await getSettings(userId);
-      await notify(userId, {
+      await notify(userId, () => ({
         type: "meeting_reminder",
         title: t("notifications.events.meetingReminderTitle"),
         body: [
@@ -139,7 +139,7 @@ async function meetingReminders(now: Date) {
           .filter(Boolean)
           .join("\n"),
         link: `/meetings/${meeting.id}`,
-      });
+      }));
     }
   }
 }

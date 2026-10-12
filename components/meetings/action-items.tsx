@@ -6,7 +6,8 @@ import type { ProposalState } from "@/app/(app)/meetings/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
-import { t, type TranslationKey } from "@/lib/i18n";
+import { type TranslationKey } from "@/lib/i18n";
+import { useT } from "@/components/locale-provider";
 
 type Props = {
   meetingId: string;
@@ -16,6 +17,7 @@ type Props = {
 
 // "Find tasks in the minutes": AI proposes rows, the user edits and confirms them.
 export function ActionItems({ meetingId, propose, create }: Props) {
+  const t = useT();
   const [state, action, pending] = useActionState(propose, {
     error: null,
     tasks: null,

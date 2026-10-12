@@ -5,6 +5,7 @@ import { getUserFromRequest } from "@/modules/core/auth/request-user";
 import { addPostFile, LANGS, MAX_FILE_MB, MAX_FILES_PER_LANG } from "@/modules/content/files";
 import { ContentError } from "@/modules/content/service";
 import { t } from "@/lib/i18n";
+import { localeOf } from "@/modules/core/settings/locale";
 
 const allowUpload = createRateLimiter({ limit: 40, windowMs: 60_000 });
 
@@ -21,20 +22,28 @@ export async function POST(
   try {
     form = await request.formData();
   } catch {
-    return Response.json({ error: t("content.errors.invalid") }, { status: 400 });
+    return Response.json(
+      { error: t("content.errors.invalid", undefined, await localeOf(user.id)) },
+      { status: 400 },
+    );
   }
   const file = form.get("file");
   const lang = LANGS.find((l) => l === form.get("lang"));
   if (!(file instanceof File) || !lang)
-    return Response.json({ error: t("content.errors.invalid") }, { status: 400 });
+    return Response.json(
+      { error: t("content.errors.invalid", undefined, await localeOf(user.id)) },
+      { status: 400 },
+    );
   try {
     const row = await addPostFile(user, id, lang, file);
     revalidatePath("/content", "layout");
     return Response.json({ id: row.id });
   } catch (error) {
     if (!(error instanceof ContentError)) throw error;
+    const params = { mb: MAX_FILE_MB, max: MAX_FILES_PER_LANG };
+    const locale = await localeOf(user.id);
     return Response.json(
-      { error: t(`content.errors.${error.code}`, { mb: MAX_FILE_MB, max: MAX_FILES_PER_LANG }) },
+      { error: t(`content.errors.${error.code}`, params, locale) },
       { status: 400 },
     );
   }

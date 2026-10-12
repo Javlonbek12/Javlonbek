@@ -4,9 +4,10 @@ import { Copy } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { t } from "@/lib/i18n";
+import { useT } from "@/components/locale-provider";
 
 export function CopyButton({ value, label }: { value: string; label?: string }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
   return (
     <Button

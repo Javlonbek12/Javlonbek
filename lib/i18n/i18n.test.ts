@@ -28,3 +28,27 @@ describe("t with params", () => {
     expect(t("home.greeting", {})).toBe("Здравствуйте, {name}!");
   });
 });
+
+describe("languages", () => {
+  const leaves = (node: object, prefix = ""): string[] =>
+    Object.entries(node).flatMap(([key, value]) =>
+      typeof value === "string" ? [`${prefix}${key}`] : leaves(value, `${prefix}${key}.`),
+    );
+
+  it("English has exactly the Russian keys and the same placeholders", async () => {
+    const { ru } = await import("./ru");
+    const { en } = await import("./en");
+    expect(leaves(en).sort()).toEqual(leaves(ru).sort());
+    for (const key of leaves(ru) as TranslationKey[]) {
+      const holes = (text: string) => (text.match(/\{\w+\}/g) ?? []).sort();
+      expect(holes(t(key, undefined, "en")), key).toEqual(holes(t(key, undefined, "ru")));
+    }
+  });
+
+  it("uses the language set for the current work", async () => {
+    const { withLocale } = await import("./server");
+    expect(withLocale("en", () => t("nav.tasks"))).toBe("Tasks");
+    expect(await withLocale("en", async () => t("nav.tasks"))).toBe("Tasks");
+    expect(t("nav.tasks")).toBe("Задачи");
+  });
+});

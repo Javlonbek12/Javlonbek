@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { createRateLimiter } from "@/lib/rate-limit";
 import { parseTimeOfDay } from "@/lib/time";
+import { syncBotCommands } from "@/modules/bot/commands";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { createInvite, revokeInvite } from "@/modules/core/invites/service";
 import { markAllRead, markRead, sendTestNotification } from "@/modules/core/notifications/service";
@@ -81,8 +82,12 @@ export async function saveSettingsAction(formData: FormData) {
     disabledTypes: OPTIONAL_NOTIFICATION_TYPES.filter(
       (type) => formData.get(`type_${type}`) !== "on",
     ),
+    digestTime: parseTimeOfDay(String(formData.get("digestTime") ?? "")) ?? 510,
+    locale: String(formData.get("locale") ?? "ru"),
   });
   if (!parsed.success) redirect("/settings?error=1");
   await updateSettings(user.id, parsed.data);
+  if (parsed.data.locale !== user.locale) await syncBotCommands(user.id, parsed.data.locale);
+  revalidatePath("/", "layout");
   redirect("/settings?saved=1");
 }

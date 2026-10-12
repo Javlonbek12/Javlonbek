@@ -1,4 +1,6 @@
 import { db } from "@/lib/db";
+import { isLocale } from "@/lib/i18n";
+import { withLocale } from "@/lib/i18n/server";
 import { getEnv } from "@/lib/env";
 import { t } from "@/lib/i18n";
 import { sendTelegramMessage, type TelegramButton } from "@/modules/bot/send";
@@ -34,11 +36,20 @@ export function formatTelegramText(event: NotificationEvent, appUrl: string): st
 // Single entry point for notifications: saves it for the UI and sends it to Telegram
 // when the user linked the bot, has Telegram enabled, didn't turn this type off
 // and is not in quiet hours. Returns null when the user turned this type off.
-export async function notify(userId: string, event: NotificationEvent, deps?: Partial<Deps>) {
+// `event` is best given as a function: it is then made in the recipient's language.
+export async function notify(
+  userId: string,
+  eventOrBuild: NotificationEvent | (() => NotificationEvent | Promise<NotificationEvent>),
+  deps?: Partial<Deps>,
+) {
   const { sendTelegram = sendTelegramMessage, now = new Date() } = deps ?? {};
   const user = await db.user.findUnique({ where: { id: userId } });
   if (!user) return null;
   const settings = await getSettings(userId);
+  const event =
+    typeof eventOrBuild === "function"
+      ? await withLocale(isLocale(settings.locale) ? settings.locale : "ru", eventOrBuild)
+      : eventOrBuild;
 
   const optional = OPTIONAL_NOTIFICATION_TYPES.includes(event.type);
   if (optional && settings.disabledTypes.includes(event.type)) return null;
@@ -79,12 +90,12 @@ export async function notify(userId: string, event: NotificationEvent, deps?: Pa
 export async function sendTestNotification(actor: Actor, targetUserId: string) {
   if (!canSendTestNotification(actor, targetUserId)) throw new ForbiddenError();
   const sender = await db.user.findUniqueOrThrow({ where: { id: actor.id } });
-  return notify(targetUserId, {
+  return notify(targetUserId, () => ({
     type: "test",
     title: t("notifications.events.testTitle"),
     body: t("notifications.events.testBody", { name: displayName(sender) }),
     link: "/notifications",
-  });
+  }));
 }
 
 export async function listNotifications(userId: string, limit = 50) {

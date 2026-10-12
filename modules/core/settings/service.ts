@@ -5,6 +5,7 @@ import { todayInTimezone } from "@/lib/dates";
 import { getEnv } from "@/lib/env";
 import { isValidTimezone } from "@/lib/time";
 import { OPTIONAL_NOTIFICATION_TYPES } from "@/modules/core/notifications/types";
+import { LOCALES, type Locale } from "@/lib/i18n";
 
 export async function getSettings(userId: string) {
   return db.userSettings.upsert({
@@ -24,11 +25,12 @@ export const settingsInputSchema = z
     quietHoursEnd: minutes,
     disabledTypes: z.array(z.enum(OPTIONAL_NOTIFICATION_TYPES as [string, ...string[]])),
     digestTime: z.number().int().min(0).max(1439),
+    locale: z.enum(LOCALES as [Locale, ...Locale[]]).default("ru"),
   })
   // Quiet hours are either fully set or fully off.
   .refine((v) => (v.quietHoursStart === null) === (v.quietHoursEnd === null), "quiet hours");
 
-export type SettingsInput = z.infer<typeof settingsInputSchema>;
+export type SettingsInput = z.input<typeof settingsInputSchema>;
 
 export async function updateSettings(userId: string, input: SettingsInput) {
   const data = settingsInputSchema.parse(input);

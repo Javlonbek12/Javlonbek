@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from "next";
 
+import { LocaleProvider } from "@/components/locale-provider";
 import { ServiceWorkerRegister } from "@/components/service-worker-register";
 import { t } from "@/lib/i18n";
+import { getViewerLocale } from "@/modules/core/auth/current-user";
 
 import "@fontsource-variable/onest";
 import "@fontsource/unbounded/500.css";
@@ -25,11 +27,12 @@ export const viewport: Viewport = {
   themeColor: "#1c2244",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  const locale = await getViewerLocale();
   return (
-    <html lang="ru" className="h-full antialiased">
+    <html lang={locale} className="h-full antialiased">
       <body className="flex min-h-full flex-col font-sans">
-        {children}
+        <LocaleProvider locale={locale}>{children}</LocaleProvider>
         <ServiceWorkerRegister />
       </body>
     </html>

@@ -1,3 +1,5 @@
+import { dateFormat, type Locale } from "@/lib/i18n";
+
 // Calendar dates as "YYYY-MM-DD" strings. Task and plan dates have no time of day,
 // so working with strings avoids timezone shifts. "Today" depends on the user's timezone.
 
@@ -72,28 +74,23 @@ export function isoWeekNumber(value: string): number {
   return Math.floor(daysBetween(yearStart, thursday) / 7) + 1;
 }
 
-const ruDay = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", timeZone: "UTC" });
-const ruDayLong = new Intl.DateTimeFormat("ru-RU", {
-  weekday: "short",
-  day: "numeric",
-  month: "long",
-  timeZone: "UTC",
-});
-const ruMonth = new Intl.DateTimeFormat("ru-RU", {
-  month: "long",
-  year: "numeric",
-  timeZone: "UTC",
-});
-
-export function formatDay(value: string): string {
-  return ruDay.format(fromDateString(value));
+// In the current language (client components pass theirs).
+export function formatDay(value: string, locale?: Locale): string {
+  return dateFormat({ day: "numeric", month: "short", timeZone: "UTC" }, locale).format(
+    fromDateString(value),
+  );
 }
 
-export function formatDayLong(value: string): string {
-  return ruDayLong.format(fromDateString(value));
+export function formatDayLong(value: string, locale?: Locale): string {
+  return dateFormat(
+    { weekday: "short", day: "numeric", month: "long", timeZone: "UTC" },
+    locale,
+  ).format(fromDateString(value));
 }
 
-export function formatMonth(value: string): string {
-  const text = ruMonth.format(fromDateString(value)).replace(" г.", "");
+export function formatMonth(value: string, locale?: Locale): string {
+  const text = dateFormat({ month: "long", year: "numeric", timeZone: "UTC" }, locale)
+    .format(fromDateString(value))
+    .replace(" г.", "");
   return text.charAt(0).toUpperCase() + text.slice(1);
 }

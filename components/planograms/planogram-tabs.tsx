@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { t } from "@/lib/i18n";
+import { useT } from "@/components/locale-provider";
 import { cn } from "@/lib/utils";
 
 const TABS = [
@@ -17,6 +17,7 @@ const TABS = [
 ] as const;
 
 export function PlanogramTabs() {
+  const t = useT();
   const pathname = usePathname();
   const library = TABS.slice(1).some((tab) => pathname.startsWith(tab.href));
   const active = (href: string) => (href === "/planograms" ? !library : pathname.startsWith(href));

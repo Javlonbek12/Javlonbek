@@ -15,6 +15,7 @@ import type { Actor } from "@/modules/core/permissions";
 
 import { listPostFiles } from "./files";
 import { canPlanContent, ContentError, markSent } from "./service";
+import { inLocaleOf } from "@/modules/core/settings/locale";
 
 // Sends approved posts to the user's chat with the Assistant bot, one after another, ready to
 // forward into the company bots: a header with "sent to …" buttons, then the Russian version
@@ -94,6 +95,11 @@ export async function deliverToTelegram(
   target: { date: string } | { postId: string },
   send: Sender = telegram,
 ) {
+  // Headers and buttons in the language of the person who gets them.
+  return inLocaleOf(actor.id, () => deliver(actor, target, send));
+}
+
+async function deliver(actor: Actor, target: { date: string } | { postId: string }, send: Sender) {
   if (!canPlanContent(actor)) throw new ContentError("forbidden");
   const user = await db.user.findUnique({ where: { id: actor.id } });
   if (!user?.botChatId) throw new ContentError("noBot");
