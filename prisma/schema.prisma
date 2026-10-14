@@ -743,6 +743,8 @@ enum ContentStatus {
 model ContentSection {
   id          String   @id @default(cuid())
   name        String
+  // The name in English (for people who use the app in English); empty = the Russian name.
+  nameEn      String?
   // What belongs here: shown to the AI that sorts posts.
   description String?
   sortOrder   Int      @default(0)

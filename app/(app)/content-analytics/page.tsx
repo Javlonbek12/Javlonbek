@@ -8,6 +8,7 @@ import {
   sectionMeta,
   TopicBotMatrix,
 } from "@/components/content/analytics-charts";
+import { AnalyticsTabs } from "@/components/content/analytics-tabs";
 import { BOT_COLOR } from "@/components/content/bot-chip";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
@@ -85,6 +86,7 @@ export default async function ContentAnalyticsPage({
         <h1 className="text-[22px] font-medium md:text-2xl">{t("content.analytics.title")}</h1>
         <p className="text-muted-foreground max-w-3xl text-sm">{t("content.analytics.intro")}</p>
       </div>
+      <AnalyticsTabs active="analytics" />
 
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <div className="bg-secondary/70 inline-flex gap-0.5 rounded-full p-1">
@@ -240,7 +242,7 @@ export default async function ContentAnalyticsPage({
                     <span
                       className={cn("font-medium", section.archived && "text-muted-foreground")}
                     >
-                      {section.name}
+                      {meta[section.id]?.name ?? section.name}
                     </span>
                     <span className="text-muted-foreground text-xs">
                       {t("content.analytics.sections.posts", { count: section.posts })}
@@ -289,7 +291,13 @@ export default async function ContentAnalyticsPage({
             </summary>
             <div className="mt-3">
               <SectionForm
-                section={{ id: "", name: "", description: null, sortOrder: sections.length }}
+                section={{
+                  id: "",
+                  name: "",
+                  nameEn: null,
+                  description: null,
+                  sortOrder: sections.length,
+                }}
                 back={href({})}
               />
             </div>
@@ -318,7 +326,13 @@ function SectionForm({
   section,
   back,
 }: {
-  section: { id: string; name: string; description: string | null; sortOrder: number };
+  section: {
+    id: string;
+    name: string;
+    nameEn: string | null;
+    description: string | null;
+    sortOrder: number;
+  };
   back: string;
 }) {
   return (
@@ -341,6 +355,10 @@ function SectionForm({
           />
         </label>
       </div>
+      <label className="flex flex-col gap-1">
+        {t("content.analytics.sections.nameEn")}
+        <Input name="nameEn" defaultValue={section.nameEn ?? ""} maxLength={60} />
+      </label>
       <label className="flex flex-col gap-1">
         {t("content.analytics.sections.description")}
         <Textarea

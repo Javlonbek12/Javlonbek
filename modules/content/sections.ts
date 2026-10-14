@@ -20,6 +20,12 @@ export async function listSections() {
 
 const sectionSchema = z.object({
   name: z.string().trim().min(1).max(60),
+  nameEn: z
+    .string()
+    .trim()
+    .max(60)
+    .optional()
+    .transform((v) => v || null),
   description: z
     .string()
     .trim()
