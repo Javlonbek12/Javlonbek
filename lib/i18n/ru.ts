@@ -407,6 +407,8 @@ export const ru = {
         important: "Важные",
         noDue: "Без срока",
       },
+      person: "Сотрудник",
+      personAny: "Все сотрудники",
       reset: "Сбросить",
     },
     buckets: {

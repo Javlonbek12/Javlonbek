@@ -12,7 +12,13 @@ import { cn } from "@/lib/utils";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getUserToday } from "@/modules/core/settings/service";
 import { parseTaskFilters, TASK_SORTS, type TaskFilters } from "@/modules/tasks/filters";
-import { countQuickFilters, listProjects, listTasks } from "@/modules/tasks/service";
+import {
+  countQuickFilters,
+  listProjects,
+  listTaskPeople,
+  listTasks,
+} from "@/modules/tasks/service";
+import { displayName } from "@/modules/core/users/display-name";
 import { bucketOf, BUCKETS } from "@/modules/tasks/sort";
 
 // Quick filters: each one sets the due date and importance filters.
@@ -33,6 +39,7 @@ const DEFAULTS: Partial<TaskFilters> = {
   project: "",
   q: "",
   sort: "smart",
+  person: "",
 };
 
 function hrefWith(filters: TaskFilters, change: Partial<TaskFilters>) {
@@ -49,10 +56,11 @@ export default async function TaskListPage({ searchParams }: PageProps<"/tasks">
   const params = await searchParams;
   const filters = parseTaskFilters(params);
   const today = await getUserToday(user.id);
-  const [tasks, projects, counts] = await Promise.all([
+  const [tasks, projects, counts, people] = await Promise.all([
     listTasks(user, filters, today),
     listProjects(user),
     countQuickFilters(user, filters, today),
+    listTaskPeople(user),
   ]);
   const activeChip = CHIPS.find((c) => c.due === filters.due && c.priority === filters.priority);
   const groups =
@@ -87,7 +95,22 @@ export default async function TaskListPage({ searchParams }: PageProps<"/tasks">
           <Button type="submit">{t("tasks.filters.apply")}</Button>
         </div>
         <div className="grid grid-cols-2 gap-2 md:flex md:flex-wrap md:items-center">
-          <ScopeSelect value={filters.scope} />
+          {/* "Whose" or a chosen employee: the employee replaces "whose". */}
+          {!filters.person && <ScopeSelect value={filters.scope} />}
+          {people.length > 1 && (
+            <NativeSelect
+              name="person"
+              defaultValue={filters.person}
+              aria-label={t("tasks.filters.person")}
+            >
+              <option value="">{t("tasks.filters.personAny")}</option>
+              {people.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.id === user.id ? `${displayName(p)} (${t("common.you")})` : displayName(p)}
+                </option>
+              ))}
+            </NativeSelect>
+          )}
           <NativeSelect
             name="status"
             defaultValue={filters.status}

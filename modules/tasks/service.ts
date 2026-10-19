@@ -428,6 +428,16 @@ export async function getTodayOverview(actor: Actor, today: string) {
   return { dueToday, overdue, waiting };
 }
 
+// People whose tasks the actor can see (as assignees), for the "employee" filter.
+export async function listTaskPeople(actor: Actor) {
+  const rows = await db.task.findMany({
+    where: visibleTasksWhere(actor),
+    distinct: ["assigneeId"],
+    select: { assignee: { select: { id: true, firstName: true, lastName: true } } },
+  });
+  return rows.map((r) => r.assignee).sort((a, b) => displayName(a).localeCompare(displayName(b)));
+}
+
 export async function listAssignableUsers() {
   return db.user.findMany({
     select: { id: true, firstName: true, lastName: true },

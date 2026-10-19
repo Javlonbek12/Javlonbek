@@ -408,6 +408,8 @@ export const en: Dictionary = {
         important: "Important",
         noDue: "No due date",
       },
+      person: "Employee",
+      personAny: "All employees",
       reset: "Reset",
     },
     buckets: {

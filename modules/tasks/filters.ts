@@ -25,6 +25,8 @@ export const taskFiltersSchema = z.object({
   project: z.string().max(60).catch(""),
   q: z.string().trim().max(100).catch(""),
   sort: z.enum(TASK_SORTS).catch("smart"),
+  // An employee (user id): their tasks as the assignee, instead of "whose".
+  person: z.string().max(64).catch(""),
 });
 
 export type TaskFilters = z.infer<typeof taskFiltersSchema>;
@@ -39,6 +41,7 @@ export function parseTaskFilters(params: Record<string, string | string[] | unde
     project: first(params.project) ?? "",
     q: first(params.q) ?? "",
     sort: first(params.sort),
+    person: first(params.person) ?? "",
   });
 }
 
@@ -58,7 +61,10 @@ export function filtersWhere(
   today: string,
   { quick = true }: { quick?: boolean } = {},
 ): Prisma.TaskWhereInput {
-  const and: Prisma.TaskWhereInput[] = [scopeWhere(filters.scope, actor)];
+  // A chosen employee replaces "whose": all their tasks the actor may see.
+  const and: Prisma.TaskWhereInput[] = [
+    filters.person ? { assigneeId: filters.person } : scopeWhere(filters.scope, actor),
+  ];
 
   if (filters.status === "active") and.push({ status: { notIn: CLOSED_STATUSES } });
   else if (filters.status !== "all") and.push({ status: filters.status });

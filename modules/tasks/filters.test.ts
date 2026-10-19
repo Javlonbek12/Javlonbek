@@ -11,6 +11,7 @@ const base: TaskFilters = {
   project: "",
   q: "",
   sort: "smart",
+  person: "",
 };
 
 describe("parseTaskFilters", () => {
@@ -31,8 +32,10 @@ describe("parseTaskFilters", () => {
         project: "ESSE",
         q: " отчёт ",
         sort: "priority",
+        person: "u2",
       }),
     ).toEqual({
+      person: "u2",
       scope: "team",
       status: "DONE",
       due: "overdue",
@@ -65,5 +68,13 @@ describe("filtersWhere", () => {
     expect(full.AND).toContainEqual({ priority: { in: ["HIGH", "URGENT"] } });
     const counting = filtersWhere(filters, actor, "2026-10-02", { quick: false });
     expect(counting.AND).toHaveLength(3);
+  });
+});
+
+describe("employee filter", () => {
+  it("shows the chosen employee's tasks instead of “whose”", () => {
+    expect(filtersWhere({ ...base, person: "u2" }, actor, "2026-10-19")).toEqual({
+      AND: [{ assigneeId: "u2" }, { status: { notIn: ["DONE", "CANCELLED"] } }],
+    });
   });
 });
