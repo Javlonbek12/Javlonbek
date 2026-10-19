@@ -25,8 +25,10 @@ describe("employee filter in tasks", () => {
       "approve",
     );
 
+    // Everyone is in the list for the owner, also people with no tasks yet.
+    const idle = await createTestUser("MEMBER");
     const people = (await listTaskPeople(owner)).map((p) => p.id).sort();
-    expect(people).toEqual([a.id, b.id].sort());
+    expect(people).toEqual([owner.id, a.id, b.id, idle.id].sort());
     const ofA = await listTasks(owner, parseTaskFilters({ person: a.id }), TODAY);
     expect(ofA.map((t) => t.id)).toEqual([forA.id]);
 

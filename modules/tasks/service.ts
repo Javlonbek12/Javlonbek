@@ -10,7 +10,14 @@ import { displayName } from "@/modules/core/users/display-name";
 
 import { approverIdsFor } from "@/modules/core/access/approvers";
 
-import { canEditTask, canViewTask, CLOSED_STATUSES, isApprover, visibleTasksWhere } from "./access";
+import {
+  canEditTask,
+  canViewTask,
+  CLOSED_STATUSES,
+  isApprover,
+  oversight,
+  visibleTasksWhere,
+} from "./access";
 import { TaskError } from "./errors";
 import { filtersWhere, scopeWhere, type Scope, type TaskFilters, type TaskSort } from "./filters";
 import { sendTaskNotices, statusChangeRecipients } from "./notifications";
@@ -429,13 +436,26 @@ export async function getTodayOverview(actor: Actor, today: string) {
 }
 
 // People whose tasks the actor can see (as assignees), for the "employee" filter.
+// People for the "employee" filter: everyone whose tasks the actor oversees (even with no tasks
+// yet), plus anyone else whose tasks they can see.
 export async function listTaskPeople(actor: Actor) {
-  const rows = await db.task.findMany({
-    where: visibleTasksWhere(actor),
-    distinct: ["assigneeId"],
-    select: { assignee: { select: { id: true, firstName: true, lastName: true } } },
-  });
-  return rows.map((r) => r.assignee).sort((a, b) => displayName(a).localeCompare(displayName(b)));
+  const scope = oversight(actor);
+  const select = { id: true, firstName: true, lastName: true } as const;
+  const [overseen, withTasks] = await Promise.all([
+    scope === "none"
+      ? []
+      : db.user.findMany({
+          where: scope === "all" ? {} : { id: { in: [actor.id, ...scope] } },
+          select,
+        }),
+    db.task.findMany({
+      where: visibleTasksWhere(actor),
+      distinct: ["assigneeId"],
+      select: { assignee: { select } },
+    }),
+  ]);
+  const people = new Map([...overseen, ...withTasks.map((r) => r.assignee)].map((u) => [u.id, u]));
+  return [...people.values()].sort((a, b) => displayName(a).localeCompare(displayName(b)));
 }
 
 export async function listAssignableUsers() {

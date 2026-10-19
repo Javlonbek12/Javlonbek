@@ -22,7 +22,7 @@ export function isClosed(status: TaskStatus): boolean {
 // Which team tasks the actor oversees (sees all of, approves, accepts). OWNER: all.
 // MANAGER: per the role settings — all, their people's (creator or assignee below them), or none.
 // Without loaded settings (`access`) the role's full rights apply.
-function oversight(actor: Actor): "all" | "none" | string[] {
+export function oversight(actor: Actor): "all" | "none" | string[] {
   if (actor.role === "OWNER") return "all";
   if (actor.role !== "MANAGER") return "none";
   const scope = actor.access?.taskScope ?? "all";
