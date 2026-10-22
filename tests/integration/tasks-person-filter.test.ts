@@ -19,11 +19,7 @@ describe("employee filter in tasks", () => {
       taskInput({ title: "Тестовая А", assigneeId: a.id }),
       "approve",
     );
-    const forB = await createTask(
-      owner,
-      taskInput({ title: "Тестовая Б", assigneeId: b.id }),
-      "approve",
-    );
+    await createTask(owner, taskInput({ title: "Тестовая Б", assigneeId: b.id }), "approve");
 
     // Everyone is in the list for the owner, also people with no tasks yet.
     const idle = await createTestUser("MEMBER");
