@@ -127,6 +127,38 @@ export async function importConnectFiles(
   return results;
 }
 
+// Rows parsed elsewhere (the server's data-load script): saved the same way as an upload.
+export async function importConnectRows(userId: string | null, name: string, rows: ParsedRow[]) {
+  const kinds = [...new Set(rows.map((r) => r.kind))];
+  const log = await db.connectImport.create({
+    data: {
+      userId,
+      fileName: name.slice(0, 200),
+      kinds: kinds.join(","),
+      created: 0,
+      updated: 0,
+      skipped: 0,
+    },
+  });
+  const sheets = [];
+  for (const kind of kinds) {
+    const counts = await saveRows(
+      kind,
+      rows.filter((r) => r.kind === kind),
+      log.id,
+    );
+    sheets.push({ kind, ...counts, skipped: 0 });
+  }
+  await db.connectImport.update({
+    where: { id: log.id },
+    data: {
+      created: sheets.reduce((a, s) => a + s.created, 0),
+      updated: sheets.reduce((a, s) => a + s.updated, 0),
+    },
+  });
+  return sheets;
+}
+
 async function saveRows(kind: ConnectKind, rows: ParsedRow[], importId: string) {
   // The last row wins when an export repeats an ID.
   const byId = new Map(rows.map((r) => [r.record.id, r.record]));
