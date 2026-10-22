@@ -13,6 +13,9 @@ name: Server
 #   project-import - load a project plan from the JSON in "data" (see modules/projects/import.ts)
 #   project-create - create a project from a template (JSON in "data", see scripts/project-create.ts)
 #   team-check / team-fix - show users, roles and places; apply fixes from the JSON in "data" (modules/team/admin.ts)
+#   data-load - load business data (Connect exports, planogram library) prepared outside the app.
+#     The data is committed only encrypted (deploy/data/*.enc, AES-256); "data" is
+#     {"file": "deploy/data/….enc", "key": "…"} — the key is never written to the repository.
 # Secrets: VPS_HOST, VPS_USER (root), VPS_SSH_KEY; for setup also TELEGRAM_BOT_TOKEN,
 # TELEGRAM_BOT_USERNAME, ANTHROPIC_API_KEY. Variable (optional): DOMAIN. See docs/SETUP-SERVER.md.
 on:
@@ -37,6 +40,7 @@ on:
             project-create,
             team-check,
             team-fix,
+            data-load,
           ]
         default: status
       service:
@@ -145,6 +149,14 @@ jobs:
               ssh vps 'cd ~/assistant && docker compose -f docker-compose.prod.yml run --rm -T app node --import tsx scripts/team.ts check' ;;
             team-fix)
               printf '%s' "$ORG_DATA" | ssh vps "cd ~/assistant && docker compose -f docker-compose.prod.yml run --rm -T app node --import tsx scripts/team.ts fix" ;;
+            data-load)
+              file="$(printf '%s' "$ORG_DATA" | jq -r .file)"
+              DATA_KEY="$(printf '%s' "$ORG_DATA" | jq -r .key)"
+              echo "::add-mask::$DATA_KEY"
+              export DATA_KEY
+              if ! [[ "$file" =~ ^deploy/data/[A-Za-z0-9._-]+\.enc$ ]] || [ ! -f "$file" ]; then echo "No such data file"; exit 1; fi
+              openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:DATA_KEY -in "$file" | gunzip \
+                | ssh vps "cd ~/assistant && docker compose -f docker-compose.prod.yml run --rm -T app node --import tsx scripts/data-load.ts" ;;
             restart)
               ssh vps 'cd ~/assistant && docker compose -f docker-compose.prod.yml restart && docker compose -f docker-compose.prod.yml ps' ;;
             *)
