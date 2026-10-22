@@ -761,6 +761,8 @@ export const en: Dictionary = {
       reset: "Reset view",
       fullscreen: "Full screen",
       loading: "Building the equipment…",
+      failed:
+        "This browser can't show 3D. Open the page in an up-to-date Chrome or Safari or on a computer; hardware acceleration must be on in the browser settings.",
       hint: "Drag with the mouse or a finger to turn; the wheel or two fingers to zoom. Packs without a picture are shown as a coloured card with the name.",
     },
     history: "Version history",
