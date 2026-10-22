@@ -20,7 +20,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
         user={{ name: displayName(user), role: user.role, photoUrl: user.photoUrl }}
         collapsed={jar.get("nav")?.value === "collapsed"}
       />
-      <div className="mx-auto flex w-full max-w-[1320px] min-w-0 flex-1 flex-col gap-6 px-4 pt-5 pb-28 md:px-8 md:pt-6 md:pb-12">
+      <div className="flex w-full min-w-0 flex-1 flex-col gap-6 px-4 pt-5 pb-28 md:px-8 md:pt-6 md:pb-12 2xl:px-10">
         <TopBar unreadCount={unreadCount} dark={dark} />
         <main className="min-w-0">{children}</main>
       </div>

@@ -276,6 +276,9 @@ function BellLink({ unreadCount, className }: { unreadCount: number; className?:
 export function TopBar({ unreadCount, dark }: { unreadCount: number; dark: boolean }) {
   const t = useT();
   const router = useRouter();
+  const pathname = usePathname();
+  // "Today" and the task pages have their own "New task" button in the page header.
+  const ownButton = pathname === "/" || pathname.startsWith("/tasks");
   return (
     <div className="hidden items-center gap-3 md:flex">
       <form
@@ -299,12 +302,17 @@ export function TopBar({ unreadCount, dark }: { unreadCount: number; dark: boole
       <div className="ml-auto flex items-center gap-2.5">
         <ThemeButton dark={dark} />
         <BellLink unreadCount={unreadCount} />
-        <Button asChild className="h-10 rounded-full px-5 shadow-[0_8px_18px_-8px_var(--primary)]">
-          <Link href="/tasks/new">
-            <Plus />
-            {t("tasks.newTask")}
-          </Link>
-        </Button>
+        {!ownButton && (
+          <Button
+            asChild
+            className="h-10 rounded-full px-5 shadow-[0_8px_18px_-8px_var(--primary)]"
+          >
+            <Link href="/tasks/new">
+              <Plus />
+              {t("tasks.newTask")}
+            </Link>
+          </Button>
+        )}
       </div>
     </div>
   );

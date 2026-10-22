@@ -85,7 +85,7 @@ export function Planogram3D({ input }: { input: RenderInput }) {
   const t = useT();
   const host = useRef<HTMLDivElement>(null);
   const api = useRef<{ setView: (v: View) => void; reset: () => void } | null>(null);
-  const [finish, setFinish] = useState<Finish>("dark");
+  const [finish, setFinish] = useState<Finish>("light");
   const [ready, setReady] = useState(false);
   // The browser can't draw 3D (no WebGL) or the 3D code didn't load.
   const [failed, setFailed] = useState(false);
@@ -116,15 +116,19 @@ export function Planogram3D({ input }: { input: RenderInput }) {
       const left = -bodyW / 2 + SIDE + sideHeaderW; // inner left edge
 
       const scene = new THREE.Scene();
-      scene.background = new THREE.Color("#eef0f3");
+      scene.background = new THREE.Color("#dfe3e8");
+      // Far parts of the shop fade into the background.
+      scene.fog = new THREE.Fog("#dfe3e8", 420, 1100);
       const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.05;
       renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       element.appendChild(renderer.domElement);
 
-      const camera = new THREE.PerspectiveCamera(32, 1, 1, 2000);
+      const camera = new THREE.PerspectiveCamera(32, 1, 1, 3000);
       const controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
       controls.minDistance = 40;
@@ -133,40 +137,112 @@ export function Planogram3D({ input }: { input: RenderInput }) {
       const center = new THREE.Vector3(0, totalH * 0.55, 0);
       controls.target.copy(center);
 
-      // Light: soft room light, a key light from the front, a fill from the side.
-      scene.add(new THREE.HemisphereLight("#ffffff", "#c7cbd3", 1.6));
-      const key = new THREE.DirectionalLight("#ffffff", 1.6);
+      // Light: a bright shop ceiling, a key light from the front, a fill from the side.
+      scene.add(new THREE.HemisphereLight("#ffffff", "#b9bec7", 1.7));
+      const key = new THREE.DirectionalLight("#ffffff", 1.5);
       key.position.set(-60, totalH * 1.6, 160);
       key.castShadow = true;
       key.shadow.mapSize.set(2048, 2048);
+      key.shadow.radius = 4;
       Object.assign(key.shadow.camera, { left: -150, right: 150, top: 300, bottom: -50 });
       scene.add(key);
-      const fill = new THREE.DirectionalLight("#ffffff", 0.5);
+      const fill = new THREE.DirectionalLight("#ffffff", 0.55);
       fill.position.set(120, totalH, 60);
       scene.add(fill);
 
-      // Floor and wall.
+      // The shop around: tiled floor, a panelled wall with a steel skirting, dark pilasters and
+      // shop shelving on both sides.
+      const floorTexture = canvasTexture(THREE, 512, 512, (ctx) => {
+        ctx.fillStyle = "#b9bdc2";
+        ctx.fillRect(0, 0, 512, 512);
+        for (let i = 0; i < 4; i++)
+          for (let j = 0; j < 4; j++) {
+            const shade = 178 + ((i * 7 + j * 13) % 5) * 3;
+            ctx.fillStyle = `rgb(${shade},${shade + 3},${shade + 7})`;
+            ctx.fillRect(i * 128 + 2, j * 128 + 2, 124, 124);
+          }
+      });
+      floorTexture.wrapS = floorTexture.wrapT = THREE.RepeatWrapping;
+      floorTexture.repeat.set(20, 20);
       const floor = new THREE.Mesh(
         new THREE.PlaneGeometry(1200, 1200),
-        new THREE.MeshStandardMaterial({ color: "#c9d2e3", roughness: 0.95 }),
+        new THREE.MeshStandardMaterial({ map: floorTexture, roughness: 0.35, metalness: 0.15 }),
       );
       floor.rotation.x = -Math.PI / 2;
       floor.receiveShadow = true;
       scene.add(floor);
+
+      const wallZ = -DEPTH / 2 - 6;
+      const wallTexture = canvasTexture(THREE, 512, 256, (ctx) => {
+        ctx.fillStyle = "#c9cdd2";
+        ctx.fillRect(0, 0, 512, 256);
+        ctx.fillStyle = "#b8bcc2";
+        for (let x = 0; x < 512; x += 128) ctx.fillRect(x, 0, 2, 256);
+      });
+      wallTexture.wrapS = wallTexture.wrapT = THREE.RepeatWrapping;
+      wallTexture.repeat.set(6, 3);
       const wall = new THREE.Mesh(
         new THREE.PlaneGeometry(1200, 600),
-        new THREE.MeshStandardMaterial({ color: "#e7e2da", roughness: 1 }),
+        new THREE.MeshStandardMaterial({ map: wallTexture, roughness: 0.9 }),
       );
-      wall.position.set(0, 300, -DEPTH / 2 - 6);
+      wall.position.set(0, 300, wallZ);
       wall.receiveShadow = true;
       scene.add(wall);
+      const steel = new THREE.MeshStandardMaterial({
+        color: "#c4c8cd",
+        metalness: 0.85,
+        roughness: 0.3,
+      });
+      const skirting = new THREE.Mesh(new THREE.BoxGeometry(1200, 14, 1.2), steel);
+      skirting.position.set(0, 7, wallZ + 0.6);
+      scene.add(skirting);
+      const pilaster = new THREE.MeshStandardMaterial({
+        color: "#3a4049",
+        metalness: 0.5,
+        roughness: 0.4,
+      });
+      for (const side of [-1, 1]) {
+        const column = new THREE.Mesh(new THREE.BoxGeometry(14, 600, 8), pilaster);
+        column.position.set(side * (bodyW / 2 + 95), 300, wallZ + 4);
+        column.castShadow = true;
+        scene.add(column);
+        // Shop shelving with goods beyond the columns.
+        const rack = new THREE.Group();
+        const rackMaterial = new THREE.MeshStandardMaterial({ color: "#eceef1", roughness: 0.7 });
+        const rackW = 100;
+        const rackX = side * (bodyW / 2 + 95 + 7 + rackW / 2 + 6);
+        const back = new THREE.Mesh(new THREE.BoxGeometry(rackW, 180, 2), rackMaterial);
+        back.position.set(rackX, 90, wallZ + 2);
+        rack.add(back);
+        // Small, softly coloured goods: background, not competing with the packs.
+        const goods = ["#c98b8b", "#d9c48a", "#8fa9d6", "#93c2ad", "#b3a3d9", "#e9e9e9", "#d6a283"];
+        const itemMaterials = goods.map(
+          (color) => new THREE.MeshStandardMaterial({ color, roughness: 0.7 }),
+        );
+        for (let level = 0; level < 6; level++) {
+          const y = 18 + level * 27;
+          const board = new THREE.Mesh(new THREE.BoxGeometry(rackW, 1.2, 26), rackMaterial);
+          board.position.set(rackX, y, wallZ + 14);
+          rack.add(board);
+          for (let k = 0; k < 16; k++) {
+            const h = 8 + ((k * 7 + level * 5) % 4) * 2.5;
+            const item = new THREE.Mesh(
+              new THREE.BoxGeometry(5, h, 7),
+              itemMaterials[(k + level * 3) % itemMaterials.length],
+            );
+            item.position.set(rackX - rackW / 2 + 4 + k * 6.1, y + 0.6 + h / 2, wallZ + 20);
+            rack.add(item);
+          }
+        }
+        scene.add(rack);
+      }
 
       const cabinet = new THREE.Group();
       scene.add(cabinet);
-      const bodyMaterial = new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0.1 });
+      const bodyMaterial = new THREE.MeshStandardMaterial({ roughness: 0.35, metalness: 0.15 });
       const innerMaterial = new THREE.MeshStandardMaterial({ roughness: 0.8 });
       const applyFinish = (value: Finish) => {
-        bodyMaterial.color.set(value === "dark" ? "#1f2329" : "#f3f4f6");
+        bodyMaterial.color.set(value === "dark" ? "#1f2329" : "#f4f5f7");
         innerMaterial.color.set(value === "dark" ? "#2b3038" : "#ffffff");
       };
       applyFinish(finish);
@@ -200,6 +276,24 @@ export function Planogram3D({ input }: { input: RenderInput }) {
       for (const y of [BASE_H * 0.36, BASE_H * 0.7])
         box(bodyW - SIDE * 2 - 1, 0.4, 0.3, drawerMaterial, 0, y, DEPTH / 2 + 0.2);
 
+      // LED light: strips under the shelves and along the inner sides, and a glow inside.
+      const ledMaterial = new THREE.MeshStandardMaterial({
+        color: "#ffffff",
+        emissive: "#e8f3ff",
+        emissiveIntensity: 2.2,
+      });
+      for (const x of [left + 0.3, left + innerW - 0.3])
+        box(0.4, shelvesH, 0.6, ledMaterial, x, BASE_H + shelvesH / 2, DEPTH / 2 - 3);
+      for (let i = 0; i < geometry.shelves.length; i += 2) {
+        const glow = new THREE.PointLight("#eaf4ff", 18, 60, 2);
+        glow.position.set(
+          left + innerW / 2,
+          BASE_H + shelvesH - (i + 0.4) * SHELF_H,
+          DEPTH / 2 - 4,
+        );
+        cabinet.add(glow);
+      }
+
       // Header light box on top (or a tall panel on the side).
       const headerTexture = (w: number, h: number) =>
         header?.image
@@ -223,7 +317,7 @@ export function Planogram3D({ input }: { input: RenderInput }) {
         const front = new THREE.MeshStandardMaterial({
           map: headerTexture(w, HEADER_H - 4),
           emissive: "#ffffff",
-          emissiveIntensity: 0.35,
+          emissiveIntensity: 0.6,
         });
         front.emissiveMap = front.map;
         box(
@@ -287,6 +381,8 @@ export function Planogram3D({ input }: { input: RenderInput }) {
         const shelfLeft = left + MARGIN + shelf.offset * SLOT;
         const shelfW = shelf.slots * SLOT;
         box(innerW, 0.8, DEPTH - 2, innerMaterial, left + innerW / 2, boardY, 0);
+        // A cool-white LED strip under the board's front edge lights the shelf below.
+        box(innerW - 1, 0.35, 0.6, ledMaterial, left + innerW / 2, boardY - 0.6, DEPTH / 2 - 3);
 
         // The price rail with a tag under every facing.
         const railColor = RAILS[shelfIndex % RAILS.length]!;
@@ -383,7 +479,7 @@ export function Planogram3D({ input }: { input: RenderInput }) {
       });
 
       // Camera positions.
-      const distance = Math.max(totalH, bodyW) * 1.9;
+      const distance = Math.max(totalH, bodyW) * 1.75;
       const views: Record<View, Three.Vector3> = {
         front: new THREE.Vector3(0, center.y + 10, distance),
         left: new THREE.Vector3(-distance * 0.62, center.y + 25, distance * 0.78),
