@@ -163,7 +163,7 @@ jobs:
               scp -q "$file" "$file.key" vps:/tmp/
               name="$(basename "$file")"
               ssh vps "set -o pipefail; cd ~/assistant && openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in /tmp/$name \
-                -pass file:<(openssl pkeyutl -decrypt -inkey ~/.assistant-keys/data.pem -in /tmp/$name.key) | gunzip \
+                -pass file:<(openssl pkeyutl -decrypt -pkeyopt rsa_padding_mode:oaep -inkey ~/.assistant-keys/data.pem -in /tmp/$name.key) | gunzip \
                 | docker compose -f docker-compose.prod.yml run --rm -T app node --import tsx scripts/data-load.ts; \
                 status=\$?; rm -f /tmp/$name /tmp/$name.key; exit \$status" ;;
             restart)
