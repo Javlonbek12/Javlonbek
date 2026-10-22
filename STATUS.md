@@ -14,6 +14,7 @@
   попадают — только во входные данные workflow.
 - Проверки перед коммитом: `npx prettier --write .`, `npm run lint`, `npm run typecheck`, `npm test`.
 - Аналитика Connect (`/connect`): данные Connect-бота загружаются на странице «Загрузить данные» выгрузками Excel (проверки остатков, экспресс-заказы, заявки ISM, визиты); три уровня — руководство, менеджеры, исполнители; скачивание в Excel и PowerPoint. Подробности — в `docs/DECISIONS.md` (22.10.2026).
+- Данные на сервере (22.10.2026): загружены выгрузки Connect (проверки остатков, экспресс-заказы, заявки ISM, визиты) и библиотека планограмм из презентации «planogram_price_change_updated_02Nov2026»: 8 типов дисплеев (XL/L/M/C POSI, L/M MW/DG, C DG, S MW), 42 SKU с картинками, POSM (хедеры, баннеры, стикеры), прайс-лист «Цены из планограмм (02.11.2026)» и 8 планограмм-черновиков. Открытые вопросы по планограммам — коды SKU, цены ESSE Change 1 Grip Style и Simple E-ON Mystic Purple, обязательные SKU, пометки «Вниз»/«delete» на слайдах M — записаны в заметках планограмм. Загрузка таких данных: `data-key` / `data-load` в workflow Server (см. `docs/DECISIONS.md`).
 - Состояние команды на сервере (12.10.2026): владелец — Javlon (Marketing Team Lead); место Marketing Director
   (JO HOGWON) — над ним, приглашение на это место с ролью «Владелец» создано, ждём входа; Nodirbek — руководитель
   команды Marketing Execution; проекты Connect Bot и Launching product.
