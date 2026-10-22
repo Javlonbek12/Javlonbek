@@ -32,19 +32,28 @@ async function dataUri(relative: string | null, height = 220): Promise<string | 
   return uri;
 }
 
-// A picture by link instead of inline (the 3D view loads them separately, once per picture).
-const imageUrl = (kind: "sku" | "posm", id: string, relative: string | null, height: number) =>
+// A picture by link instead of inline: pages load each picture once (and cache it) instead of
+// carrying a copy of it in every cell. `base` is where pictures are served from.
+const imageUrl = (
+  base: string,
+  kind: "sku" | "posm",
+  id: string,
+  relative: string | null,
+  height: number,
+) =>
   relative
-    ? `/api/planogram-images/${kind}/${id}?h=${height}&v=${encodeURIComponent(path.basename(relative))}`
+    ? `${base}/${kind}/${id}?h=${height}&v=${encodeURIComponent(path.basename(relative))}`
     : null;
 
 export async function buildRenderInput(
   loaded: LoadedPlanogram,
-  options: { large?: boolean; highlight?: RenderInput["highlight"]; imageUrls?: boolean } = {},
+  options: { large?: boolean; highlight?: RenderInput["highlight"]; imageBase?: string } = {},
 ): Promise<RenderInput> {
   const [skus, posms] = await Promise.all([db.sku.findMany(), db.posm.findMany()]);
   const picture = (kind: "sku" | "posm", id: string, relative: string | null, height: number) =>
-    options.imageUrls ? imageUrl(kind, id, relative, height * 2) : dataUri(relative, height);
+    options.imageBase
+      ? imageUrl(options.imageBase, kind, id, relative, height * 2)
+      : dataUri(relative, height);
   const skuById = new Map(skus.map((s) => [s.id, s]));
   const posmById = new Map(posms.map((p) => [p.id, p]));
   const cells: Record<string, RenderCell> = {};
@@ -91,7 +100,10 @@ export async function buildRenderInput(
   };
 }
 
-export async function planogramSvg(loaded: LoadedPlanogram, options: { large?: boolean } = {}) {
+export async function planogramSvg(
+  loaded: LoadedPlanogram,
+  options: { large?: boolean; imageBase?: string } = {},
+) {
   return renderPlanogramSvg(await buildRenderInput(loaded, options));
 }
 

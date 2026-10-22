@@ -3,8 +3,11 @@ import { db } from "@/lib/db";
 import { formatPrice } from "./prices";
 import { loadPlanogram, type LoadedPlanogram } from "./repository";
 
+// Light copies sized for the editor's cells (a pack is 84 px high; ×2 for sharp screens).
 const imageUrl = (kind: "sku" | "posm", id: string, path: string | null) =>
-  path ? `/api/planogram-images/${kind}/${id}?v=${encodeURIComponent(path)}` : null;
+  path
+    ? `/api/planogram-images/${kind}/${id}?h=${kind === "sku" ? 180 : 240}&v=${encodeURIComponent(path)}`
+    : null;
 
 // Plain data for the client-side editor.
 export async function editorData(loaded: LoadedPlanogram) {

@@ -24,7 +24,7 @@ export function Thumb({
   return (
     // eslint-disable-next-line @next/next/no-img-element -- private, auth-protected image route
     <img
-      src={`/api/planogram-images/${kind}/${id}?v=${encodeURIComponent(imagePath)}`}
+      src={`/api/planogram-images/${kind}/${id}?h=96&v=${encodeURIComponent(imagePath)}`}
       alt=""
       className="h-10 w-7 shrink-0 rounded-sm border object-contain"
     />

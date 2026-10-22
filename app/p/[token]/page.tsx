@@ -23,7 +23,7 @@ export default async function PublicPlanogramPage({
   }
   const large = print === "1";
   const [svg, changes, names] = await Promise.all([
-    planogramSvg(loaded, { large }),
+    planogramSvg(loaded, { large, imageBase: `/p/${token}/img` }),
     changesVsPrevious(loaded),
     Promise.all([
       db.sku.findMany({ select: { id: true, name: true } }),
