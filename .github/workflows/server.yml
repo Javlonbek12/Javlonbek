@@ -13,9 +13,10 @@ name: Server
 #   project-import - load a project plan from the JSON in "data" (see modules/projects/import.ts)
 #   project-create - create a project from a template (JSON in "data", see scripts/project-create.ts)
 #   team-check / team-fix - show users, roles and places; apply fixes from the JSON in "data" (modules/team/admin.ts)
-#   data-load - load business data (Connect exports, planogram library) prepared outside the app.
-#     The data is committed only encrypted (deploy/data/*.enc, AES-256); "data" is
-#     {"file": "deploy/data/….enc", "key": "…"} — the key is never written to the repository.
+#   data-key / data-load - load business data (Connect exports, planogram library) prepared outside
+#     the app. data-key prints the server's public key; the file is committed only encrypted
+#     (deploy/data/X.enc with AES-256, its key in X.enc.key encrypted with that public key), so only
+#     the server can read it. "data" is {"file": "deploy/data/X.enc"}.
 # Secrets: VPS_HOST, VPS_USER (root), VPS_SSH_KEY; for setup also TELEGRAM_BOT_TOKEN,
 # TELEGRAM_BOT_USERNAME, ANTHROPIC_API_KEY. Variable (optional): DOMAIN. See docs/SETUP-SERVER.md.
 on:
@@ -40,6 +41,7 @@ on:
             project-create,
             team-check,
             team-fix,
+            data-key,
             data-load,
           ]
         default: status
@@ -149,14 +151,21 @@ jobs:
               ssh vps 'cd ~/assistant && docker compose -f docker-compose.prod.yml run --rm -T app node --import tsx scripts/team.ts check' ;;
             team-fix)
               printf '%s' "$ORG_DATA" | ssh vps "cd ~/assistant && docker compose -f docker-compose.prod.yml run --rm -T app node --import tsx scripts/team.ts fix" ;;
+            data-key)
+              # The server's own key pair for data-load: the private key never leaves the server,
+              # the public one is printed here to encrypt files with.
+              ssh vps 'mkdir -p ~/.assistant-keys && chmod 700 ~/.assistant-keys && cd ~/.assistant-keys \
+                && { [ -f data.pem ] || openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -out data.pem 2> /dev/null; } \
+                && chmod 600 data.pem && openssl pkey -in data.pem -pubout' ;;
             data-load)
               file="$(printf '%s' "$ORG_DATA" | jq -r .file)"
-              DATA_KEY="$(printf '%s' "$ORG_DATA" | jq -r .key)"
-              echo "::add-mask::$DATA_KEY"
-              export DATA_KEY
-              if ! [[ "$file" =~ ^deploy/data/[A-Za-z0-9._-]+\.enc$ ]] || [ ! -f "$file" ]; then echo "No such data file"; exit 1; fi
-              openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:DATA_KEY -in "$file" | gunzip \
-                | ssh vps "cd ~/assistant && docker compose -f docker-compose.prod.yml run --rm -T app node --import tsx scripts/data-load.ts" ;;
+              if ! [[ "$file" =~ ^deploy/data/[A-Za-z0-9._-]+\.enc$ ]] || [ ! -f "$file" ] || [ ! -f "$file.key" ]; then echo "No such data file"; exit 1; fi
+              scp -q "$file" "$file.key" vps:/tmp/
+              name="$(basename "$file")"
+              ssh vps "set -o pipefail; cd ~/assistant && openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in /tmp/$name \
+                -pass file:<(openssl pkeyutl -decrypt -inkey ~/.assistant-keys/data.pem -in /tmp/$name.key) | gunzip \
+                | docker compose -f docker-compose.prod.yml run --rm -T app node --import tsx scripts/data-load.ts; \
+                status=\$?; rm -f /tmp/$name /tmp/$name.key; exit \$status" ;;
             restart)
               ssh vps 'cd ~/assistant && docker compose -f docker-compose.prod.yml restart && docker compose -f docker-compose.prod.yml ps' ;;
             *)
