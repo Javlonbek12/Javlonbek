@@ -32,6 +32,25 @@ export async function teamReport() {
         ` · place: ${u.orgNode?.title ?? "none"} · manager: ${u.manager ? displayName(u.manager) : "none"}`,
     );
   }
+  // Task counts per person (no titles): team tasks by status, personal ones only counted.
+  const counts = await db.task.groupBy({
+    by: ["assigneeId", "isPersonal", "status"],
+    _count: { _all: true },
+  });
+  lines.push("Tasks (as assignee):");
+  for (const u of users) {
+    const own = counts.filter((c) => c.assigneeId === u.id);
+    if (!own.length) {
+      lines.push(`- ${displayName(u)}: none`);
+      continue;
+    }
+    const personal = own.filter((c) => c.isPersonal).reduce((s, c) => s + c._count._all, 0);
+    const team = own
+      .filter((c) => !c.isPersonal)
+      .map((c) => `${c.status} ${c._count._all}`)
+      .join(", ");
+    lines.push(`- ${displayName(u)}: team [${team || "none"}] · personal ${personal}`);
+  }
   lines.push("Org chart places:");
   for (const n of nodes) {
     lines.push(

@@ -743,6 +743,8 @@ enum ContentStatus {
 model ContentSection {
   id          String   @id @default(cuid())
   name        String
+  // The name in English (for people who use the app in English); empty = the Russian name.
+  nameEn      String?
   // What belongs here: shown to the AI that sorts posts.
   description String?
   sortOrder   Int      @default(0)
@@ -844,4 +846,51 @@ model ContentComment {
   author User        @relation(fields: [authorId], references: [id])
 
   @@index([postId])
+}
+
+// ============================================================
+// Connect analytics: exports of the Connect bot (stock checks, express orders,
+// ISM payment requests, market visits), uploaded as Excel and analysed on three levels.
+// ============================================================
+
+enum ConnectKind {
+  OOS
+  ORDER
+  PAYMENT
+  VISIT
+}
+
+// One row of an export. Uploading a newer export updates the rows with the same ID.
+model ConnectRecord {
+  id         String      @id @default(cuid())
+  kind       ConnectKind
+  // The bot's own ID: check ID, order number, request ID.
+  externalId String
+  storeCode  String
+  storeName  String
+  city       String?
+  channel    String?
+  // The day of the check / order / request in Tashkent (YYYY-MM-DD) and its month (YYYY-MM).
+  day        String
+  month      String
+  // Who did it: the checker, the order's creator, the request's TSM, the visit's executor.
+  person     String?
+  // The parsed row (typed per kind, see modules/connect/parse.ts).
+  data       Json
+  importId   String
+  updatedAt  DateTime    @updatedAt
+
+  @@unique([kind, externalId])
+  @@index([kind, month])
+}
+
+model ConnectImport {
+  id        String   @id @default(cuid())
+  userId    String?
+  fileName  String
+  kinds     String
+  created   Int
+  updated   Int
+  skipped   Int
+  createdAt DateTime @default(now())
 }

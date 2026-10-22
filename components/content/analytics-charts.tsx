@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { formatDay, formatMonth, fromDateString } from "@/lib/dates";
 import type { ContentBrand, ContentChannel } from "@/lib/generated/prisma/enums";
-import { t, dateFormat } from "@/lib/i18n";
+import { t, dateFormat, currentLocale } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type {
   brandsByMonth,
@@ -20,9 +20,18 @@ import { BOT_COLOR } from "./bot-chip";
 // Name and colour of every section. A section keeps its colour everywhere: the colour follows
 // its place among all sections (archived ones included), so archiving one repaints nothing.
 export type SectionMeta = Record<string, { name: string; color: string }>;
-export const sectionMeta = (all: { id: string; name: string }[]): SectionMeta =>
+export const sectionMeta = (
+  all: { id: string; name: string; nameEn?: string | null }[],
+): SectionMeta =>
   Object.fromEntries(
-    all.map((s, i) => [s.id, { name: s.name, color: `var(--series-${(i % 8) + 1})` }]),
+    all.map((s, i) => [
+      s.id,
+      {
+        // In English when the viewer uses English and the section has an English name.
+        name: currentLocale() === "en" && s.nameEn ? s.nameEn : s.name,
+        color: `var(--series-${(i % 8) + 1})`,
+      },
+    ]),
   );
 const NONE = { name: "—", color: "var(--muted-foreground)" };
 export const BRAND_COLOR: Record<ContentBrand, string> = {

@@ -65,6 +65,11 @@ export default async function TodayPage() {
               <Link href="/content">{t("content.open")}</Link>
             </Button>
           )}
+          {canUseModule(user, "connect") && (
+            <Button asChild size="sm" variant="outline" className="md:hidden">
+              <Link href="/connect">{t("connect.open")}</Link>
+            </Button>
+          )}
           {canSeeReports(user) && (
             <Button asChild size="sm" variant="outline">
               <Link href="/reports">{t("reports.open")}</Link>

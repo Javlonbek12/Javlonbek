@@ -1,3 +1,4 @@
+import { Box } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -123,6 +124,12 @@ export default async function PlanogramPage({
       )}
 
       <div className="flex flex-wrap items-center gap-2 text-sm">
+        <Button asChild size="sm">
+          <Link href={`/planograms/${r.id}/3d`}>
+            <Box />
+            {t("planograms.view3d.open")}
+          </Link>
+        </Button>
         <span className="text-muted-foreground">{t("planograms.export.label")}:</span>
         {(["pptx", "pdf", "png"] as const).map((format) => (
           <Button key={format} asChild size="sm" variant="outline">

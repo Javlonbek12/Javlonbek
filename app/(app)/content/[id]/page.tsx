@@ -139,7 +139,7 @@ export default async function ContentPostPage({
                       .filter((s) => !s.archived || s.id === post.topic)
                       .map((s) => (
                         <option key={s.id} value={s.id}>
-                          {s.name}
+                          {meta[s.id]?.name ?? s.name}
                         </option>
                       ))}
                   </NativeSelect>

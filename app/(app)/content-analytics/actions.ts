@@ -57,6 +57,7 @@ async function run(form: FormData, done: string, change: () => Promise<unknown>)
 
 const fields = (form: FormData) => ({
   name: String(form.get("name") ?? ""),
+  nameEn: String(form.get("nameEn") ?? ""),
   description: String(form.get("description") ?? ""),
   sortOrder: String(form.get("sortOrder") ?? "0"),
 });

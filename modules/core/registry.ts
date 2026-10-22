@@ -1,4 +1,5 @@
 import {
+  Activity,
   BarChart3,
   Bell,
   CalendarClock,
@@ -95,6 +96,15 @@ export const MODULES: ModuleEntry[] = [
     roles: ["OWNER", "MANAGER"],
     mobile: false,
   },
+  // Connect bot analytics (imported exports): on phones it opens from the "Today" screen.
+  {
+    id: "connect",
+    titleKey: "nav.connect",
+    href: "/connect",
+    icon: Activity,
+    roles: ALL_ROLES,
+    mobile: false,
+  },
   {
     id: "notifications",
     titleKey: "nav.notifications",
@@ -123,6 +133,7 @@ const SWITCHABLE = new Set([
   "projects",
   "content",
   "reports",
+  "connect",
 ]);
 
 export function modulesForRole(
