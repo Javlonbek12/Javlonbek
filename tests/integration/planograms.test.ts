@@ -300,7 +300,10 @@ describe("library import and pictures", () => {
       sku.id,
       new File([new Uint8Array(png)], "pack.png", { type: "image/png" }),
     );
-    expect((await skuByCode("SKU-TEST-100")).imagePath).toMatch(/^planograms\/sku\//);
+    const saved = await skuByCode("SKU-TEST-100");
+    expect(saved.imagePath).toMatch(/^planograms\/sku\//);
+    // The 3D sides take the picture's edge colour.
+    expect(saved.sideColor).toBe("#1d4ed8");
     await expect(
       saveImage(owner, "sku", sku.id, new File(["not an image"], "x.png")),
     ).rejects.toMatchObject({ code: "badFile" });

@@ -473,6 +473,8 @@ model Sku {
   priceStyle    PriceLabelStyle @default(NUMBER)
   // Placeholder colour when there is no picture.
   color         String          @default("#64748b")
+  // Average colour of the picture's edges: the sides, top and bottom of the pack in 3D.
+  sideColor     String?
   archived      Boolean         @default(false)
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt

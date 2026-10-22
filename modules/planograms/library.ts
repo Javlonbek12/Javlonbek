@@ -14,6 +14,7 @@ import type { Actor } from "@/modules/core/permissions";
 import { canManagePlanograms } from "./access";
 import { PlanogramError } from "./errors";
 import { geometrySchema } from "./geometry";
+import { sideColorOf } from "./side-color";
 
 const MAX_IMAGE_MB = 10;
 
@@ -167,7 +168,11 @@ export async function saveImage(actor: Actor, kind: "sku" | "posm", id: string, 
     kind === "sku"
       ? (await db.sku.findUniqueOrThrow({ where: { id } })).imagePath
       : (await db.posm.findUniqueOrThrow({ where: { id } })).imagePath;
-  if (kind === "sku") await db.sku.update({ where: { id }, data: { imagePath: relative } });
+  if (kind === "sku")
+    await db.sku.update({
+      where: { id },
+      data: { imagePath: relative, sideColor: await sideColorOf(png) },
+    });
   else await db.posm.update({ where: { id }, data: { imagePath: relative } });
   if (previous) await rm(path.join(uploadRoot(), previous), { force: true });
 }

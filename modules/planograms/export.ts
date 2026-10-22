@@ -17,6 +17,7 @@ import { formatPrice } from "./prices";
 import { renderPlanogramSvg, type RenderCell, type RenderInput } from "./render";
 import { loadPlanogram, type LoadedPlanogram } from "./repository";
 import { changesVsPrevious } from "./service";
+import { sideColorOf } from "./side-color";
 
 const imageCache = new Map<string, string | null>();
 
@@ -50,6 +51,17 @@ export async function buildRenderInput(
   options: { large?: boolean; highlight?: RenderInput["highlight"]; imageBase?: string } = {},
 ): Promise<RenderInput> {
   const [skus, posms] = await Promise.all([db.sku.findMany(), db.posm.findMany()]);
+  // Pictures uploaded before side colours existed get theirs once, here.
+  const used = new Set(
+    Object.values(loaded.layout).flatMap((c) => (c.kind === "SKU" ? [c.skuId] : [])),
+  );
+  for (const sku of skus)
+    if (used.has(sku.id) && sku.imagePath && !sku.sideColor) {
+      const buffer = await readImage(sku.imagePath);
+      sku.sideColor = buffer ? await sideColorOf(buffer) : null;
+      if (sku.sideColor)
+        await db.sku.update({ where: { id: sku.id }, data: { sideColor: sku.sideColor } });
+    }
   const picture = (kind: "sku" | "posm", id: string, relative: string | null, height: number) =>
     options.imageBase
       ? imageUrl(options.imageBase, kind, id, relative, height * 2)
@@ -68,6 +80,7 @@ export async function buildRenderInput(
         brand: sku.brand,
         name: sku.name,
         color: sku.color,
+        sideColor: sku.imagePath ? sku.sideColor : null,
         image: await picture("sku", sku.id, sku.imagePath, 220),
         price: price === undefined ? null : formatPrice(price, sku.priceStyle),
         badges: content.badges,
