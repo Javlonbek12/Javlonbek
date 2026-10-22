@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import sharp from "sharp";
 
 import { db } from "@/lib/db";
 import { getEnv } from "@/lib/env";
 import { PlanogramError } from "@/modules/planograms/errors";
 import { requireRequestUser } from "@/modules/planograms/http";
 import { readImage, saveImage } from "@/modules/planograms/library";
+import { pictureResponse } from "@/modules/planograms/picture-response";
 
 const kindOf = (value: string) => (value === "sku" || value === "posm" ? value : null);
 
@@ -22,15 +22,9 @@ export async function GET(
   if (!(await requireRequestUser(request))) return new Response(null, { status: 401 });
   const { kind, id } = await params;
   const k = kindOf(kind);
-  let image = k ? await readImage(await imagePath(k, id)) : null;
+  const image = k ? await readImage(await imagePath(k, id)) : null;
   if (!image) return new Response(null, { status: 404 });
-  // ?h=… returns a smaller copy (the 3D view loads many pictures at once).
-  const height = Number(new URL(request.url).searchParams.get("h"));
-  if (Number.isInteger(height) && height >= 32 && height < 600)
-    image = await sharp(image).resize({ height, withoutEnlargement: true }).png().toBuffer();
-  return new Response(new Uint8Array(image), {
-    headers: { "Content-Type": "image/png", "Cache-Control": "private, max-age=86400" },
-  });
+  return pictureResponse(image, request.url);
 }
 
 // Upload form posts here; redirects back to the SKU / POSM page.

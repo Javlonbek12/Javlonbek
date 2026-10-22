@@ -47,7 +47,7 @@ export default async function PlanogramPage({
 
   const [svg, violations, changes, history, equipment, people, priceLists, names] =
     await Promise.all([
-      planogramSvg(loaded),
+      planogramSvg(loaded, { imageBase: "/api/planogram-images" }),
       validateStored(loaded),
       changesVsPrevious(loaded),
       versionHistory(r.rootId ?? r.id),
