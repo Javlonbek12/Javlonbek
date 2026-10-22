@@ -15,7 +15,7 @@ export default async function Planogram3DPage({ params }: PageProps<"/planograms
   const loaded = await loadPlanogram(id);
   if (!loaded) notFound();
   const r = loaded.record;
-  const input = await buildRenderInput(loaded);
+  const input = await buildRenderInput(loaded, { imageUrls: true });
 
   return (
     <div className="flex flex-col gap-3">

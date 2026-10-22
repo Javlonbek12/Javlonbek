@@ -32,11 +32,19 @@ async function dataUri(relative: string | null, height = 220): Promise<string | 
   return uri;
 }
 
+// A picture by link instead of inline (the 3D view loads them separately, once per picture).
+const imageUrl = (kind: "sku" | "posm", id: string, relative: string | null, height: number) =>
+  relative
+    ? `/api/planogram-images/${kind}/${id}?h=${height}&v=${encodeURIComponent(path.basename(relative))}`
+    : null;
+
 export async function buildRenderInput(
   loaded: LoadedPlanogram,
-  options: { large?: boolean; highlight?: RenderInput["highlight"] } = {},
+  options: { large?: boolean; highlight?: RenderInput["highlight"]; imageUrls?: boolean } = {},
 ): Promise<RenderInput> {
   const [skus, posms] = await Promise.all([db.sku.findMany(), db.posm.findMany()]);
+  const picture = (kind: "sku" | "posm", id: string, relative: string | null, height: number) =>
+    options.imageUrls ? imageUrl(kind, id, relative, height * 2) : dataUri(relative, height);
   const skuById = new Map(skus.map((s) => [s.id, s]));
   const posmById = new Map(posms.map((p) => [p.id, p]));
   const cells: Record<string, RenderCell> = {};
@@ -51,7 +59,7 @@ export async function buildRenderInput(
         brand: sku.brand,
         name: sku.name,
         color: sku.color,
-        image: await dataUri(sku.imagePath),
+        image: await picture("sku", sku.id, sku.imagePath, 220),
         price: price === undefined ? null : formatPrice(price, sku.priceStyle),
         badges: content.badges,
       };
@@ -62,7 +70,7 @@ export async function buildRenderInput(
         kind: "POSM",
         name: posm.name,
         color: posm.color,
-        image: await dataUri(posm.imagePath, 300),
+        image: await picture("posm", posm.id, posm.imagePath, 300),
         span: content.span,
       };
     }
@@ -72,7 +80,11 @@ export async function buildRenderInput(
     geometry: loaded.geometry,
     cells,
     header: header
-      ? { name: header.name, color: header.color, image: await dataUri(header.imagePath, 200) }
+      ? {
+          name: header.name,
+          color: header.color,
+          image: await picture("posm", header.id, header.imagePath, 200),
+        }
       : null,
     large: options.large,
     highlight: options.highlight,

@@ -65,6 +65,15 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, x: number, y: num
   lines.slice(0, 4).forEach((l, i) => ctx.fillText(l, x, y + i * step));
 }
 
+function webglAvailable() {
+  try {
+    const canvas = document.createElement("canvas");
+    return Boolean(canvas.getContext("webgl2") ?? canvas.getContext("webgl"));
+  } catch {
+    return false;
+  }
+}
+
 function imageTexture(THREE: ThreeModule, src: string) {
   const texture = new THREE.TextureLoader().load(src);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -78,6 +87,8 @@ export function Planogram3D({ input }: { input: RenderInput }) {
   const api = useRef<{ setView: (v: View) => void; reset: () => void } | null>(null);
   const [finish, setFinish] = useState<Finish>("dark");
   const [ready, setReady] = useState(false);
+  // The browser can't draw 3D (no WebGL) or the 3D code didn't load.
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     const element = host.current;
@@ -88,6 +99,8 @@ export function Planogram3D({ input }: { input: RenderInput }) {
 
     void (async () => {
       const THREE = await import("three");
+      if (disposed) return;
+      if (!webglAvailable()) throw new Error("webgl");
       const { OrbitControls } = await import("three/examples/jsm/controls/OrbitControls.js");
       if (disposed) return;
 
@@ -419,7 +432,9 @@ export function Planogram3D({ input }: { input: RenderInput }) {
         renderer.dispose();
         renderer.domElement.remove();
       };
-    })();
+    })().catch(() => {
+      if (!disposed) setFailed(true);
+    });
 
     return () => {
       disposed = true;
@@ -483,11 +498,17 @@ export function Planogram3D({ input }: { input: RenderInput }) {
         ref={host}
         className="bg-muted relative h-[70vh] min-h-[420px] w-full touch-none overflow-hidden rounded-2xl border"
       >
-        {!ready && (
-          <div className="text-muted-foreground absolute inset-0 flex items-center justify-center gap-2 text-sm">
-            <Box className="size-4 animate-pulse" />
-            {t("planograms.view3d.loading")}
+        {failed ? (
+          <div className="text-muted-foreground absolute inset-0 flex items-center justify-center p-6 text-center text-sm">
+            {t("planograms.view3d.failed")}
           </div>
+        ) : (
+          !ready && (
+            <div className="text-muted-foreground absolute inset-0 flex items-center justify-center gap-2 text-sm">
+              <Box className="size-4 animate-pulse" />
+              {t("planograms.view3d.loading")}
+            </div>
+          )
         )}
       </div>
       <p className="text-muted-foreground text-xs">{t("planograms.view3d.hint")}</p>
