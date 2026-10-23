@@ -9,7 +9,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { db } from "@/lib/db";
 import { t } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
-import { canManagePlanograms } from "@/modules/planograms/access";
+import { canApprovePlanograms, canManagePlanograms } from "@/modules/planograms/access";
 
 import { approveAllPendingAction, massInsertAction, massReplaceAction } from "../actions";
 
@@ -109,17 +109,19 @@ export default async function MassPage({ searchParams }: PageProps<"/planograms/
         </form>
       </Card>
 
-      <Card className="gap-2">
-        <CardTitle>{t("planograms.library.mass.approveAll")}</CardTitle>
-        <p className="text-sm">
-          {t("planograms.library.mass.pending", { count: String(pending) })}
-        </p>
-        <form action={approveAllPendingAction}>
-          <Button type="submit" size="sm" disabled={pending === 0}>
-            {t("planograms.library.mass.approveAll")}
-          </Button>
-        </form>
-      </Card>
+      {canApprovePlanograms(user.role) && (
+        <Card className="gap-2">
+          <CardTitle>{t("planograms.library.mass.approveAll")}</CardTitle>
+          <p className="text-sm">
+            {t("planograms.library.mass.pending", { count: String(pending) })}
+          </p>
+          <form action={approveAllPendingAction}>
+            <Button type="submit" size="sm" disabled={pending === 0}>
+              {t("planograms.library.mass.approveAll")}
+            </Button>
+          </form>
+        </Card>
+      )}
     </div>
   );
 }

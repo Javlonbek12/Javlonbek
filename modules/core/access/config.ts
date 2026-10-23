@@ -28,9 +28,10 @@ const roleSchema = z.object({
   modules: z.array(z.enum(CONFIGURABLE_MODULES)),
   taskScope: z.enum(TASK_SCOPES),
 });
-const LAWYER_DEFAULT = { modules: ["meetings", "content"], taskScope: "own" } satisfies z.infer<
-  typeof roleSchema
->;
+const LAWYER_DEFAULT = {
+  modules: ["meetings", "planograms", "content"],
+  taskScope: "own",
+} satisfies z.infer<typeof roleSchema>;
 // The lawyer's settings were added later: configs saved before get the default.
 const configSchema = z.object({
   MANAGER: roleSchema,
@@ -41,8 +42,11 @@ export type RoleConfig = z.infer<typeof configSchema>;
 
 // Default: only the owner sees everything; others see their tasks and meetings.
 export const DEFAULT_ROLE_CONFIG: RoleConfig = {
-  MANAGER: { modules: ["meetings", "projects", "content", "connect"], taskScope: "team" },
-  MEMBER: { modules: ["meetings", "content"], taskScope: "own" },
+  MANAGER: {
+    modules: ["meetings", "planograms", "projects", "content", "connect"],
+    taskScope: "team",
+  },
+  MEMBER: { modules: ["meetings", "planograms", "content"], taskScope: "own" },
   LAWYER: LAWYER_DEFAULT,
 };
 

@@ -5,7 +5,7 @@ import { fromDateString, isDateString } from "@/lib/dates";
 import { logActivity } from "@/modules/core/activity/service";
 import type { Actor } from "@/modules/core/permissions";
 
-import { canManagePlanograms } from "./access";
+import { canApprovePlanograms, canManagePlanograms } from "./access";
 import { PlanogramError } from "./errors";
 import { mergePriceLists, priceChanges, type PriceChange } from "./prices";
 import { copyPlanogram } from "./service";
@@ -108,7 +108,7 @@ export async function previewPriceList(priceListId: string): Promise<PricePrevie
 
 // Every affected planogram gets a new approved version with the new prices; old versions keep theirs.
 export async function applyPriceList(actor: Actor, priceListId: string) {
-  if (!canManagePlanograms(actor.role)) throw new PlanogramError("forbidden");
+  if (!canApprovePlanograms(actor.role)) throw new PlanogramError("forbidden");
   const preview = await previewPriceList(priceListId);
   const created: string[] = [];
   for (const item of preview) {

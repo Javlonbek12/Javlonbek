@@ -8,7 +8,7 @@ import { db } from "@/lib/db";
 import { formatDay, toDateString } from "@/lib/dates";
 import { t } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
-import { canManagePlanograms } from "@/modules/planograms/access";
+import { canApprovePlanograms } from "@/modules/planograms/access";
 import { formatPrice } from "@/modules/planograms/prices";
 import { previewPriceList } from "@/modules/planograms/pricing";
 
@@ -84,7 +84,7 @@ export default async function PriceListPage({
           ))}
         </div>
       )}
-      {canManagePlanograms(user.role) && preview.length > 0 && (
+      {canApprovePlanograms(user.role) && preview.length > 0 && (
         <form action={applyPriceListAction}>
           <input type="hidden" name="priceListId" value={list.id} />
           <Button type="submit">{t("planograms.library.prices.apply")}</Button>
