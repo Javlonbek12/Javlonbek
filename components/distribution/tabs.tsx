@@ -2,7 +2,6 @@
 
 import {
   BookOpen,
-  Boxes,
   ChartPie,
   ClipboardList,
   PackageCheck,
@@ -23,7 +22,6 @@ const TABS = [
   { href: "/distribution/plan", key: "dist.tabs.plan", icon: Truck },
   { href: "/distribution/stock", key: "dist.tabs.stock", icon: PackageCheck },
   { href: "/distribution", key: "dist.tabs.overview", icon: ChartPie },
-  { href: "/distribution/equipment", key: "dist.tabs.equipment", icon: Boxes },
   { href: "/distribution/sizes", key: "dist.tabs.sizes", icon: Ruler },
   { href: "/distribution/import", key: "dist.tabs.import", icon: Upload, manage: true },
   { href: "/distribution/help", key: "dist.tabs.help", icon: BookOpen },

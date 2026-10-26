@@ -146,11 +146,13 @@ const ru: GuidePart[] = [
         ],
       },
       {
-        title: "Оборудование",
-        href: "/distribution/equipment",
+        title: "Оборудование (отдельный пункт меню)",
+        href: "/equipment",
         text: [
-          "Установленное и складское оборудование по регионам, база для распределения, регионы по TSM, связь типов оборудования с планограммами.",
-          "«Учитывать оборудование на складах» в распределении — переключатель там же.",
+          "«Карта»: Узбекистан по регионам — сколько установлено, на складах и в скольких точках; нажмите на регион, чтобы открыть его.",
+          "Страница региона: оборудование по типам с моделями, по TSM, склад.",
+          "«Типы оборудования»: каждый тип — модель в масштабе, размеры, слоты, сколько установлено и где больше всего.",
+          "«Таблицы»: оборудование по регионам, база для распределения, регионы по TSM, связь с планограммами; переключатель «Учитывать оборудование на складах».",
         ],
       },
       {
@@ -314,11 +316,13 @@ const en: GuidePart[] = [
         ],
       },
       {
-        title: "Equipment",
-        href: "/distribution/equipment",
+        title: "Equipment (its own menu item)",
+        href: "/equipment",
         text: [
-          "Installed and warehouse equipment by region, the base for the split, regions by TSM, equipment types linked to planograms.",
-          "The “Count equipment in warehouses” switch for the split is there.",
+          "“Map”: Uzbekistan by region — installed, in warehouses and in how many outlets; click a region to open it.",
+          "A region's page: equipment by type with the models, by TSM, the warehouse.",
+          "“Equipment types”: every type — a to-scale model, dimensions, slots, how many are installed and where most are.",
+          "“Tables”: equipment by region, the base for the split, regions by TSM, the link to planograms; the “Count equipment in warehouses” switch.",
         ],
       },
       {

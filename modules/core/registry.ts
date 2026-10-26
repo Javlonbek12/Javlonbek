@@ -9,6 +9,7 @@ import {
   Megaphone,
   PieChart,
   ListTodo,
+  MapPinned,
   Network,
   Settings,
   Truck,
@@ -114,6 +115,17 @@ export const MODULES: ModuleEntry[] = [
     href: "/distribution/campaigns",
     icon: Truck,
     roles: ALL_ROLES,
+    mobile: false,
+  },
+  // Where the equipment is: a map of Uzbekistan, every type with its model, regions and TSMs.
+  // The same data as the distribution, so the same access.
+  {
+    id: "equipment",
+    titleKey: "nav.equipment",
+    href: "/equipment",
+    icon: MapPinned,
+    roles: ALL_ROLES,
+    access: "distribution",
     mobile: false,
   },
   {
