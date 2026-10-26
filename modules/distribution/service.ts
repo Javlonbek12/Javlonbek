@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 
 import { db } from "@/lib/db";
+import type { Prisma } from "@/lib/generated/prisma/client";
 import { fromDateString, isDateString } from "@/lib/dates";
 import { canUseModule } from "@/modules/core/access/actor";
 import { logActivity } from "@/modules/core/activity/service";
@@ -21,14 +22,16 @@ import {
   type Item,
   type TypeFacts,
 } from "./compute";
+import { controlRows, hasMinus, purchasedByType, stockByType, type ControlRow } from "./control";
 import {
   DistributionParseError,
   parseEquipmentFile,
   parseOutletBase,
   parsePosmList,
+  type ParsedEquipment,
   type ParsedPosm,
 } from "./parse";
-import { DIST_TYPES, sortRegions, tsmDestination } from "./types";
+import { DIST_TYPES, NO_TSM, sortRegions, tsmDestination } from "./types";
 
 type Viewer = Parameters<typeof canUseModule>[0];
 
@@ -203,13 +206,13 @@ export async function posmOrderId(id: string) {
   return item?.orderId ?? null;
 }
 
-// Installed equipment: unit by unit from the equipment file, the TSM from the outlet base (else
-// the one in the equipment file). Before the first equipment file, the counts of the old format.
+// Installed equipment: unit by unit from the equipment file, the TSM looked up in the outlet base
+// now (so a new base re-splits at once); units it has none for are «TSM не назначен». Before the
+// first equipment file, the counts of the old format.
 async function equipmentCounts(): Promise<Count[]> {
   const [grouped, stored] = await Promise.all([
     db.$queryRaw<{ region: string; type: string; tsm: string; count: number }[]>`
-      SELECT u."region", u."type",
-             COALESCE(NULLIF(o."tsm", ''), NULLIF(u."tsm", ''), '') AS "tsm",
+      SELECT u."region", u."type", COALESCE(NULLIF(o."tsm", ''), ${NO_TSM}) AS "tsm",
              SUM(u."units")::float8 AS "count"
       FROM "DistUnit" u LEFT JOIN "DistOutlet" o ON o."outletId" = u."outletId"
       GROUP BY 1, 2, 3`,
@@ -352,15 +355,87 @@ const chunks = <T>(list: T[]) =>
     list.slice(i * CHUNK, (i + 1) * CHUNK),
   );
 
+// What the control equation would be with this file: its rows and its stock (or the stock
+// loaded now, when the file has no «Current stock» block).
+async function previewControl(file: ParsedEquipment): Promise<ControlRow[]> {
+  const installed: Record<string, number> = {};
+  for (const u of file.units) installed[u.type] = (installed[u.type] ?? 0) + u.units;
+  const stock: Record<string, number> = {};
+  for (const c of file.stock) stock[c.type] = (stock[c.type] ?? 0) + c.count;
+  const [purchased, current] = await Promise.all([purchasedByType(), stockByType()]);
+  return controlRows(purchased, installed, file.stock.length ? stock : current);
+}
+
+export type EquipmentImport =
+  | {
+      status: "saved";
+      rows: number;
+      units: number;
+      stock: number;
+      skipped: number;
+      noId: number;
+      control: ControlRow[];
+    }
+  | { status: "pending"; id: string; control: ControlRow[] };
+
 // The equipment file replaces the installed equipment; its «Current stock» block, when there is
-// one, replaces the warehouse counts.
-export async function importEquipmentFile(actor: Actor & Viewer, buffer: Buffer) {
+// one, replaces the warehouse counts. The control table comes back at once; when it has a minus
+// the file waits (DistPendingImport) until the user confirms it.
+export async function importEquipmentFile(
+  actor: Actor & Viewer,
+  buffer: Buffer,
+): Promise<EquipmentImport> {
   if (!canManageDistribution(actor)) throw new DistributionError("forbidden");
   const file = await parsed(buffer, parseEquipmentFile);
+  const control = await previewControl(file);
+  if (hasMinus(control)) {
+    // One waiting file per day is plenty: older ones are dropped.
+    await db.distPendingImport.deleteMany({
+      where: { createdAt: { lt: new Date(Date.now() - 24 * 3600 * 1000) } },
+    });
+    const pending = await db.distPendingImport.create({
+      data: { payload: file as unknown as Prisma.InputJsonValue, createdById: actor.id },
+    });
+    return { status: "pending", id: pending.id, control };
+  }
+  return { status: "saved", ...(await saveEquipment(actor, file)), control };
+}
+
+export async function pendingImport(id: string) {
+  const row = await db.distPendingImport.findUnique({ where: { id } });
+  if (!row) return null;
+  const file = row.payload as unknown as ParsedEquipment;
+  return {
+    id,
+    createdAt: row.createdAt,
+    rows: file.units.length,
+    skipped: file.skipped.length,
+    control: await previewControl(file),
+  };
+}
+
+// Saves a waiting file despite its minus (the user saw the table), or drops it.
+export async function resolvePendingImport(actor: Actor & Viewer, id: string, save: boolean) {
+  if (!canManageDistribution(actor)) throw new DistributionError("forbidden");
+  const row = await db.distPendingImport.findUnique({ where: { id } });
+  if (!row) throw new DistributionError("notFound");
+  await db.distPendingImport.delete({ where: { id } });
+  if (!save) return null;
+  return saveEquipment(actor, row.payload as unknown as ParsedEquipment, true);
+}
+
+async function saveEquipment(actor: Actor & Viewer, file: ParsedEquipment, confirmed = false) {
+  const seen = [...new Map(file.units.filter((u) => u.outletId).map((u) => [u.outletId, u]))].map(
+    ([outletId, u]) => ({ outletId, posName: u.posName, tin: u.tin }),
+  );
   await db.$transaction(
     async (tx) => {
       await tx.distUnit.deleteMany({});
       for (const part of chunks(file.units)) await tx.distUnit.createMany({ data: part });
+      for (const part of chunks(seen))
+        await tx.distSeenOutlet.createMany({ data: part, skipDuplicates: true });
+      await tx.distSkippedRow.deleteMany({});
+      if (file.skipped.length) await tx.distSkippedRow.createMany({ data: file.skipped });
       await tx.distEquipmentCount.deleteMany({
         where: file.stock.length ? {} : { kind: "INSTALLED" },
       });
@@ -372,23 +447,31 @@ export async function importEquipmentFile(actor: Actor & Viewer, buffer: Buffer)
     { timeout: 60_000 },
   );
   const units = file.units.reduce((s, u) => s + u.units, 0);
+  const noId = new Set(file.units.filter((u) => !u.outletId).map((u) => u.outletKey)).size;
   await logActivity({
     actorId: actor.id,
     action: "distribution.equipment",
     entityType: "DistUnit",
     entityId: "file",
-    details: { rows: file.units.length, stock: file.stock.length, skipped: file.skipped },
+    details: {
+      rows: file.units.length,
+      stock: file.stock.length,
+      skipped: file.skipped.length,
+      noId,
+      ...(confirmed ? { confirmedMinus: true } : {}),
+    },
   });
   return {
     rows: file.units.length,
     units: Math.round(units),
     stock: Math.round(file.stock.reduce((s, c) => s + c.count, 0)),
-    skipped: file.skipped,
-    unknown: file.unknownTypes,
+    skipped: file.skipped.length,
+    noId,
   };
 }
 
-// The outlet base replaces the responsible TSMs.
+// The outlet base replaces the responsible TSMs (only «ID → TSM» is used; its region only shows
+// outlets the file puts elsewhere).
 export async function importOutletBase(actor: Actor & Viewer, buffer: Buffer) {
   if (!canManageDistribution(actor)) throw new DistributionError("forbidden");
   const outlets = await parsed(buffer, parseOutletBase);
@@ -400,22 +483,31 @@ export async function importOutletBase(actor: Actor & Viewer, buffer: Buffer) {
     },
     { timeout: 60_000 },
   );
-  const [matched] = await db.$queryRaw<{ units: number; withTsm: number }[]>`
+  const [matched] = await db.$queryRaw<
+    { units: number; withTsm: number; missing: number; mismatched: number }[]
+  >`
     SELECT COUNT(*)::int AS "units",
-           COUNT(*) FILTER (WHERE NULLIF(o."tsm", '') IS NOT NULL)::int AS "withTsm"
+           COUNT(*) FILTER (WHERE NULLIF(o."tsm", '') IS NOT NULL)::int AS "withTsm",
+           COUNT(DISTINCT u."outletId")
+             FILTER (WHERE u."outletId" <> '' AND o."outletId" IS NULL)::int AS "missing",
+           COUNT(DISTINCT u."outletId")
+             FILTER (WHERE o."region" IS NOT NULL AND NOT (u."region" = ANY(string_to_array(o."region", ', '))))::int AS "mismatched"
     FROM "DistUnit" u LEFT JOIN "DistOutlet" o ON o."outletId" = u."outletId"`;
   await logActivity({
     actorId: actor.id,
     action: "distribution.outlets",
     entityType: "DistOutlet",
     entityId: "file",
-    details: { outlets: unique.length },
+    details: { outlets: unique.length, missing: matched?.missing ?? 0 },
   });
   return {
     outlets: unique.length,
     withTsm: unique.filter((o) => o.tsm).length,
     units: matched?.units ?? 0,
     unitsWithTsm: matched?.withTsm ?? 0,
+    // Outlets of the equipment file (with an ID) the base does not have.
+    missing: matched?.missing ?? 0,
+    mismatched: matched?.mismatched ?? 0,
   };
 }
 

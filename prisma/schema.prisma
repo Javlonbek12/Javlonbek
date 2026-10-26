@@ -77,6 +77,7 @@ model User {
   projectsCreated    Project[]            @relation("ProjectCreator")
   distShipments      DistShipment[]
   distOrders         DistOrder[]
+  distPurchases      DistPurchase[]       @relation("DistPurchaseCreatedBy")
   distFiles          DistCampaignFile[]
   distQuotes         DistPriceQuote[]
 }
@@ -931,20 +932,68 @@ model DistEquipmentCount {
 
 // One installed piece of equipment from the «BW management» list of the equipment file.
 model DistUnit {
-  id       String @id @default(cuid())
-  // The outlet's Smartup ID: links it to the outlet base (DistOutlet) for the responsible TSM.
-  outletId String
-  region   String
-  type     String
-  // 1 for a display; Display MOD: its slots / 18.
-  units    Float
-  // The responsible TSM written in the equipment file (used when the base has none).
-  tsm      String @default("")
+  id        String @id @default(cuid())
+  // The outlet's Smartup ID ("" when the row has none): links it to the outlet base (DistOutlet)
+  // for the responsible TSM. The TSM is never stored here: it is looked up at calculation time.
+  outletId  String @default("")
+  // Who the outlet is: its Smartup ID, else "region|tin:…" or "region|name:…" (rows without an
+  // ID are replaced on every upload, never matched by hand).
+  outletKey String @default("")
+  region    String
+  type      String
+  // 1 for a display; Display MOD: its slots / 18 (the file's own unit, as in its totals).
+  units     Float
+  posName   String @default("")
+  tin       String @default("")
 
   @@index([outletId])
 }
 
-// The outlet base: who is the responsible TSM of each outlet (only what the split needs).
+// When each Smartup ID first appeared in an equipment file: for the «new outlets» list.
+model DistSeenOutlet {
+  outletId  String   @id
+  firstSeen DateTime @default(now())
+  posName   String   @default("")
+  tin       String   @default("")
+}
+
+// A row of «BW management» that could not be counted (no ID, no TIN, no name; or an unknown
+// type): replaced on every upload.
+model DistSkippedRow {
+  id          String @id @default(cuid())
+  row         Int
+  reason      String
+  region      String @default("")
+  description String @default("")
+}
+
+// The purchase journal: how much of each equipment type was bought. Its sum is the ceiling of
+// the control equation (bought = installed + in stock + unaccounted). Entered by hand only.
+model DistPurchase {
+  id          String   @id @default(cuid())
+  type        String
+  // Display MOD in 18-slot units, like everywhere else.
+  quantity    Float
+  date        DateTime @db.Date
+  document    String
+  note        String?
+  createdById String
+  createdBy   User     @relation("DistPurchaseCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+
+  @@index([type])
+}
+
+// An equipment file waiting for confirmation: its control equation has a minus.
+model DistPendingImport {
+  id          String   @id @default(cuid())
+  payload     Json
+  createdById String
+  createdAt   DateTime @default(now())
+}
+
+// The outlet base: who is the responsible TSM of each outlet (only what the split needs). Its
+// region is never used in the counts, only to list outlets whose region differs from the file.
 model DistOutlet {
   outletId String  @id
   region   String?

@@ -1926,7 +1926,13 @@ export const en: Dictionary = {
     title: "Equipment",
     intro:
       "Where the equipment is: installed in outlets and in warehouses — from the equipment file.",
-    tabs: { map: "Map", types: "Equipment types", tables: "Tables" },
+    tabs: {
+      map: "Map",
+      types: "Equipment types",
+      control: "Control",
+      outlets: "New outlets",
+      tables: "Tables",
+    },
     empty: "No equipment yet — upload the equipment file.",
     upload: "Upload the equipment file →",
     kpi: {
@@ -1950,7 +1956,65 @@ export const en: Dictionary = {
     byType: "By equipment type",
     byTsm: "By TSM",
     byTsmHint:
-      "Installed equipment by responsible TSM: from the outlet base, else from the equipment file.",
+      "Installed equipment by responsible TSM — from the outlet base only. What the base lacks is in the «TSM не назначен» (no TSM) row.",
+    control: {
+      title: "Control equation",
+      hint: "Per type: Bought = Installed (BW management rows) + In stock (Current stock) + Unaccounted. Unaccounted is never entered — it is the difference. Display MOD is counted in 18-slot units everywhere, as in the file itself.",
+      type: "Equipment type",
+      purchased: "Bought",
+      installed: "Installed",
+      stock: "In stock",
+      unaccounted: "Unaccounted",
+      noPurchase: "no purchase entered",
+      tone: {
+        ok: "a small plus or zero — normal",
+        warn: "a large plus (over 5% of the purchase) — something was not entered in the warehouse",
+        bad: "a minus — an error in the file: duplicate rows or dismantled equipment not removed",
+        none: "no purchase entered",
+      },
+    },
+    purchases: {
+      title: "Purchase journal",
+      hint: "How much equipment of each type was bought. Entered by hand only: file uploads never change it. The sum per type is the ceiling of the control equation. A correction is a separate line with a minus.",
+      quantity: "Quantity",
+      date: "Date",
+      document: "Document",
+      note: "Note",
+      author: "Entered by",
+      add: "Add",
+      delete: "Delete entry",
+      none: "No purchases entered yet.",
+    },
+    outlets: {
+      missingTitle: "New outlets: in the BW file, not in the base",
+      missingHint:
+        "Their equipment counts as installed, in its region and in the POSM order — in the «TSM не назначен» (no TSM) row. It does not go to the region's warehouse. The TSM appears once the ID is added to the outlet base.",
+      noIdTitle: "Without an ID",
+      noIdHint:
+        "Rows without a Smartup ID but with a TIN or a name: counted in the region and the POSM order, not split by TSM. No manual matching: they are replaced on every upload.",
+      skippedTitle: "Skipped",
+      skippedHint: "BW management rows not counted anywhere, with the reason.",
+      mismatchTitle: "The base has another region than the file",
+      mismatchHint:
+        "For information only: the region comes from the BW file; the base's region is not used in any count.",
+      name: "Name",
+      tin: "TIN",
+      types: "Equipment",
+      units: "Units",
+      firstSeen: "First in the file",
+      row: "Row",
+      reason: "Reason",
+      description: "Description in the file",
+      fileRegion: "Region in the BW file",
+      baseRegion: "Region in the base",
+      none: "None.",
+      reasons: {
+        noIdentity: "no ID, TIN or name",
+        noRegion: "no region",
+        noType: "no equipment type",
+        unknownType: "unknown equipment type",
+      },
+    },
     inStock: "in warehouse: {count}",
   },
   dist: {
@@ -2004,7 +2068,7 @@ export const en: Dictionary = {
       tagNoPlanogram:
         "Price tags are split evenly over all equipment: the planograms have no prices to count the need from.",
       noTsm:
-        "{count} installed units have no responsible TSM — their share stays at the region's warehouse.",
+        "{count} installed units have no TSM in the outlet base — their share goes to the region\'s «TSM не назначен» (no TSM) row.",
       stockIn: "{count} units in warehouses are counted in the base, as in the file.",
       stockOut: "{count} units in warehouses are not counted in the base.",
       noSlots: "No slot count for types: {types}.",
@@ -2156,13 +2220,21 @@ export const en: Dictionary = {
       link: "Upload data",
       equipmentTitle: "Equipment file",
       equipmentHint:
-        "“Daily BW-POG management”: the “BW management” sheet (every unit with its region and outlet ID) and the “Current stock” block on the “Warehouse” sheet. A new file replaces the equipment; orders and shipments don't change.",
+        "“Daily BW-POG management” is the only source of quantities and regions: the “BW management” sheet (every unit with its region, outlet ID, name and TIN) and the “Current stock” block on the “Warehouse” sheet. The control table shows right after the upload; with a minus in it the file is saved only once you confirm. Uploads never change the purchase journal.",
       equipmentDone:
         "Uploaded: {rows} equipment rows ({units} units), {stock} units in warehouses.",
-      skipped: "Rows skipped without a region, ID or with an unknown type: {count}.",
+      skipped: "Rows skipped: {count} (the list is in “Equipment → New outlets”).",
+      noId: "Outlets without an ID (counted by TIN or name): {count}.",
+      minus:
+        "The file is not saved: the control equation has a minus ({rows} rows in the file). A minus usually means duplicate rows or dismantled equipment still in the file. Check the table and save only if you are sure.",
+      saveAnyway: "Save anyway",
+      drop: "Don't save",
+      dropped: "The file was not saved.",
+      missing: "Outlets in the BW file that are not in the base: {count}.",
+      mismatched: "The base has another region than the file for {count} outlets.",
       outletsTitle: "Outlet base",
       outletsHint:
-        "The base file with the “ИД” and “Responsible TSM” columns — a region's share is split between TSMs by it. A new file replaces the base.",
+        "The base file with the “ИД” and “Responsible TSM” columns — only “ID → TSM”: a region's share is split between TSMs by it. The base's region is not used in any count. A new file replaces the base and re-splits at once.",
       outletsDone:
         "Outlets uploaded: {outlets}, with a TSM: {withTsm}. Equipment matched to a TSM: {unitsWithTsm} of {units}.",
       loaded: "Last upload: {date} · {count} rows",

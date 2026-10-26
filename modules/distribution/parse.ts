@@ -1,30 +1,43 @@
 import ExcelJS from "exceljs";
 
-import { canonicalRegion, TYPE_CODES, typeFromPivotHeader, type DistType } from "./types";
+import {
+  canonicalRegion,
+  REGION_ORDER,
+  TYPE_CODES,
+  typeFromPivotHeader,
+  type DistType,
+} from "./types";
 
 // The three files of the POSM distribution, found by sheet and column titles so refreshed files
 // with moved rows or columns still read:
-// - the equipment file («Daily BW-POG management»): every installed piece in «BW management»
-//   (one row each; Display MOD counts as its slots / 18), the warehouses in the «Current stock»
-//   block of «Warehouse»;
-// - the outlet base: each outlet's ID and responsible TSM (for the split by TSM);
+// - the equipment file («Daily BW-POG management»): the only source of quantities and regions —
+//   every installed piece in «BW management» (one row each; Display MOD counts as its slots / 18),
+//   the warehouses in the «Current stock» block of «Warehouse» (the dismantling list is not read);
+// - the outlet base: only «ID → responsible TSM» (its region just shows mismatches with the file);
 // - a POSM list for an order: the «POSM» sheet of the distribution workbook.
 
 export type ParsedUnit = {
+  // "" for a row without a Smartup ID (kept when it has a TIN or a name).
   outletId: string;
+  outletKey: string;
   region: string;
   type: DistType;
   units: number;
-  tsm: string;
+  posName: string;
+  tin: string;
 };
+
+export type SkipReason = "noIdentity" | "noRegion" | "noType" | "unknownType";
+
+export type SkippedRow = { row: number; reason: SkipReason; region: string; description: string };
 
 export type ParsedStock = { region: string; type: DistType; count: number };
 
 export type ParsedEquipment = {
   units: ParsedUnit[];
   stock: ParsedStock[];
-  // Rows of «BW management» skipped: no outlet, region or a type we don't know.
-  skipped: number;
+  // Rows of «BW management» not counted, each with its reason.
+  skipped: SkippedRow[];
   unknownTypes: string[];
 };
 
@@ -147,29 +160,47 @@ export async function parseEquipmentFile(buffer: Buffer): Promise<ParsedEquipmen
   if (!head) throw new DistributionParseError("noEquipment");
   const header = grid[head.row]!.map((c) => text(c).toLowerCase());
   const slotsAt = header.findIndex((h) => /слот|slot/.test(h));
-  const tsmAt = header.findIndex((h) => /^responsible/.test(h));
+  const nameAt = header.findIndex((h) => /^pos name|^наименование|^название/.test(h));
+  const tinAt = header.findIndex((h) => /^tin\b|^инн/.test(h));
   const units: ParsedUnit[] = [];
+  const skipped: SkippedRow[] = [];
   const unknown = new Set<string>();
-  let skipped = 0;
-  for (const row of grid.slice(head.row + 1)) {
+  grid.slice(head.row + 1).forEach((row, i) => {
     const outletId = idOf(row[head.at.id!] ?? null);
-    const region = text(row[head.at.region!] ?? null);
+    const rawRegion = text(row[head.at.region!] ?? null);
     const description = text(row[head.at.type!] ?? null);
-    if (!outletId && !region && !description) continue;
+    const posName = nameAt >= 0 ? text(row[nameAt] ?? null) : "";
+    const tin = tinAt >= 0 ? idOf(row[tinAt] ?? null) : "";
+    if (!outletId && !rawRegion && !description && !posName && !tin) return;
     const type = description ? typeFromPivotHeader(description) : null;
-    if (!outletId || !region || !type) {
-      skipped += 1;
-      if (description && !type) unknown.add(description);
-      continue;
+    const region = rawRegion ? canonicalRegion(rawRegion) : "";
+    // Without an ID the outlet is known by its region and TIN (else its name).
+    const outletKey =
+      outletId || (tin ? `${region}|tin:${tin}` : posName ? `${region}|name:${posName}` : "");
+    const reason: SkipReason | null = !region
+      ? "noRegion"
+      : !description
+        ? "noType"
+        : !type
+          ? "unknownType"
+          : !outletKey
+            ? "noIdentity"
+            : null;
+    if (reason || !type) {
+      skipped.push({ row: head.row + i + 2, reason: reason ?? "noType", region, description });
+      if (reason === "unknownType") unknown.add(description);
+      return;
     }
     units.push({
       outletId,
-      region: canonicalRegion(region),
+      outletKey,
+      region,
       type,
       units: type === "POSI_MOD" ? num(row[slotsAt] ?? null) / MOD_SLOTS : 1,
-      tsm: tsmAt >= 0 ? text(row[tsmAt] ?? null) : "",
+      posName,
+      tin,
     });
-  }
+  });
   if (units.length === 0) throw new DistributionParseError("noEquipment");
 
   // «Warehouse» → the «Current stock» block: a title row, two header rows (group, type), regions.
@@ -210,10 +241,17 @@ export async function parseOutletBase(buffer: Buffer): Promise<ParsedOutlet[]> {
     for (const row of grid.slice(head.row + 1)) {
       const outletId = idOf(row[head.at.id!] ?? null);
       if (!outletId) continue;
-      const region = regionAt >= 0 ? text(row[regionAt] ?? null) : "";
+      // «Организации» can list several («C&C, Tashkent»): the known regions among them, else
+      // the value as it is.
+      const raw = regionAt >= 0 ? text(row[regionAt] ?? null) : "";
+      const known = raw
+        .split(",")
+        .map((part) => canonicalRegion(part))
+        .filter((part) => REGION_ORDER.includes(part));
+      const region = known.length ? known.join(", ") : raw && canonicalRegion(raw);
       outlets.push({
         outletId,
-        region: region ? canonicalRegion(region) : null,
+        region: region || null,
         tsm: text(row[head.at.tsm!] ?? null) || null,
       });
     }
