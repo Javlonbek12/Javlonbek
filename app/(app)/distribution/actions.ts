@@ -17,6 +17,7 @@ import {
   setOrdered,
   updateConcept,
 } from "@/modules/distribution/campaign";
+import { saveEas } from "@/modules/distribution/eas";
 import {
   addElement,
   deleteElement,
@@ -457,5 +458,48 @@ export async function importReplacementAction(form: FormData) {
       unknown: String(r.unknown),
     });
     return campaignPath(id, `?${q}#replacement`);
+  });
+}
+
+export async function saveEasAction(form: FormData) {
+  const user = await requireUser();
+  const id = str(form, "id");
+  const back = `/distribution/campaigns/${id}/eas`;
+  await run(back, async () => {
+    const amount = (key: string) => {
+      const v = str(form, key).replace(/[\s ]/g, "").replace(",", ".");
+      return v === "" ? null : Number(v);
+    };
+    const groups = form.getAll("group").map(String);
+    await saveEas(user, id, {
+      budgetMonth: str(form, "budgetMonth"),
+      budgetCategory: str(form, "budgetCategory"),
+      categoryRemark: str(form, "categoryRemark"),
+      team: str(form, "team"),
+      account: str(form, "account"),
+      division: str(form, "division"),
+      department: str(form, "department"),
+      pic: str(form, "pic"),
+      month: str(form, "month"),
+      expensesDetails: str(form, "expensesDetails"),
+      monthlyBudget: amount("monthlyBudget"),
+      alreadySpent: amount("alreadySpent"),
+      title: str(form, "title"),
+      intro: str(form, "intro"),
+      background: str(form, "background"),
+      purpose: str(form, "purpose"),
+      scope: str(form, "scope"),
+      coverage: str(form, "coverage"),
+      groupPurpose: Object.fromEntries(groups.map((g, i) => [g, str(form, `groupPurpose:${i}`)])),
+      suppliers: [0, 1, 2, 3].map((i) => ({
+        name: str(form, `supplier:${i}`),
+        legalName: str(form, `legal:${i}`),
+        total: amount(`total:${i}`),
+      })),
+      recommended: str(form, "recommended"),
+      recommendedReason: str(form, "recommendedReason"),
+      benefits: str(form, "benefits"),
+    });
+    return `${back}?saved=1`;
   });
 }

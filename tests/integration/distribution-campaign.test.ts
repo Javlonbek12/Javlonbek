@@ -16,6 +16,7 @@ import {
   setOrdered,
   updateConcept,
 } from "@/modules/distribution/campaign";
+import { buildEas, easData, easHtml, saveEas } from "@/modules/distribution/eas";
 import {
   addElement,
   catalogXlsx,
@@ -162,5 +163,63 @@ describe("a POSM campaign", () => {
       sizes: 1,
       types: 1,
     });
+  });
+});
+
+describe("the EAS document", () => {
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  it("is filled from the campaign and keeps the budget fields for the next one", async () => {
+    const owner = await withAccess(await createTestUser("OWNER"));
+    await importEquipmentFile(owner, await equipmentWorkbook());
+    const header = await addElement(owner, "Header (тест)", "PVC");
+    await saveElementSizes(owner, header.id, {
+      name: "Header (тест)",
+      material: "PVC",
+      sizes: [size("POSI_L")],
+    });
+    const c = await createCampaign(owner, { name: "Pine (тест)", description: "Запуск" });
+    await saveComposition(owner, c.id, {
+      reservePct: 0.1,
+      withStock: true,
+      elements: [{ elementId: header.id, types: ["POSI_L"], perUnit: {} }],
+    });
+    await makeList(owner, c.id);
+    let campaign = (await loadCampaign(c.id))!;
+    const data = await easData(campaign);
+    expect(data.background).toBe("Запуск");
+    await saveEas(owner, c.id, {
+      ...data,
+      account: "0000 (тест)",
+      monthlyBudget: 1_000_000,
+      purpose: "Первый пункт\nВторой пункт",
+      groupPurpose: { "Header (тест)": "Заметность <SKU>" },
+      suppliers: [
+        { name: "Типография А", legalName: "ООО А (тест)", total: null },
+        { name: "Типография Б", legalName: "", total: 600_000 },
+      ],
+      recommended: "Типография А",
+    });
+    campaign = (await loadCampaign(c.id))!;
+    const doc = buildEas(campaign, await easData(campaign));
+    // 20 × 25 000 = 500 000.
+    expect(doc.requested).toBe(500_000);
+    expect(doc.budget).toContainEqual(["Remaining budget amount", "500 000"]);
+    expect(doc.purpose).toEqual(["Первый пункт", "Второй пункт"]);
+    expect(doc.comparison).toEqual([
+      { name: "Типография А", total: 500_000, diff: 0, pct: 0 },
+      { name: "Типография Б", total: 600_000, diff: 100_000, pct: 0.2 },
+    ]);
+    expect(doc.finalRequest).toContain('"Типография А" (ООО А (тест))');
+    const html = easHtml(doc);
+    expect(html).toContain("Заметность &lt;SKU&gt;");
+    expect(html).not.toContain("<SKU>");
+
+    // A new campaign starts from these budget fields.
+    const next = await createCampaign(owner, { name: "Следующая (тест)" });
+    const fresh = await easData((await loadCampaign(next.id))!);
+    expect(fresh).toMatchObject({ account: "0000 (тест)", monthlyBudget: 1_000_000, purpose: "" });
   });
 });

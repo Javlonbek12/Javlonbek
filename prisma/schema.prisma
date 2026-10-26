@@ -966,6 +966,8 @@ model DistOrder {
   reservePct        Float     @default(0.1)
   // Count equipment in warehouses too (the order is for all equipment, wherever it is).
   withStock         Boolean   @default(true)
+  // The EAS approval document's fields (budget, texts, the printers compared): see eas.ts.
+  eas               Json?
   // When the POSM was ordered from the printer; the list doesn't change after.
   orderedOn         DateTime? @db.Date
   note              String?

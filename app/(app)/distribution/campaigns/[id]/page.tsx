@@ -562,9 +562,15 @@ export default async function DistributionCampaignPage({
       {/* 7. EAS and the order */}
       <Anchor id="order">
         <Section title={t("dist.campaign.orderTitle")} hint={t("dist.campaign.orderHint")}>
-          <p className="text-sm text-amber-700 dark:text-amber-400">
-            {t("dist.campaign.easPending")}
-          </p>
+          <div>
+            <Button asChild>
+              <Link href={`/distribution/campaigns/${order.id}/eas`}>
+                <FileText />
+                {t("dist.eas.open")}
+              </Link>
+            </Button>
+          </div>
+          <p className="text-muted-foreground text-xs">{t("dist.campaign.easPending")}</p>
           <Files
             files={files("EAS")}
             kind="EAS"
