@@ -1927,13 +1927,13 @@ export const en: Dictionary = {
       "How much POSM to send to each region and TSM, by the installed equipment; what is in stock and where it has gone.",
     updated: "Equipment uploaded: {date}",
     tabs: {
-      overview: "Overview",
+      overview: "Analysis",
       equipment: "Equipment",
       plan: "Distribution",
       stock: "Stock and shipments",
       orders: "Campaigns",
-      sizes: "Sizes",
-      import: "Upload",
+      sizes: "Sizes and prices",
+      import: "Data",
     },
     empty: "No campaigns yet. Create a campaign on the Campaigns tab.",
     emptyOrder:
@@ -2210,6 +2210,9 @@ export const en: Dictionary = {
       width: "Width, mm",
       depth: "Depth, mm",
       back: "← Sizes",
+      visualTitle: "How it looks on the equipment",
+      visualHint:
+        "The print size to the equipment's scale (drawn by its height and width). In red — the print is wider than the equipment.",
       editHint:
         "Print size, pieces per equipment unit and price per piece — for every equipment type.",
       elementName: "Name",
@@ -2228,7 +2231,8 @@ export const en: Dictionary = {
       steps: {
         concept: "Concept",
         kv: "Key visual",
-        composition: "Items and reserve",
+        composition: "Equipment and elements",
+        reserve: "Reserve",
         list: "List",
         prices: "Prices",
         ordered: "EAS and order",
@@ -2246,7 +2250,7 @@ export const en: Dictionary = {
       kvHint: "Upload the key visual options and mark the final one.",
       final: "Final",
       makeFinal: "Make final",
-      compositionTitle: "3. What to order and the reserve",
+      compositionTitle: "3. Equipment and elements",
       compositionHint:
         "Every element has its own equipment. Equipment counts are all of it, wherever it is (installed and in warehouses). On the right — pieces per unit for this campaign (empty — from the catalog).",
       lockedHint: "The campaign is ordered — the items don't change any more.",
@@ -2255,9 +2259,17 @@ export const en: Dictionary = {
       makeList: "Save and make the list",
       saveComposition: "Save",
       preview: "How the list will be counted",
-      listTitle: "4. List and prices",
-      listHint:
-        "The printer's prices: enter a new one or confirm the old one is still right. Confirmed prices go to the catalog for the next campaigns.",
+      listTitle: "5. List",
+      listHint: "What is ordered: element, equipment, print size, quantity and total.",
+      pricesTitle: "6. The printer's prices",
+      pricesStepHint:
+        "Enter a new price or confirm the old one is still right. Confirmed prices go to the catalog for the next campaigns.",
+      visual: "On the equipment",
+      asList: "As a list",
+      allEquipment: "all equipment",
+      none: "clear",
+      reserveStep: "4. Reserve, %",
+      tooWide: "The print is wider than the equipment",
       pricesSaved: "Prices saved, lines confirmed: {count}.",
       noList: "No list yet — choose the items above and press “Make the list”.",
       confirmed: "Price confirmed",
@@ -2272,7 +2284,7 @@ export const en: Dictionary = {
         "Price per piece, UZS incl. VAT. The printer and quote number are saved with confirmed lines.",
       listExcel: "List in Excel",
       quotes: "Quote files",
-      orderTitle: "5. EAS and the order",
+      orderTitle: "7. EAS and the order",
       orderHint:
         "The internal approval document and the mark that POSM was ordered from the printer.",
       easPending:
@@ -2282,13 +2294,13 @@ export const en: Dictionary = {
       unorder: "Undo the mark",
       markOrdered: "Mark as ordered",
       pricesNotAll: "Not all prices are confirmed.",
-      distributionTitle: "6. Split by region and TSM",
+      distributionTitle: "8. Split by region and TSM",
       distributionHint:
         "The split, waybills and shipments are on the “Distribution” and “Stock and shipments” tabs.",
       ordered: "Ordered, pcs",
       openPlan: "Open the distribution",
       openStock: "Stock and shipments",
-      replacementTitle: "7. Replacement in the shops",
+      replacementTitle: "9. Replacement in the shops",
       replacementHint:
         "The outlets with the campaign's equipment and how many have been replaced — by region and TSM.",
       replacementDone: "Rows uploaded: {rows}, replaced: {replaced}.",

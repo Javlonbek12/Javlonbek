@@ -110,7 +110,8 @@ export const MODULES: ModuleEntry[] = [
   {
     id: "distribution",
     titleKey: "nav.distribution",
-    href: "/distribution",
+    // The work starts from the campaigns.
+    href: "/distribution/campaigns",
     icon: Truck,
     roles: ALL_ROLES,
     mobile: false,

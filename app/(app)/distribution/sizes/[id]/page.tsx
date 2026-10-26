@@ -3,9 +3,16 @@ import { notFound, redirect } from "next/navigation";
 
 import { Section } from "@/components/connect/parts";
 import { Matrix } from "@/components/distribution/parts";
+import {
+  EquipmentSketch,
+  rowsOf,
+  SKETCH_COLORS,
+  sketchKind,
+} from "@/components/distribution/sketch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { t, type TranslationKey } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { equipmentSize, gapsOf } from "@/modules/distribution/builder";
 import { loadCatalog } from "@/modules/distribution/catalog";
@@ -39,6 +46,53 @@ export default async function DistributionElementPage({
       {error && (
         <p className="text-destructive text-sm">{t(`dist.errors.${error}` as TranslationKey)}</p>
       )}
+      <Section title={t("dist.sizes.visualTitle")} hint={t("dist.sizes.visualHint")}>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6">
+          {DIST_TYPES.map((type) => {
+            const box = catalog.types.find((x) => x.type === type.code);
+            const size = element.sizes.find((s) => s.type === type.code);
+            if (!box?.heightMm || !box.widthMm || size?.perUnit === 0) return null;
+            const wide = size?.widthMm != null && size.widthMm > box.widthMm;
+            return (
+              <div key={type.code} className="flex flex-col gap-1 rounded-xl border p-2">
+                <span className="text-xs font-semibold">{type.label}</span>
+                <EquipmentSketch
+                  heightMm={box.heightMm}
+                  widthMm={box.widthMm}
+                  rows={rowsOf(type.label)}
+                  height={140}
+                  items={
+                    size
+                      ? [
+                          {
+                            key: element.id,
+                            label: element.name,
+                            kind: sketchKind(element.name),
+                            heightMm: size.heightMm,
+                            widthMm: size.widthMm,
+                            count: Math.max(1, Math.round(size.perUnit ?? 1)),
+                            color: SKETCH_COLORS[0]!,
+                          },
+                        ]
+                      : []
+                  }
+                />
+                <span
+                  className={cn(
+                    "text-center text-xs",
+                    wide ? "font-medium text-red-600 dark:text-red-400" : "text-muted-foreground",
+                  )}
+                >
+                  {size && size.heightMm != null && size.widthMm != null
+                    ? `${size.heightMm}×${size.widthMm} / ${box.widthMm} ${t("dist.builder.mm")}`
+                    : t("dist.builder.gap.size")}
+                  {wide && ` · ${t("dist.campaign.tooWide")}`}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </Section>
       <Section title={element.name} hint={t("dist.sizes.editHint")}>
         <form action={saveElementSizesAction} className="flex flex-col gap-4">
           <input type="hidden" name="id" value={element.id} />

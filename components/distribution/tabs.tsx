@@ -7,12 +7,14 @@ import { usePathname } from "next/navigation";
 import { useT } from "@/components/locale-provider";
 import { cn } from "@/lib/utils";
 
+// In the order of the work: the campaign (concept → prices → order), its split by region and TSM,
+// stock and shipments, the analysis; then the reference data.
 const TABS = [
-  { href: "/distribution", key: "dist.tabs.overview", icon: ChartPie },
   { href: "/distribution/campaigns", key: "dist.tabs.orders", icon: ClipboardList },
-  { href: "/distribution/equipment", key: "dist.tabs.equipment", icon: Boxes },
   { href: "/distribution/plan", key: "dist.tabs.plan", icon: Truck },
   { href: "/distribution/stock", key: "dist.tabs.stock", icon: PackageCheck },
+  { href: "/distribution", key: "dist.tabs.overview", icon: ChartPie },
+  { href: "/distribution/equipment", key: "dist.tabs.equipment", icon: Boxes },
   { href: "/distribution/sizes", key: "dist.tabs.sizes", icon: Ruler },
   { href: "/distribution/import", key: "dist.tabs.import", icon: Upload, manage: true },
 ] as const;

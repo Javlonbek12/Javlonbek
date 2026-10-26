@@ -4,7 +4,9 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { Section } from "@/components/connect/parts";
+import { CompositionPicker } from "@/components/distribution/composition-picker";
 import { fmt, Matrix, N, pct } from "@/components/distribution/parts";
+import { rowsOf, SKETCH_COLORS, sketchKind } from "@/components/distribution/sketch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -36,8 +38,9 @@ const STEPS = [
   ["concept", "concept"],
   ["kv", "kv"],
   ["composition", "composition"],
+  ["reserve", "reserve"],
   ["list", "list"],
-  ["prices", "list"],
+  ["prices", "prices"],
   ["ordered", "order"],
   ["distribution", "distribution"],
   ["replacement", "replacement"],
@@ -74,7 +77,6 @@ export default async function DistributionCampaignPage({
   const day = dateFormat({ dateStyle: "medium", timeZone: "UTC" });
   const error = typeof query.error === "string" ? query.error : null;
   const files = (kind: string) => c.order.files.filter((f) => f.kind === kind);
-  const chosen = new Map(c.order.elements.map((e) => [e.elementId, e]));
   const q = (key: string) => (typeof query[key] === "string" ? String(query[key]) : null);
 
   return (
@@ -97,12 +99,16 @@ export default async function DistributionCampaignPage({
                 href={`#${anchor}`}
                 className={cn(
                   "flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs",
-                  c.steps[key]
+                  c.steps[key === "reserve" ? "composition" : key]
                     ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
                     : "text-muted-foreground hover:bg-accent/50",
                 )}
               >
-                {c.steps[key] ? <Check className="size-3.5" /> : <span>{i + 1}.</span>}
+                {c.steps[key === "reserve" ? "composition" : key] ? (
+                  <Check className="size-3.5" />
+                ) : (
+                  <span>{i + 1}.</span>
+                )}
                 {t(`dist.campaign.steps.${key}`)}
               </a>
             </li>
@@ -256,86 +262,49 @@ export default async function DistributionCampaignPage({
           <form action={saveCompositionAction} className="flex flex-col gap-4">
             <input type="hidden" name="id" value={order.id} />
             <fieldset disabled={!manage || locked} className="flex flex-col gap-4">
-              {catalog.elements.map((element) => {
-                const mine = chosen.get(element.id);
-                const own = (mine?.perUnit ?? {}) as Record<string, number>;
-                return (
-                  <div key={element.id} className="rounded-xl border p-3">
-                    <label className="flex items-center gap-2 text-sm font-semibold">
-                      <input
-                        type="checkbox"
-                        name="el"
-                        value={element.id}
-                        defaultChecked={!!mine}
-                        className="size-4"
-                      />
-                      {element.name}
-                    </label>
-                    <div className="mt-2 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
-                      {DIST_TYPES.map((type) => {
-                        const size = element.sizes.find((s) => s.type === type.code);
-                        if (size?.perUnit === 0) return null;
-                        return (
-                          <div
-                            key={type.code}
-                            className="hover:bg-accent/40 flex items-center gap-2 rounded-lg border px-2 py-1.5 text-xs"
-                          >
-                            <input
-                              type="checkbox"
-                              name={`t:${element.id}`}
-                              value={type.code}
-                              defaultChecked={mine?.types.includes(type.code) ?? false}
-                              className="size-4 shrink-0"
-                              aria-label={type.label}
-                            />
-                            <span className="flex min-w-0 flex-1 flex-col">
-                              <span className="font-medium">{type.label}</span>
-                              <span className="text-muted-foreground">
-                                {fmt(units[type.code] ?? 0)} {t("dist.builder.unitsShort")} ·{" "}
-                                {mm(size?.heightMm ?? null, size?.widthMm ?? null) ?? "?"}
-                              </span>
-                            </span>
-                            <Input
-                              name={`pu:${element.id}:${type.code}`}
-                              type="number"
-                              min={0}
-                              step="any"
-                              defaultValue={own[type.code] ?? ""}
-                              placeholder={size?.perUnit != null ? String(size.perUnit) : "?"}
-                              title={t("dist.builder.perUnit")}
-                              className="h-7 w-14 px-1.5 text-xs"
-                            />
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-              <div className="flex flex-wrap items-end gap-4">
-                <label className="flex flex-col gap-1 text-sm">
-                  {t("dist.builder.reserve")}
-                  <Input
-                    type="number"
-                    name="reserve"
-                    min={0}
-                    max={100}
-                    step="any"
-                    defaultValue={Math.round(order.reservePct * 1000) / 10}
-                    className="w-28"
-                  />
-                </label>
-                <label className="flex items-center gap-2 pb-2 text-sm">
-                  <input
-                    type="checkbox"
-                    name="stock"
-                    value="1"
-                    defaultChecked={order.withStock}
-                    className="size-4"
-                  />
-                  {t("dist.builder.withStock")}
-                </label>
-              </div>
+              <CompositionPicker
+                disabled={!manage || locked}
+                elements={catalog.elements.map((element, i) => ({
+                  id: element.id,
+                  name: element.name,
+                  kind: sketchKind(element.name),
+                  color: SKETCH_COLORS[i % SKETCH_COLORS.length]!,
+                  sizes: Object.fromEntries(
+                    element.sizes.map((s) => [
+                      s.type,
+                      {
+                        heightMm: s.heightMm,
+                        widthMm: s.widthMm,
+                        perUnit: s.perUnit,
+                        price: s.price,
+                      },
+                    ]),
+                  ),
+                }))}
+                types={DIST_TYPES.map((type) => {
+                  const size = catalog.types.find((x) => x.type === type.code);
+                  return {
+                    code: type.code,
+                    label: type.label,
+                    heightMm: size?.heightMm ?? null,
+                    widthMm: size?.widthMm ?? null,
+                    depthMm: size?.depthMm ?? null,
+                    units: Math.round((units[type.code] ?? 0) * 10) / 10,
+                    rows: rowsOf(type.label),
+                  };
+                })}
+                initial={{
+                  selected: Object.fromEntries(order.elements.map((e) => [e.elementId, e.types])),
+                  perUnit: Object.fromEntries(
+                    order.elements.map((e) => [
+                      e.elementId,
+                      (e.perUnit ?? {}) as Record<string, number>,
+                    ]),
+                  ),
+                  reservePct: order.reservePct,
+                  withStock: order.withStock,
+                }}
+              />
               <p className="text-muted-foreground text-xs">{t("dist.campaign.perUnitHint")}</p>
               {manage && !locked && (
                 <div className="flex flex-wrap gap-2">
@@ -399,10 +368,80 @@ export default async function DistributionCampaignPage({
         </Section>
       </Anchor>
 
-      {/* 5–6. The list and the printer's prices */}
+      {/* 5. The list */}
       <Anchor id="list">
         <Section title={t("dist.campaign.listTitle")} hint={t("dist.campaign.listHint")}>
           {q("saved") === "list" && <Saved />}
+          {c.items.length === 0 ? (
+            <p className="text-muted-foreground text-sm">{t("dist.campaign.noList")}</p>
+          ) : (
+            <>
+              <Matrix
+                dense
+                text={[1, 3]}
+                head={[
+                  t("dist.builder.posm"),
+                  t("dist.builder.equipment"),
+                  t("dist.builder.printSize"),
+                  t("dist.builder.material"),
+                  t("dist.builder.unitsCol"),
+                  t("dist.builder.perUnit"),
+                  t("dist.builder.quantity"),
+                  t("dist.builder.price"),
+                  t("dist.builder.sum"),
+                ]}
+                rows={c.items.map((item) => ({
+                  key: item.id,
+                  cells: [
+                    <Link
+                      key="n"
+                      href={`/distribution/posm/${item.id}`}
+                      className="hover:underline"
+                    >
+                      {item.category}
+                    </Link>,
+                    <span key="e" className="text-xs whitespace-normal">
+                      {item.equipmentLabel}
+                    </span>,
+                    item.size ?? "—",
+                    <span key="m" className="text-muted-foreground text-xs whitespace-normal">
+                      {item.material ?? "—"}
+                    </span>,
+                    fmt(item.orderedFor),
+                    item.norm ?? "—",
+                    <strong key="q">{fmt(item.ordered)}</strong>,
+                    item.price === null ? "—" : fmt(item.price),
+                    item.price === null ? "—" : fmt(item.price * item.ordered),
+                  ],
+                }))}
+                foot={[
+                  t("dist.total"),
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  fmt(c.items.reduce((s, i) => s + i.ordered, 0)),
+                  "",
+                  fmt(c.total),
+                ]}
+              />
+              <div>
+                <Button asChild variant="outline" size="sm">
+                  <a href={`/api/distribution/campaigns/${order.id}/xlsx`}>
+                    <Download />
+                    {t("dist.campaign.listExcel")}
+                  </a>
+                </Button>
+              </div>
+            </>
+          )}
+        </Section>
+      </Anchor>
+
+      {/* 6. The printer's prices */}
+      <Anchor id="prices">
+        <Section title={t("dist.campaign.pricesTitle")} hint={t("dist.campaign.pricesStepHint")}>
           {q("prices") !== null && (
             <p className="text-sm text-emerald-700 dark:text-emerald-400">
               {t("dist.campaign.pricesSaved", { count: q("prices")! })}
@@ -509,16 +548,6 @@ export default async function DistributionCampaignPage({
               <p className="text-muted-foreground text-xs">{t("dist.campaign.pricesHint")}</p>
             </form>
           )}
-          <div className="flex flex-wrap items-center gap-3">
-            {c.items.length > 0 && (
-              <Button asChild variant="outline" size="sm">
-                <a href={`/api/distribution/campaigns/${order.id}/xlsx`}>
-                  <Download />
-                  {t("dist.campaign.listExcel")}
-                </a>
-              </Button>
-            )}
-          </div>
           <Files
             files={files("QUOTE")}
             kind="QUOTE"
