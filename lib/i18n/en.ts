@@ -1934,6 +1934,7 @@ export const en: Dictionary = {
       orders: "Campaigns",
       sizes: "Sizes and prices",
       import: "Data",
+      help: "Instruction",
     },
     empty: "No campaigns yet. Create a campaign on the Campaigns tab.",
     emptyOrder:
@@ -2225,6 +2226,7 @@ export const en: Dictionary = {
         "Pcs per unit = 0 — the element isn't used on this equipment. An empty row deletes the size. Saving confirms the sizes.",
       delete: "Delete element",
     },
+    help: { open: "Open" },
     eas: {
       title: "EAS document",
       open: "Make the EAS",
