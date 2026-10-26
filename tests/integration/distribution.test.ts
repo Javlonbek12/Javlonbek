@@ -19,6 +19,7 @@ import {
   shipWaybill,
   updatePosmSettings,
 } from "@/modules/distribution/service";
+import { equipmentOverview, regionEquipment } from "@/modules/distribution/equipment";
 import { distributionXlsx } from "@/modules/distribution/xlsx";
 import { createTestUser, resetDb } from "@/tests/helpers/db";
 import { equipmentWorkbook, outletBaseWorkbook, posmWorkbook } from "@/tests/helpers/distribution";
@@ -242,5 +243,31 @@ describe("POSM distribution", () => {
     await expect(
       updatePosmSettings(owner, item.id, { ...item, types: ["NO_SUCH"] }),
     ).rejects.toMatchObject({ code: "invalid" });
+  });
+});
+
+describe("the equipment section", () => {
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  it("counts equipment by region, type and TSM", async () => {
+    const owner = await withAccess(await createTestUser("OWNER"));
+    await importEquipmentFile(owner, await equipmentWorkbook());
+    await importOutletBase(owner, await outletBaseWorkbook());
+    const o = await equipmentOverview();
+    expect(o.regions.map((r) => [r.region, r.installedTotal, r.stockTotal, r.outlets])).toEqual([
+      ["Tashkent", 14, 2, 14],
+      ["Test Town", 10, 0, 9],
+    ]);
+    expect(o.installedByType).toMatchObject({ POSI_L: 16, DG_C: 4, MW24_S: 2, POSI_MOD: 2 });
+    expect(o.outletsByType.POSI_L).toBe(16);
+    expect(o.outlets).toBe(23);
+    const tashkent = await regionEquipment("Tashkent");
+    expect(tashkent.tsms.map((t) => [t.tsm, t.outlets, t.units])).toEqual([
+      ["TSM_TEST_1", 8, { POSI_L: 7, DG_C: 1 }],
+      ["TSM_TEST_2", 6, { POSI_L: 3, DG_C: 3 }],
+    ]);
+    expect(tashkent.stock).toEqual({ POSI_L: 2 });
   });
 });

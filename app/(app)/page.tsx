@@ -239,6 +239,11 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
               <Link href="/distribution/campaigns">{t("dist.title")}</Link>
             </Button>
           )}
+          {canUseModule(user, "distribution") && (
+            <Button asChild size="sm" variant="outline" className="md:hidden">
+              <Link href="/equipment">{t("equip.title")}</Link>
+            </Button>
+          )}
           {canSeeReports(user) && (
             <Button asChild variant="outline" className="bg-card h-10 rounded-xl">
               <Link href="/reports">

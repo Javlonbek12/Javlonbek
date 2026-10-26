@@ -169,9 +169,9 @@ export async function deletePosmAction(form: FormData) {
 
 export async function setIncludeStockAction(form: FormData) {
   const user = await requireUser();
-  await run("/distribution/equipment", async () => {
+  await run("/equipment/tables", async () => {
     await setIncludeStock(user, str(form, "includeStock") === "1");
-    return "/distribution/equipment";
+    return "/equipment/tables";
   });
 }
 
