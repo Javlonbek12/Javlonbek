@@ -97,18 +97,35 @@ export const DIST_TYPES = [
     slots: 20,
     equipment: "DISPLAY_S_MW",
   },
+  // Display MOD is counted in 18-slot units (as in the equipment file); no planogram yet.
+  {
+    code: "POSI_MOD",
+    group: "POSI",
+    size: "MOD",
+    label: "Display MOD",
+    slots: 18,
+    equipment: null,
+  },
+  { code: "LIGHTBOX", group: "POSI", size: "", label: "Lightbox", slots: 0, equipment: null },
+  { code: "SUPPORT", group: "Z-Movers", size: "", label: "Support", slots: 0, equipment: null },
 ] as const;
 
 export type DistType = (typeof DIST_TYPES)[number]["code"];
 export const TYPE_CODES: DistType[] = DIST_TYPES.map((t) => t.code);
 export const typeInfo = (code: string) => DIST_TYPES.find((t) => t.code === code);
 
-// The TSM pivot names types like "L (10*9) MW" or "C (10*6) DG".
+// The equipment's names: "Display XL (12*10) POSI" in the equipment file, "L (10*9) MW" in the
+// TSM pivot, "Display-M (9*6) POSI" in the outlet base, "Display MOD", "LIGHTBOX", "SUPPORT".
 export function typeFromPivotHeader(header: string): DistType | null {
-  const m = /^\s*(XL|L|M|C|S)\s*\((\d+)\s*\*\s*(\d+)\)\s*(POSI|DG|MW)\s*$/i.exec(header);
+  const name = header.replace(/^\s*display[\s-]*/i, "").trim();
+  if (/^mod\b/i.test(name)) return "POSI_MOD";
+  if (/^lightbox$/i.test(name)) return "LIGHTBOX";
+  if (/^support$/i.test(name)) return "SUPPORT";
+  const m = /^(XL|L|M|C|S)\s*\((\d+)\s*\*\s*(\d+)\)\s*(POSI|DG|MW)$/i.exec(name);
   if (!m) return null;
   const [, size, a, b, family] = m;
-  const dims = `${a}*${b}`;
+  // The base sometimes writes the shelf the other way round ("M (9*6)", "S (2*10)").
+  const dims = [Number(a), Number(b)].sort((p, q) => p - q).join("*");
   const f = family!.toUpperCase();
   const s = size!.toUpperCase();
   const known = (code: string) =>
@@ -124,23 +141,42 @@ export function typeFromPivotHeader(header: string): DistType | null {
   return null;
 }
 
-// Regions in the order of the file (the rest follow alphabetically).
+// Regions in the order of the equipment file (the rest follow alphabetically).
 export const REGION_ORDER = [
   "Tashkent",
-  "Sirdarya",
-  "Samarkand",
+  "Syrdarya",
   "Fergana",
   "Kokand",
   "Andijan",
   "Namangan",
+  "Samarkand",
   "Bukhara",
-  "Navoi",
-  "Urgench",
-  "Nukus",
+  "Navai",
+  "Khorezm",
+  "Karakalpakistan",
   "Kashkadarya",
-  "Djizzak",
+  "Jizzax",
   "Surkhandarya",
 ];
+
+// The same region spelled differently in different files.
+const REGION_ALIASES: Record<string, string> = {
+  sirdarya: "Syrdarya",
+  navoi: "Navai",
+  urgench: "Khorezm",
+  nukus: "Karakalpakistan",
+  djizzak: "Jizzax",
+  jizzakh: "Jizzax",
+};
+
+export function canonicalRegion(name: string): string {
+  const clean = name.replace(/\s+/g, " ").trim();
+  return (
+    REGION_ALIASES[clean.toLowerCase()] ??
+    REGION_ORDER.find((r) => r.toLowerCase() === clean.toLowerCase()) ??
+    clean
+  );
+}
 
 export const sortRegions = (regions: Iterable<string>) =>
   [...new Set(regions)].sort((a, b) => {
@@ -152,10 +188,15 @@ export const sortRegions = (regions: Iterable<string>) =>
     return ia - ib;
   });
 
-// The region that is split by TSM.
-export const TSM_REGION = "Tashkent";
-// Shipment destinations: a region, or "Tashkent · TSM".
-export const tsmDestination = (tsm: string) => `${TSM_REGION} · ${tsm}`;
+// Shipment destinations: a region, or "Region · TSM".
+const SEP = " · ";
+export const tsmDestination = (region: string, tsm: string) => `${region}${SEP}${tsm}`;
+export function parseDestination(destination: string): { region: string; tsm: string | null } {
+  const at = destination.indexOf(SEP);
+  return at === -1
+    ? { region: destination, tsm: null }
+    : { region: destination.slice(0, at), tsm: destination.slice(at + SEP.length) };
+}
 
 // The price on a price tag: "Ценник 28000" → 28000, "Ценник 19,000 blue" → 19000; null otherwise.
 export function tagPrice(name: string): number | null {

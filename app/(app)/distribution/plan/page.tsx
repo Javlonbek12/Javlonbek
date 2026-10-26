@@ -3,14 +3,15 @@ import Link from "next/link";
 import { Section } from "@/components/connect/parts";
 import { fmt, Matrix, N } from "@/components/distribution/parts";
 import { t } from "@/lib/i18n";
+import { tsmBreakdown } from "@/modules/distribution/compute";
 import { loadDistribution } from "@/modules/distribution/service";
-import { tsmDestination } from "@/modules/distribution/types";
 
-// How many pieces of each item go to each region (as the «Разбивка» sheet), and Tashkent by TSM.
+// How many pieces of each item go to each region (as the «Разбивка» sheet), and each region's
+// share broken down by its TSMs.
 export default async function DistributionPlanPage() {
   const d = await loadDistribution();
   const regions = [...d.regions.keys()];
-  const tsms = [...d.tsms.keys()];
+  const breakdown = tsmBreakdown(d.plans, d.tsms);
   const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
   const waybill = (destination: string, label: string) => (
     <Link
@@ -60,25 +61,37 @@ export default async function DistributionPlanPage() {
         />
       </Section>
 
-      {tsms.length > 0 && (
+      {breakdown.length > 0 && (
         <div id="tsm" className="scroll-mt-24">
           <Section title={t("dist.plan.tsmTitle")} hint={t("dist.plan.tsmHint")}>
             <Matrix
               dense
               head={[t("dist.equipment.tsm"), ...d.plans.map((p) => p.item.name), t("dist.total")]}
-              rows={tsms.map((tsm) => ({
-                key: tsm,
+              rows={breakdown.map((row) => ({
+                key: `${row.kind}:${row.destination}`,
+                muted: row.kind === "rest",
                 cells: [
-                  waybill(tsmDestination(tsm), tsm),
-                  ...d.plans.map((p) => <N key={p.item.id} value={p.byTsm.get(tsm) ?? 0} />),
-                  <strong key="t">{fmt(sum(d.plans.map((p) => p.byTsm.get(tsm) ?? 0)))}</strong>,
+                  row.kind === "region" ? (
+                    <strong key="l">{waybill(row.destination, row.label)}</strong>
+                  ) : row.kind === "tsm" ? (
+                    <span key="l" className="pl-3">
+                      {waybill(row.destination, row.label)}
+                    </span>
+                  ) : (
+                    <span key="l" className="pl-3">
+                      {t("dist.plan.tsmRest", { region: row.label })}
+                    </span>
+                  ),
+                  ...row.values.map((v, i) =>
+                    row.kind === "region" ? (
+                      <strong key={i}>{fmt(v)}</strong>
+                    ) : (
+                      <N key={i} value={v} />
+                    ),
+                  ),
+                  <strong key="t">{fmt(sum(row.values))}</strong>,
                 ],
               }))}
-              foot={[
-                t("dist.plan.tsmRest"),
-                ...d.plans.map((p) => fmt(p.tsmRest)),
-                fmt(sum(d.plans.map((p) => p.tsmRest))),
-              ]}
             />
           </Section>
         </div>

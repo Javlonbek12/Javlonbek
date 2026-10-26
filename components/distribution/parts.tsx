@@ -7,7 +7,8 @@ import type { Finding } from "@/modules/distribution/compute";
 
 // Building blocks of the POSM distribution pages.
 
-export const fmt = (value: number) => new Intl.NumberFormat(intlLocale()).format(value);
+export const fmt = (value: number) =>
+  new Intl.NumberFormat(intlLocale(), { maximumFractionDigits: 1 }).format(value);
 export const pct = (value: number) =>
   new Intl.NumberFormat(intlLocale(), { style: "percent", maximumFractionDigits: 0 }).format(value);
 

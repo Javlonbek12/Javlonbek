@@ -8,7 +8,7 @@ import { t } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { sumUnits, type Count, type Units } from "@/modules/distribution/compute";
 import { canManageDistribution, loadDistribution } from "@/modules/distribution/service";
-import { DIST_TYPES, sortRegions, TSM_REGION } from "@/modules/distribution/types";
+import { DIST_TYPES, sortRegions, tsmDestination } from "@/modules/distribution/types";
 
 import { setIncludeStockAction } from "../actions";
 
@@ -28,10 +28,12 @@ function UnitsTable({
   title,
   data,
   ordered,
+  muted = [],
 }: {
   title: string;
   data: Map<string, Units>;
   ordered: string[];
+  muted?: string[];
 }) {
   const total: Units = {};
   for (const u of data.values())
@@ -42,6 +44,7 @@ function UnitsTable({
       head={[title, ...DIST_TYPES.map((type) => type.label), t("dist.total")]}
       rows={ordered.map((key) => ({
         key,
+        muted: muted.includes(key),
         cells: [
           key,
           ...DIST_TYPES.map((type) => (
@@ -59,7 +62,7 @@ function UnitsTable({
   );
 }
 
-// Equipment by region (installed, in warehouses, the base), Tashkent by TSM, and the link
+// Equipment by region (installed, in warehouses, the base), each region by TSM, and the link
 // between equipment types and the planogram library.
 export default async function DistributionEquipmentPage() {
   const user = await requireUser();
@@ -67,9 +70,22 @@ export default async function DistributionEquipmentPage() {
   const regions = sortRegions(d.counts.map((c) => c.region));
   const installed = unitsBy(d.counts, (c) => (c.kind === "INSTALLED" && !c.tsm ? c.region : null));
   const stock = unitsBy(d.counts, (c) => (c.kind === "STOCK" && !c.tsm ? c.region : null));
-  const tsm = unitsBy(d.counts, (c) => (c.tsm ? c.tsm : null));
-  const tsmTotal = [...tsm.values()].reduce((s, u) => s + sumUnits(u), 0);
-  const tashkent = sumUnits(installed.get(TSM_REGION));
+  // Each region by TSM; what no TSM answers for is a row of its own.
+  const tsm = new Map<string, Units>();
+  const noTsm: string[] = [];
+  for (const [region, people] of d.tsms) {
+    const rest: Units = { ...installed.get(region) };
+    for (const [name, units] of people) {
+      tsm.set(tsmDestination(region, name), units);
+      for (const [type, n] of Object.entries(units)) rest[type] = (rest[type] ?? 0) - n;
+    }
+    for (const type of Object.keys(rest)) if (Math.abs(rest[type]!) < 0.01) delete rest[type];
+    if (Object.keys(rest).length) {
+      const key = tsmDestination(region, t("dist.equipment.noTsm"));
+      tsm.set(key, rest);
+      noTsm.push(key);
+    }
+  }
 
   return (
     <div className="flex flex-col gap-5 [&>*]:min-w-0">
@@ -103,12 +119,12 @@ export default async function DistributionEquipmentPage() {
       </Section>
       {tsm.size > 0 && (
         <Section title={t("dist.equipment.tsmTitle")} hint={t("dist.equipment.tsmHint")}>
-          {tsmTotal !== tashkent && (
-            <p className="text-sm text-amber-700 dark:text-amber-400">
-              {t("dist.equipment.tsmCheck", { tsm: fmt(tsmTotal), region: fmt(tashkent) })}
-            </p>
-          )}
-          <UnitsTable title={t("dist.equipment.tsm")} data={tsm} ordered={[...tsm.keys()]} />
+          <UnitsTable
+            title={t("dist.equipment.tsm")}
+            data={tsm}
+            ordered={[...tsm.keys()]}
+            muted={noTsm}
+          />
         </Section>
       )}
       <Section title={t("dist.equipment.planograms")} hint={t("dist.equipment.planogramsHint")}>
@@ -129,7 +145,7 @@ export default async function DistributionEquipmentPage() {
               cells: [
                 type.label,
                 <span key="e" className="text-muted-foreground text-xs">
-                  {link.equipmentCode}
+                  {link.equipmentCode ?? "—"}
                 </span>,
                 link.planogramId ? (
                   <Link

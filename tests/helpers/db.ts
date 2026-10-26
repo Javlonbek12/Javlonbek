@@ -4,7 +4,7 @@ import { BUILT_IN_SECTIONS } from "@/modules/content/tagging";
 
 export async function resetDb() {
   await db.$executeRawUnsafe(
-    'TRUNCATE "DistShipment", "DistPosm", "DistEquipmentCount", "ConnectRecord", "ConnectImport", "ContentComment", "ContentPost", "ProjectPhase", "Project", "PlanogramRule", "PlanogramSlot", "Planogram", "SkuPrice", "PriceList", "OrgNode", "Posm", "Sku", "Equipment", "EmployeeNote", "ScheduledSend", "SystemState", "AiUsage", "BotDraft", "ActivityLog", "Notification", "UserSettings", "Invite", "MeetingNotes", "MeetingParticipant", "TaskAttachment", "Comment", "TaskDependency", "Task", "Meeting", "Plan", "User" CASCADE',
+    'TRUNCATE "DistShipment", "DistPosm", "DistOrder", "DistElementSize", "DistElement", "DistTypeSize", "DistUnit", "DistOutlet", "DistEquipmentCount", "ConnectRecord", "ConnectImport", "ContentComment", "ContentPost", "ProjectPhase", "Project", "PlanogramRule", "PlanogramSlot", "Planogram", "SkuPrice", "PriceList", "OrgNode", "Posm", "Sku", "Equipment", "EmployeeNote", "ScheduledSend", "SystemState", "AiUsage", "BotDraft", "ActivityLog", "Notification", "UserSettings", "Invite", "MeetingNotes", "MeetingParticipant", "TaskAttachment", "Comment", "TaskDependency", "Task", "Meeting", "Plan", "User" CASCADE',
   );
   // Content sections: keep the eight built-in ones (seeded by the migration), drop the rest.
   await db.contentSection.deleteMany({ where: { id: { notIn: [...BUILT_IN_SECTIONS] } } });

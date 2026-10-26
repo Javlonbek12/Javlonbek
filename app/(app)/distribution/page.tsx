@@ -9,7 +9,7 @@ import { dateFormat, t } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { coverage, sumUnits } from "@/modules/distribution/compute";
 import { canManageDistribution, loadDistribution } from "@/modules/distribution/service";
-import { DIST_TYPES, TSM_REGION, tagPrice } from "@/modules/distribution/types";
+import { DIST_TYPES, tagPrice } from "@/modules/distribution/types";
 
 // The analysis on one page: the numbers, what needs attention, regions, coverage and checks.
 export default async function DistributionPage() {
@@ -20,12 +20,14 @@ export default async function DistributionPage() {
   if (d.items.length === 0)
     return (
       <Card className="items-start gap-3">
-        <p className="text-sm">{manage ? t("dist.empty") : t("dist.emptyNoAccess")}</p>
+        <p className="text-sm">
+          {!manage ? t("dist.emptyNoAccess") : d.order ? t("dist.emptyOrder") : t("dist.empty")}
+        </p>
         {manage && (
           <Button asChild size="sm">
-            <Link href="/distribution/import">
+            <Link href={d.order ? "/distribution/import" : "/distribution/orders"}>
               <Upload />
-              {t("dist.import.link")}
+              {d.order ? t("dist.import.link") : t("dist.orders.new")}
             </Link>
           </Button>
         )}
@@ -131,9 +133,9 @@ export default async function DistributionPage() {
             return {
               key: region,
               cells: [
-                region === TSM_REGION ? (
+                d.tsms.has(region) ? (
                   <Link href="/distribution/plan#tsm" className="hover:underline">
-                    {region} · TSM {d.tsms.size}
+                    {region} · TSM {d.tsms.get(region)!.size}
                   </Link>
                 ) : (
                   region

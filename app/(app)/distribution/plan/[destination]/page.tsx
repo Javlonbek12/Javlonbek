@@ -11,11 +11,11 @@ import { requireUser } from "@/modules/core/auth/current-user";
 import { getUserToday } from "@/modules/core/settings/service";
 import { plannedFor, sumUnits } from "@/modules/distribution/compute";
 import { loadDistribution } from "@/modules/distribution/service";
-import { TSM_REGION } from "@/modules/distribution/types";
+import { parseDestination } from "@/modules/distribution/types";
 
 import { shipWaybillAction } from "../../actions";
 
-// The waybill of a region or a Tashkent TSM: what to send, what has gone already; printable, and
+// The waybill of a region or one of its TSMs: what to send, what has gone already; printable, and
 // the whole remainder can be recorded as shipped in one go.
 export default async function WaybillPage({
   params,
@@ -26,10 +26,8 @@ export default async function WaybillPage({
   const query = await searchParams;
   const d = await loadDistribution();
   if (!d.destinations.includes(destination)) notFound();
-  const tsm = destination.startsWith(`${TSM_REGION} · `)
-    ? destination.slice(TSM_REGION.length + 3)
-    : null;
-  const units = tsm ? sumUnits(d.tsms.get(tsm)) : sumUnits(d.regions.get(destination));
+  const { region, tsm } = parseDestination(destination);
+  const units = tsm ? sumUnits(d.tsms.get(region)?.get(tsm)) : sumUnits(d.regions.get(destination));
   const lines = d.plans
     .map((p) => {
       const planned = plannedFor(p, destination);

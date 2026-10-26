@@ -1,19 +1,34 @@
 import ExcelJS from "exceljs";
 
-import { TYPE_CODES, typeFromPivotHeader, TSM_REGION, type DistType } from "./types";
+import { canonicalRegion, TYPE_CODES, typeFromPivotHeader, type DistType } from "./types";
 
-// Reads the POSM distribution workbook («POSM_Distribution_by_Region»): installed and warehouse
-// equipment by region («Оборудование»), Tashkent equipment by TSM («TSM_Оборудование») and the
-// POSM list with stock, order and the equipment types each item goes to («POSM»).
-// Sheets and columns are found by their titles, so a refreshed file with moved rows still reads.
+// The three files of the POSM distribution, found by sheet and column titles so refreshed files
+// with moved rows or columns still read:
+// - the equipment file («Daily BW-POG management»): every installed piece in «BW management»
+//   (one row each; Display MOD counts as its slots / 18), the warehouses in the «Current stock»
+//   block of «Warehouse»;
+// - the outlet base: each outlet's ID and responsible TSM (for the split by TSM);
+// - a POSM list for an order: the «POSM» sheet of the distribution workbook.
 
-export type ParsedCount = {
-  kind: "INSTALLED" | "STOCK";
+export type ParsedUnit = {
+  outletId: string;
   region: string;
-  tsm: string;
   type: DistType;
-  count: number;
+  units: number;
+  tsm: string;
 };
+
+export type ParsedStock = { region: string; type: DistType; count: number };
+
+export type ParsedEquipment = {
+  units: ParsedUnit[];
+  stock: ParsedStock[];
+  // Rows of «BW management» skipped: no outlet, region or a type we don't know.
+  skipped: number;
+  unknownTypes: string[];
+};
+
+export type ParsedOutlet = { outletId: string; region: string | null; tsm: string | null };
 
 export type ParsedPosm = {
   position: number;
@@ -32,15 +47,8 @@ export type ParsedPosm = {
   types: DistType[];
 };
 
-export type ParsedDistribution = {
-  counts: ParsedCount[];
-  posm: ParsedPosm[];
-  // Whether the file counts warehouse equipment in the base («Да» in «Оборудование»).
-  includeStock: boolean | null;
-};
-
 export class DistributionParseError extends Error {
-  constructor(public readonly code: "noEquipment" | "noPosm" | "badFile") {
+  constructor(public readonly code: "noEquipment" | "noPosm" | "noOutlets" | "badFile") {
     super(code);
     this.name = "DistributionParseError";
   }
@@ -83,12 +91,15 @@ const num = (value: Cell): number => {
   return 0;
 };
 const text = (value: Cell): string => (value === null ? "" : String(value).trim());
+// IDs come as numbers or text ("4311356", 4311356.0).
+const idOf = (value: Cell): string =>
+  typeof value === "number" ? String(Math.round(value)) : text(value).replace(/\.0+$/, "");
 
-function rows(sheet: ExcelJS.Worksheet): Cell[][] {
+function rows(sheet: ExcelJS.Worksheet, columns = sheet.columnCount): Cell[][] {
   const out: Cell[][] = [];
-  sheet.eachRow({ includeEmpty: true }, (row, n) => {
+  sheet.eachRow({ includeEmpty: false }, (row, n) => {
     const values: Cell[] = [];
-    for (let c = 1; c <= sheet.columnCount; c++) values.push(cellValue(row.getCell(c)));
+    for (let c = 1; c <= columns; c++) values.push(cellValue(row.getCell(c)));
     out[n - 1] = values;
   });
   return Array.from(out, (r) => r ?? []);
@@ -97,75 +108,136 @@ function rows(sheet: ExcelJS.Worksheet): Cell[][] {
 const findSheet = (book: ExcelJS.Workbook, test: (name: string) => boolean) =>
   book.worksheets.find((s) => test(s.name.trim().toLowerCase()));
 
-// «Оборудование»: blocks headed by two «Region» rows (group, then size); the title row above says
-// which block it is. The 12 type columns follow the region name.
-function parseEquipment(sheet: ExcelJS.Worksheet) {
-  const grid = rows(sheet);
-  const counts: ParsedCount[] = [];
-  let includeStock: boolean | null = null;
-  for (let r = 0; r < grid.length; r++) {
-    const row = grid[r]!;
-    const first = row.findIndex((c) => text(c).toLowerCase() === "region");
-    const label = row.map(text).join(" ").toLowerCase();
-    if (label.includes("учитывать оборудование на складе")) {
-      const answer = row.map(text).find((c) => /^(да|нет|yes|no)$/i.test(c));
-      if (answer) includeStock = /^(да|yes)$/i.test(answer);
-    }
-    if (first === -1 || text(grid[r + 1]?.[first] ?? null).toLowerCase() !== "region") continue;
-    const title = [grid[r - 1], grid[r - 2]]
-      .map((t) => (t ?? []).map(text).join(" ").toLowerCase())
-      .join(" ");
-    const kind = /stock|склад/.test(title)
-      ? /база|base/.test(title)
-        ? null
-        : "STOCK"
-      : /база|base/.test(title)
-        ? null
-        : "INSTALLED";
-    r += 2;
-    for (; r < grid.length; r++) {
-      const data = grid[r]!;
-      const region = text(data[first] ?? null);
-      if (!region || /^total|^итого/i.test(region)) break;
-      if (!kind) continue;
-      TYPE_CODES.forEach((type, i) => {
-        const count = Math.round(num(data[first + 1 + i] ?? null));
-        if (count > 0) counts.push({ kind, region, tsm: "", type, count });
-      });
-    }
+async function load(buffer: Buffer) {
+  const book = new ExcelJS.Workbook();
+  try {
+    await book.xlsx.load(buffer as unknown as ArrayBuffer);
+  } catch {
+    throw new DistributionParseError("badFile");
   }
-  return { counts, includeStock };
+  return book;
 }
 
-// «TSM_Оборудование», block 1: TSM rows × pivot type headers.
-function parseTsm(sheet: ExcelJS.Worksheet): ParsedCount[] {
-  const grid = rows(sheet);
-  const counts: ParsedCount[] = [];
-  for (let r = 0; r < grid.length; r++) {
-    const row = grid[r]!;
-    const first = row.findIndex((c) => text(c).toLowerCase() === "tsm");
-    if (first === -1) continue;
-    const columns = row
-      .map((c, i) => ({ i, type: typeFromPivotHeader(text(c)) }))
-      .filter((c): c is { i: number; type: DistType } => c.type !== null);
-    if (columns.length === 0) continue;
-    for (r += 1; r < grid.length; r++) {
-      const data = grid[r]!;
-      const tsm = text(data[first] ?? null);
-      if (!tsm || /^total|^итого/i.test(tsm)) break;
-      for (const { i, type } of columns) {
-        const count = Math.round(num(data[i] ?? null));
-        if (count > 0) counts.push({ kind: "INSTALLED", region: TSM_REGION, tsm, type, count });
+// A header row: the first row (of the first `scan`) where every test finds a column.
+function headerOf(grid: Cell[][], tests: Record<string, RegExp>, scan = 10) {
+  for (let r = 0; r < Math.min(scan, grid.length); r++) {
+    const row = (grid[r] ?? []).map((c) => text(c).toLowerCase());
+    const at = Object.fromEntries(
+      Object.entries(tests).map(([key, re]) => [key, row.findIndex((h) => re.test(h))]),
+    );
+    if (Object.values(at).every((i) => i >= 0)) return { row: r, at };
+  }
+  return null;
+}
+
+const MOD_SLOTS = 18;
+
+export async function parseEquipmentFile(buffer: Buffer): Promise<ParsedEquipment> {
+  const book = await load(buffer);
+  const list =
+    findSheet(book, (n) => n.startsWith("bw management")) ??
+    findSheet(book, (n) => n.startsWith("bw"));
+  if (!list) throw new DistributionParseError("noEquipment");
+  const grid = rows(list, Math.min(list.columnCount, 40));
+  const head = headerOf(grid, {
+    region: /^region|^регион/,
+    id: /smartup id|^id$|^ид$/,
+    type: /bw dis|bw desc|описание|тип оборуд/,
+  });
+  if (!head) throw new DistributionParseError("noEquipment");
+  const header = grid[head.row]!.map((c) => text(c).toLowerCase());
+  const slotsAt = header.findIndex((h) => /слот|slot/.test(h));
+  const tsmAt = header.findIndex((h) => /^responsible/.test(h));
+  const units: ParsedUnit[] = [];
+  const unknown = new Set<string>();
+  let skipped = 0;
+  for (const row of grid.slice(head.row + 1)) {
+    const outletId = idOf(row[head.at.id!] ?? null);
+    const region = text(row[head.at.region!] ?? null);
+    const description = text(row[head.at.type!] ?? null);
+    if (!outletId && !region && !description) continue;
+    const type = description ? typeFromPivotHeader(description) : null;
+    if (!outletId || !region || !type) {
+      skipped += 1;
+      if (description && !type) unknown.add(description);
+      continue;
+    }
+    units.push({
+      outletId,
+      region: canonicalRegion(region),
+      type,
+      units: type === "POSI_MOD" ? num(row[slotsAt] ?? null) / MOD_SLOTS : 1,
+      tsm: tsmAt >= 0 ? text(row[tsmAt] ?? null) : "",
+    });
+  }
+  if (units.length === 0) throw new DistributionParseError("noEquipment");
+
+  // «Warehouse» → the «Current stock» block: a title row, two header rows (group, type), regions.
+  const stock: ParsedStock[] = [];
+  const warehouse = findSheet(book, (n) => n.startsWith("warehouse") || n.startsWith("склад"));
+  if (warehouse) {
+    const w = rows(warehouse, Math.min(warehouse.columnCount, 40));
+    const title = w.findIndex((row) => row.some((c) => /^current stock$/i.test(text(c))));
+    if (title !== -1) {
+      const typesRow = w[title + 2] ?? [];
+      const first = typesRow.findIndex((c) => /^region$/i.test(text(c)));
+      const columns = typesRow
+        .map((c, i) => ({ i, type: typeFromPivotHeader(text(c)) }))
+        .filter((c): c is { i: number; type: DistType } => c.type !== null);
+      for (const row of w.slice(title + 3)) {
+        const region = text(row[first] ?? null);
+        if (!region || /^total|^итого/i.test(region)) break;
+        for (const { i, type } of columns) {
+          const count = num(row[i] ?? null);
+          if (count > 0) stock.push({ region: canonicalRegion(region), type, count });
+        }
       }
     }
-    break;
   }
-  return counts;
+  return { units, stock, skipped, unknownTypes: [...unknown] };
 }
 
-// «POSM»: a header row starting with «#», «POSM»; the 12 columns after «Запас к норме» are the
-// type matrix (1 = the item goes to that type).
-function parsePosm(sheet: ExcelJS.Worksheet): ParsedPosm[] {
+// The outlet base: «ИД» and «Responsible TSM» columns (the region, «Организации», if present).
+export async function parseOutletBase(buffer: Buffer): Promise<ParsedOutlet[]> {
+  const book = await load(buffer);
+  for (const sheet of book.worksheets) {
+    const grid = rows(sheet, Math.min(sheet.columnCount, 40));
+    const head = headerOf(grid, { id: /^ид$|^id$|smartup id/, tsm: /responsible tsm/ });
+    if (!head) continue;
+    const header = grid[head.row]!.map((c) => text(c).toLowerCase());
+    const regionAt = header.findIndex((h) => /^организац|^region|^регион/.test(h));
+    const outlets: ParsedOutlet[] = [];
+    for (const row of grid.slice(head.row + 1)) {
+      const outletId = idOf(row[head.at.id!] ?? null);
+      if (!outletId) continue;
+      const region = regionAt >= 0 ? text(row[regionAt] ?? null) : "";
+      outlets.push({
+        outletId,
+        region: region ? canonicalRegion(region) : null,
+        tsm: text(row[head.at.tsm!] ?? null) || null,
+      });
+    }
+    if (outlets.length) return outlets;
+  }
+  throw new DistributionParseError("noOutlets");
+}
+
+// A POSM list: a header row starting with «#», «POSM»; the 12 columns after «Запас к норме» are
+// the type matrix (1 = the item goes to that type).
+export async function parsePosmList(buffer: Buffer): Promise<ParsedPosm[]> {
+  const book = await load(buffer);
+  const sheets = [
+    ...book.worksheets.filter((s) => s.name.trim().toLowerCase() === "posm"),
+    ...book.worksheets,
+  ];
+  for (const sheet of sheets) {
+    const items = posmFromSheet(sheet);
+    if (items.length) return items;
+  }
+  throw new DistributionParseError("noPosm");
+}
+
+function posmFromSheet(sheet: ExcelJS.Worksheet): ParsedPosm[] {
   const grid = rows(sheet);
   const head = grid.findIndex(
     (row) => text(row[0] ?? null) === "#" && text(row[1] ?? null).toUpperCase() === "POSM",
@@ -186,6 +258,8 @@ function parsePosm(sheet: ExcelJS.Worksheet): ParsedPosm[] {
     norm: col("норма"),
     normReserve: col("запас к норме"),
   };
+  // The matrix covers the 12 display types of the original workbook.
+  const matrixTypes = TYPE_CODES.slice(0, 12);
   const matrix = at.normReserve + 1;
   const items: ParsedPosm[] = [];
   for (const row of grid.slice(head + 1)) {
@@ -211,27 +285,8 @@ function parsePosm(sheet: ExcelJS.Worksheet): ParsedPosm[] {
       types:
         at.normReserve === -1
           ? []
-          : TYPE_CODES.filter((_, i) => num(row[matrix + i] ?? null) === 1),
+          : matrixTypes.filter((_, i) => num(row[matrix + i] ?? null) === 1),
     });
   }
   return items;
-}
-
-export async function parseDistributionWorkbook(buffer: Buffer): Promise<ParsedDistribution> {
-  const book = new ExcelJS.Workbook();
-  try {
-    await book.xlsx.load(buffer as unknown as ArrayBuffer);
-  } catch {
-    throw new DistributionParseError("badFile");
-  }
-  const equipmentSheet = findSheet(book, (n) => n === "оборудование" || n === "equipment");
-  const tsmSheet = findSheet(book, (n) => n.startsWith("tsm"));
-  const posmSheet = findSheet(book, (n) => n === "posm");
-  if (!equipmentSheet) throw new DistributionParseError("noEquipment");
-  if (!posmSheet) throw new DistributionParseError("noPosm");
-  const { counts, includeStock } = parseEquipment(equipmentSheet);
-  if (counts.length === 0) throw new DistributionParseError("noEquipment");
-  const posm = parsePosm(posmSheet);
-  if (posm.length === 0) throw new DistributionParseError("noPosm");
-  return { counts: [...counts, ...(tsmSheet ? parseTsm(tsmSheet) : [])], posm, includeStock };
 }

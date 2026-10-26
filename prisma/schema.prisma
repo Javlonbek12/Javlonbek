@@ -76,6 +76,7 @@ model User {
   contentComments    ContentComment[]
   projectsCreated    Project[]            @relation("ProjectCreator")
   distShipments      DistShipment[]
+  distOrders         DistOrder[]
 }
 
 model Invite {
@@ -909,18 +910,99 @@ enum DistCountKind {
   STOCK
 }
 
-// How many units of one equipment type a region (or a TSM inside it) has.
+// How many units of one equipment type a region has in its warehouse (STOCK). Installed
+// equipment comes unit by unit (DistUnit); INSTALLED rows are left from the first file format.
 model DistEquipmentCount {
   id     String        @id @default(cuid())
   kind   DistCountKind
   region String
-  // "" = the whole region; otherwise the TSM (only Tashkent is split by TSM).
+  // "" = the whole region; otherwise the TSM (old file format).
   tsm    String        @default("")
   // An equipment type code from modules/distribution/types.ts, e.g. "POSI_XL".
   type   String
-  count  Int
+  // Display MOD is counted in 18-slot units, so it can be fractional.
+  count  Float
 
   @@unique([kind, region, tsm, type])
+}
+
+// One installed piece of equipment from the «BW management» list of the equipment file.
+model DistUnit {
+  id       String @id @default(cuid())
+  // The outlet's Smartup ID: links it to the outlet base (DistOutlet) for the responsible TSM.
+  outletId String
+  region   String
+  type     String
+  // 1 for a display; Display MOD: its slots / 18.
+  units    Float
+  // The responsible TSM written in the equipment file (used when the base has none).
+  tsm      String @default("")
+
+  @@index([outletId])
+}
+
+// The outlet base: who is the responsible TSM of each outlet (only what the split needs).
+model DistOutlet {
+  outletId String  @id
+  region   String?
+  tsm      String?
+}
+
+// A POSM order: a version of the list. Old orders keep their plan and shipments.
+model DistOrder {
+  id          String   @id @default(cuid())
+  name        String
+  orderedOn   DateTime @db.Date
+  note        String?
+  // A closed order is kept for history; new shipments go to open ones.
+  closed      Boolean  @default(false)
+  createdById String
+  createdAt   DateTime @default(now())
+
+  posm      DistPosm[]
+  createdBy User       @relation(fields: [createdById], references: [id])
+}
+
+// The order builder's catalog. Equipment dimensions by type (from the KT&G sizes sheet).
+model DistTypeSize {
+  // An equipment type code from modules/distribution/types.ts.
+  type     String  @id
+  heightMm Float?
+  widthMm  Float?
+  depthMm  Float?
+  note     String?
+}
+
+// A kind of POSM the builder orders: Header, Shelftalker, Divider, price tag…
+model DistElement {
+  id       String  @id @default(cuid())
+  name     String  @unique
+  position Int     @default(0)
+  material String?
+
+  sizes DistElementSize[]
+}
+
+// The print size of an element on one equipment type: it differs by equipment, so each pair is
+// its own row. Empty sizes or price = still to fill in.
+model DistElementSize {
+  id        String  @id @default(cuid())
+  elementId String
+  type      String
+  heightMm  Float?
+  widthMm   Float?
+  // Pieces on one unit of the equipment.
+  perUnit   Float?
+  // Price of one piece.
+  price     Float?
+  material  String?
+  note      String?
+  // Taken from an old POSM list, not confirmed for this equipment yet.
+  verified  Boolean @default(false)
+
+  element DistElement @relation(fields: [elementId], references: [id], onDelete: Cascade)
+
+  @@unique([elementId, type])
 }
 
 enum DistBase {
@@ -935,8 +1017,9 @@ enum DistBase {
 // A POSM item to distribute: stock, order, reserve, and the equipment types it goes to.
 model DistPosm {
   id             String   @id @default(cuid())
+  orderId        String
   position       Int
-  name           String   @unique
+  name           String
   category       String
   equipmentLabel String?
   size           String?
@@ -955,14 +1038,17 @@ model DistPosm {
   types          String[] @default([])
   updatedAt      DateTime @updatedAt
 
+  order     DistOrder      @relation(fields: [orderId], references: [id], onDelete: Cascade)
   shipments DistShipment[]
+
+  @@unique([orderId, name])
 }
 
 // POSM that left the central warehouse: where to, how many, when.
 model DistShipment {
   id          String   @id @default(cuid())
   posmId      String
-  // A region, or "Tashkent · <TSM>".
+  // A region, or "<region> · <TSM>".
   destination String
   quantity    Int
   shippedOn   DateTime @db.Date
