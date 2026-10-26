@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { distributionWorkbook } from "@/tests/helpers/distribution";
+import { equipmentWorkbook, outletBaseWorkbook, posmWorkbook } from "@/tests/helpers/distribution";
 
 import {
   controlItem,
@@ -15,12 +15,18 @@ import {
   stock,
   totalUnits,
   tsmBase,
+  tsmBreakdown,
   type Count,
   type Item,
   type TypeFacts,
 } from "./compute";
-import { DistributionParseError, parseDistributionWorkbook } from "./parse";
-import { tagPrice, typeFromPivotHeader } from "./types";
+import {
+  DistributionParseError,
+  parseEquipmentFile,
+  parseOutletBase,
+  parsePosmList,
+} from "./parse";
+import { canonicalRegion, parseDestination, tagPrice, typeFromPivotHeader } from "./types";
 
 const counts: Count[] = [
   { kind: "INSTALLED", region: "Tashkent", tsm: "", type: "POSI_L", count: 10 },
@@ -80,7 +86,7 @@ describe("the distribution model", () => {
     expect(split(5, new Map([["a", 0]])).rest).toBe(5);
   });
 
-  it("plans an item by the units of its types, then splits Tashkent between TSMs", () => {
+  it("plans an item by the units of its types, then breaks each region down by TSM", () => {
     const shelf = item({ ordered: 19, types: ["POSI_L"] });
     const plan = planItem(shelf, regions, tsms, facts);
     // 19 × 12/18 = 12.67 → 12; 19 × 6/18 = 6.33 → 6; 1 left.
@@ -88,12 +94,20 @@ describe("the distribution model", () => {
     expect(plan.byRegion.get("Test Town")).toBe(6);
     expect(plan.distributed).toBe(18);
     expect(plan.central).toBe(1);
-    // 12 by TSM POSI L units 7 : 3 → 8.4 → 8 and 3.6 → 3; 1 stays in the Tashkent warehouse.
-    expect(plan.byTsm.get("TSM_TEST_1")).toBe(8);
-    expect(plan.byTsm.get("TSM_TEST_2")).toBe(3);
-    expect(plan.tsmRest).toBe(1);
-    expect(plannedFor(plan, "Tashkent · TSM_TEST_1")).toBe(8);
+    // Tashkent's 12 by POSI L units: TSM 7, TSM 3, and 2 in its warehouse (no TSM) → 7, 3, 2.
+    expect(plan.byTsm.get("Tashkent · TSM_TEST_1")).toBe(7);
+    expect(plan.byTsm.get("Tashkent · TSM_TEST_2")).toBe(3);
+    expect(plan.tsmRest.get("Tashkent")).toBe(2);
+    expect(plan.tsmRest.has("Test Town")).toBe(false);
+    expect(plannedFor(plan, "Tashkent · TSM_TEST_1")).toBe(7);
     expect(plannedFor(plan, "Test Town")).toBe(6);
+    const rows = tsmBreakdown([plan], tsms);
+    expect(rows.map((r) => [r.kind, r.label, r.values[0]])).toEqual([
+      ["region", "Tashkent", 12],
+      ["tsm", "TSM_TEST_1", 7],
+      ["tsm", "TSM_TEST_2", 3],
+      ["rest", "Tashkent", 2],
+    ]);
   });
 
   it("keeps the reserve at the central warehouse and weighs slots and planogram facings", () => {
@@ -207,10 +221,39 @@ describe("the distribution model", () => {
     expect(keys).toContain("gap");
     expect(keys).toContain("tagShort");
     expect(keys).toContain("tagUniform");
-    expect(keys).toContain("tsmStock");
+    expect(keys).not.toContain("noTsm");
     expect(out.findIndex((f) => f.tone === "info")).toBeGreaterThan(
       out.findIndex((f) => f.tone === "warn"),
     );
+  });
+});
+
+describe("the TSM breakdown", () => {
+  it("keeps the share of units without a TSM in the region", () => {
+    const some: Count[] = [
+      { kind: "INSTALLED", region: "Test Town", tsm: "", type: "POSI_L", count: 10 },
+      { kind: "INSTALLED", region: "Test Town", tsm: "TSM_A", type: "POSI_L", count: 4 },
+      { kind: "INSTALLED", region: "Test Town", tsm: "TSM_B", type: "POSI_L", count: 1.5 },
+    ];
+    const regions = regionBase(some, true);
+    const tsms = tsmBase(some);
+    const plan = planItem(item({ ordered: 20, types: ["POSI_L"] }), regions, tsms, facts);
+    // 20 × 4/10 = 8, 20 × 1.5/10 = 3; 9 stay in Test Town for the 4.5 units without a TSM.
+    expect(plan.byTsm.get("Test Town · TSM_A")).toBe(8);
+    expect(plan.byTsm.get("Test Town · TSM_B")).toBe(3);
+    expect(plan.tsmRest.get("Test Town")).toBe(9);
+    const out = findings({
+      items: [],
+      regions,
+      tsms,
+      counts: some,
+      includeStock: true,
+      plans: [],
+      controls: [],
+      tags: [],
+      facts,
+    });
+    expect(out.find((f) => f.key === "noTsm")?.params).toEqual({ count: "5" });
   });
 });
 
@@ -225,6 +268,19 @@ describe("names", () => {
     expect(typeFromPivotHeader("Grand Total")).toBeNull();
   });
 
+  it("reads the equipment file's names, regions and destinations", () => {
+    expect(typeFromPivotHeader("Display XL (12*10) POSI")).toBe("POSI_XL");
+    expect(typeFromPivotHeader("Display l (10*10) MW")).toBe("MW25_L");
+    expect(typeFromPivotHeader("Display-M (9*6) POSI")).toBe("POSI_M");
+    expect(typeFromPivotHeader("Display MOD")).toBe("POSI_MOD");
+    expect(typeFromPivotHeader("LIGHTBOX")).toBe("LIGHTBOX");
+    expect(canonicalRegion("Sirdarya")).toBe("Syrdarya");
+    expect(canonicalRegion(" navoi ")).toBe("Navai");
+    expect(canonicalRegion("Test Town")).toBe("Test Town");
+    expect(parseDestination("Test Town · TSM_A")).toEqual({ region: "Test Town", tsm: "TSM_A" });
+    expect(parseDestination("Test Town")).toEqual({ region: "Test Town", tsm: null });
+  });
+
   it("reads the price on a price tag", () => {
     expect(tagPrice("Ценник 28000")).toBe(28000);
     expect(tagPrice("Ценник 19,000 blue")).toBe(19000);
@@ -233,28 +289,33 @@ describe("names", () => {
   });
 });
 
-describe("parseDistributionWorkbook", () => {
-  it("reads equipment, TSMs and POSM from the workbook", async () => {
-    const parsed = await parseDistributionWorkbook(await distributionWorkbook());
-    const installed = parsed.counts.filter((c) => c.kind === "INSTALLED" && !c.tsm);
-    expect(installed).toEqual(
-      expect.arrayContaining([
-        { kind: "INSTALLED", region: "Tashkent", tsm: "", type: "POSI_L", count: 10 },
-        { kind: "INSTALLED", region: "Test Town", tsm: "", type: "MW24_S", count: 2 },
-      ]),
-    );
-    expect(parsed.counts.filter((c) => c.kind === "STOCK")).toEqual([
-      { kind: "STOCK", region: "Tashkent", tsm: "", type: "POSI_L", count: 2 },
-    ]);
-    // The calculated base block is not read.
-    expect(installed.reduce((s, c) => s + c.count, 0)).toBe(22);
-    expect(parsed.counts.filter((c) => c.tsm === "TSM_TEST_2")).toEqual([
-      { kind: "INSTALLED", region: "Tashkent", tsm: "TSM_TEST_2", type: "POSI_L", count: 3 },
-      { kind: "INSTALLED", region: "Tashkent", tsm: "TSM_TEST_2", type: "DG_C", count: 3 },
-    ]);
-    expect(parsed.includeStock).toBe(true);
-    expect(parsed.posm).toHaveLength(3);
-    expect(parsed.posm[0]).toMatchObject({
+describe("the files", () => {
+  it("reads the equipment file unit by unit, with the warehouse stock", async () => {
+    const file = await parseEquipmentFile(await equipmentWorkbook());
+    expect(file.units).toHaveLength(23);
+    expect(file.skipped).toBe(1);
+    expect(file.unknownTypes).toEqual(["Fridge"]);
+    expect(file.units[0]).toEqual({
+      outletId: "1",
+      region: "Tashkent",
+      type: "POSI_L",
+      units: 1,
+      tsm: "",
+    });
+    expect(file.units.find((u) => u.type === "POSI_MOD")).toMatchObject({ units: 2 });
+    expect(file.units.filter((u) => u.tsm === "TSM_TOWN_1")).toHaveLength(4);
+    expect(file.stock).toEqual([{ region: "Tashkent", type: "POSI_L", count: 2 }]);
+  });
+
+  it("reads the outlet base and the POSM list", async () => {
+    const outlets = await parseOutletBase(await outletBaseWorkbook());
+    expect(outlets).toHaveLength(24);
+    expect(outlets[0]).toEqual({ outletId: "1", region: "Tashkent", tsm: "TSM_TEST_1" });
+    expect(outlets.at(-1)).toEqual({ outletId: "30", region: "Test Town", tsm: null });
+
+    const posm = await parsePosmList(await posmWorkbook());
+    expect(posm).toHaveLength(3);
+    expect(posm[0]).toMatchObject({
       name: "Shelftalker (тест)",
       ordered: 19,
       norm: 1,
@@ -262,20 +323,22 @@ describe("parseDistributionWorkbook", () => {
       base: "UNITS",
       types: ["POSI_L"],
     });
-    expect(parsed.posm[1]).toMatchObject({ inStock: 5, reservePct: 0.1, norm: null });
-    expect(parsed.posm[1]!.types).toHaveLength(12);
-    expect(parsed.posm[2]).toMatchObject({ base: "SLOTS", types: ["POSI_L", "DG_C"] });
+    expect(posm[1]).toMatchObject({ inStock: 5, reservePct: 0.1, norm: null });
+    expect(posm[1]!.types).toHaveLength(12);
+    expect(posm[2]).toMatchObject({ base: "SLOTS", types: ["POSI_L", "DG_C"] });
   });
 
-  it("reads the warehouse switch and refuses files without the sheets", async () => {
-    expect(
-      (await parseDistributionWorkbook(await distributionWorkbook({ includeStock: "Нет" })))
-        .includeStock,
-    ).toBe(false);
-    await expect(
-      parseDistributionWorkbook(await distributionWorkbook({ posmSheet: false })),
-    ).rejects.toBeInstanceOf(DistributionParseError);
-    await expect(parseDistributionWorkbook(Buffer.from("not excel"))).rejects.toMatchObject({
+  it("refuses files without what it needs", async () => {
+    await expect(parsePosmList(await posmWorkbook({ posmSheet: false }))).rejects.toBeInstanceOf(
+      DistributionParseError,
+    );
+    await expect(parseEquipmentFile(await posmWorkbook())).rejects.toMatchObject({
+      code: "noEquipment",
+    });
+    await expect(parseOutletBase(await posmWorkbook())).rejects.toMatchObject({
+      code: "noOutlets",
+    });
+    await expect(parseEquipmentFile(Buffer.from("not excel"))).rejects.toMatchObject({
       code: "badFile",
     });
   });

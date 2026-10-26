@@ -1,9 +1,19 @@
 // The POSM distribution model, as in the customer's workbook: every item goes to the equipment
 // types marked for it; regions get shares by their weight (units of those types, or their slots,
 // or — for price tags — the facings with that price on the type's planogram); rounding is down
-// and the rest stays at the central warehouse. Tashkent's share is split the same way between
-// its TSMs. Pure functions: no database, so they are easy to test.
-import { sortRegions, tagPrice, TSM_REGION, typeInfo, TYPE_CODES, type DistType } from "./types";
+// and the rest stays at the central warehouse. Each region's share is then broken down between
+// its TSMs by the units they are responsible for; what falls to units without a TSM (or to the
+// region's warehouse stock) and the rounding rest stay at the region's warehouse.
+// Pure functions: no database, so they are easy to test.
+import {
+  parseDestination,
+  sortRegions,
+  tagPrice,
+  tsmDestination,
+  typeInfo,
+  TYPE_CODES,
+  type DistType,
+} from "./types";
 
 export type Count = {
   kind: "INSTALLED" | "STOCK";
@@ -54,15 +64,24 @@ export function regionBase(counts: Count[], includeStock: boolean): Map<string, 
   return new Map(sortRegions(out.keys()).map((r) => [r, out.get(r)!]));
 }
 
-export function tsmBase(counts: Count[]): Map<string, Units> {
-  const out = new Map<string, Units>();
+// Installed units by region and responsible TSM.
+export function tsmBase(counts: Count[]): Map<string, Map<string, Units>> {
+  const out = new Map<string, Map<string, Units>>();
   for (const c of counts) {
     if (c.tsm === "" || c.kind !== "INSTALLED") continue;
-    const units = out.get(c.tsm) ?? {};
+    const region = out.get(c.region) ?? new Map<string, Units>();
+    const units = region.get(c.tsm) ?? {};
     add(units, c.type, c.count);
-    out.set(c.tsm, units);
+    region.set(c.tsm, units);
+    out.set(c.region, region);
   }
-  return out;
+  return new Map(
+    sortRegions(out.keys()).map((r) => {
+      const byTsm = out.get(r)!;
+      const names = [...byTsm.keys()].sort((a, b) => a.localeCompare(b, "ru", { numeric: true }));
+      return [r, new Map(names.map((t) => [t, byTsm.get(t)!]))];
+    }),
+  );
 }
 
 export function totalUnits(base: Map<string, Units>): Units {
@@ -107,25 +126,38 @@ export type ItemPlan = {
   distributed: number;
   // Rounding rest + the reserve: stays at the central warehouse.
   central: number;
+  // By "Region · TSM".
   byTsm: Map<string, number>;
-  // Tashkent's rest after the TSM split: stays at the Tashkent warehouse.
-  tsmRest: number;
+  // Per region, what is left after the TSM breakdown: stays at the region's warehouse.
+  tsmRest: Map<string, number>;
 };
 
 export function planItem(
   item: Item,
   regions: Map<string, Units>,
-  tsms: Map<string, Units>,
+  tsms: Map<string, Map<string, Units>>,
   facts: TypeFacts,
 ): ItemPlan {
   const weights = new Map([...regions].map(([r, u]) => [r, weightOf(item, u, facts)]));
   const ship = toShip(item);
   const { shares, rest, weight } = split(ship, weights);
-  const tashkent = shares.get(TSM_REGION) ?? 0;
-  const tsmSplit = split(
-    tashkent,
-    new Map([...tsms].map(([t, u]) => [t, weightOf(item, u, facts)])),
-  );
+  const byTsm = new Map<string, number>();
+  const tsmRest = new Map<string, number>();
+  for (const [region, people] of tsms) {
+    const share = shares.get(region) ?? 0;
+    const own = new Map([...people].map(([t, u]) => [t, weightOf(item, u, facts)]));
+    const assigned = [...own.values()].reduce((a, b) => a + b, 0);
+    // Units without a TSM and the region's stock weigh too: their part stays in the region.
+    const unassigned = Math.max(0, (weights.get(region) ?? 0) - assigned);
+    const { shares: perTsm } = split(share, new Map([...own, ["", unassigned]]));
+    let given = 0;
+    for (const [tsm, n] of perTsm)
+      if (tsm !== "") {
+        byTsm.set(tsmDestination(region, tsm), n);
+        given += n;
+      }
+    tsmRest.set(region, share - given);
+  }
   return {
     item,
     available: available(item),
@@ -134,8 +166,8 @@ export function planItem(
     byRegion: shares,
     distributed: ship - rest,
     central: available(item) - ship + rest,
-    byTsm: tsmSplit.shares,
-    tsmRest: tsms.size > 0 ? tsmSplit.rest : 0,
+    byTsm,
+    tsmRest,
   };
 }
 
@@ -262,10 +294,9 @@ export function stock(plans: ItemPlan[], shipments: Shipment[]): StockLine[] {
   });
 }
 
-// The plan for a destination: a region, or "Tashkent · TSM".
+// The plan for a destination: a region (its whole share), or "Region · TSM".
 export function plannedFor(plan: ItemPlan, destination: string): number {
-  const prefix = `${TSM_REGION} · `;
-  if (destination.startsWith(prefix)) return plan.byTsm.get(destination.slice(prefix.length)) ?? 0;
+  if (parseDestination(destination).tsm !== null) return plan.byTsm.get(destination) ?? 0;
   return plan.byRegion.get(destination) ?? 0;
 }
 
@@ -281,7 +312,7 @@ const fmt = (n: number) => Math.round(n).toLocaleString("ru-RU");
 export function findings(input: {
   items: Item[];
   regions: Map<string, Units>;
-  tsms: Map<string, Units>;
+  tsms: Map<string, Map<string, Units>>;
   counts: Count[];
   includeStock: boolean;
   plans: ItemPlan[];
@@ -364,11 +395,20 @@ export function findings(input: {
     out.push({ tone: "info", key: "tagNoPlanogram", params: {} });
   }
 
-  const tashkentStock = counts
-    .filter((c) => c.kind === "STOCK" && c.region === TSM_REGION && c.tsm === "")
-    .reduce((s, c) => s + c.count, 0);
-  if (includeStock && tsms.size > 0 && tashkentStock > 0)
-    out.push({ tone: "info", key: "tsmStock", params: { count: fmt(tashkentStock) } });
+  // Installed units no TSM answers for: their part of the region's share stays at its warehouse.
+  const withTsm = new Map<string, number>();
+  for (const [region, people] of tsms)
+    withTsm.set(
+      region,
+      [...people.values()].reduce((s, u) => s + sumUnits(u), 0),
+    );
+  if (tsms.size > 0) {
+    const without = counts
+      .filter((c) => c.kind === "INSTALLED" && c.tsm === "" && tsms.has(c.region))
+      .reduce((s, c) => s + c.count, 0);
+    const missing = without - [...withTsm.values()].reduce((a, b) => a + b, 0);
+    if (missing >= 1) out.push({ tone: "warn", key: "noTsm", params: { count: fmt(missing) } });
+  }
 
   const stockUnits = counts
     .filter((c) => c.kind === "STOCK" && c.tsm === "")
@@ -389,4 +429,45 @@ export function findings(input: {
 
   const order = { bad: 0, warn: 1, info: 2 };
   return out.sort((a, b) => order[a.tone] - order[b.tone]);
+}
+
+export type BreakdownRow = {
+  kind: "region" | "tsm" | "rest";
+  region: string;
+  // "Region · TSM" for a TSM row.
+  destination: string;
+  label: string;
+  values: number[];
+};
+
+// The TSM breakdown as rows: each region's share, its TSMs, and what stays at its warehouse.
+export function tsmBreakdown(plans: ItemPlan[], tsms: Map<string, Map<string, Units>>) {
+  const rows: BreakdownRow[] = [];
+  for (const [region, people] of tsms) {
+    rows.push({
+      kind: "region",
+      region,
+      destination: region,
+      label: region,
+      values: plans.map((p) => p.byRegion.get(region) ?? 0),
+    });
+    for (const tsm of people.keys()) {
+      const destination = tsmDestination(region, tsm);
+      rows.push({
+        kind: "tsm",
+        region,
+        destination,
+        label: tsm,
+        values: plans.map((p) => p.byTsm.get(destination) ?? 0),
+      });
+    }
+    rows.push({
+      kind: "rest",
+      region,
+      destination: region,
+      label: region,
+      values: plans.map((p) => p.tsmRest.get(region) ?? 0),
+    });
+  }
+  return rows;
 }

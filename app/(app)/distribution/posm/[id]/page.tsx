@@ -8,10 +8,14 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { t, type TranslationKey } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
-import { canManageDistribution, loadDistribution } from "@/modules/distribution/service";
+import {
+  canManageDistribution,
+  loadDistribution,
+  posmOrderId,
+} from "@/modules/distribution/service";
 import { DIST_TYPES, tagPrice } from "@/modules/distribution/types";
 
-import { updatePosmAction } from "../../actions";
+import { deletePosmAction, updatePosmAction } from "../../actions";
 
 // One item: its plan by region and, for the owner and managers, its settings (stock, order,
 // reserve, base, norm, the equipment types it goes to).
@@ -22,11 +26,14 @@ export default async function DistributionPosmPage({
   const user = await requireUser();
   const { id } = await params;
   const query = await searchParams;
-  const d = await loadDistribution();
+  const orderId = await posmOrderId(id);
+  if (!orderId) notFound();
+  const d = await loadDistribution(orderId);
   const plan = d.plans.find((p) => p.item.id === id);
   if (!plan) notFound();
   const item = plan.item;
-  const manage = canManageDistribution(user);
+  const manage = canManageDistribution(user) && !d.order?.closed;
+  const shipped = d.stock.find((line) => line.item.id === id)?.shipped ?? 0;
   const error = typeof query.error === "string" ? query.error : null;
   const isTag = tagPrice(item.name) !== null;
 
@@ -38,7 +45,7 @@ export default async function DistributionPosmPage({
       <div className="flex flex-col gap-1">
         <h2 className="text-lg font-semibold">{item.name}</h2>
         <p className="text-muted-foreground text-sm">
-          {item.category} · {t(`dist.base.${item.base}`)}
+          {d.order?.name} · {item.category} · {t(`dist.base.${item.base}`)}
         </p>
       </div>
       {query.saved && (
@@ -161,6 +168,14 @@ export default async function DistributionPosmPage({
               <Button type="submit">{t("dist.posm.save")}</Button>
             </div>
           </form>
+          {shipped === 0 && (
+            <form action={deletePosmAction} className="border-t pt-4">
+              <input type="hidden" name="id" value={item.id} />
+              <Button type="submit" variant="outline" size="sm">
+                {t("dist.posm.delete")}
+              </Button>
+            </form>
+          )}
         </Section>
       )}
     </div>

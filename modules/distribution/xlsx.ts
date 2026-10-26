@@ -2,13 +2,13 @@ import ExcelJS from "exceljs";
 
 import { t, type TranslationKey } from "@/lib/i18n";
 
-import { plannedFor } from "./compute";
+import { plannedFor, tsmBreakdown } from "./compute";
 import type { Distribution } from "./service";
-import { DIST_TYPES } from "./types";
+import { DIST_TYPES, tsmDestination } from "./types";
 
 type Value = string | number | null;
 
-// The distribution as Excel: findings, the plan by region, Tashkent by TSM, the stock, where it
+// The distribution as Excel: findings, the plan by region, the breakdown by TSM, the stock, where it
 // went, and a waybill sheet per region — the same numbers as on the screen.
 export async function distributionXlsx(d: Distribution): Promise<Buffer> {
   const book = new ExcelJS.Workbook();
@@ -28,8 +28,10 @@ export async function distributionXlsx(d: Distribution): Promise<Buffer> {
     return ws;
   };
   const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
+  // Display MOD is counted in 18-slot units: fractions.
+  const round = (n: number) => Math.round(n * 100) / 100;
   const regions = [...d.regions.keys()];
-  const tsms = [...d.tsms.keys()];
+  const breakdown = tsmBreakdown(d.plans, d.tsms);
 
   sheet(
     t("dist.findings.title"),
@@ -68,22 +70,26 @@ export async function distributionXlsx(d: Distribution): Promise<Buffer> {
     ],
   );
 
-  if (tsms.length)
+  if (breakdown.length)
     sheet(
       t("dist.plan.tsmTitle"),
-      [t("dist.equipment.tsm"), ...d.plans.map((p) => p.item.name), t("dist.total")],
       [
-        ...tsms.map((tsm) => [
-          tsm,
-          ...d.plans.map((p) => p.byTsm.get(tsm) ?? 0),
-          sum(d.plans.map((p) => p.byTsm.get(tsm) ?? 0)),
-        ]),
-        [
-          t("dist.plan.tsmRest"),
-          ...d.plans.map((p) => p.tsmRest),
-          sum(d.plans.map((p) => p.tsmRest)),
-        ],
+        t("dist.regions.region"),
+        t("dist.equipment.tsm"),
+        ...d.plans.map((p) => p.item.name),
+        t("dist.total"),
       ],
+      breakdown.map((row) => [
+        row.region,
+        row.kind === "tsm"
+          ? row.label
+          : row.kind === "rest"
+            ? t("dist.plan.tsmRest", { region: row.region })
+            : t("dist.total"),
+        ...row.values,
+        sum(row.values),
+      ]),
+      [18, 28],
     );
 
   sheet(
@@ -123,13 +129,15 @@ export async function distributionXlsx(d: Distribution): Promise<Buffer> {
     [t("dist.equipment.region"), ...DIST_TYPES.map((x) => x.label), t("dist.total")],
     [...d.regions].map(([region, units]) => [
       region,
-      ...DIST_TYPES.map((x) => units[x.code] ?? 0),
-      sum(Object.values(units)),
+      ...DIST_TYPES.map((x) => round(units[x.code] ?? 0)),
+      round(sum(Object.values(units))),
     ]),
   );
 
-  // A waybill per region: what to send, what has gone, with a column for the signature.
+  // A waybill per region: what to send, what has gone, its breakdown by TSM, with a column for
+  // the signature.
   for (const region of regions) {
+    const people = [...(d.tsms.get(region)?.keys() ?? [])];
     const ws = sheet(
       `${t("dist.regions.waybill")} ${region}`,
       [
@@ -138,6 +146,8 @@ export async function distributionXlsx(d: Distribution): Promise<Buffer> {
         t("dist.waybill.planned"),
         t("dist.waybill.shipped"),
         t("dist.waybill.toSend"),
+        ...people,
+        ...(people.length ? [t("dist.plan.tsmRest", { region })] : []),
         t("dist.waybill.received"),
       ],
       d.plans
@@ -154,11 +164,13 @@ export async function distributionXlsx(d: Distribution): Promise<Buffer> {
             planned,
             shipped,
             Math.max(0, planned - shipped),
+            ...people.map((tsm) => p.byTsm.get(tsmDestination(region, tsm)) ?? 0),
+            ...(people.length ? [p.tsmRest.get(region) ?? 0] : []),
             null,
           ];
         })
         .filter((row) => (row[2] as number) > 0),
-      [36, 16, 12, 12, 12, 24],
+      [36, 16, 12, 12, 12, ...people.map(() => 14), ...(people.length ? [16] : []), 24],
     );
     ws.views = [{ state: "frozen", ySplit: 1 }];
   }

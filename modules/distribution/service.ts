@@ -1,3 +1,5 @@
+import { cookies } from "next/headers";
+
 import { db } from "@/lib/db";
 import { fromDateString, isDateString } from "@/lib/dates";
 import { canUseModule } from "@/modules/core/access/actor";
@@ -19,7 +21,13 @@ import {
   type Item,
   type TypeFacts,
 } from "./compute";
-import { DistributionParseError, parseDistributionWorkbook } from "./parse";
+import {
+  DistributionParseError,
+  parseEquipmentFile,
+  parseOutletBase,
+  parsePosmList,
+  type ParsedPosm,
+} from "./parse";
 import { DIST_TYPES, sortRegions, tsmDestination } from "./types";
 
 type Viewer = Parameters<typeof canUseModule>[0];
@@ -33,7 +41,16 @@ export const canManageDistribution = (user: Viewer) =>
 export class DistributionError extends Error {
   constructor(
     public readonly code:
-      "forbidden" | "badFile" | "noEquipment" | "noPosm" | "tooBig" | "invalid" | "notFound",
+      | "forbidden"
+      | "badFile"
+      | "noEquipment"
+      | "noPosm"
+      | "noOutlets"
+      | "tooBig"
+      | "invalid"
+      | "notFound"
+      | "closed"
+      | "hasShipments",
   ) {
     super(code);
     this.name = "DistributionError";
@@ -62,7 +79,7 @@ export async function setIncludeStock(actor: Actor & Viewer, value: boolean) {
 
 export type PlanogramLink = {
   type: string;
-  equipmentCode: string;
+  equipmentCode: string | null;
   planogramId: string | null;
   title: string | null;
   status: string | null;
@@ -73,7 +90,9 @@ export type PlanogramLink = {
 // The planogram of each equipment type: the latest approved one, else the latest draft. Its
 // facings by price tell how many price tags of each price one unit needs.
 export async function planogramFacts(): Promise<{ facts: TypeFacts; links: PlanogramLink[] }> {
-  const codes = [...new Set(DIST_TYPES.map((t) => t.equipment))];
+  const codes = [
+    ...new Set(DIST_TYPES.flatMap((t) => (t.equipment === null ? [] : [t.equipment]))),
+  ];
   const equipment = await db.equipment.findMany({
     where: { code: { in: codes } },
     select: {
@@ -112,7 +131,7 @@ export async function planogramFacts(): Promise<{ facts: TypeFacts; links: Plano
   }
   const links = DIST_TYPES.map((t) => ({
     type: t.code,
-    ...(byCode.get(t.equipment) ?? {
+    ...((t.equipment && byCode.get(t.equipment)) || {
       equipmentCode: t.equipment,
       planogramId: null,
       title: null,
@@ -130,12 +149,106 @@ export async function planogramFacts(): Promise<{ facts: TypeFacts; links: Plano
   };
 }
 
-// Everything the pages need, computed once per request.
-export async function loadDistribution() {
-  const [counts, rows, shipments, includeStock, planogram, lastImport] = await Promise.all([
+export const ORDER_COOKIE = "dist-order";
+
+export async function listOrders() {
+  const orders = await db.distOrder.findMany({
+    orderBy: [{ orderedOn: "desc" }, { createdAt: "desc" }],
+    include: {
+      createdBy: { select: { firstName: true, lastName: true } },
+      _count: { select: { posm: true } },
+    },
+  });
+  const shipped = await db.distShipment.groupBy({
+    by: ["posmId"],
+    _sum: { quantity: true },
+  });
+  const posm = await db.distPosm.findMany({ select: { id: true, orderId: true } });
+  const orderOf = new Map(posm.map((p) => [p.id, p.orderId]));
+  const byOrder = new Map<string, number>();
+  for (const s of shipped) {
+    const order = orderOf.get(s.posmId);
+    if (order) byOrder.set(order, (byOrder.get(order) ?? 0) + (s._sum.quantity ?? 0));
+  }
+  return orders.map((o) => ({ ...o, items: o._count.posm, shipped: byOrder.get(o.id) ?? 0 }));
+}
+
+export type OrderRow = Awaited<ReturnType<typeof listOrders>>[number];
+
+// The order the pages show: the one picked (kept in a cookie), else the latest open one.
+export async function currentOrder(orders?: OrderRow[]) {
+  const list = orders ?? (await listOrders());
+  // Outside a request (scripts, tests) there are no cookies.
+  let picked: string | undefined;
+  try {
+    picked = (await cookies()).get(ORDER_COOKIE)?.value;
+  } catch {
+    picked = undefined;
+  }
+  return list.find((o) => o.id === picked) ?? list.find((o) => !o.closed) ?? list[0] ?? null;
+}
+
+// The pick itself is a cookie, set by the page's action.
+export async function checkOrder(id: string) {
+  if (!(await db.distOrder.findUnique({ where: { id } }))) throw new DistributionError("notFound");
+}
+
+export async function posmOrderId(id: string) {
+  const item = await db.distPosm.findUnique({ where: { id }, select: { orderId: true } });
+  return item?.orderId ?? null;
+}
+
+// Installed equipment: unit by unit from the equipment file, the TSM from the outlet base (else
+// the one in the equipment file). Before the first equipment file, the counts of the old format.
+async function equipmentCounts(): Promise<Count[]> {
+  const [grouped, stored] = await Promise.all([
+    db.$queryRaw<{ region: string; type: string; tsm: string; count: number }[]>`
+      SELECT u."region", u."type",
+             COALESCE(NULLIF(o."tsm", ''), NULLIF(u."tsm", ''), '') AS "tsm",
+             SUM(u."units")::float8 AS "count"
+      FROM "DistUnit" u LEFT JOIN "DistOutlet" o ON o."outletId" = u."outletId"
+      GROUP BY 1, 2, 3`,
     db.distEquipmentCount.findMany(),
-    db.distPosm.findMany({ orderBy: { position: "asc" } }),
+  ]);
+  const counts: Count[] = stored.map((c) => ({ ...c }));
+  if (grouped.length === 0) return counts;
+  const byRegion = new Map<string, Count>();
+  const out = counts.filter((c) => c.kind === "STOCK");
+  for (const g of grouped) {
+    const key = `${g.region}|${g.type}`;
+    const region = byRegion.get(key) ?? {
+      kind: "INSTALLED" as const,
+      region: g.region,
+      tsm: "",
+      type: g.type,
+      count: 0,
+    };
+    region.count += g.count;
+    byRegion.set(key, region);
+    if (g.tsm)
+      out.push({ kind: "INSTALLED", region: g.region, tsm: g.tsm, type: g.type, count: g.count });
+  }
+  return [...byRegion.values(), ...out];
+}
+
+// Everything the pages need for one order, computed once per request.
+export async function loadDistribution(orderId?: string) {
+  const orders = await listOrders();
+  const order = orderId
+    ? (orders.find((o) => o.id === orderId) ?? null)
+    : await currentOrder(orders);
+  const posmIds = order
+    ? (await db.distPosm.findMany({ where: { orderId: order.id }, select: { id: true } })).map(
+        (p) => p.id,
+      )
+    : [];
+  const [counts, rows, shipments, includeStock, planogram, sources] = await Promise.all([
+    equipmentCounts(),
+    order
+      ? db.distPosm.findMany({ where: { orderId: order.id }, orderBy: { position: "asc" } })
+      : Promise.resolve([]),
     db.distShipment.findMany({
+      where: { posmId: { in: posmIds } },
       orderBy: [{ shippedOn: "desc" }, { createdAt: "desc" }],
       include: {
         posm: { select: { name: true } },
@@ -144,11 +257,7 @@ export async function loadDistribution() {
     }),
     getIncludeStock(),
     planogramFacts(),
-    db.activityLog.findFirst({
-      where: { action: "distribution.imported" },
-      orderBy: { createdAt: "desc" },
-      select: { createdAt: true },
-    }),
+    dataSources(),
   ]);
   const items: Item[] = rows.map((r) => ({ ...r }));
   const regions = regionBase(counts, includeStock);
@@ -159,7 +268,9 @@ export async function loadDistribution() {
   const controls = items.map((item) => controlItem(item, total));
   const tags = priceTagNeed(items, total, facts);
   return {
-    counts: counts as Count[],
+    orders,
+    order,
+    counts,
     items,
     regions,
     tsms,
@@ -183,45 +294,262 @@ export async function loadDistribution() {
       tags,
       facts,
     }),
-    importedAt: lastImport?.createdAt ?? null,
+    sources,
+    importedAt: sources.equipment?.at ?? null,
     destinations: [
       ...sortRegions(regions.keys()),
-      ...[...tsms.keys()].map((t) => tsmDestination(t)),
+      ...[...tsms].flatMap(([region, people]) =>
+        [...people.keys()].map((t) => tsmDestination(region, t)),
+      ),
     ],
   };
 }
 
 export type Distribution = Awaited<ReturnType<typeof loadDistribution>>;
 
+// When each file was last loaded, and what it held.
+export async function dataSources() {
+  const [equipment, outlets, units, outletCount] = await Promise.all([
+    db.activityLog.findFirst({
+      where: { action: { in: ["distribution.equipment", "distribution.imported"] } },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    }),
+    db.activityLog.findFirst({
+      where: { action: "distribution.outlets" },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    }),
+    db.distUnit.count(),
+    db.distOutlet.count(),
+  ]);
+  return {
+    equipment: equipment ? { at: equipment.createdAt, units } : null,
+    outlets: outlets ? { at: outlets.createdAt, count: outletCount } : null,
+  };
+}
+
 const MAX_FILE = 20 * 1024 * 1024;
 
-// A new file replaces the equipment counts and updates the items by name; items missing from the
-// file stay (with their shipments) so the history isn't lost.
-export async function importDistributionFile(actor: Actor & Viewer, buffer: Buffer) {
-  if (!canManageDistribution(actor)) throw new DistributionError("forbidden");
+async function parsed<T>(buffer: Buffer, parse: (b: Buffer) => Promise<T>): Promise<T> {
   if (buffer.length > MAX_FILE) throw new DistributionError("tooBig");
-  let parsed;
   try {
-    parsed = await parseDistributionWorkbook(buffer);
+    return await parse(buffer);
   } catch (error) {
     if (error instanceof DistributionParseError) throw new DistributionError(error.code);
     throw error;
   }
-  await db.$transaction(async (tx) => {
-    await tx.distEquipmentCount.deleteMany({});
-    await tx.distEquipmentCount.createMany({ data: parsed.counts });
-    for (const p of parsed.posm)
-      await tx.distPosm.upsert({ where: { name: p.name }, create: p, update: p });
+}
+
+const CHUNK = 2000;
+const chunks = <T>(list: T[]) =>
+  Array.from({ length: Math.ceil(list.length / CHUNK) }, (_, i) =>
+    list.slice(i * CHUNK, (i + 1) * CHUNK),
+  );
+
+// The equipment file replaces the installed equipment; its «Current stock» block, when there is
+// one, replaces the warehouse counts.
+export async function importEquipmentFile(actor: Actor & Viewer, buffer: Buffer) {
+  if (!canManageDistribution(actor)) throw new DistributionError("forbidden");
+  const file = await parsed(buffer, parseEquipmentFile);
+  await db.$transaction(
+    async (tx) => {
+      await tx.distUnit.deleteMany({});
+      for (const part of chunks(file.units)) await tx.distUnit.createMany({ data: part });
+      await tx.distEquipmentCount.deleteMany({
+        where: file.stock.length ? {} : { kind: "INSTALLED" },
+      });
+      if (file.stock.length)
+        await tx.distEquipmentCount.createMany({
+          data: file.stock.map((s) => ({ kind: "STOCK" as const, tsm: "", ...s })),
+        });
+    },
+    { timeout: 60_000 },
+  );
+  const units = file.units.reduce((s, u) => s + u.units, 0);
+  await logActivity({
+    actorId: actor.id,
+    action: "distribution.equipment",
+    entityType: "DistUnit",
+    entityId: "file",
+    details: { rows: file.units.length, stock: file.stock.length, skipped: file.skipped },
   });
-  if (parsed.includeStock !== null) await setIncludeStockValue(parsed.includeStock);
+  return {
+    rows: file.units.length,
+    units: Math.round(units),
+    stock: Math.round(file.stock.reduce((s, c) => s + c.count, 0)),
+    skipped: file.skipped,
+    unknown: file.unknownTypes,
+  };
+}
+
+// The outlet base replaces the responsible TSMs.
+export async function importOutletBase(actor: Actor & Viewer, buffer: Buffer) {
+  if (!canManageDistribution(actor)) throw new DistributionError("forbidden");
+  const outlets = await parsed(buffer, parseOutletBase);
+  const unique = [...new Map(outlets.map((o) => [o.outletId, o])).values()];
+  await db.$transaction(
+    async (tx) => {
+      await tx.distOutlet.deleteMany({});
+      for (const part of chunks(unique)) await tx.distOutlet.createMany({ data: part });
+    },
+    { timeout: 60_000 },
+  );
+  const [matched] = await db.$queryRaw<{ units: number; withTsm: number }[]>`
+    SELECT COUNT(*)::int AS "units",
+           COUNT(*) FILTER (WHERE NULLIF(o."tsm", '') IS NOT NULL)::int AS "withTsm"
+    FROM "DistUnit" u LEFT JOIN "DistOutlet" o ON o."outletId" = u."outletId"`;
+  await logActivity({
+    actorId: actor.id,
+    action: "distribution.outlets",
+    entityType: "DistOutlet",
+    entityId: "file",
+    details: { outlets: unique.length },
+  });
+  return {
+    outlets: unique.length,
+    withTsm: unique.filter((o) => o.tsm).length,
+    units: matched?.units ?? 0,
+    unitsWithTsm: matched?.withTsm ?? 0,
+  };
+}
+
+// Items of a POSM list go into an order, matched by name; items missing from the list stay
+// (with their shipments).
+async function savePosm(orderId: string, list: ParsedPosm[]) {
+  await db.$transaction(async (tx) => {
+    for (const p of list)
+      await tx.distPosm.upsert({
+        where: { orderId_name: { orderId, name: p.name } },
+        create: { ...p, orderId },
+        update: p,
+      });
+  });
+}
+
+export async function createOrder(
+  actor: Actor & Viewer,
+  input: { name: string; orderedOn: string; note?: string; copyFrom?: string | null },
+  file: Buffer | null,
+) {
+  if (!canManageDistribution(actor)) throw new DistributionError("forbidden");
+  const name = input.name.trim();
+  if (!name || name.length > 120 || !isDateString(input.orderedOn))
+    throw new DistributionError("invalid");
+  const list = file ? await parsed(file, parsePosmList) : null;
+  let copied: ParsedPosm[] = [];
+  if (!list && input.copyFrom) {
+    // A new order from the last one: the same items and settings; what is still on hand there
+    // becomes the stock, the new quantities are entered (or uploaded) after.
+    const previous = await loadDistribution(input.copyFrom);
+    if (!previous.order) throw new DistributionError("notFound");
+    copied = previous.stock.map((line) => ({
+      ...pick(line.item),
+      inStock: Math.max(0, line.onHand),
+      ordered: 0,
+    }));
+  }
+  if (!list && copied.length === 0) throw new DistributionError("noPosm");
+  const order = await db.distOrder.create({
+    data: {
+      name,
+      orderedOn: fromDateString(input.orderedOn),
+      note: input.note?.trim() || null,
+      createdById: actor.id,
+    },
+  });
+  await savePosm(order.id, list ?? copied);
+  await logActivity({
+    actorId: actor.id,
+    action: "distribution.order",
+    entityType: "DistOrder",
+    entityId: order.id,
+    details: { name, items: (list ?? copied).length },
+  });
+  return order;
+}
+
+const pick = (item: Item): ParsedPosm => {
+  const row = item as Item & Partial<ParsedPosm>;
+  return {
+    position: item.position,
+    name: item.name,
+    category: item.category,
+    equipmentLabel: row.equipmentLabel ?? null,
+    size: row.size ?? null,
+    material: row.material ?? null,
+    orderedFor: item.orderedFor,
+    inStock: item.inStock,
+    ordered: item.ordered,
+    reservePct: item.reservePct,
+    base: item.base as ParsedPosm["base"],
+    norm: item.norm,
+    normReserve: item.normReserve,
+    types: item.types as ParsedPosm["types"],
+  };
+};
+
+// A refreshed POSM list for an existing order.
+export async function importPosmList(actor: Actor & Viewer, orderId: string, buffer: Buffer) {
+  if (!canManageDistribution(actor)) throw new DistributionError("forbidden");
+  const order = await db.distOrder.findUnique({ where: { id: orderId } });
+  if (!order) throw new DistributionError("notFound");
+  if (order.closed) throw new DistributionError("closed");
+  const list = await parsed(buffer, parsePosmList);
+  await savePosm(orderId, list);
   await logActivity({
     actorId: actor.id,
     action: "distribution.imported",
-    entityType: "DistPosm",
-    entityId: "file",
-    details: { counts: parsed.counts.length, posm: parsed.posm.length },
+    entityType: "DistOrder",
+    entityId: orderId,
+    details: { posm: list.length },
   });
-  return { counts: parsed.counts.length, posm: parsed.posm.length };
+  return list.length;
+}
+
+export async function setOrderClosed(actor: Actor & Viewer, id: string, closed: boolean) {
+  if (!canManageDistribution(actor)) throw new DistributionError("forbidden");
+  if (!(await db.distOrder.findUnique({ where: { id } }))) throw new DistributionError("notFound");
+  await db.distOrder.update({ where: { id }, data: { closed } });
+  await logActivity({
+    actorId: actor.id,
+    action: closed ? "distribution.orderClosed" : "distribution.orderOpened",
+    entityType: "DistOrder",
+    entityId: id,
+  });
+}
+
+// Only an order nothing was shipped from can be deleted: shipments are history.
+export async function deleteOrder(actor: Actor & Viewer, id: string) {
+  if (!canManageDistribution(actor)) throw new DistributionError("forbidden");
+  if (!(await db.distOrder.findUnique({ where: { id } }))) throw new DistributionError("notFound");
+  if (await db.distShipment.count({ where: { posm: { orderId: id } } }))
+    throw new DistributionError("hasShipments");
+  await db.distOrder.delete({ where: { id } });
+  await logActivity({
+    actorId: actor.id,
+    action: "distribution.orderDeleted",
+    entityType: "DistOrder",
+    entityId: id,
+  });
+}
+
+export async function deletePosm(actor: Actor & Viewer, id: string) {
+  if (!canManageDistribution(actor)) throw new DistributionError("forbidden");
+  const item = await db.distPosm.findUnique({ where: { id }, include: { order: true } });
+  if (!item) throw new DistributionError("notFound");
+  if (item.order.closed) throw new DistributionError("closed");
+  if (await db.distShipment.count({ where: { posmId: id } }))
+    throw new DistributionError("hasShipments");
+  await db.distPosm.delete({ where: { id } });
+  await logActivity({
+    actorId: actor.id,
+    action: "distribution.posmDeleted",
+    entityType: "DistPosm",
+    entityId: id,
+    details: { name: item.name },
+  });
+  return item.orderId;
 }
 
 export type PosmSettings = {
@@ -244,7 +572,9 @@ export async function updatePosmSettings(actor: Actor & Viewer, id: string, inpu
     input.normReserve >= 0 &&
     input.types.every((t) => DIST_TYPES.some((d) => d.code === t));
   if (!valid) throw new DistributionError("invalid");
-  if (!(await db.distPosm.findUnique({ where: { id } }))) throw new DistributionError("notFound");
+  const item = await db.distPosm.findUnique({ where: { id }, include: { order: true } });
+  if (!item) throw new DistributionError("notFound");
+  if (item.order.closed) throw new DistributionError("closed");
   await db.distPosm.update({ where: { id }, data: input });
   await logActivity({
     actorId: actor.id,
@@ -273,8 +603,12 @@ export async function addShipment(
     !destinations.includes(input.destination)
   )
     throw new DistributionError("invalid");
-  if (!(await db.distPosm.findUnique({ where: { id: input.posmId } })))
-    throw new DistributionError("notFound");
+  const item = await db.distPosm.findUnique({
+    where: { id: input.posmId },
+    include: { order: { select: { closed: true } } },
+  });
+  if (!item) throw new DistributionError("notFound");
+  if (item.order.closed) throw new DistributionError("closed");
   const created = await db.distShipment.create({
     data: {
       posmId: input.posmId,
