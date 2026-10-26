@@ -1,23 +1,11 @@
 import ExcelJS from "exceljs";
 
 import { db } from "@/lib/db";
-import { fromDateString, isDateString } from "@/lib/dates";
 import { t } from "@/lib/i18n";
 import { logActivity } from "@/modules/core/activity/service";
 import type { Actor } from "@/modules/core/permissions";
 
-import {
-  buildOrder,
-  equipmentSize,
-  gapsOf,
-  missing,
-  mm,
-  perUnitKey,
-  typeLabel,
-  type BuilderInput,
-  type BuilderLine,
-  type Catalog,
-} from "./builder";
+import { equipmentSize, gapsOf, missing, typeLabel, type Catalog } from "./builder";
 import { canManageDistribution, DistributionError } from "./service";
 import { TYPE_CODES, typeInfo } from "./types";
 
@@ -355,9 +343,7 @@ export async function importCatalogFile(actor: Actor & Viewer, buffer: Buffer) {
   return { sizes, types };
 }
 
-// ——— The builder's result ———
-
-export type BuilderOptions = Omit<BuilderInput, "catalog" | "units"> & { withStock: boolean };
+// ——— Equipment counts for a campaign ———
 
 // Equipment units by type from the loaded equipment file (installed, plus stock when asked).
 export async function equipmentUnits(withStock: boolean): Promise<Record<string, number>> {
@@ -373,139 +359,4 @@ export async function equipmentUnits(withStock: boolean): Promise<Record<string,
   // Before the first equipment file: the old counts.
   for (const c of stock) if (c.kind === "STOCK" || installed.length === 0) add(c.type, c.count);
   return out;
-}
-
-// The builder's choices from a form or the link: t = types, e = elements, reserve (%), stock, merge.
-// pu.<element>.<type[+type…]> = pieces per unit for this order.
-export function builderOptions(
-  get: (key: string) => string[],
-  keys: Iterable<string> = [],
-): BuilderOptions {
-  const one = (key: string) => get(key)[0] ?? "";
-  const reserve = Number(one("reserve") || 10);
-  const perUnit: Record<string, number> = {};
-  for (const key of keys) {
-    const m = /^pu\.([^.]+)\.(.+)$/.exec(key);
-    const raw = (get(key)[0] ?? "").replace(",", ".").trim();
-    const value = Number(raw);
-    if (!m || raw === "" || !Number.isFinite(value) || value < 0) continue;
-    for (const type of m[2]!.split("+")) perUnit[perUnitKey(m[1]!, type)] = value;
-  }
-  return {
-    perUnit,
-    types: get("t"),
-    elements: get("e"),
-    reservePct: Number.isFinite(reserve) ? Math.min(100, Math.max(0, reserve)) / 100 : 0.1,
-    merge: one("merge") !== "0",
-    withStock: one("stock") === "1",
-  };
-}
-
-export async function runBuilder(options: BuilderOptions) {
-  const [catalog, units] = await Promise.all([loadCatalog(), equipmentUnits(options.withStock)]);
-  return { catalog, units, lines: buildOrder({ ...options, catalog, units }) };
-}
-
-export function builderXlsx(lines: BuilderLine[], catalog: Catalog, reservePct: number) {
-  const book = new ExcelJS.Workbook();
-  book.creator = t("app.name");
-  const ws = book.addWorksheet("Заказ POSM");
-  ws.addRow([
-    "POSM",
-    "Элемент",
-    "Оборудование",
-    "Размер оборудования, мм",
-    "Размер печати, мм",
-    "Материал",
-    "Ед. оборудования",
-    "Шт на ед.",
-    `Количество (+${Math.round(reservePct * 100)}% запас)`,
-    "Цена за шт, сум с НДС",
-    "Сумма, сум с НДС",
-    "Нет данных",
-  ]).font = { bold: true };
-  for (const l of lines)
-    ws.addRow([
-      l.name,
-      l.element,
-      l.types.map(typeLabel).join(", "),
-      l.types
-        .map((type) => equipmentSize(catalog.types.find((x) => x.type === type)) ?? "?")
-        .join(", "),
-      mm(l.heightMm, l.widthMm) ?? "",
-      l.material ?? "",
-      Math.round(l.units * 10) / 10,
-      l.perUnit,
-      l.quantity,
-      l.price,
-      l.sum,
-      l.gaps.map((g) => GAP_TEXT[g]).join(", "),
-    ]);
-  const total = (key: "quantity" | "sum") => lines.reduce((s, l) => s + (l[key] ?? 0), 0);
-  ws.addRow([
-    "Итого",
-    null,
-    null,
-    null,
-    null,
-    null,
-    null,
-    null,
-    total("quantity"),
-    null,
-    total("sum"),
-  ]).font = { bold: true };
-  ws.columns.forEach(
-    (c, i) => (c.width = [40, 16, 28, 26, 16, 24, 14, 10, 16, 12, 14, 30][i] ?? 12),
-  );
-  ws.views = [{ state: "frozen", ySplit: 1 }];
-  return book.xlsx.writeBuffer().then((b) => Buffer.from(b));
-}
-
-// The builder's lines become a new POSM order: one item per line, for its equipment types.
-export async function createOrderFromBuilder(
-  actor: Actor & Viewer,
-  input: { name: string; orderedOn: string; note?: string },
-  options: BuilderOptions,
-) {
-  assertManager(actor);
-  const name = input.name.trim();
-  if (!name || name.length > 120 || !isDateString(input.orderedOn))
-    throw new DistributionError("invalid");
-  const { lines } = await runBuilder(options);
-  const usable = lines.filter((l) => l.quantity !== null && l.quantity > 0);
-  if (usable.length === 0) throw new DistributionError("noLines");
-  const order = await db.distOrder.create({
-    data: {
-      name,
-      orderedOn: fromDateString(input.orderedOn),
-      note: input.note?.trim() || null,
-      createdById: actor.id,
-      posm: {
-        create: usable.map((l, i) => ({
-          position: i + 1,
-          name: l.name,
-          category: l.element,
-          equipmentLabel: l.types.map(typeLabel).join(" / "),
-          size: mm(l.heightMm, l.widthMm),
-          material: l.material,
-          orderedFor: Math.round(l.units),
-          ordered: l.quantity!,
-          reservePct: 0,
-          base: "UNITS" as const,
-          norm: l.perUnit,
-          normReserve: options.reservePct,
-          types: l.types,
-        })),
-      },
-    },
-  });
-  await logActivity({
-    actorId: actor.id,
-    action: "distribution.order",
-    entityType: "DistOrder",
-    entityId: order.id,
-    details: { name, items: usable.length, builder: true },
-  });
-  return order;
 }

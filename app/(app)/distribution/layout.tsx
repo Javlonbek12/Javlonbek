@@ -25,7 +25,7 @@ export default async function DistributionLayout({ children }: LayoutProps<"/dis
             current={order.id}
             orders={orders.map((o) => ({
               id: o.id,
-              label: `${o.name} · ${day.format(o.orderedOn)}${o.closed ? ` · ${t("dist.orders.closed")}` : ""}`,
+              label: `${o.name}${o.orderedOn ? ` · ${day.format(o.orderedOn)}` : ""}${o.closed ? ` · ${t("dist.orders.closed")}` : ""}`,
             }))}
           />
         )}

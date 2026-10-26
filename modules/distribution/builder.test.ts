@@ -117,15 +117,3 @@ describe("the order builder", () => {
     expect(gaps.types).toContain("POSI_MOD");
   });
 });
-
-describe("the builder's link", () => {
-  it("reads pieces per unit for merged lines", async () => {
-    const { builderOptions } = await import("./catalog");
-    const query = new URLSearchParams(
-      "t=POSI_L&e=dv&pu.dv.POSI_L%2BDG_L=2&pu.st.POSI_M=&reserve=5",
-    );
-    const options = builderOptions((key) => query.getAll(key), query.keys());
-    expect(options.perUnit).toEqual({ "dv.POSI_L": 2, "dv.DG_L": 2 });
-    expect(options.reservePct).toBe(0.05);
-  });
-});

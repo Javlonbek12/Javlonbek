@@ -6,13 +6,23 @@ import { redirect } from "next/navigation";
 
 import { requireUser } from "@/modules/core/auth/current-user";
 import {
+  addCampaignFile,
+  createCampaign,
+  importReplacement,
+  makeList,
+  removeCampaignFile,
+  saveComposition,
+  savePrices,
+  setKvFinal,
+  setOrdered,
+  updateConcept,
+} from "@/modules/distribution/campaign";
+import {
   addElement,
-  createOrderFromBuilder,
   deleteElement,
   importCatalogFile,
   saveElementSizes,
   saveTypeSizes,
-  builderOptions,
 } from "@/modules/distribution/catalog";
 import {
   addShipment,
@@ -47,7 +57,9 @@ async function run(back: string, action: () => Promise<string>) {
     target = await action();
   } catch (error) {
     if (!(error instanceof DistributionError)) throw error;
-    target = `${back}${back.includes("?") ? "&" : "?"}error=${error.code}`;
+    // The error goes before the #anchor, if any.
+    const [path, hash] = back.split("#");
+    target = `${path}${path!.includes("?") ? "&" : "?"}error=${error.code}${hash ? `#${hash}` : ""}`;
   }
   revalidatePath("/distribution", "layout");
   redirect(target);
@@ -93,7 +105,7 @@ export async function importOutletsAction(form: FormData) {
 
 export async function createOrderAction(form: FormData) {
   const user = await requireUser();
-  await run("/distribution/orders", async () => {
+  await run("/distribution/campaigns", async () => {
     const order = await createOrder(
       user,
       {
@@ -105,17 +117,17 @@ export async function createOrderAction(form: FormData) {
       await upload(form),
     );
     await rememberOrder(order.id);
-    return "/distribution/orders?created=1";
+    return "/distribution/campaigns?created=1";
   });
 }
 
 export async function importPosmAction(form: FormData) {
   const user = await requireUser();
-  await run("/distribution/orders", async () => {
+  await run("/distribution/campaigns", async () => {
     const buffer = await upload(form);
     if (!buffer) throw new DistributionError("badFile");
     const count = await importPosmList(user, str(form, "orderId"), buffer);
-    return `/distribution/orders?posm=${count}`;
+    return `/distribution/campaigns?posm=${count}`;
   });
 }
 
@@ -131,17 +143,17 @@ export async function pickOrderAction(form: FormData) {
 
 export async function setOrderClosedAction(form: FormData) {
   const user = await requireUser();
-  await run("/distribution/orders", async () => {
+  await run("/distribution/campaigns", async () => {
     await setOrderClosed(user, str(form, "orderId"), str(form, "closed") === "1");
-    return "/distribution/orders";
+    return "/distribution/campaigns";
   });
 }
 
 export async function deleteOrderAction(form: FormData) {
   const user = await requireUser();
-  await run("/distribution/orders", async () => {
+  await run("/distribution/campaigns", async () => {
     await deleteOrder(user, str(form, "orderId"));
-    return "/distribution/orders?deleted=1";
+    return "/distribution/campaigns?deleted=1";
   });
 }
 
@@ -150,7 +162,7 @@ export async function deletePosmAction(form: FormData) {
   const id = str(form, "id");
   await run(`/distribution/posm/${id}`, async () => {
     await deletePosm(user, id);
-    return "/distribution/orders?posmDeleted=1";
+    return "/distribution/campaigns?posmDeleted=1";
   });
 }
 
@@ -235,21 +247,6 @@ const optNum = (form: FormData, key: string) => {
   return v === "" ? null : Number(v);
 };
 
-export async function createOrderFromBuilderAction(form: FormData) {
-  const user = await requireUser();
-  const options = builderOptions((key) => form.getAll(key).map(String), form.keys());
-  const query = str(form, "query");
-  await run(`/distribution/builder?${query}`, async () => {
-    const order = await createOrderFromBuilder(
-      user,
-      { name: str(form, "name"), orderedOn: str(form, "orderedOn"), note: str(form, "note") },
-      options,
-    );
-    await rememberOrder(order.id);
-    return "/distribution/orders?created=1";
-  });
-}
-
 export async function addElementAction(form: FormData) {
   const user = await requireUser();
   await run("/distribution/sizes", async () => {
@@ -318,5 +315,147 @@ export async function importCatalogAction(form: FormData) {
     if (!buffer) throw new DistributionError("badFile");
     const r = await importCatalogFile(user, buffer);
     return `/distribution/sizes?sizes=${r.sizes}&types=${r.types}`;
+  });
+}
+
+// ——— Campaigns ———
+
+const campaignPath = (id: string, anchor = "") => `/distribution/campaigns/${id}${anchor}`;
+
+export async function createCampaignAction(form: FormData) {
+  const user = await requireUser();
+  await run("/distribution/campaigns", async () => {
+    const order = await createCampaign(user, {
+      name: str(form, "name"),
+      description: str(form, "description"),
+      projectId: str(form, "projectId") || null,
+    });
+    await rememberOrder(order.id);
+    return campaignPath(order.id);
+  });
+}
+
+export async function updateConceptAction(form: FormData) {
+  const user = await requireUser();
+  const id = str(form, "id");
+  await run(campaignPath(id, "#concept"), async () => {
+    await updateConcept(user, id, {
+      name: str(form, "name"),
+      description: str(form, "description"),
+      projectId: str(form, "projectId") || null,
+      approved: form.get("approved") === "1",
+    });
+    return campaignPath(id, "?saved=concept#concept");
+  });
+}
+
+const FILE_KINDS = ["CONCEPT", "KEY_VISUAL", "QUOTE", "EAS", "OTHER"] as const;
+
+export async function addCampaignFileAction(form: FormData) {
+  const user = await requireUser();
+  const id = str(form, "id");
+  const kind = FILE_KINDS.find((k) => k === str(form, "kind")) ?? "OTHER";
+  const anchor = kind === "KEY_VISUAL" ? "#kv" : kind === "QUOTE" ? "#prices" : "#concept";
+  await run(campaignPath(id, anchor), async () => {
+    const files = form.getAll("file").filter((f): f is File => f instanceof File && f.size > 0);
+    if (files.length === 0) throw new DistributionError("badFile");
+    for (const file of files.slice(0, 10)) await addCampaignFile(user, id, kind, file);
+    return campaignPath(id, anchor);
+  });
+}
+
+export async function removeCampaignFileAction(form: FormData) {
+  const user = await requireUser();
+  const id = str(form, "id");
+  await run(campaignPath(id), async () => {
+    await removeCampaignFile(user, str(form, "fileId"));
+    return campaignPath(id, str(form, "anchor"));
+  });
+}
+
+export async function setKvFinalAction(form: FormData) {
+  const user = await requireUser();
+  const id = str(form, "id");
+  await run(campaignPath(id, "#kv"), async () => {
+    await setKvFinal(user, str(form, "fileId"), str(form, "final") === "1");
+    return campaignPath(id, "#kv");
+  });
+}
+
+// The composition form: el = chosen elements; t:<element> = its types; pu:<element>:<type>.
+export async function saveCompositionAction(form: FormData) {
+  const user = await requireUser();
+  const id = str(form, "id");
+  await run(campaignPath(id, "#composition"), async () => {
+    const reserve = Number(str(form, "reserve").replace(",", ".") || 0);
+    await saveComposition(user, id, {
+      reservePct: reserve / 100,
+      withStock: form.get("stock") === "1",
+      elements: form.getAll("el").map((value) => {
+        const elementId = String(value);
+        const perUnit: Record<string, number> = {};
+        for (const key of form.keys()) {
+          const m = new RegExp(`^pu:${elementId}:(.+)$`).exec(key);
+          const v = str(form, key).replace(",", ".");
+          if (m && v !== "") perUnit[m[1]!] = Number(v);
+        }
+        return { elementId, types: form.getAll(`t:${elementId}`).map(String), perUnit };
+      }),
+    });
+    if (str(form, "next") === "list") await makeList(user, id);
+    return campaignPath(id, str(form, "next") === "list" ? "?saved=list#list" : "#composition");
+  });
+}
+
+export async function savePricesAction(form: FormData) {
+  const user = await requireUser();
+  const id = str(form, "id");
+  await run(campaignPath(id, "#list"), async () => {
+    const count = await savePrices(user, id, {
+      prices: form.getAll("posmId").map((value) => ({
+        posmId: String(value),
+        price: optNum(form, `price:${String(value)}`),
+      })),
+      confirm: form.getAll("confirm").map(String),
+      supplier: str(form, "supplier"),
+      quoteNo: str(form, "quoteNo"),
+      quotedOn: str(form, "quotedOn"),
+    });
+    return campaignPath(id, `?prices=${count}#list`);
+  });
+}
+
+export async function setOrderedAction(form: FormData) {
+  const user = await requireUser();
+  const id = str(form, "id");
+  await run(campaignPath(id, "#order"), async () => {
+    await setOrdered(user, id, str(form, "undo") === "1" ? null : str(form, "orderedOn"));
+    return campaignPath(id, "#order");
+  });
+}
+
+export async function openDistributionAction(form: FormData) {
+  await requireUser();
+  const id = str(form, "id");
+  await run(campaignPath(id), async () => {
+    await checkOrder(id);
+    await rememberOrder(id);
+    return str(form, "to") === "stock" ? "/distribution/stock" : "/distribution/plan";
+  });
+}
+
+export async function importReplacementAction(form: FormData) {
+  const user = await requireUser();
+  const id = str(form, "id");
+  await run(campaignPath(id, "#replacement"), async () => {
+    const buffer = await upload(form);
+    if (!buffer) throw new DistributionError("badFile");
+    const r = await importReplacement(user, id, buffer);
+    const q = new URLSearchParams({
+      rows: String(r.rows),
+      replaced: String(r.replaced),
+      unknown: String(r.unknown),
+    });
+    return campaignPath(id, `?${q}#replacement`);
   });
 }

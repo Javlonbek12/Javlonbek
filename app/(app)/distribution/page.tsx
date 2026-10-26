@@ -25,7 +25,7 @@ export default async function DistributionPage() {
         </p>
         {manage && (
           <Button asChild size="sm">
-            <Link href={d.order ? "/distribution/import" : "/distribution/orders"}>
+            <Link href={d.order ? "/distribution/import" : "/distribution/campaigns"}>
               <Upload />
               {d.order ? t("dist.import.link") : t("dist.orders.new")}
             </Link>
