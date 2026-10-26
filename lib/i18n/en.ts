@@ -1096,7 +1096,7 @@ export const en: Dictionary = {
       structure: "Org chart",
       planograms: "Planograms",
       projects: "Projects (their own and those with their tasks)",
-      content: "Content plan (manager — plans and approves; employee — prepares their posts)",
+      content: "Content plan (every right: plan, prepare, approve, delete)",
       reports: "Reports for management (whole team)",
       connect: "Connect bot analytics",
       distribution: "POSM distribution (by region and TSM, stock and shipments)",

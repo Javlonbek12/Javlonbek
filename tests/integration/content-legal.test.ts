@@ -77,7 +77,7 @@ describe("content: lawyer, withdrawing, moving", () => {
     expect(await status(post.id)).toBe("APPROVED");
   });
 
-  it("the lawyer always has the content plan and sees every post", async () => {
+  it("the lawyer always has the content plan, with every right in it", async () => {
     const { owner, lawyer, post } = await setup();
     await saveRoleConfig(owner, {
       MANAGER: { modules: ["content"], taskScope: "team" },
@@ -87,7 +87,11 @@ describe("content: lawyer, withdrawing, moving", () => {
     const fresh = await withAccess(await db.user.findUniqueOrThrow({ where: { id: lawyer.id } }));
     expect(fresh.access.modules).toContain("content");
     expect(fresh.access.taskScope).toBe("own");
-    expect((await getPost(fresh, post.id))?.rights).toMatchObject({ view: true, editPlan: false });
+    expect((await getPost(fresh, post.id))?.rights).toMatchObject({
+      view: true,
+      planner: true,
+      editPlan: true,
+    });
   });
 
   it("the author takes the post back from review and from the lawyer", async () => {
@@ -105,10 +109,10 @@ describe("content: lawyer, withdrawing, moving", () => {
     await expect(withdrawPost(author, post.id)).rejects.toBeInstanceOf(ContentError);
   });
 
-  it("moves a post to another day: planners, and the employee their own draft", async () => {
+  it("moves a post to another day: everyone with the section", async () => {
     const { owner, author, post } = await setup();
-    // Assigned by the owner: the author can't move it.
-    await expect(movePost(author, post.id, "2026-10-12")).rejects.toBeInstanceOf(ContentError);
+    // Assigned by the owner: the author moves it all the same.
+    await movePost(author, post.id, "2026-10-11");
     await movePost(owner, post.id, "2026-10-12");
     const moved = await db.contentPost.findUniqueOrThrow({ where: { id: post.id } });
     expect(moved.publishDate.toISOString().slice(0, 10)).toBe("2026-10-12");

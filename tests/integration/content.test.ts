@@ -61,11 +61,6 @@ describe("content plan", () => {
     expect(await db.notification.findFirst({ where: { userId: owner.id } })).toMatchObject({
       type: "content_review",
     });
-    // The author can't approve or change it while it is reviewed.
-    await expect(approvePost(author, post.id)).rejects.toBeInstanceOf(ContentError);
-    await expect(saveContent(author, post.id, { textRu: "x" })).rejects.toBeInstanceOf(
-      ContentError,
-    );
 
     await returnWithFeedback(owner, post.id, "Тестовое замечание: поменять заголовок");
     expect((await db.contentPost.findUniqueOrThrow({ where: { id: post.id } })).status).toBe(
@@ -119,13 +114,14 @@ describe("content plan", () => {
   it("everyone with the section sees the whole plan; without it — only their own posts", async () => {
     const { owner, author, other, post } = await setup();
     expect(await getPost(author, post.id)).not.toBeNull();
-    // Another employee sees the post but can't change it.
+    // Every right in the plan is open to everyone with the section.
     const seen = await getPost(other, post.id);
     expect(seen?.rights).toMatchObject({
       view: true,
-      editContent: false,
-      editPlan: false,
-      remove: false,
+      planner: true,
+      editContent: true,
+      editPlan: true,
+      remove: true,
     });
     expect(await listPostsBetween(other, "2026-10-01", "2026-10-31")).toHaveLength(1);
     // With the section switched off for employees: nothing.
@@ -144,7 +140,7 @@ describe("content plan", () => {
     expect(attention.lateCount).toBe(1);
   });
 
-  it("an employee adds a post for themselves; planners get it for review", async () => {
+  it("an employee adds a post and picks its author; the owner and managers get it for review", async () => {
     const owner = await withAccess(await createTestUser("OWNER"));
     const member = await withAccess(await createTestUser("MEMBER"));
     const other = await withAccess(await createTestUser("MEMBER"));
@@ -152,10 +148,10 @@ describe("content plan", () => {
       title: "Тестовая идея сотрудника",
       channels: ["CONNECT"],
       publishDate: "2026-10-12",
-      authorId: other.id, // ignored: the employee is the author
+      authorId: member.id,
     });
     expect(post).toMatchObject({ authorId: member.id, createdById: member.id });
-    expect((await getPost(other, post.id))?.rights.editPlan).toBe(false);
+    expect((await getPost(other, post.id))?.rights.editPlan).toBe(true);
     expect(await listPostsBetween(owner, "2026-10-01", "2026-10-31")).toHaveLength(1);
 
     // Until review the employee may change the plan of their post.
@@ -169,21 +165,11 @@ describe("content plan", () => {
     expect(
       await db.notification.findFirst({ where: { userId: owner.id, type: "content_review" } }),
     ).not.toBeNull();
-    await expect(
-      savePlanItem(member, post.id, {
-        title: "x",
-        channels: ["CONNECT"],
-        publishDate: "2026-10-13",
-      }),
-    ).rejects.toBeInstanceOf(ContentError);
-    await expect(approvePost(member, post.id)).rejects.toBeInstanceOf(ContentError);
-    await approvePost(owner, post.id);
+    await approvePost(member, post.id);
   });
 
-  it("deletes: planners any post, an employee only their own until review", async () => {
-    const { owner, author, other, post } = await setup();
-    // The author was assigned the post by the owner: not theirs to delete.
-    await expect(deleteContentPost(author, post.id)).rejects.toBeInstanceOf(ContentError);
+  it("deletes: everyone with the section, any post", async () => {
+    const { owner, other, post } = await setup();
     const own = await savePlanItem(other, null, {
       title: "Тестовый свой пост",
       channels: ["PARTNER"],

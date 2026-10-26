@@ -47,8 +47,8 @@ export class ContentError extends Error {
 // planners also assign authors, review, approve and mark sending.
 export const canAddContent = (actor: Actor) => canUseModule(actor, "content");
 
-export const canPlanContent = (actor: Actor) =>
-  actor.role === "OWNER" || (actor.role === "MANAGER" && canUseModule(actor, "content"));
+// Every role with the section plans: all rights in the content plan are open to everyone.
+export const canPlanContent = (actor: Actor) => canAddContent(actor);
 
 const EDITABLE_BY_AUTHOR: ContentStatus[] = ["PLANNED", "DRAFT", "CHANGES"];
 // Waiting for a check (planner or lawyer): the author may take the post back.
