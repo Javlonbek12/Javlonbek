@@ -81,15 +81,19 @@ describe("content tagging", () => {
     await expect(saveContentTargets(owner, { ...mix, PRICES: 50 }, ids)).rejects.toBeInstanceOf(
       ContentError,
     );
-    await expect(saveContentTargets(member, mix, ids)).rejects.toBeInstanceOf(ContentError);
+    await saveContentTargets(member, mix, ids);
   });
 
   it("planners add their own sections; AI gets them; archived ones are not offered", async () => {
     const owner = await withAccess(await createTestUser("OWNER"));
     const member = await withAccess(await createTestUser("MEMBER"));
-    await expect(
-      saveSection(member, null, { name: "Тестовый раздел", description: "", sortOrder: 8 }),
-    ).rejects.toBeInstanceOf(ContentError);
+    // Everyone with the section adds sections.
+    const own = await saveSection(member, null, {
+      name: "Раздел сотрудника (тест)",
+      description: "",
+      sortOrder: 7,
+    });
+    await deleteSection(member, own);
     const id = await saveSection(owner, null, {
       name: "Тестовый раздел",
       description: "О тестовом",

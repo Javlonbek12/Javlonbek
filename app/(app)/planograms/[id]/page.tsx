@@ -17,7 +17,7 @@ import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { displayName } from "@/modules/core/users/display-name";
-import { canManagePlanograms } from "@/modules/planograms/access";
+import { canApprovePlanograms, canManagePlanograms } from "@/modules/planograms/access";
 import { describeChange, describeViolation } from "@/modules/planograms/describe";
 import { planogramSvg } from "@/modules/planograms/export";
 import { describeGeometry } from "@/modules/planograms/geometry";
@@ -43,6 +43,7 @@ export default async function PlanogramPage({
   if (!loaded) notFound();
   const r = loaded.record;
   const manage = canManagePlanograms(user.role);
+  const approve = canApprovePlanograms(user.role);
   const draft = r.status === "DRAFT" || r.status === "PENDING_APPROVAL";
 
   const [svg, violations, changes, history, equipment, people, priceLists, names] =
@@ -109,14 +110,17 @@ export default async function PlanogramPage({
             </Button>
           )}
           {r.status === "DRAFT" && !r.isTemplate && step("submit", t("planograms.actions.submit"))}
-          {draft &&
+          {approve &&
+            draft &&
             !r.isTemplate &&
             step("approve", t("planograms.actions.approve"), "default", critical)}
           {r.status === "PENDING_APPROVAL" &&
             step("draft", t("planograms.actions.returnToDraft"), "ghost")}
           {!draft && step("version", t("planograms.actions.newVersion"))}
           {!r.isTemplate && step("template", t("planograms.actions.saveTemplate"), "ghost")}
-          {r.status !== "ARCHIVED" && step("archive", t("planograms.actions.archive"), "ghost")}
+          {approve &&
+            r.status !== "ARCHIVED" &&
+            step("archive", t("planograms.actions.archive"), "ghost")}
         </div>
       )}
       {critical && draft && (

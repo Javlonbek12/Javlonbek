@@ -8,7 +8,7 @@ import type { Prisma } from "@/lib/generated/prisma/client";
 import { logActivity } from "@/modules/core/activity/service";
 import type { Actor } from "@/modules/core/permissions";
 
-import { canManagePlanograms } from "./access";
+import { canApprovePlanograms, canManagePlanograms } from "./access";
 import { autofill } from "./autofill";
 import { diffLayouts, type LayoutChange } from "./diff";
 import { PlanogramError } from "./errors";
@@ -19,6 +19,10 @@ import { DEFAULT_RULES, hasCritical, validatePlanogram, type Rule } from "./vali
 
 function requireManager(actor: Actor) {
   if (!canManagePlanograms(actor.role)) throw new PlanogramError("forbidden");
+}
+
+function requireApprover(actor: Actor) {
+  if (!canApprovePlanograms(actor.role)) throw new PlanogramError("forbidden");
 }
 
 const dateOrNull = z
@@ -239,7 +243,7 @@ export async function submitForApproval(actor: Actor, id: string) {
 // Approval is blocked while critical rule violations remain. The previously approved
 // version of the same planogram is archived; the approved one gets a public link token.
 export async function approvePlanogram(actor: Actor, id: string, now = new Date()) {
-  requireManager(actor);
+  requireApprover(actor);
   const loaded = await loadPlanogram(id);
   if (!loaded) throw new PlanogramError("notFound");
   if (loaded.record.status !== "PENDING_APPROVAL" && loaded.record.status !== "DRAFT")
@@ -275,7 +279,7 @@ export async function returnToDraft(actor: Actor, id: string) {
 }
 
 export async function archivePlanogram(actor: Actor, id: string) {
-  requireManager(actor);
+  requireApprover(actor);
   await db.planogram.update({ where: { id }, data: { status: "ARCHIVED" } });
   await logActivity({
     actorId: actor.id,
@@ -300,6 +304,7 @@ export async function copyPlanogram(
   } = {},
 ) {
   requireManager(actor);
+  if (options.status === "APPROVED") requireApprover(actor);
   const loaded = await loadPlanogram(id);
   if (!loaded) throw new PlanogramError("notFound");
   const r = loaded.record;

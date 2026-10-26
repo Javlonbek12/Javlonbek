@@ -11,6 +11,7 @@ import {
   ListTodo,
   Network,
   Settings,
+  Truck,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -105,6 +106,15 @@ export const MODULES: ModuleEntry[] = [
     roles: ALL_ROLES,
     mobile: false,
   },
+  // POSM distribution by region and TSM, stock and shipments: on phones from the "Today" screen.
+  {
+    id: "distribution",
+    titleKey: "nav.distribution",
+    href: "/distribution",
+    icon: Truck,
+    roles: ALL_ROLES,
+    mobile: false,
+  },
   {
     id: "notifications",
     titleKey: "nav.notifications",
@@ -134,6 +144,7 @@ const SWITCHABLE = new Set([
   "content",
   "reports",
   "connect",
+  "distribution",
 ]);
 
 export function modulesForRole(

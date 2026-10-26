@@ -81,11 +81,11 @@ describe("content plan in Excel", () => {
     });
   });
 
-  it("only planners upload; a file that is not Excel is refused", async () => {
+  it("everyone with the section uploads; a file that is not Excel is refused", async () => {
     const owner = await withAccess(await createTestUser("OWNER"));
     const member = await withAccess(await createTestUser("MEMBER"));
     const file = await exportPlanXlsx(owner, "2026-10-01", "2026-10-31", "https://test.example");
-    await expect(importPlanXlsx(member, file)).rejects.toBeInstanceOf(ContentError);
+    await expect(importPlanXlsx(member, file)).resolves.toMatchObject({ errors: [] });
     await expect(importPlanXlsx(owner, Buffer.from("not excel"))).rejects.toBeInstanceOf(
       ContentError,
     );

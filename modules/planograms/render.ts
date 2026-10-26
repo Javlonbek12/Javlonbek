@@ -7,6 +7,8 @@ export type RenderCell =
       brand: string;
       name: string;
       color: string;
+      // The pack's sides in 3D: the average colour of the picture's edges (null: work it out).
+      sideColor?: string | null;
       image: string | null; // data: URI
       price: string | null; // already formatted, e.g. "31 000"
       badges: string[];

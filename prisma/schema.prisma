@@ -75,6 +75,7 @@ model User {
   contentCreated     ContentPost[]        @relation("ContentCreator")
   contentComments    ContentComment[]
   projectsCreated    Project[]            @relation("ProjectCreator")
+  distShipments      DistShipment[]
 }
 
 model Invite {
@@ -473,6 +474,8 @@ model Sku {
   priceStyle    PriceLabelStyle @default(NUMBER)
   // Placeholder colour when there is no picture.
   color         String          @default("#64748b")
+  // Average colour of the picture's edges: the sides, top and bottom of the pack in 3D.
+  sideColor     String?
   archived      Boolean         @default(false)
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
@@ -893,4 +896,83 @@ model ConnectImport {
   updated   Int
   skipped   Int
   createdAt DateTime @default(now())
+}
+
+// ============================================================
+// POSM distribution by region and TSM (separate from the planogram POSM library)
+// ============================================================
+
+enum DistCountKind {
+  // Installed in the shops
+  INSTALLED
+  // In the regional warehouses, not installed yet
+  STOCK
+}
+
+// How many units of one equipment type a region (or a TSM inside it) has.
+model DistEquipmentCount {
+  id     String        @id @default(cuid())
+  kind   DistCountKind
+  region String
+  // "" = the whole region; otherwise the TSM (only Tashkent is split by TSM).
+  tsm    String        @default("")
+  // An equipment type code from modules/distribution/types.ts, e.g. "POSI_XL".
+  type   String
+  count  Int
+
+  @@unique([kind, region, tsm, type])
+}
+
+enum DistBase {
+  // By the number of equipment units
+  UNITS
+  // By the number of slots (shelf places) on the equipment
+  SLOTS
+  // Price tags: by the facings with this price on the equipment's planogram
+  PLANOGRAM
+}
+
+// A POSM item to distribute: stock, order, reserve, and the equipment types it goes to.
+model DistPosm {
+  id             String   @id @default(cuid())
+  position       Int
+  name           String   @unique
+  category       String
+  equipmentLabel String?
+  size           String?
+  material       String?
+  // Equipment count the order was made for
+  orderedFor     Int      @default(0)
+  inStock        Int      @default(0)
+  ordered        Int      @default(0)
+  // Share kept at the central warehouse, 0..1
+  reservePct     Float    @default(0)
+  base           DistBase @default(UNITS)
+  // Pieces per equipment unit and the reserve on top of it (0.1 = +10%); null = no norm.
+  norm           Float?
+  normReserve    Float    @default(0)
+  // Equipment type codes this POSM goes to.
+  types          String[] @default([])
+  updatedAt      DateTime @updatedAt
+
+  shipments DistShipment[]
+}
+
+// POSM that left the central warehouse: where to, how many, when.
+model DistShipment {
+  id          String   @id @default(cuid())
+  posmId      String
+  // A region, or "Tashkent · <TSM>".
+  destination String
+  quantity    Int
+  shippedOn   DateTime @db.Date
+  note        String?
+  createdById String
+  createdAt   DateTime @default(now())
+
+  posm      DistPosm @relation(fields: [posmId], references: [id], onDelete: Cascade)
+  createdBy User     @relation(fields: [createdById], references: [id])
+
+  @@index([posmId])
+  @@index([destination])
 }

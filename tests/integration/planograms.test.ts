@@ -17,10 +17,12 @@ import { loadPlanogram } from "@/modules/planograms/repository";
 import { seedPlanogramLibrary } from "@/modules/planograms/seed-library";
 import {
   approvePlanogram,
+  archivePlanogram,
   changesVsPrevious,
   copyPlanogram,
   createPlanogram,
   findByShareToken,
+  returnToDraft,
   saveLayout,
   submitForApproval,
   validateStored,
@@ -111,17 +113,28 @@ describe("planogram lifecycle (stage 7 «done» scenario)", () => {
     expect(png.subarray(1, 4).toString()).toBe("PNG");
   }, 60_000);
 
-  it("a MEMBER can't create or approve planograms", async () => {
+  it("everyone builds planograms and sends them for approval; only OWNER/MANAGER approve", async () => {
     const { member } = await setup();
-    await expect(
-      createPlanogram(member, {
-        ...meta,
-        title: "x",
-        equipmentId: (await equipment("POG_MINI")).id,
-      }),
-    ).rejects.toMatchObject({
-      code: "forbidden",
+    const pog = await createPlanogram(member, {
+      ...meta,
+      title: "От сотрудника (тест)",
+      equipmentId: (await equipment("POG_MINI")).id,
+      fill: "auto",
     });
+    await submitForApproval(member, pog.id);
+    await returnToDraft(member, pog.id);
+    await submitForApproval(member, pog.id);
+    await expect(approvePlanogram(member, pog.id)).rejects.toMatchObject({ code: "forbidden" });
+    await expect(archivePlanogram(member, pog.id)).rejects.toMatchObject({ code: "forbidden" });
+    const { list } = await createPriceList(
+      member,
+      { name: "От сотрудника (тест)", effectiveFrom: "2026-11-01" },
+      [{ code: "SKU-TEST-001", price: 33000 }],
+    );
+    await expect(applyPriceList(member, list.id)).rejects.toMatchObject({ code: "forbidden" });
+    expect((await db.planogram.findUniqueOrThrow({ where: { id: pog.id } })).status).toBe(
+      "PENDING_APPROVAL",
+    );
   });
 
   it("new price list → preview → new versions of all approved planograms; old versions keep old prices", async () => {
@@ -300,7 +313,10 @@ describe("library import and pictures", () => {
       sku.id,
       new File([new Uint8Array(png)], "pack.png", { type: "image/png" }),
     );
-    expect((await skuByCode("SKU-TEST-100")).imagePath).toMatch(/^planograms\/sku\//);
+    const saved = await skuByCode("SKU-TEST-100");
+    expect(saved.imagePath).toMatch(/^planograms\/sku\//);
+    // The 3D sides take the picture's edge colour.
+    expect(saved.sideColor).toBe("#1d4ed8");
     await expect(
       saveImage(owner, "sku", sku.id, new File(["not an image"], "x.png")),
     ).rejects.toMatchObject({ code: "badFile" });
