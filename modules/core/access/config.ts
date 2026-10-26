@@ -17,6 +17,7 @@ export const CONFIGURABLE_MODULES = [
   "content",
   "reports",
   "connect",
+  "distribution",
 ] as const;
 export type ConfigurableModule = (typeof CONFIGURABLE_MODULES)[number];
 
@@ -43,7 +44,7 @@ export type RoleConfig = z.infer<typeof configSchema>;
 // Default: only the owner sees everything; others see their tasks and meetings.
 export const DEFAULT_ROLE_CONFIG: RoleConfig = {
   MANAGER: {
-    modules: ["meetings", "planograms", "projects", "content", "connect"],
+    modules: ["meetings", "planograms", "projects", "content", "connect", "distribution"],
     taskScope: "team",
   },
   MEMBER: { modules: ["meetings", "planograms", "content"], taskScope: "own" },
