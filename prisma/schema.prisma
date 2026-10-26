@@ -963,6 +963,48 @@ model DistOrder {
   createdBy User       @relation(fields: [createdById], references: [id])
 }
 
+// The order builder's catalog. Equipment dimensions by type (from the KT&G sizes sheet).
+model DistTypeSize {
+  // An equipment type code from modules/distribution/types.ts.
+  type     String  @id
+  heightMm Float?
+  widthMm  Float?
+  depthMm  Float?
+  note     String?
+}
+
+// A kind of POSM the builder orders: Header, Shelftalker, Divider, price tag…
+model DistElement {
+  id       String  @id @default(cuid())
+  name     String  @unique
+  position Int     @default(0)
+  material String?
+
+  sizes DistElementSize[]
+}
+
+// The print size of an element on one equipment type: it differs by equipment, so each pair is
+// its own row. Empty sizes or price = still to fill in.
+model DistElementSize {
+  id        String  @id @default(cuid())
+  elementId String
+  type      String
+  heightMm  Float?
+  widthMm   Float?
+  // Pieces on one unit of the equipment.
+  perUnit   Float?
+  // Price of one piece.
+  price     Float?
+  material  String?
+  note      String?
+  // Taken from an old POSM list, not confirmed for this equipment yet.
+  verified  Boolean @default(false)
+
+  element DistElement @relation(fields: [elementId], references: [id], onDelete: Cascade)
+
+  @@unique([elementId, type])
+}
+
 enum DistBase {
   // By the number of equipment units
   UNITS

@@ -1,6 +1,15 @@
 "use client";
 
-import { Boxes, ChartPie, ClipboardList, PackageCheck, Truck, Upload } from "lucide-react";
+import {
+  Boxes,
+  ChartPie,
+  ClipboardList,
+  PackageCheck,
+  Ruler,
+  ShoppingCart,
+  Truck,
+  Upload,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -13,6 +22,8 @@ const TABS = [
   { href: "/distribution/plan", key: "dist.tabs.plan", icon: Truck },
   { href: "/distribution/stock", key: "dist.tabs.stock", icon: PackageCheck },
   { href: "/distribution/orders", key: "dist.tabs.orders", icon: ClipboardList },
+  { href: "/distribution/builder", key: "dist.tabs.builder", icon: ShoppingCart },
+  { href: "/distribution/sizes", key: "dist.tabs.sizes", icon: Ruler },
   { href: "/distribution/import", key: "dist.tabs.import", icon: Upload, manage: true },
 ] as const;
 

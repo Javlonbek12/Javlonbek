@@ -6,6 +6,15 @@ import { redirect } from "next/navigation";
 
 import { requireUser } from "@/modules/core/auth/current-user";
 import {
+  addElement,
+  createOrderFromBuilder,
+  deleteElement,
+  importCatalogFile,
+  saveElementSizes,
+  saveTypeSizes,
+  builderOptions,
+} from "@/modules/distribution/catalog";
+import {
   addShipment,
   createOrder,
   deleteOrder,
@@ -216,5 +225,98 @@ export async function deleteShipmentAction(form: FormData) {
   await run("/distribution/stock", async () => {
     await deleteShipment(user, str(form, "id"));
     return "/distribution/stock?deleted=1";
+  });
+}
+
+// ——— The order builder and its catalog of sizes ———
+
+const optNum = (form: FormData, key: string) => {
+  const v = str(form, key).replace(",", ".");
+  return v === "" ? null : Number(v);
+};
+
+export async function createOrderFromBuilderAction(form: FormData) {
+  const user = await requireUser();
+  const options = builderOptions((key) => form.getAll(key).map(String));
+  const query = str(form, "query");
+  await run(`/distribution/builder?${query}`, async () => {
+    const order = await createOrderFromBuilder(
+      user,
+      { name: str(form, "name"), orderedOn: str(form, "orderedOn"), note: str(form, "note") },
+      options,
+    );
+    await rememberOrder(order.id);
+    return "/distribution/orders?created=1";
+  });
+}
+
+export async function addElementAction(form: FormData) {
+  const user = await requireUser();
+  await run("/distribution/sizes", async () => {
+    const element = await addElement(user, str(form, "name"), str(form, "material"));
+    return `/distribution/sizes/${element.id}`;
+  });
+}
+
+export async function saveElementSizesAction(form: FormData) {
+  const user = await requireUser();
+  const id = str(form, "id");
+  await run(`/distribution/sizes/${id}`, async () => {
+    await saveElementSizes(user, id, {
+      name: str(form, "name"),
+      material: str(form, "material"),
+      sizes: form.getAll("type").map((value) => {
+        const type = String(value);
+        const field = (key: string) => optNum(form, `${key}:${type}`);
+        return {
+          type,
+          heightMm: field("h"),
+          widthMm: field("w"),
+          perUnit: field("per"),
+          price: field("price"),
+          material: str(form, `material:${type}`) || null,
+          note: str(form, `note:${type}`) || null,
+        };
+      }),
+    });
+    return `/distribution/sizes/${id}?saved=1`;
+  });
+}
+
+export async function deleteElementAction(form: FormData) {
+  const user = await requireUser();
+  await run("/distribution/sizes", async () => {
+    await deleteElement(user, str(form, "id"));
+    return "/distribution/sizes?deleted=1";
+  });
+}
+
+export async function saveTypeSizesAction(form: FormData) {
+  const user = await requireUser();
+  await run("/distribution/sizes", async () => {
+    await saveTypeSizes(
+      user,
+      form.getAll("type").map((value) => {
+        const type = String(value);
+        return {
+          type,
+          heightMm: optNum(form, `h:${type}`),
+          widthMm: optNum(form, `w:${type}`),
+          depthMm: optNum(form, `d:${type}`),
+          note: str(form, `note:${type}`) || null,
+        };
+      }),
+    );
+    return "/distribution/sizes?saved=1";
+  });
+}
+
+export async function importCatalogAction(form: FormData) {
+  const user = await requireUser();
+  await run("/distribution/sizes", async () => {
+    const buffer = await upload(form);
+    if (!buffer) throw new DistributionError("badFile");
+    const r = await importCatalogFile(user, buffer);
+    return `/distribution/sizes?sizes=${r.sizes}&types=${r.types}`;
   });
 }

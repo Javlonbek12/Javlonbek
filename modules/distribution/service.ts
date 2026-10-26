@@ -50,7 +50,10 @@ export class DistributionError extends Error {
       | "invalid"
       | "notFound"
       | "closed"
-      | "hasShipments",
+      | "hasShipments"
+      | "exists"
+      | "noSizes"
+      | "noLines",
   ) {
     super(code);
     this.name = "DistributionError";
