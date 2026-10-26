@@ -2,13 +2,15 @@ import { redirect } from "next/navigation";
 
 import { Section } from "@/components/connect/parts";
 import { fmt } from "@/components/distribution/parts";
+import { ControlTable } from "@/components/equipment/control-table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { dateFormat, t, type TranslationKey } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
-import { canManageDistribution, dataSources } from "@/modules/distribution/service";
+import { equipmentControl } from "@/modules/distribution/control";
+import { canManageDistribution, dataSources, pendingImport } from "@/modules/distribution/service";
 
-import { importEquipmentAction, importOutletsAction } from "../actions";
+import { importEquipmentAction, importOutletsAction, resolveImportAction } from "../actions";
 
 const XLSX = ".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
@@ -23,6 +25,9 @@ export default async function DistributionImportPage({
   const error = typeof query.error === "string" ? query.error : null;
   const q = (key: string) => (typeof query[key] === "string" ? Number(query[key]) : 0);
   const sources = await dataSources();
+  const pending = typeof query.pending === "string" ? await pendingImport(query.pending) : null;
+  // Right after an upload: the control table of what is now loaded.
+  const control = typeof query.equipment === "string" ? await equipmentControl() : null;
   const at = dateFormat({ dateStyle: "medium", timeStyle: "short" });
 
   return (
@@ -39,8 +44,30 @@ export default async function DistributionImportPage({
               units: fmt(q("units")),
               stock: fmt(q("stock")),
             })}
+            {q("noId") > 0 && ` ${t("dist.import.noId", { count: fmt(q("noId")) })}`}
             {q("skipped") > 0 && ` ${t("dist.import.skipped", { count: fmt(q("skipped")) })}`}
           </p>
+        )}
+        {control && control.rows.length > 0 && <ControlTable rows={control.rows} />}
+        {typeof query.dropped === "string" && (
+          <p className="text-muted-foreground text-sm">{t("dist.import.dropped")}</p>
+        )}
+        {pending && (
+          <div className="flex flex-col gap-3 rounded-xl border border-red-300 p-3 dark:border-red-900">
+            <p className="text-sm font-medium text-red-700 dark:text-red-400">
+              {t("dist.import.minus", { rows: fmt(pending.rows) })}
+            </p>
+            <ControlTable rows={pending.control} />
+            <form action={resolveImportAction} className="flex flex-wrap gap-2">
+              <input type="hidden" name="id" value={pending.id} />
+              <Button type="submit" name="save" value="1" variant="destructive">
+                {t("dist.import.saveAnyway")}
+              </Button>
+              <Button type="submit" name="save" value="0" variant="outline">
+                {t("dist.import.drop")}
+              </Button>
+            </form>
+          </div>
         )}
         <p className="text-muted-foreground text-xs">
           {sources.equipment
@@ -67,7 +94,10 @@ export default async function DistributionImportPage({
               withTsm: fmt(q("withTsm")),
               units: fmt(q("units")),
               unitsWithTsm: fmt(q("unitsWithTsm")),
-            })}
+            })}{" "}
+            {t("dist.import.missing", { count: fmt(q("missing")) })}
+            {q("mismatched") > 0 &&
+              ` ${t("dist.import.mismatched", { count: fmt(q("mismatched")) })}`}
           </p>
         )}
         <p className="text-muted-foreground text-xs">

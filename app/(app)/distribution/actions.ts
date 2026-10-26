@@ -18,6 +18,7 @@ import {
   updateConcept,
 } from "@/modules/distribution/campaign";
 import { saveEas } from "@/modules/distribution/eas";
+import { addPurchase, deletePurchase } from "@/modules/distribution/purchases";
 import {
   addElement,
   deleteElement,
@@ -37,6 +38,7 @@ import {
   importPosmList,
   loadDistribution,
   ORDER_COOKIE,
+  resolvePendingImport,
   checkOrder,
   setIncludeStock,
   setOrderClosed,
@@ -63,6 +65,7 @@ async function run(back: string, action: () => Promise<string>) {
     target = `${path}${path!.includes("?") ? "&" : "?"}error=${error.code}${hash ? `#${hash}` : ""}`;
   }
   revalidatePath("/distribution", "layout");
+  revalidatePath("/equipment", "layout");
   redirect(target);
 }
 
@@ -78,13 +81,54 @@ export async function importEquipmentAction(form: FormData) {
     const buffer = await upload(form);
     if (!buffer) throw new DistributionError("badFile");
     const r = await importEquipmentFile(user, buffer);
-    const query = new URLSearchParams({
-      equipment: String(r.rows),
-      units: String(r.units),
-      stock: String(r.stock),
-      skipped: String(r.skipped),
+    if (r.status === "pending") return `/distribution/import?pending=${r.id}`;
+    return `/distribution/import?${equipmentQuery(r)}`;
+  });
+}
+
+const equipmentQuery = (r: {
+  rows: number;
+  units: number;
+  stock: number;
+  skipped: number;
+  noId: number;
+}) =>
+  new URLSearchParams({
+    equipment: String(r.rows),
+    units: String(r.units),
+    stock: String(r.stock),
+    skipped: String(r.skipped),
+    noId: String(r.noId),
+  });
+
+// A file whose control table has a minus: saved anyway, or dropped.
+export async function resolveImportAction(form: FormData) {
+  const user = await requireUser();
+  await run("/distribution/import", async () => {
+    const r = await resolvePendingImport(user, str(form, "id"), str(form, "save") === "1");
+    return r ? `/distribution/import?${equipmentQuery(r)}` : "/distribution/import?dropped=1";
+  });
+}
+
+export async function addPurchaseAction(form: FormData) {
+  const user = await requireUser();
+  await run("/equipment/control", async () => {
+    await addPurchase(user, {
+      type: str(form, "type"),
+      quantity: Number(str(form, "quantity").replace(",", ".")),
+      date: str(form, "date"),
+      document: str(form, "document"),
+      note: str(form, "note"),
     });
-    return `/distribution/import?${query}`;
+    return "/equipment/control?added=1";
+  });
+}
+
+export async function deletePurchaseAction(form: FormData) {
+  const user = await requireUser();
+  await run("/equipment/control", async () => {
+    await deletePurchase(user, str(form, "id"));
+    return "/equipment/control";
   });
 }
 
@@ -99,6 +143,8 @@ export async function importOutletsAction(form: FormData) {
       withTsm: String(r.withTsm),
       units: String(r.units),
       unitsWithTsm: String(r.unitsWithTsm),
+      missing: String(r.missing),
+      mismatched: String(r.mismatched),
     });
     return `/distribution/import?${query}`;
   });

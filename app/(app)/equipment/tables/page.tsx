@@ -8,7 +8,7 @@ import { t } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { sumUnits, type Count, type Units } from "@/modules/distribution/compute";
 import { canManageDistribution, loadDistribution } from "@/modules/distribution/service";
-import { DIST_TYPES, sortRegions, tsmDestination } from "@/modules/distribution/types";
+import { DIST_TYPES, NO_TSM, sortRegions, tsmDestination } from "@/modules/distribution/types";
 
 import { setIncludeStockAction } from "../../distribution/actions";
 
@@ -70,22 +70,15 @@ export default async function DistributionEquipmentPage() {
   const regions = sortRegions(d.counts.map((c) => c.region));
   const installed = unitsBy(d.counts, (c) => (c.kind === "INSTALLED" && !c.tsm ? c.region : null));
   const stock = unitsBy(d.counts, (c) => (c.kind === "STOCK" && !c.tsm ? c.region : null));
-  // Each region by TSM; what no TSM answers for is a row of its own.
+  // Each region by TSM (from the outlet base); «TSM не назначен» rows are muted.
   const tsm = new Map<string, Units>();
   const noTsm: string[] = [];
-  for (const [region, people] of d.tsms) {
-    const rest: Units = { ...installed.get(region) };
+  for (const [region, people] of d.tsms)
     for (const [name, units] of people) {
-      tsm.set(tsmDestination(region, name), units);
-      for (const [type, n] of Object.entries(units)) rest[type] = (rest[type] ?? 0) - n;
+      const key = tsmDestination(region, name);
+      tsm.set(key, units);
+      if (name === NO_TSM) noTsm.push(key);
     }
-    for (const type of Object.keys(rest)) if (Math.abs(rest[type]!) < 0.01) delete rest[type];
-    if (Object.keys(rest).length) {
-      const key = tsmDestination(region, t("dist.equipment.noTsm"));
-      tsm.set(key, rest);
-      noTsm.push(key);
-    }
-  }
 
   return (
     <div className="flex flex-col gap-5 [&>*]:min-w-0">

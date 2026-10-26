@@ -17,7 +17,7 @@ import { safeFileName } from "@/modules/tasks/attachment-service";
 import { buildOrder, mm, perUnitKey, typeLabel, type BuilderLine } from "./builder";
 import { equipmentUnits, loadCatalog } from "./catalog";
 import { canManageDistribution, canSeeDistribution, DistributionError } from "./service";
-import { sortRegions, TYPE_CODES } from "./types";
+import { byTsmName, NO_TSM, sortRegions, TYPE_CODES } from "./types";
 
 // A POSM campaign, step by step: concept → key visual → what to order on which equipment (+ the
 // reserve) → the list → the printer's prices → ordered → split by region and TSM → replacement
@@ -405,12 +405,12 @@ export async function plannedOutlets(id: string): Promise<PlannedOutlet[]> {
     db.$queryRaw<
       { outletId: string; region: string; tsm: string; types: string[]; units: number }[]
     >`
-      SELECT u."outletId", MIN(u."region") AS "region",
-             COALESCE(MAX(NULLIF(o."tsm", '')), MAX(NULLIF(u."tsm", '')), '') AS "tsm",
+      SELECT u."outletKey" AS "outletId", MIN(u."region") AS "region",
+             COALESCE(MAX(NULLIF(o."tsm", '')), ${NO_TSM}) AS "tsm",
              ARRAY_AGG(DISTINCT u."type") AS "types", SUM(u."units")::float8 AS "units"
       FROM "DistUnit" u LEFT JOIN "DistOutlet" o ON o."outletId" = u."outletId"
       WHERE u."type" = ANY(${types})
-      GROUP BY u."outletId"`,
+      GROUP BY u."outletKey"`,
     db.distReplacement.findMany({ where: { orderId: id } }),
   ]);
   const done = new Map(marks.map((m) => [m.outletId, m.replaced]));
@@ -420,7 +420,7 @@ export async function plannedOutlets(id: string): Promise<PlannedOutlet[]> {
     .sort(
       (a, b) =>
         order.indexOf(a.region) - order.indexOf(b.region) ||
-        a.tsm.localeCompare(b.tsm, "ru", { numeric: true }) ||
+        byTsmName(a.tsm, b.tsm) ||
         a.outletId.localeCompare(b.outletId, "ru", { numeric: true }),
     );
 }

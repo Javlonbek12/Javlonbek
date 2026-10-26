@@ -191,6 +191,15 @@ export const sortRegions = (regions: Iterable<string>) =>
 // Shipment destinations: a region, or "Region · TSM".
 const SEP = " · ";
 export const tsmDestination = (region: string, tsm: string) => `${region}${SEP}${tsm}`;
+// Installed equipment whose outlet has no TSM in the outlet base (or is not in it, or has no
+// Smartup ID): a row of its own inside the region. It is counted as installed and gets its POSM;
+// it never goes to the region's warehouse.
+export const NO_TSM = "TSM не назначен";
+
+// TSM names in order, «TSM не назначен» last.
+export const byTsmName = (a: string, b: string) =>
+  a === NO_TSM ? 1 : b === NO_TSM ? -1 : a.localeCompare(b, "ru", { numeric: true });
+
 export function parseDestination(destination: string): { region: string; tsm: string | null } {
   const at = destination.indexOf(SEP);
   return at === -1

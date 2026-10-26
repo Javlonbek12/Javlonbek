@@ -17,9 +17,14 @@ import {
   setIncludeStock,
   setOrderClosed,
   shipWaybill,
+  pendingImport,
+  resolvePendingImport,
   updatePosmSettings,
 } from "@/modules/distribution/service";
 import { equipmentOverview, regionEquipment } from "@/modules/distribution/equipment";
+import { equipmentControl, outletReview } from "@/modules/distribution/control";
+import { addPurchase, deletePurchase } from "@/modules/distribution/purchases";
+import { NO_TSM } from "@/modules/distribution/types";
 import { distributionXlsx } from "@/modules/distribution/xlsx";
 import { createTestUser, resetDb } from "@/tests/helpers/db";
 import { equipmentWorkbook, outletBaseWorkbook, posmWorkbook } from "@/tests/helpers/distribution";
@@ -43,18 +48,21 @@ describe("POSM distribution", () => {
 
   it("loads the files, breaks every region down by TSM, records shipments and exports Excel", async () => {
     const owner = await withAccess(await createTestUser("OWNER"));
-    expect(await importEquipmentFile(owner, await equipmentWorkbook())).toEqual({
+    expect(await importEquipmentFile(owner, await equipmentWorkbook())).toMatchObject({
+      status: "saved",
       rows: 23,
       units: 24,
       stock: 2,
       skipped: 1,
-      unknown: ["Fridge"],
+      noId: 0,
     });
     expect(await importOutletBase(owner, await outletBaseWorkbook())).toEqual({
       outlets: 24,
       withTsm: 14,
       units: 23,
       unitsWithTsm: 14,
+      missing: 0,
+      mismatched: 0,
     });
     const order = await createOrder(
       owner,
@@ -67,20 +75,21 @@ describe("POSM distribution", () => {
     expect(d.includeStock).toBe(true);
     expect(d.regions.get("Tashkent")).toEqual({ POSI_L: 12, DG_C: 4 });
     expect(d.regions.get("Test Town")).toEqual({ POSI_L: 6, MW24_S: 2, POSI_MOD: 2 });
-    // Tashkent's TSMs come from the base; Test Town's from the equipment file.
+    // TSMs come from the base only: Test Town's outlets have none there (the file's «Responsible»
+    // column is not used), so they are «TSM не назначен».
     expect(d.destinations).toEqual([
       "Tashkent",
       "Test Town",
       "Tashkent · TSM_TEST_1",
       "Tashkent · TSM_TEST_2",
-      "Test Town · TSM_TOWN_1",
+      `Test Town · ${NO_TSM}`,
     ]);
     const shelf = d.plans.find((p) => p.item.name === "Shelftalker (тест)")!;
     expect(shelf.byRegion.get("Tashkent")).toBe(12);
     expect(shelf.byTsm.get("Tashkent · TSM_TEST_1")).toBe(7);
-    expect(shelf.byTsm.get("Test Town · TSM_TOWN_1")).toBe(4);
+    expect(shelf.byTsm.get(`Test Town · ${NO_TSM}`)).toBe(6);
     expect(shelf.tsmRest.get("Tashkent")).toBe(2);
-    expect(shelf.tsmRest.get("Test Town")).toBe(2);
+    expect(shelf.tsmRest.get("Test Town")).toBe(0);
     expect(d.findings.map((f) => f.key)).toEqual(expect.arrayContaining(["gap", "noTsm"]));
 
     // A waybill for Test Town, then one line for a TSM.
@@ -122,7 +131,7 @@ describe("POSM distribution", () => {
       expect.arrayContaining(["Распределение", "Разбивка по TSM", "Склад", "Накладная Test Town"]),
     );
     const waybill = book.getWorksheet("Накладная Test Town")!;
-    expect(waybill.getRow(1).values).toContain("TSM_TOWN_1");
+    expect(waybill.getRow(1).values).toContain(NO_TSM);
 
     // A new equipment file and base keep the order and its shipments.
     await importEquipmentFile(owner, await equipmentWorkbook());
@@ -269,5 +278,85 @@ describe("the equipment section", () => {
       ["TSM_TEST_2", 6, { POSI_L: 3, DG_C: 3 }],
     ]);
     expect(tashkent.stock).toEqual({ POSI_L: 2 });
+  });
+
+  it("checks the control equation, holds a file with a minus, and lists new outlets", async () => {
+    const owner = await withAccess(await createTestUser("OWNER"));
+    const member = await withAccess(await createTestUser("MEMBER"));
+    await importOutletBase(owner, await outletBaseWorkbook());
+    // Bought: 18 POSI L (16 installed + 2 in stock → 0 unaccounted), 3 DG C (4 installed → −1).
+    await addPurchase(owner, {
+      type: "POSI_L",
+      quantity: 20,
+      date: "2026-01-10",
+      document: "Накладная №1 (тест)",
+    });
+    const correction = await addPurchase(owner, {
+      type: "POSI_L",
+      quantity: -2,
+      date: "2026-02-01",
+      document: "Исправление (тест)",
+    });
+    await addPurchase(owner, { type: "DG_C", quantity: 3, date: "2026-01-10", document: "№2" });
+    await expect(
+      addPurchase(member, { type: "DG_C", quantity: 1, date: "2026-01-10", document: "№3" }),
+    ).rejects.toMatchObject({ code: "forbidden" });
+    await expect(
+      addPurchase(owner, { type: "NO_SUCH", quantity: 1, date: "2026-01-10", document: "№3" }),
+    ).rejects.toMatchObject({ code: "invalid" });
+
+    // A minus: the file waits for a confirmation, nothing is saved.
+    const held = await importEquipmentFile(owner, await equipmentWorkbook());
+    expect(held.status).toBe("pending");
+    expect(await db.distUnit.count()).toBe(0);
+    const pending = await pendingImport(held.status === "pending" ? held.id : "");
+    expect(pending?.control.find((r) => r.type === "DG_C")).toMatchObject({
+      purchased: 3,
+      installed: 4,
+      unaccounted: -1,
+      tone: "bad",
+    });
+    expect(await resolvePendingImport(owner, pending!.id, true)).toMatchObject({ rows: 23 });
+    expect(await db.distPendingImport.count()).toBe(0);
+    const control = await equipmentControl();
+    expect(control.rows.find((r) => r.type === "POSI_L")).toMatchObject({
+      purchased: 18,
+      installed: 16,
+      stock: 2,
+      unaccounted: 0,
+      tone: "ok",
+    });
+
+    // Once the purchase is right, the same file goes straight in; the journal is untouched.
+    await addPurchase(owner, { type: "DG_C", quantity: 1, date: "2026-03-01", document: "№4" });
+    await deletePurchase(owner, correction.id);
+    const extra = await importEquipmentFile(owner, await equipmentWorkbook({ extra: true }));
+    expect(extra).toMatchObject({ status: "saved", rows: 25, skipped: 2, noId: 1 });
+    expect(await db.distPurchase.count()).toBe(3);
+    // 20 bought − 18 installed − 2 in stock = 0 (outlet 15 and the row without an ID count).
+    expect((await equipmentControl()).rows.find((r) => r.type === "POSI_L")?.unaccounted).toBe(0);
+
+    // Outlet 15 is not in the base: installed, «TSM не назначен»; the TIN row has no TSM either.
+    const review = await outletReview();
+    expect(review.missing.map((o) => [o.outletId, o.region, o.posName])).toEqual([
+      ["15", "Tashkent", "Точка 15"],
+    ]);
+    expect(review.missing[0]!.firstSeen).toBeInstanceOf(Date);
+    expect(review.noId.map((o) => [o.key, o.tin, o.units])).toEqual([
+      ["Test Town|tin:300000001", "300000001", 1],
+    ]);
+    expect(review.skipped.map((r) => r.reason)).toEqual(["unknownType", "noIdentity"]);
+    const tashkent = await regionEquipment("Tashkent");
+    expect(tashkent.tsms.map((t) => [t.tsm, t.outlets])).toEqual([
+      ["TSM_TEST_1", 8],
+      ["TSM_TEST_2", 6],
+      [NO_TSM, 1],
+    ]);
+    const d = await loadDistribution();
+    expect(d.regions.get("Test Town")).toMatchObject({ POSI_L: 7 });
+
+    // The base: how many outlets of the file it lacks, and region mismatches (shown, not used).
+    const base = await importOutletBase(owner, await outletBaseWorkbook());
+    expect(base).toMatchObject({ missing: 1, mismatched: 0 });
   });
 });

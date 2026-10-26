@@ -6,15 +6,33 @@ type Row = (string | number | null)[];
 
 // «Daily BW-POG management»: «BW management» (one row per unit) and the «Current stock» block of
 // «Warehouse». Tashkent: 10 POSI L (outlets 1–10) and 4 DG C (11–14); Test Town: 6 POSI L
-// (21–26, the file names TSM_TOWN_1 for 21–24), 2 MW-24 S (27–28) and a Display MOD with 36 slots
-// (= 2 units); one row with an unknown type. In stock: 2 POSI L in Tashkent.
-export async function equipmentWorkbook() {
+// (21–26, the file names TSM_TOWN_1 for 21–24 — ignored: the TSM comes from the base only), 2
+// MW-24 S (27–28) and a Display MOD with 36 slots (= 2 units); one row with an unknown type. In
+// stock: 2 POSI L in Tashkent. With `extra`: Tashkent outlet 15 (not in the base), a POSI L
+// without an ID but with a TIN, and one with neither an ID, a TIN nor a name.
+export async function equipmentWorkbook(options: { extra?: boolean } = {}) {
   const book = new ExcelJS.Workbook();
   book.addWorksheet("Dashboard").addRow(["Daily BW-POG management (тест)"]);
   const list = book.addWorksheet("BW management");
-  list.addRow(["Region", "Smartup ID", "Responsible", "BW discription", "Кол-во слотов", "Type"]);
-  const add = (region: string, id: number, tsm: string, type: string, slots: number | null) =>
-    list.addRow([region, id, tsm, type, slots, "BWD"]);
+  list.addRow([
+    "Region",
+    "Smartup ID",
+    "POS NAME",
+    "TIN",
+    "Responsible",
+    "BW discription",
+    "Кол-во слотов",
+    "Type",
+  ]);
+  const add = (
+    region: string,
+    id: number | null,
+    tsm: string,
+    type: string,
+    slots: number | null,
+    name: string | null = id === null ? null : `Точка ${id}`,
+    tin: string | null = null,
+  ) => list.addRow([region, id, name, tin, tsm, type, slots, "BWD"]);
   for (let id = 1; id <= 10; id++) add("Tashkent", id, "", "Display L (10*9) POSI", 90);
   for (let id = 11; id <= 14; id++) add("Tashkent", id, "", "Display C (10*6) DG", 60);
   for (let id = 21; id <= 26; id++)
@@ -22,6 +40,11 @@ export async function equipmentWorkbook() {
   for (let id = 27; id <= 28; id++) add("Test Town", id, "", "Display S (10*2) MW", 20);
   add("Test Town", 29, "", "Display MOD", 36);
   add("Test Town", 30, "", "Fridge", null);
+  if (options.extra) {
+    add("Tashkent", 15, "", "Display L (10*9) POSI", 90);
+    add("Test Town", null, "", "Display L (10*9) POSI", 90, "Без ID", "300000001");
+    add("Test Town", null, "", "Display L (10*9) POSI", 90, null, null);
+  }
 
   const warehouse = book.addWorksheet("Warehouse");
   const rows: Row[] = [

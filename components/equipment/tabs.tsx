@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutGrid, Map, Table } from "lucide-react";
+import { LayoutGrid, Map, Scale, Store, Table } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -10,6 +10,8 @@ import { cn } from "@/lib/utils";
 const TABS = [
   { href: "/equipment", key: "equip.tabs.map", icon: Map },
   { href: "/equipment/types", key: "equip.tabs.types", icon: LayoutGrid },
+  { href: "/equipment/control", key: "equip.tabs.control", icon: Scale },
+  { href: "/equipment/outlets", key: "equip.tabs.outlets", icon: Store },
   { href: "/equipment/tables", key: "equip.tabs.tables", icon: Table },
 ] as const;
 

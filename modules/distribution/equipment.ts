@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 
 import { loadCatalog } from "./catalog";
-import { sortRegions, TYPE_CODES } from "./types";
+import { byTsmName, NO_TSM, sortRegions, TYPE_CODES } from "./types";
 
 // The equipment section: what is installed where (from the equipment file, unit by unit), what is
 // in the warehouses, in how many outlets, and each type's dimensions.
@@ -15,16 +15,16 @@ export async function equipmentOverview() {
     await Promise.all([
       db.$queryRaw<{ region: string; type: string; units: number; outlets: number }[]>`
         SELECT "region", "type", SUM("units")::float8 AS "units",
-               COUNT(DISTINCT "outletId")::int AS "outlets"
+               COUNT(DISTINCT "outletKey")::int AS "outlets"
         FROM "DistUnit" GROUP BY 1, 2`,
       db.$queryRaw<{ region: string; outlets: number }[]>`
-        SELECT "region", COUNT(DISTINCT "outletId")::int AS "outlets" FROM "DistUnit" GROUP BY 1`,
+        SELECT "region", COUNT(DISTINCT "outletKey")::int AS "outlets" FROM "DistUnit" GROUP BY 1`,
       db.$queryRaw<{ type: string; outlets: number }[]>`
-        SELECT "type", COUNT(DISTINCT "outletId")::int AS "outlets" FROM "DistUnit" GROUP BY 1`,
+        SELECT "type", COUNT(DISTINCT "outletKey")::int AS "outlets" FROM "DistUnit" GROUP BY 1`,
       db.distEquipmentCount.findMany({ where: { kind: "STOCK", tsm: "" } }),
       db.distEquipmentCount.findMany({ where: { kind: "INSTALLED", tsm: "" } }),
       loadCatalog(),
-      db.$queryRaw<{ n: number }[]>`SELECT COUNT(DISTINCT "outletId")::int AS "n" FROM "DistUnit"`,
+      db.$queryRaw<{ n: number }[]>`SELECT COUNT(DISTINCT "outletKey")::int AS "n" FROM "DistUnit"`,
     ]);
   // Before the first equipment file: the old counts, without outlets.
   const installedRows =
@@ -71,12 +71,13 @@ export async function equipmentOverview() {
   };
 }
 
-// One region: its equipment by type and by responsible TSM (from the outlet base, else the file).
+// One region: its equipment by type and by responsible TSM (from the outlet base only; the rest
+// is «TSM не назначен»).
 export async function regionEquipment(region: string) {
   const [rows, stock] = await Promise.all([
     db.$queryRaw<{ tsm: string; type: string; units: number; outlets: number }[]>`
-      SELECT COALESCE(NULLIF(o."tsm", ''), NULLIF(u."tsm", ''), '') AS "tsm", u."type",
-             SUM(u."units")::float8 AS "units", COUNT(DISTINCT u."outletId")::int AS "outlets"
+      SELECT COALESCE(NULLIF(o."tsm", ''), ${NO_TSM}) AS "tsm", u."type",
+             SUM(u."units")::float8 AS "units", COUNT(DISTINCT u."outletKey")::int AS "outlets"
       FROM "DistUnit" u LEFT JOIN "DistOutlet" o ON o."outletId" = u."outletId"
       WHERE u."region" = ${region}
       GROUP BY 1, 2`,
@@ -89,8 +90,8 @@ export async function regionEquipment(region: string) {
     tsms.set(r.tsm, row);
   }
   const outletRows = await db.$queryRaw<{ tsm: string; outlets: number }[]>`
-    SELECT COALESCE(NULLIF(o."tsm", ''), NULLIF(u."tsm", ''), '') AS "tsm",
-           COUNT(DISTINCT u."outletId")::int AS "outlets"
+    SELECT COALESCE(NULLIF(o."tsm", ''), ${NO_TSM}) AS "tsm",
+           COUNT(DISTINCT u."outletKey")::int AS "outlets"
     FROM "DistUnit" u LEFT JOIN "DistOutlet" o ON o."outletId" = u."outletId"
     WHERE u."region" = ${region}
     GROUP BY 1`;
@@ -98,9 +99,7 @@ export async function regionEquipment(region: string) {
     const row = tsms.get(r.tsm);
     if (row) row.outlets = r.outlets;
   }
-  const names = [...tsms.keys()].sort((a, b) =>
-    a === "" ? 1 : b === "" ? -1 : a.localeCompare(b, "ru", { numeric: true }),
-  );
+  const names = [...tsms.keys()].sort(byTsmName);
   return {
     tsms: names.map((tsm) => ({ tsm, ...tsms.get(tsm)! })),
     stock: Object.fromEntries(stock.map((s) => [s.type, s.count])) as TypeCounts,

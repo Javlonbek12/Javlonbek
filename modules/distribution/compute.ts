@@ -2,10 +2,13 @@
 // types marked for it; regions get shares by their weight (units of those types, or their slots,
 // or — for price tags — the facings with that price on the type's planogram); rounding is down
 // and the rest stays at the central warehouse. Each region's share is then broken down between
-// its TSMs by the units they are responsible for; what falls to units without a TSM (or to the
-// region's warehouse stock) and the rounding rest stay at the region's warehouse.
+// its TSMs by the units they are responsible for (the TSM comes from the outlet base; units it
+// has no TSM for are the «TSM не назначен» row); what falls to the region's warehouse stock and
+// the rounding rest stay at the region's warehouse.
 // Pure functions: no database, so they are easy to test.
 import {
+  byTsmName,
+  NO_TSM,
   parseDestination,
   sortRegions,
   tagPrice,
@@ -64,7 +67,7 @@ export function regionBase(counts: Count[], includeStock: boolean): Map<string, 
   return new Map(sortRegions(out.keys()).map((r) => [r, out.get(r)!]));
 }
 
-// Installed units by region and responsible TSM.
+// Installed units by region and responsible TSM (with «TSM не назначен» last).
 export function tsmBase(counts: Count[]): Map<string, Map<string, Units>> {
   const out = new Map<string, Map<string, Units>>();
   for (const c of counts) {
@@ -78,7 +81,7 @@ export function tsmBase(counts: Count[]): Map<string, Map<string, Units>> {
   return new Map(
     sortRegions(out.keys()).map((r) => {
       const byTsm = out.get(r)!;
-      const names = [...byTsm.keys()].sort((a, b) => a.localeCompare(b, "ru", { numeric: true }));
+      const names = [...byTsm.keys()].sort(byTsmName);
       return [r, new Map(names.map((t) => [t, byTsm.get(t)!]))];
     }),
   );
@@ -147,7 +150,7 @@ export function planItem(
     const share = shares.get(region) ?? 0;
     const own = new Map([...people].map(([t, u]) => [t, weightOf(item, u, facts)]));
     const assigned = [...own.values()].reduce((a, b) => a + b, 0);
-    // Units without a TSM and the region's stock weigh too: their part stays in the region.
+    // The region's stock weighs too: its part stays at the region's warehouse.
     const unassigned = Math.max(0, (weights.get(region) ?? 0) - assigned);
     const { shares: perTsm } = split(share, new Map([...own, ["", unassigned]]));
     let given = 0;
@@ -395,20 +398,9 @@ export function findings(input: {
     out.push({ tone: "info", key: "tagNoPlanogram", params: {} });
   }
 
-  // Installed units no TSM answers for: their part of the region's share stays at its warehouse.
-  const withTsm = new Map<string, number>();
-  for (const [region, people] of tsms)
-    withTsm.set(
-      region,
-      [...people.values()].reduce((s, u) => s + sumUnits(u), 0),
-    );
-  if (tsms.size > 0) {
-    const without = counts
-      .filter((c) => c.kind === "INSTALLED" && c.tsm === "" && tsms.has(c.region))
-      .reduce((s, c) => s + c.count, 0);
-    const missing = without - [...withTsm.values()].reduce((a, b) => a + b, 0);
-    if (missing >= 1) out.push({ tone: "warn", key: "noTsm", params: { count: fmt(missing) } });
-  }
+  // Installed units the outlet base has no TSM for: the «TSM не назначен» rows.
+  const missing = [...tsms.values()].reduce((s, people) => s + sumUnits(people.get(NO_TSM)), 0);
+  if (missing >= 1) out.push({ tone: "warn", key: "noTsm", params: { count: fmt(missing) } });
 
   const stockUnits = counts
     .filter((c) => c.kind === "STOCK" && c.tsm === "")

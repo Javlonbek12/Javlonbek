@@ -7,7 +7,7 @@ import { EquipmentSketch, rowsOf } from "@/components/distribution/sketch";
 import { UzbekistanMap } from "@/components/equipment/uz-map";
 import { t } from "@/lib/i18n";
 import { equipmentOverview, regionEquipment } from "@/modules/distribution/equipment";
-import { DIST_TYPES } from "@/modules/distribution/types";
+import { DIST_TYPES, NO_TSM } from "@/modules/distribution/types";
 
 // One region: where it is on the map, its equipment by type (with the models), by TSM, and what
 // is in its warehouse.
@@ -81,10 +81,10 @@ export default async function EquipmentRegionPage({
             dense
             head={["TSM", t("equip.metric.outlets"), ...types.map((x) => x.label), t("dist.total")]}
             rows={detail.tsms.map((row) => ({
-              key: row.tsm || "—",
-              muted: row.tsm === "",
+              key: row.tsm,
+              muted: row.tsm === NO_TSM,
               cells: [
-                row.tsm || t("dist.equipment.noTsm"),
+                row.tsm,
                 fmt(row.outlets),
                 ...types.map((x) => <N key={x.code} value={row.units[x.code] ?? 0} />),
                 <strong key="t">{fmt(sum(row.units))}</strong>,

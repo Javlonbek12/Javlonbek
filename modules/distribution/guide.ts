@@ -18,9 +18,11 @@ const ru: GuidePart[] = [
         href: "/distribution/import",
         text: [
           "Вкладка «Данные» → «Файл оборудования». Нужен файл «Daily BW-POG management» (.xlsx).",
-          "Из листа «BW management» берётся каждая единица оборудования: регион, ID точки (Smartup ID), тип. Display MOD считается как слоты / 18.",
-          "Из блока «Current stock» на листе «Warehouse» берётся оборудование на складах.",
-          "Новый файл заменяет прежнее оборудование; кампании и отгрузки не меняются. Обновляйте файл, когда меняется оборудование.",
+          "Это единственный источник количества и региона. Из листа «BW management» берётся каждая единица оборудования: регион, ID точки (Smartup ID), название, ИНН, тип. Display MOD считается как слоты / 18 — везде в этих единицах, как в самом файле.",
+          "Строка без Smartup ID, но с ИНН или названием, учитывается («Без ID»); без ID, ИНН и названия — пропускается с причиной («Оборудование → Новые точки»).",
+          "Из блока «Current stock» на листе «Warehouse» берётся оборудование на складах. Лист демонтажа не читается.",
+          "Сразу после загрузки — контрольная таблица «закуплено / установлено / склад / неучтённое». Если где-то минус, файл не сохраняется, пока вы не подтвердите.",
+          "Новый файл заменяет прежнее оборудование; кампании, отгрузки и журнал закупок не меняются.",
         ],
       },
       {
@@ -28,8 +30,9 @@ const ru: GuidePart[] = [
         href: "/distribution/import",
         text: [
           "Там же → «База точек». Нужны колонки «ИД» и «Responsible TSM».",
-          "По ней доля региона делится между TSM. Если у точки в базе нет TSM, берётся TSM из файла оборудования.",
-          "После загрузки видно, у скольких единиц оборудования нашёлся TSM.",
+          "Из неё берётся только «ID → TSM»: по ней доля региона делится между TSM. TSM не хранится в оборудовании — новая база сразу пересчитывает разбивку.",
+          "Оборудование точек без TSM в базе (или без ID) — в строке «TSM не назначен» своего региона: оно учтено и получает POSM, на склад региона не уходит.",
+          "После загрузки видно, сколько точек BW-файла нет в базе и у скольких регион в базе другой (только для сведения: регион всегда из BW-файла).",
         ],
       },
       {
@@ -117,7 +120,7 @@ const ru: GuidePart[] = [
         text: [
           "«Открыть распределение» на странице кампании, или вкладка «Распределение» (кампания выбирается вверху страницы).",
           "Доля региона = его оборудование нужных типов; округление вниз, остаток — на центральном складе.",
-          "«Разбивка по TSM»: доля региона делится между его TSM по их оборудованию; доля оборудования без TSM, складского оборудования и остаток от округления — на складе региона.",
+          "«Разбивка по TSM»: доля региона делится между его TSM по их оборудованию (оборудование без TSM в базе — строка «TSM не назначен»); доля складского оборудования и остаток от округления — на складе региона.",
           "У каждого региона и каждого TSM своя накладная: печать и «Записать отгрузку по накладной» одной кнопкой.",
           "«Склад и отгрузки»: сколько доступно, сколько отгружено, сколько ещё отправить и куда уже уехало; отдельные отгрузки записываются там же.",
           "Excel со всей разбивкой — кнопка «Excel» на вкладке «Анализ».",
@@ -152,6 +155,8 @@ const ru: GuidePart[] = [
           "«Карта»: Узбекистан по регионам — сколько установлено, на складах и в скольких точках; нажмите на регион, чтобы открыть его.",
           "Страница региона: оборудование по типам с моделями, по TSM, склад.",
           "«Типы оборудования»: каждый тип — модель в масштабе, размеры, слоты, сколько установлено и где больше всего.",
+          "«Контроль»: по каждому типу Закуплено = Установлено + На складе + Неучтённое. Неучтённое — разница, не вводится: небольшой плюс — норма, большой плюс (больше 5% закупки) — что-то не внесли на склад, минус — ошибка в файле (дубли или неубранный демонтаж). Ниже — журнал закупок: вносится вручную (тип, количество, дата, документ), исправление — строкой с минусом.",
+          "«Новые точки»: точки с ID, которых нет в базе (с датой появления в файле), точки без ID, пропущенные строки с причиной и точки, у которых регион в базе другой.",
           "«Таблицы»: оборудование по регионам, база для распределения, регионы по TSM, связь с планограммами; переключатель «Учитывать оборудование на складах».",
         ],
       },
@@ -188,9 +193,11 @@ const en: GuidePart[] = [
         href: "/distribution/import",
         text: [
           "“Data” tab → “Equipment file”. The “Daily BW-POG management” file (.xlsx).",
-          "Every unit comes from the “BW management” sheet: region, outlet ID (Smartup ID), type. Display MOD counts as its slots / 18.",
-          "Warehouse equipment comes from the “Current stock” block of the “Warehouse” sheet.",
-          "A new file replaces the equipment; campaigns and shipments don't change. Update it when the equipment changes.",
+          "It is the only source of quantities and regions. Every unit comes from the “BW management” sheet: region, outlet ID (Smartup ID), name, TIN, type. Display MOD counts as its slots / 18 — in these units everywhere, as in the file itself.",
+          "A row without a Smartup ID but with a TIN or a name is counted (“Without an ID”); one with neither an ID, a TIN nor a name is skipped with its reason (“Equipment → New outlets”).",
+          "Warehouse equipment comes from the “Current stock” block of the “Warehouse” sheet. The dismantling sheet is not read.",
+          "Right after the upload you see the “bought / installed / in stock / unaccounted” table. With a minus anywhere the file is not saved until you confirm.",
+          "A new file replaces the equipment; campaigns, shipments and the purchase journal don't change.",
         ],
       },
       {
@@ -198,8 +205,9 @@ const en: GuidePart[] = [
         href: "/distribution/import",
         text: [
           "Same page → “Outlet base”. The “ИД” and “Responsible TSM” columns are needed.",
-          "A region's share is split between TSMs by it. An outlet without a TSM in the base takes the TSM from the equipment file.",
-          "After the upload you see how many units found a TSM.",
+          "Only “ID → TSM” is taken from it: a region's share is split between TSMs by it. The TSM is not stored with the equipment — a new base re-splits at once.",
+          "Equipment of outlets without a TSM in the base (or without an ID) is the region's «TSM не назначен» (no TSM) row: counted and getting POSM, never sent to the region's warehouse.",
+          "After the upload you see how many outlets of the BW file the base lacks and how many have another region there (for information only: the region always comes from the BW file).",
         ],
       },
       {
@@ -287,7 +295,7 @@ const en: GuidePart[] = [
         text: [
           "“Open the distribution” on the campaign page, or the “Distribution” tab (the campaign is picked at the top).",
           "A region's share = its equipment of the matching types; rounded down, the rest at the central warehouse.",
-          "“Breakdown by TSM”: a region's share is split between its TSMs by their equipment; the share of equipment without a TSM, warehouse equipment and the rounding rest stay at the region's warehouse.",
+          "“Breakdown by TSM”: a region's share is split between its TSMs by their equipment (equipment without a TSM in the base is the «TSM не назначен» row); the warehouse equipment's share and the rounding rest stay at the region's warehouse.",
           "Every region and TSM has a waybill: print it and “Record the shipment” in one go.",
           "“Stock and shipments”: available, shipped, still to send and where it went; single shipments are recorded there.",
           "Excel with the whole split — the “Excel” button on the “Analysis” tab.",
@@ -322,6 +330,8 @@ const en: GuidePart[] = [
           "“Map”: Uzbekistan by region — installed, in warehouses and in how many outlets; click a region to open it.",
           "A region's page: equipment by type with the models, by TSM, the warehouse.",
           "“Equipment types”: every type — a to-scale model, dimensions, slots, how many are installed and where most are.",
+          "“Control”: per type, Bought = Installed + In stock + Unaccounted. Unaccounted is the difference, never entered: a small plus is normal, a large plus (over 5% of the purchase) means something was not entered in the warehouse, a minus is an error in the file (duplicates or dismantling not removed). Below is the purchase journal: entered by hand (type, quantity, date, document); a correction is a line with a minus.",
+          "“New outlets”: outlets with an ID the base lacks (with the date they appeared in the file), outlets without an ID, skipped rows with the reason, and outlets with another region in the base.",
           "“Tables”: equipment by region, the base for the split, regions by TSM, the link to planograms; the “Count equipment in warehouses” switch.",
         ],
       },
