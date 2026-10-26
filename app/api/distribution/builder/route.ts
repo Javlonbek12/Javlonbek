@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
   if (!canSeeDistribution(user)) return Response.json({ error: "forbidden" }, { status: 403 });
   const query = new URL(request.url).searchParams;
-  const options = builderOptions((key) => query.getAll(key));
+  const options = builderOptions((key) => query.getAll(key), query.keys());
   const { catalog, lines } = await runBuilder(options);
   if (lines.length === 0) return Response.json({ error: "empty" }, { status: 404 });
   const name = `${t("dist.builder.file")} — ${new Date().toISOString().slice(0, 10)}.xlsx`;

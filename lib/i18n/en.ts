@@ -2167,14 +2167,16 @@ export const en: Dictionary = {
       unitsCol: "Equipment units",
       perUnit: "Pcs per unit",
       quantity: "Quantity",
-      price: "Price per pc",
-      sum: "Total",
+      price: "Price per pc, UZS incl. VAT",
+      sum: "Total, UZS incl. VAT",
       gap: {
         size: "no size",
         perUnit: "no pcs per unit",
         price: "no price",
         check: "size not confirmed",
       },
+      perUnitHint:
+        "Pcs per unit come from the sizes catalog; change them for this order (one or several, as the case needs) and press “Calculate”. The catalog doesn't change.",
       save: "Save as an order",
       saveHint:
         "Lines with a known quantity become the items of a new order — for the split by region and TSM.",

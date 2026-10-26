@@ -12,6 +12,7 @@ import {
   gapsOf,
   missing,
   mm,
+  perUnitKey,
   typeLabel,
   type BuilderInput,
   type BuilderLine,
@@ -161,7 +162,7 @@ const SIZE_HEAD = [
   "Высота печати, мм",
   "Ширина печати, мм",
   "Шт на 1 ед. оборудования",
-  "Цена за 1 шт",
+  "Цена за 1 шт, сум с НДС",
   "Материал",
   "Комментарий",
   "Что заполнить",
@@ -375,10 +376,23 @@ export async function equipmentUnits(withStock: boolean): Promise<Record<string,
 }
 
 // The builder's choices from a form or the link: t = types, e = elements, reserve (%), stock, merge.
-export function builderOptions(get: (key: string) => string[]): BuilderOptions {
+// pu.<element>.<type[+type…]> = pieces per unit for this order.
+export function builderOptions(
+  get: (key: string) => string[],
+  keys: Iterable<string> = [],
+): BuilderOptions {
   const one = (key: string) => get(key)[0] ?? "";
   const reserve = Number(one("reserve") || 10);
+  const perUnit: Record<string, number> = {};
+  for (const key of keys) {
+    const m = /^pu\.([^.]+)\.(.+)$/.exec(key);
+    const raw = (get(key)[0] ?? "").replace(",", ".").trim();
+    const value = Number(raw);
+    if (!m || raw === "" || !Number.isFinite(value) || value < 0) continue;
+    for (const type of m[2]!.split("+")) perUnit[perUnitKey(m[1]!, type)] = value;
+  }
   return {
+    perUnit,
     types: get("t"),
     elements: get("e"),
     reservePct: Number.isFinite(reserve) ? Math.min(100, Math.max(0, reserve)) / 100 : 0.1,
@@ -406,8 +420,8 @@ export function builderXlsx(lines: BuilderLine[], catalog: Catalog, reservePct: 
     "Ед. оборудования",
     "Шт на ед.",
     `Количество (+${Math.round(reservePct * 100)}% запас)`,
-    "Цена за шт",
-    "Сумма",
+    "Цена за шт, сум с НДС",
+    "Сумма, сум с НДС",
     "Нет данных",
   ]).font = { bold: true };
   for (const l of lines)

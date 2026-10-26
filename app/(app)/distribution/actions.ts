@@ -237,7 +237,7 @@ const optNum = (form: FormData, key: string) => {
 
 export async function createOrderFromBuilderAction(form: FormData) {
   const user = await requireUser();
-  const options = builderOptions((key) => form.getAll(key).map(String));
+  const options = builderOptions((key) => form.getAll(key).map(String), form.keys());
   const query = str(form, "query");
   await run(`/distribution/builder?${query}`, async () => {
     const order = await createOrderFromBuilder(

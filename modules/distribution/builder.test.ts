@@ -93,6 +93,20 @@ describe("the order builder", () => {
     ).toHaveLength(2);
   });
 
+  it("takes pieces per unit for this order over the catalog's", () => {
+    const lines = buildOrder({
+      catalog,
+      units: { POSI_L: 10, DG_L: 4, POSI_M: 5 },
+      types: ["POSI_L", "DG_L", "POSI_M"],
+      elements: ["dv"],
+      reservePct: 0,
+      merge: true,
+      perUnit: { "dv.POSI_L": 3, "dv.DG_L": 3, "dv.POSI_M": 0 },
+    });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({ types: ["POSI_L", "DG_L"], perUnit: 3, quantity: 42 });
+  });
+
   it("lists what is still to fill in", () => {
     expect(gapsOf(undefined)).toEqual(["size", "perUnit", "price"]);
     expect(gapsOf(size({ perUnit: 0, heightMm: null }))).toEqual([]);
@@ -101,5 +115,17 @@ describe("the order builder", () => {
     expect(gaps.pairs).toHaveLength(27);
     expect(gaps.types).not.toContain("POSI_L");
     expect(gaps.types).toContain("POSI_MOD");
+  });
+});
+
+describe("the builder's link", () => {
+  it("reads pieces per unit for merged lines", async () => {
+    const { builderOptions } = await import("./catalog");
+    const query = new URLSearchParams(
+      "t=POSI_L&e=dv&pu.dv.POSI_L%2BDG_L=2&pu.st.POSI_M=&reserve=5",
+    );
+    const options = builderOptions((key) => query.getAll(key), query.keys());
+    expect(options.perUnit).toEqual({ "dv.POSI_L": 2, "dv.DG_L": 2 });
+    expect(options.reservePct).toBe(0.05);
   });
 });

@@ -89,7 +89,11 @@ export type BuilderInput = {
   reservePct: number;
   // One line for the types that share the same print size, pieces and price.
   merge: boolean;
+  // Pieces per unit for this order, by "elementId.type": one or several, as the case needs.
+  perUnit?: Record<string, number>;
 };
+
+export const perUnitKey = (elementId: string, type: string) => `${elementId}.${type}`;
 
 const quantity = (units: number, perUnit: number | null, reservePct: number) =>
   perUnit === null ? null : Math.ceil(units * perUnit * (1 + reservePct) - 1e-9);
@@ -99,12 +103,13 @@ export function buildOrder(input: BuilderInput): BuilderLine[] {
   const types = TYPE_CODES.filter((t) => input.types.includes(t));
   const lines: BuilderLine[] = [];
   for (const element of catalog.elements.filter((e) => input.elements.includes(e.id))) {
-    const own: BuilderLine[] = [];
+    const mine: BuilderLine[] = [];
     for (const type of types) {
       const size = element.sizes.find((s) => s.type === type);
-      if (size?.perUnit === 0) continue;
+      const own = input.perUnit?.[perUnitKey(element.id, type)];
+      if ((own ?? size?.perUnit) === 0) continue;
       const n = units[type] ?? 0;
-      const perUnit = size?.perUnit ?? null;
+      const perUnit = own ?? size?.perUnit ?? null;
       const line: BuilderLine = {
         key: `${element.id}:${type}`,
         elementId: element.id,
@@ -119,10 +124,10 @@ export function buildOrder(input: BuilderInput): BuilderLine[] {
         price: size?.price ?? null,
         sum: null,
         material: size?.material ?? element.material,
-        gaps: gapsOf(size),
+        gaps: gapsOf(size).filter((g) => g !== "perUnit" || own === undefined),
       };
       const same = input.merge
-        ? own.find(
+        ? mine.find(
             (l) =>
               l.heightMm !== null &&
               l.heightMm === line.heightMm &&
@@ -137,9 +142,9 @@ export function buildOrder(input: BuilderInput): BuilderLine[] {
         same.units += n;
         same.quantity = quantity(same.units, same.perUnit, reservePct);
         same.gaps = [...new Set([...same.gaps, ...line.gaps])];
-      } else own.push(line);
+      } else mine.push(line);
     }
-    lines.push(...own);
+    lines.push(...mine);
   }
   for (const line of lines) {
     line.name = `${line.element} (${line.types.map(typeLabel).join(" / ")})`;

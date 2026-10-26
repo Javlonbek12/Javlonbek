@@ -6,6 +6,7 @@ import { fmt, Matrix } from "@/components/distribution/parts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { t, type TranslationKey } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getUserToday } from "@/modules/core/settings/service";
 import { equipmentSize, mm, typeLabel } from "@/modules/distribution/builder";
@@ -31,7 +32,7 @@ export default async function DistributionBuilderPage({
   };
   const picked = get("t").length > 0 || get("e").length > 0;
   if (!picked && query.stock === undefined && (await getIncludeStock())) query.stock = "1";
-  const options = builderOptions(get);
+  const options = builderOptions(get, Object.keys(query));
   const { catalog, units, lines } = await runBuilder(options);
   const error = typeof query.error === "string" ? query.error : null;
   const params = new URLSearchParams();
@@ -48,7 +49,7 @@ export default async function DistributionBuilderPage({
       {error && (
         <p className="text-destructive text-sm">{t(`dist.errors.${error}` as TranslationKey)}</p>
       )}
-      <form method="get" className="flex flex-col gap-5">
+      <form id="builder" method="get" className="flex flex-col gap-5">
         <Section title={t("dist.builder.step1")} hint={t("dist.builder.step1Hint")}>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {DIST_TYPES.map((type) => {
@@ -200,7 +201,20 @@ export default async function DistributionBuilderPage({
                       {l.material ?? "—"}
                     </span>,
                     fmt(l.units),
-                    l.perUnit ?? <Missing key="u" />,
+                    <Input
+                      key="u"
+                      form="builder"
+                      name={`pu.${l.elementId}.${l.types.join("+")}`}
+                      type="number"
+                      min={0}
+                      step="any"
+                      defaultValue={l.perUnit ?? ""}
+                      aria-label={t("dist.builder.perUnit")}
+                      className={cn(
+                        "ml-auto h-8 w-20",
+                        l.perUnit === null && "border-red-400 dark:border-red-500",
+                      )}
+                    />,
                     l.quantity === null ? (
                       <Missing key="q" />
                     ) : (
@@ -223,7 +237,11 @@ export default async function DistributionBuilderPage({
                   fmt(total("sum")),
                 ]}
               />
+              <p className="text-muted-foreground text-xs">{t("dist.builder.perUnitHint")}</p>
               <div className="flex flex-wrap items-center gap-3">
+                <Button type="submit" form="builder" size="sm">
+                  {t("dist.builder.count")}
+                </Button>
                 <Button asChild variant="outline" size="sm">
                   <a href={`/api/distribution/builder?${params}`}>
                     <FileSpreadsheet />
@@ -249,6 +267,11 @@ export default async function DistributionBuilderPage({
             <input type="hidden" name="reserve" value={options.reservePct * 100} />
             <input type="hidden" name="merge" value={options.merge ? "1" : "0"} />
             <input type="hidden" name="stock" value={options.withStock ? "1" : "0"} />
+            {[...params.entries()]
+              .filter(([key]) => key.startsWith("pu."))
+              .map(([key, value]) => (
+                <input key={key} type="hidden" name={key} value={value} />
+              ))}
             <label className="flex flex-col gap-1 text-sm">
               {t("dist.orders.name")}
               <Input name="name" required maxLength={120} className="w-64" />
