@@ -77,6 +77,8 @@ model User {
   projectsCreated    Project[]            @relation("ProjectCreator")
   distShipments      DistShipment[]
   distOrders         DistOrder[]
+  distFiles          DistCampaignFile[]
+  distQuotes         DistPriceQuote[]
 }
 
 model Invite {
@@ -693,9 +695,10 @@ model Project {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  lead      User?          @relation("ProjectLead", fields: [leadId], references: [id], onDelete: SetNull)
-  createdBy User           @relation("ProjectCreator", fields: [createdById], references: [id])
-  phases    ProjectPhase[]
+  lead       User?          @relation("ProjectLead", fields: [leadId], references: [id], onDelete: SetNull)
+  createdBy  User           @relation("ProjectCreator", fields: [createdById], references: [id])
+  phases     ProjectPhase[]
+  distOrders DistOrder[]
 }
 
 model ProjectPhase {
@@ -948,19 +951,110 @@ model DistOutlet {
   tsm      String?
 }
 
-// A POSM order: a version of the list. Old orders keep their plan and shipments.
+// A POSM campaign (e.g. "Pine Purple 4 SKU"): concept → key visual → what to order on which
+// equipment → prices → order → split by region and TSM → replacement in the shops. Its POSM
+// list is a version of its own: old campaigns keep their plan and shipments.
 model DistOrder {
-  id          String   @id @default(cuid())
+  id                String    @id @default(cuid())
+  name              String
+  description       String?
+  // The project the concept is worked on in (tasks, phases), if any.
+  projectId         String?
+  conceptApprovedAt DateTime?
+  kvFinalAt         DateTime?
+  // The reserve added on top of the need when the list is made (0.1 = +10%).
+  reservePct        Float     @default(0.1)
+  // Count equipment in warehouses too (the order is for all equipment, wherever it is).
+  withStock         Boolean   @default(true)
+  // When the POSM was ordered from the printer; the list doesn't change after.
+  orderedOn         DateTime? @db.Date
+  note              String?
+  // A closed campaign is kept for history; new shipments go to open ones.
+  closed            Boolean   @default(false)
+  createdById       String
+  createdAt         DateTime  @default(now())
+
+  posm         DistPosm[]
+  createdBy    User                  @relation(fields: [createdById], references: [id])
+  project      Project?              @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  files        DistCampaignFile[]
+  elements     DistCampaignElement[]
+  replacements DistReplacement[]
+}
+
+enum DistFileKind {
+  CONCEPT
+  KEY_VISUAL
+  // The printer's quote (КП).
+  QUOTE
+  EAS
+  OTHER
+}
+
+model DistCampaignFile {
+  id          String       @id @default(cuid())
+  orderId     String
+  kind        DistFileKind
   name        String
-  orderedOn   DateTime @db.Date
-  note        String?
-  // A closed order is kept for history; new shipments go to open ones.
-  closed      Boolean  @default(false)
+  // Relative to UPLOAD_DIR.
+  path        String
+  mime        String
+  size        Int
+  // The final key visual.
+  final       Boolean      @default(false)
+  createdById String
+  createdAt   DateTime     @default(now())
+
+  order     DistOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  createdBy User      @relation(fields: [createdById], references: [id])
+
+  @@index([orderId])
+}
+
+// What a campaign orders: an element of the catalog on its own set of equipment types.
+model DistCampaignElement {
+  id        String   @id @default(cuid())
+  orderId   String
+  elementId String
+  types     String[] @default([])
+  // Pieces per unit for this campaign, by type: { "POSI_L": 2 } (else the catalog's).
+  perUnit   Json?
+
+  order   DistOrder   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  element DistElement @relation(fields: [elementId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, elementId])
+}
+
+// The printer's prices: every confirmed or new price is kept with who gave it.
+model DistPriceQuote {
+  id          String   @id @default(cuid())
+  elementId   String
+  type        String
+  price       Float
+  supplier    String?
+  quoteNo     String?
+  quotedOn    DateTime @db.Date
+  orderId     String?
   createdById String
   createdAt   DateTime @default(now())
 
-  posm      DistPosm[]
-  createdBy User       @relation(fields: [createdById], references: [id])
+  element   DistElement @relation(fields: [elementId], references: [id], onDelete: Cascade)
+  createdBy User        @relation(fields: [createdById], references: [id])
+
+  @@index([elementId, type])
+}
+
+// Replacement in the shops: has the outlet got the campaign's POSM.
+model DistReplacement {
+  orderId   String
+  outletId  String
+  replaced  Boolean
+  updatedAt DateTime @updatedAt
+
+  order DistOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@id([orderId, outletId])
 }
 
 // The order builder's catalog. Equipment dimensions by type (from the KT&G sizes sheet).
@@ -980,7 +1074,9 @@ model DistElement {
   position Int     @default(0)
   material String?
 
-  sizes DistElementSize[]
+  sizes     DistElementSize[]
+  campaigns DistCampaignElement[]
+  quotes    DistPriceQuote[]
 }
 
 // The print size of an element on one equipment type: it differs by equipment, so each pair is
@@ -1016,27 +1112,33 @@ enum DistBase {
 
 // A POSM item to distribute: stock, order, reserve, and the equipment types it goes to.
 model DistPosm {
-  id             String   @id @default(cuid())
-  orderId        String
-  position       Int
-  name           String
-  category       String
-  equipmentLabel String?
-  size           String?
-  material       String?
+  id               String    @id @default(cuid())
+  orderId          String
+  position         Int
+  name             String
+  category         String
+  equipmentLabel   String?
+  size             String?
+  material         String?
   // Equipment count the order was made for
-  orderedFor     Int      @default(0)
-  inStock        Int      @default(0)
-  ordered        Int      @default(0)
+  orderedFor       Int       @default(0)
+  inStock          Int       @default(0)
+  ordered          Int       @default(0)
   // Share kept at the central warehouse, 0..1
-  reservePct     Float    @default(0)
-  base           DistBase @default(UNITS)
+  reservePct       Float     @default(0)
+  base             DistBase  @default(UNITS)
   // Pieces per equipment unit and the reserve on top of it (0.1 = +10%); null = no norm.
-  norm           Float?
-  normReserve    Float    @default(0)
+  norm             Float?
+  normReserve      Float     @default(0)
   // Equipment type codes this POSM goes to.
-  types          String[] @default([])
-  updatedAt      DateTime @updatedAt
+  types            String[]  @default([])
+  // Made by a campaign from this catalog element; its price per piece (UZS incl. VAT).
+  elementId        String?
+  price            Float?
+  priceConfirmedAt DateTime?
+  supplier         String?
+  quoteNo          String?
+  updatedAt        DateTime  @updatedAt
 
   order     DistOrder      @relation(fields: [orderId], references: [id], onDelete: Cascade)
   shipments DistShipment[]

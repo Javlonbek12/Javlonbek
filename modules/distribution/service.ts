@@ -53,7 +53,9 @@ export class DistributionError extends Error {
       | "hasShipments"
       | "exists"
       | "noSizes"
-      | "noLines",
+      | "noLines"
+      | "ordered"
+      | "noReplacement",
   ) {
     super(code);
     this.name = "DistributionError";
