@@ -249,6 +249,7 @@ export async function savePosmAction(formData: FormData) {
       name: str(formData, "name"),
       type: str(formData, "type") as "HEADER" | "BANNER" | "STICKER",
       slotSpan: Number(str(formData, "slotSpan")) || 1,
+      shelfSpan: Number(str(formData, "shelfSpan")) || 1,
       color: str(formData, "color") || "#16a34a",
       archived: formData.get("archived") === "on",
     });

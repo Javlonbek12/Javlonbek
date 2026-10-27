@@ -528,6 +528,8 @@ model Posm {
   type      PosmType
   // How many slots it covers on a shelf (ignored for HEADER).
   slotSpan  Int      @default(1)
+  // How many shelves it covers downwards (a combo box over two shelves); ignored for HEADER.
+  shelfSpan Int      @default(1)
   imagePath String?
   color     String   @default("#16a34a")
   archived  Boolean  @default(false)

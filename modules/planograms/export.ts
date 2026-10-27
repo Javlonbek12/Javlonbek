@@ -94,6 +94,7 @@ export async function buildRenderInput(
         color: posm.color,
         image: await picture("posm", posm.id, posm.imagePath, 300),
         span: content.span,
+        rows: content.rows,
       };
     }
   }

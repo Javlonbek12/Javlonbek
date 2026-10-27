@@ -13,7 +13,15 @@ export type RenderCell =
       price: string | null; // already formatted, e.g. "31 000"
       badges: string[];
     }
-  | { kind: "POSM"; name: string; color: string; image: string | null; span: number }
+  | {
+      kind: "POSM";
+      name: string;
+      color: string;
+      image: string | null;
+      span: number;
+      // Shelves it covers downwards (a combo box over two shelves).
+      rows?: number;
+    }
   | { kind: "EMPTY" };
 
 export type RenderInput = {
@@ -109,6 +117,17 @@ export function renderPlanogramSvg(input: RenderInput): string {
     }
   }
 
+  // Slots of lower shelves a POSM item hangs over: not drawn. The items themselves are drawn
+  // last, over the shelf boards they cross.
+  const hidden = new Set<string>();
+  for (const [key, cell] of Object.entries(input.cells))
+    if (cell.kind === "POSM" && (cell.rows ?? 1) > 1) {
+      const [s, p] = key.split(":").map(Number);
+      for (let r = 1; r < cell.rows!; r++)
+        for (let i = 0; i < cell.span; i++) hidden.add(slotKey(s + r, p + i));
+    }
+  const overlay: string[] = [];
+
   input.geometry.shelves.forEach((shelf, shelfIndex) => {
     const top = PAD + headerH + shelfIndex * shelfH;
     const left = PAD + shelf.offset * SLOT_W;
@@ -120,6 +139,7 @@ export function renderPlanogramSvg(input: RenderInput): string {
       const key = slotKey(shelfIndex, position);
       const cell = input.cells[key];
       const x = left + position * SLOT_W;
+      if (hidden.has(key)) continue;
       if (shelf.group > 0 && position > 0 && position % shelf.group === 0) {
         parts.push(
           `<line x1="${x}" y1="${top}" x2="${x}" y2="${top + PACK_H + tagH}" stroke="#cbd5e1" stroke-width="2"/>`,
@@ -140,16 +160,18 @@ export function renderPlanogramSvg(input: RenderInput): string {
       }
       if (cell.kind === "POSM") {
         const w = cell.span * SLOT_W - GAP;
-        parts.push(
-          `<rect x="${x + GAP / 2}" y="${top}" width="${w}" height="${PACK_H + tagH}" rx="6" fill="${cell.color}"/>`,
+        const h = PACK_H + tagH + ((cell.rows ?? 1) - 1) * shelfH;
+        const target = (cell.rows ?? 1) > 1 ? overlay : parts;
+        target.push(
+          `<rect x="${x + GAP / 2}" y="${top}" width="${w}" height="${h}" rx="6" fill="${cell.color}"/>`,
         );
         if (cell.image) {
-          parts.push(
-            `<image href="${cell.image}" x="${x + GAP / 2}" y="${top}" width="${w}" height="${PACK_H + tagH}" preserveAspectRatio="xMidYMid meet"/>`,
+          target.push(
+            `<image href="${cell.image}" x="${x + GAP / 2}" y="${top}" width="${w}" height="${h}" preserveAspectRatio="xMidYMid meet"/>`,
           );
         } else {
           wrap(cell.name, Math.max(6, Math.floor(w / 9)), 3).forEach((line, i) =>
-            parts.push(
+            target.push(
               `<text x="${x + GAP / 2 + w / 2}" y="${top + 40 + i * 18}" text-anchor="middle" font-size="14" font-weight="bold" fill="#fff">${escapeXml(line)}</text>`,
             ),
           );
@@ -218,6 +240,6 @@ export function renderPlanogramSvg(input: RenderInput): string {
     }
   });
 
-  parts.push("</svg>");
+  parts.push(...overlay, "</svg>");
   return parts.join("");
 }

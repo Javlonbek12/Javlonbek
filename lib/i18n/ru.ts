@@ -905,6 +905,8 @@ export const ru = {
         type: "Тип",
         types: { HEADER: "Хедер", BANNER: "Баннер на полку", STICKER: "Стикер / воблер" },
         span: "Сколько слотов занимает",
+        shelfSpan: "Сколько полок занимает (вниз)",
+        shelfSpanHint: "Например, Combo Box на Display L MW/DG — 2 полки.",
         color: "Цвет",
         save: "Сохранить POSM",
       },

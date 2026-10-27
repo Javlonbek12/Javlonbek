@@ -120,6 +120,7 @@ const posmSchema = z.object({
   name: z.string().trim().min(1).max(100),
   type: z.enum(["HEADER", "BANNER", "STICKER"]),
   slotSpan: z.number().int().min(1).max(40),
+  shelfSpan: z.number().int().min(1).max(20).default(1),
   color,
   archived: z.boolean().default(false),
 });

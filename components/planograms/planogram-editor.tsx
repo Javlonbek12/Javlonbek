@@ -20,11 +20,11 @@ import { cn } from "@/lib/utils";
 import { describeChange, describeViolation } from "@/modules/planograms/describe";
 import { diffLayouts } from "@/modules/planograms/diff";
 import { slotKey, type Geometry } from "@/modules/planograms/geometry";
-import { coveredSlots, type Layout, type SkuInfo } from "@/modules/planograms/layout";
+import { coveredBelow, coveredSlots, type Layout, type SkuInfo } from "@/modules/planograms/layout";
 import { validatePlanogram, type Rule } from "@/modules/planograms/validate";
 
 import { moveCell, placeAt, removeAt, swapShelves, copyShelf, toggleBadge } from "./editor-ops";
-import { SLOT_W, SlotView, type EditorPosm, type EditorSku } from "./slot-cell";
+import { PACK_H, SLOT_W, SlotView, type EditorPosm, type EditorSku } from "./slot-cell";
 
 type SaveResult = { ok: boolean; error?: string };
 
@@ -141,6 +141,8 @@ export function PlanogramEditor(props: Props) {
   );
   const layout = state.layout;
   const covered = coveredSlots(layout);
+  // Under a POSM hanging from the shelf above: an empty place, the block is drawn over it.
+  const below = coveredBelow(layout);
 
   const apply = useCallback((next: Layout | null) => {
     if (!next) return;
@@ -190,7 +192,8 @@ export function PlanogramEditor(props: Props) {
         badges: [...new Set([...(sku.isNew ? ["YANGI"] : []), ...sku.defaultBadges])],
       };
     }
-    return { kind: "POSM" as const, posmId: id, span: posmById.get(id)!.span };
+    const posm = posmById.get(id)!;
+    return { kind: "POSM" as const, posmId: id, span: posm.span, rows: posm.rows };
   };
 
   const placeMany = (itemId: string, keys: string[]) => {
@@ -457,6 +460,22 @@ export function PlanogramEditor(props: Props) {
                 >
                   {Array.from({ length: shelf.slots }, (_, position) => {
                     const key = slotKey(shelfIndex, position);
+                    if (below.has(key))
+                      return (
+                        <div
+                          key={key}
+                          className={cn(
+                            shelf.group > 0 &&
+                              position > 0 &&
+                              position % shelf.group === 0 &&
+                              "ml-1 border-l-2 border-slate-300 pl-1",
+                          )}
+                        >
+                          <div className="p-0.5">
+                            <div style={{ width: SLOT_W - 4, height: PACK_H + 20 }} />
+                          </div>
+                        </div>
+                      );
                     if (covered.has(key)) return null;
                     const content = layout[key];
                     return (

@@ -1,41 +1,42 @@
-import { slotKey, type Geometry } from "@/modules/planograms/geometry";
-import { coveredSlots, type Layout, type SlotContent } from "@/modules/planograms/layout";
+import { isInside, slotKey, type Geometry } from "@/modules/planograms/geometry";
+import { coveredSlots, posmArea, type Layout, type SlotContent } from "@/modules/planograms/layout";
 
 // Pure editing operations used by the planogram editor (kept outside React for clarity).
 
-// Removes the item that occupies `key` (also when `key` is under a multi-slot POSM).
+// Removes the item that occupies `key` (also when `key` is under a POSM spanning slots or
+// shelves).
 export function removeAt(layout: Layout, key: string): Layout {
   const result = { ...layout };
   if (result[key]) {
     delete result[key];
     return result;
   }
-  const [shelf, position] = key.split(":").map(Number);
-  for (let p = position - 1; p >= 0; p--) {
-    const start = result[slotKey(shelf, p)];
-    if (start?.kind === "POSM" && p + start.span > position) {
-      delete result[slotKey(shelf, p)];
+  for (const [start, content] of Object.entries(result))
+    if (content.kind === "POSM" && posmArea(start, content.span, content.rows).includes(key)) {
+      delete result[start];
       break;
     }
-    if (start) break;
-  }
   return result;
 }
 
-// Puts content at `key`. A multi-slot POSM replaces whatever stands in its span; it fails
-// (returns null) when it doesn't fit on the shelf.
+// Puts content at `key`. A POSM spanning slots (and shelves) replaces whatever stands under it;
+// it fails (returns null) when it doesn't fit on the equipment.
 export function placeAt(
   layout: Layout,
   geometry: Geometry,
   key: string,
   content: SlotContent,
 ): Layout | null {
-  const [shelf, position] = key.split(":").map(Number);
-  const slots = geometry.shelves[shelf]?.slots ?? 0;
-  const span = content.kind === "POSM" ? content.span : 1;
-  if (position + span > slots) return null;
+  const area = content.kind === "POSM" ? posmArea(key, content.span, content.rows) : [key];
+  if (
+    area.some((k) => {
+      const [s, p] = k.split(":").map(Number);
+      return !isInside(geometry, s, p);
+    })
+  )
+    return null;
   let result = layout;
-  for (let p = position; p < position + span; p++) result = removeAt(result, slotKey(shelf, p));
+  for (const k of area) result = removeAt(result, k);
   return { ...result, [key]: content };
 }
 

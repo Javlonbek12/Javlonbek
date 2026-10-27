@@ -906,6 +906,8 @@ export const en: Dictionary = {
         type: "Type",
         types: { HEADER: "Header", BANNER: "Shelf banner", STICKER: "Sticker / wobbler" },
         span: "How many slots it takes",
+        shelfSpan: "How many shelves it takes (downwards)",
+        shelfSpanHint: "E.g. the Combo Box on Display L MW/DG takes 2 shelves.",
         color: "Colour",
         save: "Save POSM",
       },
