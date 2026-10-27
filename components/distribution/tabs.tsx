@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  BookOpen,
-  ChartPie,
-  ClipboardList,
-  PackageCheck,
-  Truck,
-  Upload,
-} from "lucide-react";
+import { BookOpen, ChartPie, ClipboardList, PackageCheck, Truck, Upload } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
