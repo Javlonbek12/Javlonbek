@@ -61,9 +61,7 @@ describe("the order builder", () => {
       merge: true,
     };
     // The same size merges into one line at 10%.
-    expect(buildOrder(input).map((l) => [l.types, l.quantity])).toEqual([
-      [["DG_L", "MW25_L"], 22],
-    ]);
+    expect(buildOrder(input).map((l) => [l.types, l.quantity])).toEqual([[["DG_L", "MW25_L"], 22]]);
     // Metawerk L at 20%: its own line.
     const lines = buildOrder({ ...input, reserveByType: { MW25_L: 0.2 } });
     expect(lines.map((l) => [l.types, l.quantity, l.reservePct])).toEqual([
@@ -73,7 +71,6 @@ describe("the order builder", () => {
     expect(reserveLabel({ reservePct: 0.1, reserveByType: { MW25_L: 0.2 } })).toBe("10–20%");
     expect(reserveLabel({ reservePct: 0.1 })).toBe("10%");
   });
-
 
   it("counts pieces per equipment with the reserve and prices them", () => {
     const lines = buildOrder({
