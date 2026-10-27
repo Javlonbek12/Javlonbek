@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 const TABS = [
   { href: "/planograms", key: "planograms.tabs.list" },
   { href: "/planograms/templates", key: "planograms.tabs.templates" },
-  { href: "/planograms/equipment", key: "planograms.tabs.equipment" },
+  { href: "/equipment/models", key: "planograms.tabs.equipment" },
   { href: "/planograms/skus", key: "planograms.tabs.skus" },
   { href: "/planograms/posm", key: "planograms.tabs.posm" },
   { href: "/planograms/prices", key: "planograms.tabs.prices" },

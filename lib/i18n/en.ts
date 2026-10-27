@@ -1934,12 +1934,15 @@ export const en: Dictionary = {
   equip: {
     title: "Equipment",
     intro:
-      "Where the equipment is: installed in outlets and in warehouses — from the equipment file.",
+      "All about the equipment in one place: planogram models, display and POSM print sizes, how many are installed and where (by the equipment file), purchases and uploads.",
     tabs: {
       map: "Map",
       types: "Equipment types",
+      models: "Models",
+      sizes: "Sizes",
       control: "Control",
       outlets: "New outlets",
+      uploads: "Uploads",
       tables: "Tables",
     },
     empty: "No equipment yet — upload the equipment file.",
@@ -2241,6 +2244,8 @@ export const en: Dictionary = {
       noId: "Outlets without an ID (counted by TIN or name): {count}.",
       minus:
         "The file is not saved: the control equation has a minus ({rows} rows in the file). A minus usually means duplicate rows or dismantled equipment still in the file. Check the table and save only if you are sure.",
+      movedToEquipment: "The equipment file (BW) and the outlet base are uploaded in “Equipment”.",
+      movedLink: "Equipment → Uploads",
       templateTitle: "POSM launch template",
       templateHint:
         "A file like “POSM_ESSE_Change_1”: the “Parameters” sheet (Equipment Master — how much equipment was bought) → the purchase journal; the “BOM Matrix” sheet (elements, sizes, pieces per equipment) → the size catalog. Code L is every L but POSI (Display Group + Metawerk), M every M but POSI, C is DG C, S is MW S, XL/LP/MP/CP are POSI. Shelftalkers go by shelf (“Shelftalker №1”, “№2”…); the print name does not go into the catalog. Uploading the same file again replaces its purchases.",

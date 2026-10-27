@@ -88,7 +88,7 @@ export default async function EquipmentTypesPage() {
                     const model = models.find((m) => m.distTypes.includes(type.code));
                     return model ? (
                       <Link
-                        href={`/planograms/equipment/${model.id}`}
+                        href={`/equipment/models/${model.id}`}
                         className="text-primary text-xs hover:underline"
                       >
                         {t("equip.model", {
@@ -135,7 +135,7 @@ export default async function EquipmentTypesPage() {
       ))}
       <p className="text-muted-foreground text-xs">
         {t("equip.sizesHint")}{" "}
-        <Link href="/distribution/sizes" className="text-primary hover:underline">
+        <Link href="/equipment/sizes" className="text-primary hover:underline">
           {t("equip.sizesLink")}
         </Link>
       </p>

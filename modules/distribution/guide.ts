@@ -15,9 +15,9 @@ const ru: GuidePart[] = [
     steps: [
       {
         title: "Загрузите файл оборудования",
-        href: "/distribution/import",
+        href: "/equipment/uploads",
         text: [
-          "Вкладка «Данные» → «Файл оборудования». Нужен файл «Daily BW-POG management» (.xlsx).",
+          "«Оборудование» → «Загрузки» → «Файл оборудования». Нужен файл «Daily BW-POG management» (.xlsx).",
           "Это единственный источник количества и региона. Из листа «BW management» берётся каждая единица оборудования: регион, ID точки (Smartup ID), название, ИНН, тип. Display MOD считается как слоты / 18 — везде в этих единицах, как в самом файле.",
           "Строка без Smartup ID, но с ИНН или названием, учитывается («Без ID»); без ID, ИНН и названия — пропускается с причиной («Оборудование → Новые точки»).",
           "Из блока «Current stock» на листе «Warehouse» берётся оборудование на складах. Лист демонтажа не читается.",
@@ -27,9 +27,9 @@ const ru: GuidePart[] = [
       },
       {
         title: "Загрузите базу точек",
-        href: "/distribution/import",
+        href: "/equipment/uploads",
         text: [
-          "Там же → «База точек». Нужны колонки «ИД» и «Responsible TSM».",
+          "Там же («Оборудование» → «Загрузки») → «База точек». Нужны колонки «ИД» и «Responsible TSM».",
           "Из неё берётся только «ID → TSM»: по ней доля региона делится между TSM. TSM не хранится в оборудовании — новая база сразу пересчитывает разбивку.",
           "Оборудование точек без TSM в базе (или без ID) — в строке «TSM не назначен» своего региона: оно учтено и получает POSM, на склад региона не уходит.",
           "После загрузки видно, сколько точек BW-файла нет в базе и у скольких регион в базе другой (только для сведения: регион всегда из BW-файла).",
@@ -37,9 +37,9 @@ const ru: GuidePart[] = [
       },
       {
         title: "Проверьте размеры и цены",
-        href: "/distribution/sizes",
+        href: "/equipment/sizes",
         text: [
-          "Вкладка «Размеры и цены». Размеры оборудования уже заполнены по таблице KT&G; для Display MOD, Lightbox и Support впишите их сами.",
+          "«Оборудование» → «Размеры». Размеры оборудования уже заполнены по таблице KT&G; для Display MOD, Lightbox и Support впишите их сами.",
           "У каждого элемента (Header, Shelftalker, Divider, Ценник…) для каждого оборудования свои: размер печати (высота × ширина, мм), штук на единицу и цена за штуку (сум с НДС). Печать отличается даже у оборудования одного размера — проверяйте каждую пару.",
           "«Шт на ед.» = 0 — элемент на этом оборудовании не используется.",
           "Нажмите на название элемента, чтобы изменить его размеры. Вверху страницы элемента печать нарисована на оборудовании в масштабе; красным — печать шире оборудования.",
@@ -190,9 +190,9 @@ const en: GuidePart[] = [
     steps: [
       {
         title: "Upload the equipment file",
-        href: "/distribution/import",
+        href: "/equipment/uploads",
         text: [
-          "“Data” tab → “Equipment file”. The “Daily BW-POG management” file (.xlsx).",
+          "“Equipment” → “Uploads” → “Equipment file”. The “Daily BW-POG management” file (.xlsx).",
           "It is the only source of quantities and regions. Every unit comes from the “BW management” sheet: region, outlet ID (Smartup ID), name, TIN, type. Display MOD counts as its slots / 18 — in these units everywhere, as in the file itself.",
           "A row without a Smartup ID but with a TIN or a name is counted (“Without an ID”); one with neither an ID, a TIN nor a name is skipped with its reason (“Equipment → New outlets”).",
           "Warehouse equipment comes from the “Current stock” block of the “Warehouse” sheet. The dismantling sheet is not read.",
@@ -202,9 +202,9 @@ const en: GuidePart[] = [
       },
       {
         title: "Upload the outlet base",
-        href: "/distribution/import",
+        href: "/equipment/uploads",
         text: [
-          "Same page → “Outlet base”. The “ИД” and “Responsible TSM” columns are needed.",
+          "Same page (“Equipment” → “Uploads”) → “Outlet base”. The “ИД” and “Responsible TSM” columns are needed.",
           "Only “ID → TSM” is taken from it: a region's share is split between TSMs by it. The TSM is not stored with the equipment — a new base re-splits at once.",
           "Equipment of outlets without a TSM in the base (or without an ID) is the region's «TSM не назначен» (no TSM) row: counted and getting POSM, never sent to the region's warehouse.",
           "After the upload you see how many outlets of the BW file the base lacks and how many have another region there (for information only: the region always comes from the BW file).",
@@ -212,9 +212,9 @@ const en: GuidePart[] = [
       },
       {
         title: "Check sizes and prices",
-        href: "/distribution/sizes",
+        href: "/equipment/sizes",
         text: [
-          "“Sizes and prices” tab. Equipment dimensions are filled in from the KT&G table; enter Display MOD, Lightbox and Support yourself.",
+          "“Equipment” → “Sizes”. Equipment dimensions are filled in from the KT&G table; enter Display MOD, Lightbox and Support yourself.",
           "Every element (Header, Shelftalker, Divider, price tag…) has, on every equipment, its own print size (height × width, mm), pieces per unit and price per piece (UZS incl. VAT). Prints differ even on equipment of the same size — check every pair.",
           "Pieces per unit = 0 — the element isn't used on that equipment.",
           "Click an element's name to change its sizes. Its page draws the print on each display to scale; red — wider than the display.",

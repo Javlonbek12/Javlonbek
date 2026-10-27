@@ -1,14 +1,6 @@
 "use client";
 
-import {
-  BookOpen,
-  ChartPie,
-  ClipboardList,
-  PackageCheck,
-  Ruler,
-  Truck,
-  Upload,
-} from "lucide-react";
+import { BookOpen, ChartPie, ClipboardList, PackageCheck, Truck, Upload } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -22,7 +14,6 @@ const TABS = [
   { href: "/distribution/plan", key: "dist.tabs.plan", icon: Truck },
   { href: "/distribution/stock", key: "dist.tabs.stock", icon: PackageCheck },
   { href: "/distribution", key: "dist.tabs.overview", icon: ChartPie },
-  { href: "/distribution/sizes", key: "dist.tabs.sizes", icon: Ruler },
   { href: "/distribution/import", key: "dist.tabs.import", icon: Upload, manage: true },
   { href: "/distribution/help", key: "dist.tabs.help", icon: BookOpen },
 ] as const;

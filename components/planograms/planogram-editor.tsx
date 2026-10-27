@@ -19,7 +19,7 @@ import { useT } from "@/components/locale-provider";
 import { cn } from "@/lib/utils";
 import { describeChange, describeViolation } from "@/modules/planograms/describe";
 import { diffLayouts } from "@/modules/planograms/diff";
-import { slotKey, type Geometry } from "@/modules/planograms/geometry";
+import { slotKey, widthInSlots, type Geometry } from "@/modules/planograms/geometry";
 import { coveredBelow, coveredSlots, type Layout, type SkuInfo } from "@/modules/planograms/layout";
 import { validatePlanogram, type Rule } from "@/modules/planograms/validate";
 
@@ -409,14 +409,28 @@ export function PlanogramEditor(props: Props) {
           )}
 
           <div className="overflow-x-auto rounded-lg border bg-white p-3">
-            {geometry.header && (
-              <div
-                className="mb-2 flex h-10 items-center justify-center rounded-md text-xs font-bold text-white"
-                style={{ background: headerId ? posmById.get(headerId)?.color : "#e2e8f0" }}
-              >
-                {headerId ? posmById.get(headerId)?.name : t("planograms.fields.noHeader")}
-              </div>
-            )}
+            {geometry.header &&
+              (headerId && posmById.get(headerId)?.imageUrl ? (
+                // The header picture at its own proportions over the shelves' width.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={posmById.get(headerId)!.imageUrl!}
+                  alt={posmById.get(headerId)!.name}
+                  className="mb-2 ml-[72px] block h-auto rounded-md object-contain"
+                  style={{
+                    width: widthInSlots(geometry) * SLOT_W,
+                    maxHeight: widthInSlots(geometry) * SLOT_W * 0.45,
+                    background: posmById.get(headerId)!.color,
+                  }}
+                />
+              ) : (
+                <div
+                  className="mb-2 flex h-10 items-center justify-center rounded-md text-xs font-bold text-white"
+                  style={{ background: headerId ? posmById.get(headerId)?.color : "#e2e8f0" }}
+                >
+                  {headerId ? posmById.get(headerId)?.name : t("planograms.fields.noHeader")}
+                </div>
+              ))}
             {geometry.shelves.map((shelf, shelfIndex) => (
               <div key={shelfIndex} className="mb-3 flex items-end gap-2">
                 <div className="flex w-16 shrink-0 flex-col items-start gap-0.5 text-[10px]">

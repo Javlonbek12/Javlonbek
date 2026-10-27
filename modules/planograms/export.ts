@@ -20,6 +20,18 @@ import { changesVsPrevious } from "./service";
 import { sideColorOf } from "./side-color";
 
 const imageCache = new Map<string, string | null>();
+const aspectCache = new Map<string, number | null>();
+
+// Width / height of a picture (the header is drawn at its own proportions).
+async function imageAspect(relative: string | null): Promise<number | null> {
+  if (!relative) return null;
+  if (aspectCache.has(relative)) return aspectCache.get(relative)!;
+  const buffer = await readImage(relative);
+  const meta = buffer ? await sharp(buffer).metadata() : null;
+  const aspect = meta?.width && meta.height ? meta.width / meta.height : null;
+  aspectCache.set(relative, aspect);
+  return aspect;
+}
 
 // Small PNG thumbnail as a data URI (pictures inside the SVG must be self-contained).
 async function dataUri(relative: string | null, height = 220): Promise<string | null> {
@@ -106,7 +118,8 @@ export async function buildRenderInput(
       ? {
           name: header.name,
           color: header.color,
-          image: await picture("posm", header.id, header.imagePath, 200),
+          image: await picture("posm", header.id, header.imagePath, 400),
+          aspect: await imageAspect(header.imagePath),
         }
       : null,
     large: options.large,

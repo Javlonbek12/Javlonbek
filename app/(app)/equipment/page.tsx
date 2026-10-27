@@ -21,7 +21,7 @@ export default async function EquipmentMapPage({ searchParams }: PageProps<"/equ
     return (
       <Card className="items-start gap-2">
         <p className="text-sm">{t("equip.empty")}</p>
-        <Link href="/distribution/import" className="text-primary text-sm hover:underline">
+        <Link href="/equipment/uploads" className="text-primary text-sm hover:underline">
           {t("equip.upload")}
         </Link>
       </Card>

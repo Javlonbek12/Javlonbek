@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutGrid, Map, Scale, Store, Table } from "lucide-react";
+import { Boxes, LayoutGrid, Map, Ruler, Scale, Store, Table, Upload } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -10,12 +10,16 @@ import { cn } from "@/lib/utils";
 const TABS = [
   { href: "/equipment", key: "equip.tabs.map", icon: Map },
   { href: "/equipment/types", key: "equip.tabs.types", icon: LayoutGrid },
+  { href: "/equipment/models", key: "equip.tabs.models", icon: Boxes },
+  { href: "/equipment/sizes", key: "equip.tabs.sizes", icon: Ruler },
   { href: "/equipment/control", key: "equip.tabs.control", icon: Scale },
   { href: "/equipment/outlets", key: "equip.tabs.outlets", icon: Store },
+  { href: "/equipment/uploads", key: "equip.tabs.uploads", icon: Upload, manage: true },
   { href: "/equipment/tables", key: "equip.tabs.tables", icon: Table },
 ] as const;
 
-export function EquipmentTabs() {
+// `manage`: the owner and managers also get the uploads.
+export function EquipmentTabs({ manage }: { manage: boolean }) {
   const t = useT();
   const pathname = usePathname();
   const active = (href: string) =>
@@ -25,7 +29,7 @@ export function EquipmentTabs() {
   return (
     <nav className="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
       <ul className="bg-card shadow-card inline-flex gap-1 rounded-2xl border p-1">
-        {TABS.map(({ href, key, icon: Icon }) => (
+        {TABS.filter((tab) => manage || !("manage" in tab)).map(({ href, key, icon: Icon }) => (
           <li key={href}>
             <Link
               href={href}
