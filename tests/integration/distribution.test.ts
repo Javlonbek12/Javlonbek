@@ -18,6 +18,7 @@ import {
   setOrderClosed,
   shipWaybill,
   pendingImport,
+  planogramFacts,
   resolvePendingImport,
   updatePosmSettings,
 } from "@/modules/distribution/service";
@@ -27,6 +28,7 @@ import { addPurchase, deletePurchase } from "@/modules/distribution/purchases";
 import { importLaunchTemplate } from "@/modules/distribution/template";
 import { NO_TSM } from "@/modules/distribution/types";
 import { distributionXlsx } from "@/modules/distribution/xlsx";
+import { saveEquipment } from "@/modules/planograms/library";
 import { createTestUser, resetDb } from "@/tests/helpers/db";
 import {
   equipmentWorkbook,
@@ -400,5 +402,43 @@ describe("the equipment section", () => {
       ["MW24_L", 310, true],
       ["MW25_L", 310, true],
     ]);
+  });
+
+  it("links a planogram model to the equipment file's types, one model per type", async () => {
+    const owner = await withAccess(await createTestUser("OWNER"));
+    const geometry = { header: null, shelves: [{ slots: 10, offset: 0, group: 0 }] };
+    const a = await saveEquipment(owner, null, {
+      code: "TEST_L",
+      name: "Тест L",
+      channel: "MW/DG",
+      geometry,
+      distTypes: ["DG_L", "MW25_L"],
+    });
+    const b = await saveEquipment(owner, null, {
+      code: "TEST_L2",
+      name: "Тест L2",
+      channel: "MW/DG",
+      geometry,
+      distTypes: ["MW25_L", "MW24_L"],
+    });
+    // MW-25 L moved to the second model.
+    expect((await db.equipment.findUnique({ where: { id: a.id } }))?.distTypes).toEqual(["DG_L"]);
+    expect((await db.equipment.findUnique({ where: { id: b.id } }))?.distTypes).toEqual([
+      "MW25_L",
+      "MW24_L",
+    ]);
+    const { links } = await planogramFacts();
+    expect(links.find((l) => l.type === "DG_L")?.equipmentCode).toBe("TEST_L");
+    expect(links.find((l) => l.type === "MW24_L")?.equipmentCode).toBe("TEST_L2");
+    expect(links.find((l) => l.type === "POSI_L")?.equipmentCode).toBeNull();
+    await expect(
+      saveEquipment(owner, null, {
+        code: "TEST_X",
+        name: "X",
+        channel: "X",
+        geometry,
+        distTypes: ["NO_SUCH"],
+      }),
+    ).rejects.toMatchObject({ code: "invalid" });
   });
 });

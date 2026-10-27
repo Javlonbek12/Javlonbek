@@ -5,6 +5,7 @@ import { PlanogramErrorNote, SavedNote } from "@/components/planograms/error-not
 import { db } from "@/lib/db";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { parseGeometry } from "@/modules/planograms/geometry";
+import { distTypeOptions } from "@/modules/planograms/library";
 
 export default async function EquipmentEditPage({
   params,
@@ -30,6 +31,8 @@ export default async function EquipmentEditPage({
         channel={item.channel}
         geometry={parseGeometry(item.geometry)}
         locked={item._count.planograms > 0}
+        distTypes={item.distTypes}
+        typeOptions={await distTypeOptions()}
       />
     </div>
   );

@@ -96,17 +96,16 @@ export type PlanogramLink = {
   facings: Record<number, number>;
 };
 
-// The planogram of each equipment type: the latest approved one, else the latest draft. Its
-// facings by price tell how many price tags of each price one unit needs.
+// The planogram of each equipment type (through the planogram model the type is linked to):
+// the latest approved one, else the latest draft. Its facings by price tell how many price
+// tags of each price one unit needs.
 export async function planogramFacts(): Promise<{ facts: TypeFacts; links: PlanogramLink[] }> {
-  const codes = [
-    ...new Set(DIST_TYPES.flatMap((t) => (t.equipment === null ? [] : [t.equipment]))),
-  ];
   const equipment = await db.equipment.findMany({
-    where: { code: { in: codes } },
+    where: { distTypes: { isEmpty: false } },
     select: {
       id: true,
       code: true,
+      distTypes: true,
       geometry: true,
       planograms: {
         where: { isTemplate: false, status: { not: "ARCHIVED" } },
@@ -114,7 +113,7 @@ export async function planogramFacts(): Promise<{ facts: TypeFacts; links: Plano
       },
     },
   });
-  const byCode = new Map<string, Omit<PlanogramLink, "type">>();
+  const byType = new Map<string, Omit<PlanogramLink, "type">>();
   for (const e of equipment) {
     const pick = [...e.planograms].sort(
       (a, b) =>
@@ -129,19 +128,20 @@ export async function planogramFacts(): Promise<{ facts: TypeFacts; links: Plano
           const price = loaded.prices.get(cell.skuId);
           if (price) facings[price] = (facings[price] ?? 0) + 1;
         }
-    byCode.set(e.code, {
-      equipmentCode: e.code,
-      planogramId: loaded?.record.id ?? null,
-      title: loaded?.record.title ?? null,
-      status: loaded?.record.status ?? null,
-      slots: loaded ? totalSlots(loaded.geometry) : null,
-      facings,
-    });
+    for (const type of e.distTypes)
+      byType.set(type, {
+        equipmentCode: e.code,
+        planogramId: loaded?.record.id ?? null,
+        title: loaded?.record.title ?? null,
+        status: loaded?.record.status ?? null,
+        slots: loaded ? totalSlots(loaded.geometry) : null,
+        facings,
+      });
   }
   const links = DIST_TYPES.map((t) => ({
     type: t.code,
-    ...((t.equipment && byCode.get(t.equipment)) || {
-      equipmentCode: t.equipment,
+    ...(byType.get(t.code) ?? {
+      equipmentCode: null,
       planogramId: null,
       title: null,
       status: null,

@@ -212,6 +212,7 @@ export async function saveEquipmentAction(formData: FormData) {
       name: str(formData, "name"),
       channel: str(formData, "channel"),
       geometry,
+      distTypes: formData.getAll("distTypes").map(String),
     });
     return `/planograms/equipment/${saved.id}?saved=1`;
   });

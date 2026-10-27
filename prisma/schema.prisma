@@ -450,6 +450,10 @@ model Equipment {
   channel   String
   // { header: null | "horizontal" | "vertical", shelves: [{ slots, offset, group }] } — see modules/planograms/geometry.ts
   geometry  Json
+  // The equipment types of the equipment file (BW) this model is, e.g. ["DG_L", "MW25_L",
+  // "MW24_L"] for Display L MW/DG: one shared equipment for planograms and POSM distribution.
+  // A type belongs to one model at most.
+  distTypes String[] @default([])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

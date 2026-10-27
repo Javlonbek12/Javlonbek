@@ -873,6 +873,13 @@ export const en: Dictionary = {
         used: "used in planograms: {count}",
         inUse:
           "The shape of equipment that already has planograms can't be changed. Create a new one.",
+        distTypes: "This equipment in the equipment file (BW)",
+        distTypesHint:
+          "Which types of the equipment file this model is. They show how many stand in outlets, and the POSM distribution takes slots and prices from its planograms. A type is one model: if another model had it, it moves here.",
+        types: "Types in the BW file",
+        installed: "in outlets: {installed} · in warehouses: {stock}",
+        noTypes: "Not linked to the equipment file",
+        more: "Equipment →",
       },
       skus: {
         title: "SKU",
@@ -1954,6 +1961,8 @@ export const en: Dictionary = {
     moreRegions: "and {count} more regions",
     sizesHint: "Equipment dimensions are changed in “POSM distribution → Sizes and prices”.",
     sizesLink: "Open →",
+    model: "Planograms: {name} ({shelves}), planograms: {count} →",
+    noModel: "No planogram model linked (Planograms → Equipment).",
     back: "← Map",
     byType: "By equipment type",
     byTsm: "By TSM",
