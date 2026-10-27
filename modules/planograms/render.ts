@@ -27,7 +27,9 @@ export type RenderCell =
 export type RenderInput = {
   geometry: Geometry;
   cells: Record<string, RenderCell>;
-  header?: { name: string; color: string; image: string | null } | null;
+  // `aspect`: the picture's width / height — a horizontal header is as tall as its picture
+  // needs to fill the width (within limits), not a thin strip.
+  header?: { name: string; color: string; image: string | null; aspect?: number | null } | null;
   // Outline colours for before/after comparison.
   highlight?: Map<string, "added" | "removed" | "moved" | "price">;
   // Bigger price tags for printing.
@@ -74,7 +76,12 @@ export function planogramSize(input: RenderInput) {
   const tagH = input.large ? 34 : 24;
   const shelfH = PACK_H + tagH + SHELF_GAP;
   const vertical = input.geometry.header === "vertical";
-  const headerH = input.geometry.header === "horizontal" ? HEADER_H + SHELF_GAP : 0;
+  const bandW = widthInSlots(input.geometry) * SLOT_W;
+  const aspect = input.header?.image ? input.header.aspect : null;
+  const headerBand = aspect
+    ? Math.round(Math.min(bandW * 0.45, Math.max(HEADER_H, bandW / aspect)))
+    : HEADER_H;
+  const headerH = input.geometry.header === "horizontal" ? headerBand + SHELF_GAP : 0;
   return {
     width:
       PAD * 2 +
@@ -84,12 +91,13 @@ export function planogramSize(input: RenderInput) {
     tagH,
     shelfH,
     headerH,
+    headerBand,
   };
 }
 
 // The planogram as an SVG picture (no external files: images are data URIs).
 export function renderPlanogramSvg(input: RenderInput): string {
-  const { width, height, tagH, shelfH, headerH } = planogramSize(input);
+  const { width, height, tagH, shelfH, headerH, headerBand } = planogramSize(input);
   const font = `font-family="DejaVu Sans, Arial, sans-serif"`;
   const parts: string[] = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" ${font}>`,
@@ -101,7 +109,7 @@ export function renderPlanogramSvg(input: RenderInput): string {
     const vertical = input.geometry.header === "vertical";
     const x = vertical ? width - PAD - VERTICAL_HEADER_W : PAD;
     const w = vertical ? VERTICAL_HEADER_W : width - PAD * 2;
-    const h = vertical ? height - PAD * 2 : HEADER_H;
+    const h = vertical ? height - PAD * 2 : headerBand;
     parts.push(
       `<rect x="${x}" y="${PAD}" width="${w}" height="${h}" rx="6" fill="${header.color}"/>`,
     );

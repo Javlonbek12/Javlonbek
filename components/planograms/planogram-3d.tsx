@@ -182,7 +182,12 @@ export function Planogram3D({ input }: { input: RenderInput }) {
       const sideHeaderW = vertical ? 14 : 0;
       const shelvesH = geometry.shelves.length * SHELF_H + 4;
       const bodyW = innerW + SIDE * 2 + sideHeaderW;
-      const totalH = BASE_H + shelvesH + (horizontal ? HEADER_H + 2 : 3);
+      // A horizontal header as tall as its picture needs to fill the width (within limits).
+      const headerH =
+        horizontal && header.image && header.aspect
+          ? Math.min(innerW * 0.45, Math.max(HEADER_H, innerW / header.aspect + 4))
+          : HEADER_H;
+      const totalH = BASE_H + shelvesH + (horizontal ? headerH + 2 : 3);
       const left = -bodyW / 2 + SIDE + sideHeaderW; // inner left edge
 
       const scene = new THREE.Scene();
@@ -396,18 +401,18 @@ export function Planogram3D({ input }: { input: RenderInput }) {
       if (horizontal) {
         const w = innerW - 1;
         const front = new THREE.MeshStandardMaterial({
-          map: headerTexture(w, HEADER_H - 4),
+          map: headerTexture(w, headerH - 4),
           emissive: "#ffffff",
           emissiveIntensity: 0.6,
         });
         front.emissiveMap = front.map;
         box(
           w,
-          HEADER_H - 4,
+          headerH - 4,
           8,
           [bodyMaterial, bodyMaterial, bodyMaterial, bodyMaterial, front, bodyMaterial],
           left + innerW / 2,
-          totalH - SIDE - HEADER_H / 2,
+          totalH - SIDE - headerH / 2,
           DEPTH / 2 - 4,
         );
       }

@@ -49,6 +49,21 @@ describe("renderPlanogramSvg", () => {
     expect(dashed).toBe(shelves - 10);
   });
 
+  it("draws a header picture at its own proportions, within limits", () => {
+    const header = { name: "H", color: "#111827", image: "data:image/png;base64,AA==" };
+    const geometry = { ...displayL, header: "horizontal" as const };
+    // 10 slots × 64 = 640 wide; a 600 × 230 mm header picture → 245 high.
+    expect(
+      planogramSize({ geometry, cells: {}, header: { ...header, aspect: 600 / 230 } }).headerBand,
+    ).toBe(245);
+    // Without a picture (or its proportions): the thin strip.
+    expect(planogramSize({ geometry, cells: {}, header }).headerBand).toBe(56);
+    // A square picture is capped at 45% of the width.
+    expect(
+      planogramSize({ geometry, cells: {}, header: { ...header, aspect: 1 } }).headerBand,
+    ).toBe(288);
+  });
+
   it("sizes a stepped LEGO by its widest shelf", () => {
     expect(planogramSize({ geometry: lego, cells: {} }).width).toBe(16 * 2 + 9 * 64);
   });
