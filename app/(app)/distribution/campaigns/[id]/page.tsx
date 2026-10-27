@@ -316,7 +316,7 @@ export default async function DistributionCampaignPage({
                     {t("dist.campaign.saveComposition")}
                   </Button>
                   <Link
-                    href="/distribution/sizes"
+                    href="/equipment/sizes"
                     className="text-primary self-center px-2 text-sm hover:underline"
                   >
                     {t("dist.builder.catalog")}

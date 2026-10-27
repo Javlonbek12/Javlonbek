@@ -43,7 +43,7 @@ export default async function EquipmentControlPage({
         ) : (
           <p className="text-muted-foreground text-sm">
             {t("equip.empty")}{" "}
-            <Link href="/distribution/import" className="text-primary hover:underline">
+            <Link href="/equipment/uploads" className="text-primary hover:underline">
               {t("equip.upload")}
             </Link>
           </p>

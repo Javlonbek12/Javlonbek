@@ -78,12 +78,12 @@ async function upload(form: FormData) {
 
 export async function importEquipmentAction(form: FormData) {
   const user = await requireUser();
-  await run("/distribution/import", async () => {
+  await run("/equipment/uploads", async () => {
     const buffer = await upload(form);
     if (!buffer) throw new DistributionError("badFile");
     const r = await importEquipmentFile(user, buffer);
-    if (r.status === "pending") return `/distribution/import?pending=${r.id}`;
-    return `/distribution/import?${equipmentQuery(r)}`;
+    if (r.status === "pending") return `/equipment/uploads?pending=${r.id}`;
+    return `/equipment/uploads?${equipmentQuery(r)}`;
   });
 }
 
@@ -102,34 +102,12 @@ const equipmentQuery = (r: {
     noId: String(r.noId),
   });
 
-// A POSM launch template: «Parameters» into the purchase journal, «BOM Matrix» into the catalog.
-export async function importTemplateAction(form: FormData) {
-  const user = await requireUser();
-  await run("/distribution/import", async () => {
-    const file = form.get("file");
-    const buffer = await upload(form);
-    if (!buffer || !(file instanceof File)) throw new DistributionError("badFile");
-    const r = await importLaunchTemplate(user, buffer, {
-      fileName: file.name,
-      date: str(form, "date"),
-    });
-    const query = new URLSearchParams({
-      template: String(r.purchases),
-      bought: String(r.bought),
-      sizes: String(r.sizes),
-      elements: String(r.elements),
-      noSize: String(r.skipped.length),
-    });
-    return `/distribution/import?${query}#template`;
-  });
-}
-
 // A file whose control table has a minus: saved anyway, or dropped.
 export async function resolveImportAction(form: FormData) {
   const user = await requireUser();
-  await run("/distribution/import", async () => {
+  await run("/equipment/uploads", async () => {
     const r = await resolvePendingImport(user, str(form, "id"), str(form, "save") === "1");
-    return r ? `/distribution/import?${equipmentQuery(r)}` : "/distribution/import?dropped=1";
+    return r ? `/equipment/uploads?${equipmentQuery(r)}` : "/equipment/uploads?dropped=1";
   });
 }
 
@@ -157,7 +135,7 @@ export async function deletePurchaseAction(form: FormData) {
 
 export async function importOutletsAction(form: FormData) {
   const user = await requireUser();
-  await run("/distribution/import", async () => {
+  await run("/equipment/uploads", async () => {
     const buffer = await upload(form);
     if (!buffer) throw new DistributionError("badFile");
     const r = await importOutletBase(user, buffer);
@@ -169,7 +147,29 @@ export async function importOutletsAction(form: FormData) {
       missing: String(r.missing),
       mismatched: String(r.mismatched),
     });
-    return `/distribution/import?${query}`;
+    return `/equipment/uploads?${query}`;
+  });
+}
+
+// A POSM launch template: «Parameters» into the purchase journal, «BOM Matrix» into the catalog.
+export async function importTemplateAction(form: FormData) {
+  const user = await requireUser();
+  await run("/distribution/import", async () => {
+    const file = form.get("file");
+    const buffer = await upload(form);
+    if (!buffer || !(file instanceof File)) throw new DistributionError("badFile");
+    const r = await importLaunchTemplate(user, buffer, {
+      fileName: file.name,
+      date: str(form, "date"),
+    });
+    const query = new URLSearchParams({
+      template: String(r.purchases),
+      bought: String(r.bought),
+      sizes: String(r.sizes),
+      elements: String(r.elements),
+      noSize: String(r.skipped.length),
+    });
+    return `/distribution/import?${query}#template`;
   });
 }
 
@@ -319,16 +319,16 @@ const optNum = (form: FormData, key: string) => {
 
 export async function addElementAction(form: FormData) {
   const user = await requireUser();
-  await run("/distribution/sizes", async () => {
+  await run("/equipment/sizes", async () => {
     const element = await addElement(user, str(form, "name"), str(form, "material"));
-    return `/distribution/sizes/${element.id}`;
+    return `/equipment/sizes/${element.id}`;
   });
 }
 
 export async function saveElementSizesAction(form: FormData) {
   const user = await requireUser();
   const id = str(form, "id");
-  await run(`/distribution/sizes/${id}`, async () => {
+  await run(`/equipment/sizes/${id}`, async () => {
     await saveElementSizes(user, id, {
       name: str(form, "name"),
       material: str(form, "material"),
@@ -346,21 +346,21 @@ export async function saveElementSizesAction(form: FormData) {
         };
       }),
     });
-    return `/distribution/sizes/${id}?saved=1`;
+    return `/equipment/sizes/${id}?saved=1`;
   });
 }
 
 export async function deleteElementAction(form: FormData) {
   const user = await requireUser();
-  await run("/distribution/sizes", async () => {
+  await run("/equipment/sizes", async () => {
     await deleteElement(user, str(form, "id"));
-    return "/distribution/sizes?deleted=1";
+    return "/equipment/sizes?deleted=1";
   });
 }
 
 export async function saveTypeSizesAction(form: FormData) {
   const user = await requireUser();
-  await run("/distribution/sizes", async () => {
+  await run("/equipment/sizes", async () => {
     await saveTypeSizes(
       user,
       form.getAll("type").map((value) => {
@@ -374,17 +374,17 @@ export async function saveTypeSizesAction(form: FormData) {
         };
       }),
     );
-    return "/distribution/sizes?saved=1";
+    return "/equipment/sizes?saved=1";
   });
 }
 
 export async function importCatalogAction(form: FormData) {
   const user = await requireUser();
-  await run("/distribution/sizes", async () => {
+  await run("/equipment/sizes", async () => {
     const buffer = await upload(form);
     if (!buffer) throw new DistributionError("badFile");
     const r = await importCatalogFile(user, buffer);
-    return `/distribution/sizes?sizes=${r.sizes}&types=${r.types}`;
+    return `/equipment/sizes?sizes=${r.sizes}&types=${r.types}`;
   });
 }
 

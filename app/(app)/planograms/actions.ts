@@ -205,7 +205,7 @@ export async function sendToTelegramAction(formData: FormData) {
 export async function saveEquipmentAction(formData: FormData) {
   const user = await actor();
   const id = str(formData, "equipmentId") || null;
-  await run(id ? `/planograms/equipment/${id}` : "/planograms/equipment", async () => {
+  await run(id ? `/equipment/models/${id}` : "/equipment/models/new", async () => {
     const geometry = JSON.parse(str(formData, "geometry") || "{}") as EquipmentInput["geometry"];
     const saved = await saveEquipment(user, id, {
       code: str(formData, "code"),
@@ -214,7 +214,7 @@ export async function saveEquipmentAction(formData: FormData) {
       geometry,
       distTypes: formData.getAll("distTypes").map(String),
     });
-    return `/planograms/equipment/${saved.id}?saved=1`;
+    return `/equipment/models/${saved.id}?saved=1`;
   });
 }
 

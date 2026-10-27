@@ -26,8 +26,9 @@ export type ModuleEntry = {
   href: string;
   icon: LucideIcon;
   roles: Role[];
-  // The role-settings section that switches it (default: its own id).
-  access?: string;
+  // The role-settings section(s) that switch it (default: its own id); with several, any of
+  // them shows it.
+  access?: string | string[];
   // false = not in the phone's bottom bar (shown elsewhere, e.g. the bell in the header).
   mobile?: boolean;
 };
@@ -117,15 +118,15 @@ export const MODULES: ModuleEntry[] = [
     roles: ALL_ROLES,
     mobile: false,
   },
-  // Where the equipment is: a map of Uzbekistan, every type with its model, regions and TSMs.
-  // The same data as the distribution, so the same access.
+  // The equipment: a map of Uzbekistan, types, planogram models, sizes, quantities, uploads.
+  // Shared by the planograms and the distribution: shown with either.
   {
     id: "equipment",
     titleKey: "nav.equipment",
     href: "/equipment",
     icon: MapPinned,
     roles: ALL_ROLES,
-    access: "distribution",
+    access: ["distribution", "planograms"],
     mobile: false,
   },
   {
@@ -171,7 +172,6 @@ export function modulesForRole(
       module.roles.includes(role) &&
       (role === "OWNER" ||
         !enabled ||
-        !SWITCHABLE.has(module.access ?? module.id) ||
-        enabled.includes(module.access ?? module.id)),
+        [module.access ?? module.id].flat().some((m) => !SWITCHABLE.has(m) || enabled.includes(m))),
   );
 }
