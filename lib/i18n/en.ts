@@ -1975,13 +1975,16 @@ export const en: Dictionary = {
     },
     purchases: {
       title: "Purchase journal",
-      hint: "How much equipment of each type was bought. Entered by hand only: file uploads never change it. The sum per type is the ceiling of the control equation. A correction is a separate line with a minus.",
+      hint: "How much equipment of each type was bought. Entered by hand or by uploading a POSM launch template (“Data”); the equipment file and the outlet base never change it. The sum per type is the ceiling of the control equation. A correction is a separate line with a minus.",
       quantity: "Quantity",
       date: "Date",
       document: "Document",
       note: "Note",
       author: "Entered by",
       add: "Add",
+      types: "Equipment type (several — if one purchase covers a group)",
+      typesHint:
+        "E.g. Display L: DG L + Metawerk L — their headers are the same, bought together. The control checks the group as a whole.",
       delete: "Delete entry",
       none: "No purchases entered yet.",
     },
@@ -2227,6 +2230,14 @@ export const en: Dictionary = {
       noId: "Outlets without an ID (counted by TIN or name): {count}.",
       minus:
         "The file is not saved: the control equation has a minus ({rows} rows in the file). A minus usually means duplicate rows or dismantled equipment still in the file. Check the table and save only if you are sure.",
+      templateTitle: "POSM launch template",
+      templateHint:
+        "A file like “POSM_ESSE_Change_1”: the “Parameters” sheet (Equipment Master — how much equipment was bought) → the purchase journal; the “BOM Matrix” sheet (elements, sizes, pieces per equipment) → the size catalog. Code L is every L but POSI (Display Group + Metawerk), M every M but POSI, C is DG C, S is MW S, XL/LP/MP/CP are POSI. Shelftalkers go by shelf (“Shelftalker №1”, “№2”…); the print name does not go into the catalog. Uploading the same file again replaces its purchases.",
+      templateDate: "Purchase date",
+      templateDone:
+        "Uploaded: {purchases} purchase lines ({bought} units), catalog sizes: {sizes}, new elements: {elements}.",
+      templateNoSize: "Without a size, not in the catalog: {count}.",
+      templateControl: "Control →",
       saveAnyway: "Save anyway",
       drop: "Don't save",
       dropped: "The file was not saved.",
@@ -2513,6 +2524,8 @@ export const en: Dictionary = {
         "The file has no “BW management” sheet with the Region, Smartup ID and BW discription columns.",
       noPosm: "The file has no “POSM” sheet with the list of materials (a “#”, “POSM” header row).",
       noOutlets: "The file has no “ИД” and “Responsible TSM” columns.",
+      noTemplate:
+        "This is not a POSM launch template: no “Parameters” sheet (Equipment Type, Code, BWD Count) or “BOM Matrix” (POSM Name, H, W).",
       tooBig: "The file is larger than 20 MB.",
       invalid: "Check the values you entered.",
       notFound: "Not found.",

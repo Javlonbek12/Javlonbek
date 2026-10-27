@@ -19,12 +19,15 @@ export async function listPurchases() {
 
 export async function addPurchase(
   actor: Actor & Viewer,
-  input: { type: string; quantity: number; date: string; document: string; note?: string },
+  input: { types: string[]; quantity: number; date: string; document: string; note?: string },
 ) {
   if (!canManageDistribution(actor)) throw new DistributionError("forbidden");
   const document = input.document.trim();
+  // In the order of the type list, each once.
+  const types = DIST_TYPES.map((d) => d.code).filter((c) => input.types.includes(c));
   if (
-    !DIST_TYPES.some((d) => d.code === input.type) ||
+    types.length === 0 ||
+    types.length !== new Set(input.types).size ||
     !Number.isFinite(input.quantity) ||
     input.quantity === 0 ||
     !isDateString(input.date) ||
@@ -34,7 +37,7 @@ export async function addPurchase(
     throw new DistributionError("invalid");
   const created = await db.distPurchase.create({
     data: {
-      type: input.type,
+      types,
       quantity: input.quantity,
       date: fromDateString(input.date),
       document,
@@ -47,7 +50,7 @@ export async function addPurchase(
     action: "distribution.purchase",
     entityType: "DistPurchase",
     entityId: created.id,
-    details: { type: input.type, quantity: input.quantity, document },
+    details: { types, quantity: input.quantity, document },
   });
   return created;
 }
@@ -62,6 +65,6 @@ export async function deletePurchase(actor: Actor & Viewer, id: string) {
     action: "distribution.purchaseDeleted",
     entityType: "DistPurchase",
     entityId: id,
-    details: { type: row.type, quantity: row.quantity, document: row.document },
+    details: { types: row.types, quantity: row.quantity, document: row.document },
   });
 }

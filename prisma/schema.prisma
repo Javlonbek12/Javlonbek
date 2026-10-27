@@ -971,7 +971,9 @@ model DistSkippedRow {
 // the control equation (bought = installed + in stock + unaccounted). Entered by hand only.
 model DistPurchase {
   id          String   @id @default(cuid())
-  type        String
+  // One type, or a group bought as one (e.g. Display L = DG L + Metawerk L): the control
+  // equation then checks the group as a whole.
+  types       String[]
   // Display MOD in 18-slot units, like everywhere else.
   quantity    Float
   date        DateTime @db.Date
@@ -980,8 +982,6 @@ model DistPurchase {
   createdById String
   createdBy   User     @relation("DistPurchaseCreatedBy", fields: [createdById], references: [id])
   createdAt   DateTime @default(now())
-
-  @@index([type])
 }
 
 // An equipment file waiting for confirmation: its control equation has a minus.

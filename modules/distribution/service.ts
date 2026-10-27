@@ -22,7 +22,7 @@ import {
   type Item,
   type TypeFacts,
 } from "./compute";
-import { controlRows, hasMinus, purchasedByType, stockByType, type ControlRow } from "./control";
+import { controlRows, hasMinus, purchaseEntries, stockByType, type ControlRow } from "./control";
 import {
   DistributionParseError,
   parseEquipmentFile,
@@ -49,6 +49,7 @@ export class DistributionError extends Error {
       | "noEquipment"
       | "noPosm"
       | "noOutlets"
+      | "noTemplate"
       | "tooBig"
       | "invalid"
       | "notFound"
@@ -339,7 +340,7 @@ export async function dataSources() {
 
 const MAX_FILE = 20 * 1024 * 1024;
 
-async function parsed<T>(buffer: Buffer, parse: (b: Buffer) => Promise<T>): Promise<T> {
+export async function parsed<T>(buffer: Buffer, parse: (b: Buffer) => Promise<T>): Promise<T> {
   if (buffer.length > MAX_FILE) throw new DistributionError("tooBig");
   try {
     return await parse(buffer);
@@ -362,7 +363,7 @@ async function previewControl(file: ParsedEquipment): Promise<ControlRow[]> {
   for (const u of file.units) installed[u.type] = (installed[u.type] ?? 0) + u.units;
   const stock: Record<string, number> = {};
   for (const c of file.stock) stock[c.type] = (stock[c.type] ?? 0) + c.count;
-  const [purchased, current] = await Promise.all([purchasedByType(), stockByType()]);
+  const [purchased, current] = await Promise.all([purchaseEntries(), stockByType()]);
   return controlRows(purchased, installed, file.stock.length ? stock : current);
 }
 

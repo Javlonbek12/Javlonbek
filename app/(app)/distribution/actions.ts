@@ -19,6 +19,7 @@ import {
 } from "@/modules/distribution/campaign";
 import { saveEas } from "@/modules/distribution/eas";
 import { addPurchase, deletePurchase } from "@/modules/distribution/purchases";
+import { importLaunchTemplate } from "@/modules/distribution/template";
 import {
   addElement,
   deleteElement,
@@ -101,6 +102,28 @@ const equipmentQuery = (r: {
     noId: String(r.noId),
   });
 
+// A POSM launch template: «Parameters» into the purchase journal, «BOM Matrix» into the catalog.
+export async function importTemplateAction(form: FormData) {
+  const user = await requireUser();
+  await run("/distribution/import", async () => {
+    const file = form.get("file");
+    const buffer = await upload(form);
+    if (!buffer || !(file instanceof File)) throw new DistributionError("badFile");
+    const r = await importLaunchTemplate(user, buffer, {
+      fileName: file.name,
+      date: str(form, "date"),
+    });
+    const query = new URLSearchParams({
+      template: String(r.purchases),
+      bought: String(r.bought),
+      sizes: String(r.sizes),
+      elements: String(r.elements),
+      noSize: String(r.skipped.length),
+    });
+    return `/distribution/import?${query}#template`;
+  });
+}
+
 // A file whose control table has a minus: saved anyway, or dropped.
 export async function resolveImportAction(form: FormData) {
   const user = await requireUser();
@@ -114,7 +137,7 @@ export async function addPurchaseAction(form: FormData) {
   const user = await requireUser();
   await run("/equipment/control", async () => {
     await addPurchase(user, {
-      type: str(form, "type"),
+      types: form.getAll("types").map(String),
       quantity: Number(str(form, "quantity").replace(",", ".")),
       date: str(form, "date"),
       document: str(form, "document"),

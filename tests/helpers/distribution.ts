@@ -179,3 +179,32 @@ export async function posmWorkbook(options: { posmSheet?: boolean } = {}) {
   }
   return Buffer.from(await book.xlsx.writeBuffer());
 }
+
+// A POSM launch template: «Parameters» (equipment master) and «BOM Matrix» (made-up launch).
+export async function launchTemplateWorkbook() {
+  const book = new ExcelJS.Workbook();
+  const params = book.addWorksheet("Parameters");
+  params.addRow(["POSM LAUNCH TEMPLATE — PARAMETERS"]);
+  params.addRow([]);
+  params.addRow(["Launch name", "Тестовый запуск"]);
+  params.addRow([]);
+  params.addRow(["EQUIPMENT MASTER"]);
+  params.addRow(["#", "Equipment Type", "Code", "BWD Count", "Reserve %", "Multiplier (auto)"]);
+  params.addRow([1, "Display-L (10*10 / 10*9)", "L", 20, 0.1, 1.1]);
+  params.addRow([2, "Display-L POSI (10*9)", "LP", 12, 0.2, 1.2]);
+  params.addRow([3, "Display-C (10*6)", "C", 4, 0.2, 1.2]);
+  const bom = book.addWorksheet("BOM Matrix");
+  bom.addRow(["BOM MATRIX"]);
+  bom.addRow(["Coefficient = units per backwall."]);
+  bom.addRow([]);
+  bom.addRow(["#", "POSM Name", "H (mm)", "W (mm)", "Material", "L", "M", "C", "S", "XL", "LP"]);
+  bom.addRow([1, "Header (L)", 230, 600, "Backprint UV", 1]);
+  bom.addRow([2, "Header POSI (L)", 294, 578, "Backprint UV", null, null, null, null, null, 1]);
+  bom.addRow([3, "Combo Box (L) Static", 230, 288, "Backprint UV", 1]);
+  bom.addRow([4, 'Shelftalker №1 "Тест A" (L)', 38, 625, "Backprint UV", 1]);
+  bom.addRow([5, 'Shelftalker №3-4 "Тест B" (L)', 38, 310, "Backprint UV", 2]);
+  bom.addRow([6, 'Divider "Тест A" (2 slot)', 105, 120, "PET plastic", 1, null, 1]);
+  bom.addRow([7, 'Divider "Тест B" (2 slot)', 105, 120, "PET plastic", 1]);
+  bom.addRow([8, "Jumbo Pack Header (тест)", null, null, "Carton UV", 1]);
+  return Buffer.from(await book.xlsx.writeBuffer());
+}

@@ -3,17 +3,16 @@ import Link from "next/link";
 
 import { Section } from "@/components/connect/parts";
 import { fmt, Matrix } from "@/components/distribution/parts";
-import { ControlTable } from "@/components/equipment/control-table";
+import { ControlTable, typesLabel } from "@/components/equipment/control-table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { NativeSelect } from "@/components/ui/native-select";
 import { dateFormat, t, type TranslationKey } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getUserToday } from "@/modules/core/settings/service";
 import { equipmentControl } from "@/modules/distribution/control";
 import { listPurchases } from "@/modules/distribution/purchases";
 import { canManageDistribution } from "@/modules/distribution/service";
-import { DIST_TYPES, typeInfo } from "@/modules/distribution/types";
+import { DIST_TYPES } from "@/modules/distribution/types";
 
 import { addPurchaseAction, deletePurchaseAction } from "../../distribution/actions";
 
@@ -54,19 +53,20 @@ export default async function EquipmentControlPage({
       <Section title={t("equip.purchases.title")} hint={t("equip.purchases.hint")}>
         {manage && (
           <form action={addPurchaseAction} className="flex flex-wrap items-end gap-3">
-            <label className="flex flex-col gap-1 text-sm">
-              {t("equip.control.type")}
-              <NativeSelect name="type" required defaultValue="">
-                <option value="" disabled>
-                  —
-                </option>
+            <fieldset className="flex w-full flex-col gap-1 text-sm">
+              <legend className="mb-1">{t("equip.purchases.types")}</legend>
+              <div className="flex flex-wrap gap-x-4 gap-y-1.5">
                 {DIST_TYPES.map((x) => (
-                  <option key={x.code} value={x.code}>
+                  <label key={x.code} className="flex items-center gap-1.5">
+                    <input type="checkbox" name="types" value={x.code} className="size-4" />
                     {x.label}
-                  </option>
+                  </label>
                 ))}
-              </NativeSelect>
-            </label>
+              </div>
+              <span className="text-muted-foreground text-xs">
+                {t("equip.purchases.typesHint")}
+              </span>
+            </fieldset>
             <label className="flex w-28 flex-col gap-1 text-sm">
               {t("equip.purchases.quantity")}
               <Input name="quantity" required inputMode="decimal" />
@@ -88,7 +88,7 @@ export default async function EquipmentControlPage({
         )}
         {purchases.length ? (
           <Matrix
-            text={[3, 4, 5]}
+            text={[1, 3, 4, 5]}
             head={[
               t("equip.purchases.date"),
               t("equip.control.type"),
@@ -102,7 +102,9 @@ export default async function EquipmentControlPage({
               key: p.id,
               cells: [
                 day.format(p.date),
-                typeInfo(p.type)?.label ?? p.type,
+                <span key="t" className="whitespace-normal">
+                  {typesLabel(p.types)}
+                </span>,
                 fmt(p.quantity),
                 p.document,
                 p.note ?? "",

@@ -24,10 +24,16 @@ import {
 import { equipmentOverview, regionEquipment } from "@/modules/distribution/equipment";
 import { equipmentControl, outletReview } from "@/modules/distribution/control";
 import { addPurchase, deletePurchase } from "@/modules/distribution/purchases";
+import { importLaunchTemplate } from "@/modules/distribution/template";
 import { NO_TSM } from "@/modules/distribution/types";
 import { distributionXlsx } from "@/modules/distribution/xlsx";
 import { createTestUser, resetDb } from "@/tests/helpers/db";
-import { equipmentWorkbook, outletBaseWorkbook, posmWorkbook } from "@/tests/helpers/distribution";
+import {
+  equipmentWorkbook,
+  launchTemplateWorkbook,
+  outletBaseWorkbook,
+  posmWorkbook,
+} from "@/tests/helpers/distribution";
 
 async function setUp() {
   const owner = await withAccess(await createTestUser("OWNER"));
@@ -286,23 +292,23 @@ describe("the equipment section", () => {
     await importOutletBase(owner, await outletBaseWorkbook());
     // Bought: 18 POSI L (16 installed + 2 in stock → 0 unaccounted), 3 DG C (4 installed → −1).
     await addPurchase(owner, {
-      type: "POSI_L",
+      types: ["POSI_L"],
       quantity: 20,
       date: "2026-01-10",
       document: "Накладная №1 (тест)",
     });
     const correction = await addPurchase(owner, {
-      type: "POSI_L",
+      types: ["POSI_L"],
       quantity: -2,
       date: "2026-02-01",
       document: "Исправление (тест)",
     });
-    await addPurchase(owner, { type: "DG_C", quantity: 3, date: "2026-01-10", document: "№2" });
+    await addPurchase(owner, { types: ["DG_C"], quantity: 3, date: "2026-01-10", document: "№2" });
     await expect(
-      addPurchase(member, { type: "DG_C", quantity: 1, date: "2026-01-10", document: "№3" }),
+      addPurchase(member, { types: ["DG_C"], quantity: 1, date: "2026-01-10", document: "№3" }),
     ).rejects.toMatchObject({ code: "forbidden" });
     await expect(
-      addPurchase(owner, { type: "NO_SUCH", quantity: 1, date: "2026-01-10", document: "№3" }),
+      addPurchase(owner, { types: ["NO_SUCH"], quantity: 1, date: "2026-01-10", document: "№3" }),
     ).rejects.toMatchObject({ code: "invalid" });
 
     // A minus: the file waits for a confirmation, nothing is saved.
@@ -310,7 +316,7 @@ describe("the equipment section", () => {
     expect(held.status).toBe("pending");
     expect(await db.distUnit.count()).toBe(0);
     const pending = await pendingImport(held.status === "pending" ? held.id : "");
-    expect(pending?.control.find((r) => r.type === "DG_C")).toMatchObject({
+    expect(pending?.control.find((r) => r.types.join() === "DG_C")).toMatchObject({
       purchased: 3,
       installed: 4,
       unaccounted: -1,
@@ -319,7 +325,7 @@ describe("the equipment section", () => {
     expect(await resolvePendingImport(owner, pending!.id, true)).toMatchObject({ rows: 23 });
     expect(await db.distPendingImport.count()).toBe(0);
     const control = await equipmentControl();
-    expect(control.rows.find((r) => r.type === "POSI_L")).toMatchObject({
+    expect(control.rows.find((r) => r.types.join() === "POSI_L")).toMatchObject({
       purchased: 18,
       installed: 16,
       stock: 2,
@@ -328,13 +334,15 @@ describe("the equipment section", () => {
     });
 
     // Once the purchase is right, the same file goes straight in; the journal is untouched.
-    await addPurchase(owner, { type: "DG_C", quantity: 1, date: "2026-03-01", document: "№4" });
+    await addPurchase(owner, { types: ["DG_C"], quantity: 1, date: "2026-03-01", document: "№4" });
     await deletePurchase(owner, correction.id);
     const extra = await importEquipmentFile(owner, await equipmentWorkbook({ extra: true }));
     expect(extra).toMatchObject({ status: "saved", rows: 25, skipped: 2, noId: 1 });
     expect(await db.distPurchase.count()).toBe(3);
     // 20 bought − 18 installed − 2 in stock = 0 (outlet 15 and the row without an ID count).
-    expect((await equipmentControl()).rows.find((r) => r.type === "POSI_L")?.unaccounted).toBe(0);
+    expect(
+      (await equipmentControl()).rows.find((r) => r.types.join() === "POSI_L")?.unaccounted,
+    ).toBe(0);
 
     // Outlet 15 is not in the base: installed, «TSM не назначен»; the TIN row has no TSM either.
     const review = await outletReview();
@@ -358,5 +366,39 @@ describe("the equipment section", () => {
     // The base: how many outlets of the file it lacks, and region mismatches (shown, not used).
     const base = await importOutletBase(owner, await outletBaseWorkbook());
     expect(base).toMatchObject({ missing: 1, mismatched: 0 });
+  });
+
+  it("takes a launch template into the purchase journal and the size catalog", async () => {
+    const owner = await withAccess(await createTestUser("OWNER"));
+    const member = await withAccess(await createTestUser("MEMBER"));
+    await importEquipmentFile(owner, await equipmentWorkbook());
+    const input = { fileName: "POSM_test.xlsx", date: "2026-06-28" };
+    await expect(
+      importLaunchTemplate(member, await launchTemplateWorkbook(), input),
+    ).rejects.toMatchObject({ code: "forbidden" });
+    await expect(
+      importLaunchTemplate(owner, await equipmentWorkbook(), input),
+    ).rejects.toMatchObject({ code: "noTemplate" });
+
+    const r = await importLaunchTemplate(owner, await launchTemplateWorkbook(), input);
+    expect(r).toMatchObject({ launch: "Тестовый запуск", purchases: 3, bought: 36 });
+    // Again: the file's purchases are replaced, not doubled.
+    await importLaunchTemplate(owner, await launchTemplateWorkbook(), input);
+    expect(await db.distPurchase.count()).toBe(3);
+    const control = await equipmentControl();
+    expect(control.rows.find((row) => row.types.length === 3)).toMatchObject({
+      types: ["DG_L", "MW25_L", "MW24_L"],
+      purchased: 20,
+      installed: 0,
+    });
+    const shelf = await db.distElement.findUnique({
+      where: { name: "Shelftalker №3" },
+      include: { sizes: true },
+    });
+    expect(shelf?.sizes.map((x) => [x.type, x.widthMm, x.verified]).sort()).toEqual([
+      ["DG_L", 310, true],
+      ["MW24_L", 310, true],
+      ["MW25_L", 310, true],
+    ]);
   });
 });
