@@ -4,13 +4,28 @@ import { Section } from "@/components/connect/parts";
 import { fmt } from "@/components/distribution/parts";
 import { EquipmentSketch, rowsOf } from "@/components/distribution/sketch";
 import { t } from "@/lib/i18n";
+import { db } from "@/lib/db";
 import { equipmentOverview } from "@/modules/distribution/equipment";
+import { describeGeometry, parseGeometry } from "@/modules/planograms/geometry";
 import { DIST_TYPES } from "@/modules/distribution/types";
 
 // Every equipment type: a to-scale model, its dimensions and slots, how many are installed, in
 // warehouses and in how many outlets, and where most of them are.
 export default async function EquipmentTypesPage() {
-  const o = await equipmentOverview();
+  const [o, models] = await Promise.all([
+    equipmentOverview(),
+    // The planogram model of each type: the same equipment in the planogram library.
+    db.equipment.findMany({
+      where: { distTypes: { isEmpty: false } },
+      select: {
+        id: true,
+        name: true,
+        distTypes: true,
+        geometry: true,
+        _count: { select: { planograms: { where: { isTemplate: false } } } },
+      },
+    }),
+  ]);
   const groups = [...new Set(DIST_TYPES.map((x) => x.group))];
   return (
     <div className="flex flex-col gap-5 [&>*]:min-w-0">
@@ -46,11 +61,14 @@ export default async function EquipmentTypesPage() {
                         height={140}
                       />
                     </div>
-                    <dl className="grid flex-1 grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+                    <dl className="grid min-w-0 flex-1 grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
                       <dt className="text-muted-foreground">{t("equip.size")}</dt>
-                      <dd className="text-right tabular-nums">
+                      <dd className="min-w-0 text-right text-xs tabular-nums">
+                        {/* A line may break after "×", never inside a number. */}
                         {size?.heightMm && size.widthMm
-                          ? `${size.heightMm}×${size.widthMm}${size.depthMm ? `×${size.depthMm}` : ""}`
+                          ? [size.heightMm, size.widthMm, size.depthMm]
+                              .filter(Boolean)
+                              .join("×\u200b")
                           : "—"}
                       </dd>
                       <dt className="text-muted-foreground">{t("equip.metric.installed")}</dt>
@@ -66,6 +84,23 @@ export default async function EquipmentTypesPage() {
                     </dl>
                   </div>
                   {size?.note && <p className="text-muted-foreground text-xs">{size.note}</p>}
+                  {(() => {
+                    const model = models.find((m) => m.distTypes.includes(type.code));
+                    return model ? (
+                      <Link
+                        href={`/planograms/equipment/${model.id}`}
+                        className="text-primary text-xs hover:underline"
+                      >
+                        {t("equip.model", {
+                          name: model.name,
+                          shelves: describeGeometry(parseGeometry(model.geometry)),
+                          count: model._count.planograms,
+                        })}
+                      </Link>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">{t("equip.noModel")}</span>
+                    );
+                  })()}
                   {top.length > 0 && (
                     <ul className="flex flex-col gap-1 border-t pt-2">
                       {top.slice(0, 5).map((r) => (

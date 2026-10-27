@@ -1,5 +1,5 @@
-// Equipment types of the POSM distribution file, in its column order, and how each maps to the
-// planogram library's equipment (for slots and price tags).
+// Equipment types of the POSM distribution file, in its column order. Which planogram model
+// each type is lives on the model (Equipment.distTypes).
 export const DIST_TYPES = [
   {
     code: "POSI_XL",
@@ -7,7 +7,6 @@ export const DIST_TYPES = [
     size: "XL",
     label: "POSI XL (12*10)",
     slots: 120,
-    equipment: "DISPLAY_XL_POSI",
   },
   {
     code: "POSI_L",
@@ -15,7 +14,6 @@ export const DIST_TYPES = [
     size: "L",
     label: "POSI L (10*9)",
     slots: 90,
-    equipment: "DISPLAY_L_POSI",
   },
   {
     code: "POSI_M",
@@ -23,7 +21,6 @@ export const DIST_TYPES = [
     size: "M",
     label: "POSI M (6*9)",
     slots: 54,
-    equipment: "DISPLAY_M_POSI",
   },
   {
     code: "POSI_C",
@@ -31,7 +28,6 @@ export const DIST_TYPES = [
     size: "C",
     label: "POSI C (10*6)",
     slots: 60,
-    equipment: "DISPLAY_C_POSI",
   },
   {
     code: "DG_L",
@@ -39,7 +35,6 @@ export const DIST_TYPES = [
     size: "L",
     label: "DG L (10*10)",
     slots: 100,
-    equipment: "DISPLAY_L_MWDG",
   },
   {
     code: "DG_M",
@@ -47,7 +42,6 @@ export const DIST_TYPES = [
     size: "M",
     label: "DG M (6*10)",
     slots: 60,
-    equipment: "DISPLAY_M_MWDG",
   },
   {
     code: "DG_C",
@@ -55,7 +49,6 @@ export const DIST_TYPES = [
     size: "C",
     label: "DG C (10*6)",
     slots: 60,
-    equipment: "DISPLAY_C_DG",
   },
   {
     code: "MW25_L",
@@ -63,7 +56,6 @@ export const DIST_TYPES = [
     size: "L",
     label: "MW-25 L (10*10)",
     slots: 100,
-    equipment: "DISPLAY_L_MWDG",
   },
   {
     code: "MW25_M",
@@ -71,7 +63,6 @@ export const DIST_TYPES = [
     size: "M",
     label: "MW-25 M (6*10)",
     slots: 60,
-    equipment: "DISPLAY_M_MWDG",
   },
   {
     code: "MW24_L",
@@ -79,7 +70,6 @@ export const DIST_TYPES = [
     size: "L",
     label: "MW-24 L (10*9)",
     slots: 90,
-    equipment: "DISPLAY_L_MWDG",
   },
   {
     code: "MW24_M",
@@ -87,7 +77,6 @@ export const DIST_TYPES = [
     size: "M",
     label: "MW-24 M (6*9)",
     slots: 54,
-    equipment: "DISPLAY_M_MWDG",
   },
   {
     code: "MW24_S",
@@ -95,7 +84,6 @@ export const DIST_TYPES = [
     size: "S",
     label: "MW-24 S (10*2)",
     slots: 20,
-    equipment: "DISPLAY_S_MW",
   },
   // Display MOD is counted in 18-slot units (as in the equipment file); no planogram yet.
   {
@@ -104,10 +92,9 @@ export const DIST_TYPES = [
     size: "MOD",
     label: "Display MOD",
     slots: 18,
-    equipment: null,
   },
-  { code: "LIGHTBOX", group: "POSI", size: "", label: "Lightbox", slots: 0, equipment: null },
-  { code: "SUPPORT", group: "Z-Movers", size: "", label: "Support", slots: 0, equipment: null },
+  { code: "LIGHTBOX", group: "POSI", size: "", label: "Lightbox", slots: 0 },
+  { code: "SUPPORT", group: "Z-Movers", size: "", label: "Support", slots: 0 },
 ] as const;
 
 export type DistType = (typeof DIST_TYPES)[number]["code"];

@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 
 import { sortRegions, TYPE_CODES, type DistType } from "./types";
 
-// The control equation of each equipment type: bought (the purchase journal, entered by hand) =
+// The control equation of each equipment type (or group bought as one): bought (the purchase journal, entered by hand) =
 // installed (rows of «BW management») + in stock («Current stock») + unaccounted. Unaccounted is
 // never entered: it is what is left. A small plus is normal (in transit, written off); a large
 // plus means something did not reach the warehouse count; a minus is an error in the file
@@ -12,14 +12,17 @@ import { sortRegions, TYPE_CODES, type DistType } from "./types";
 export type ControlTone = "ok" | "warn" | "bad" | "none";
 
 export type ControlRow = {
-  type: DistType;
-  // null: nothing bought is entered for the type.
+  // One type, or a group bought as one (Display L = DG L + Metawerk L): checked as a whole.
+  types: DistType[];
+  // null: nothing bought is entered for it.
   purchased: number | null;
   installed: number;
   stock: number;
   unaccounted: number | null;
   tone: ControlTone;
 };
+
+export type PurchaseEntry = { types: string[]; quantity: number };
 
 // A plus above this share of what was bought (and above one unit) is «large».
 export const LARGE_SHARE = 0.05;
@@ -32,28 +35,44 @@ export function controlTone(purchased: number | null, unaccounted: number | null
   return "ok";
 }
 
+// Types bought together in any entry form one row; the rest are a row each.
 export function controlRows(
-  purchased: Partial<Record<string, number>>,
+  purchases: PurchaseEntry[],
   installed: Partial<Record<string, number>>,
   stock: Partial<Record<string, number>>,
 ): ControlRow[] {
-  return TYPE_CODES.flatMap((type) => {
-    const p = purchased[type] ?? null;
-    const i = installed[type] ?? 0;
-    const s = stock[type] ?? 0;
-    if (p === null && !i && !s) return [];
+  const known = (types: string[]) =>
+    types.filter((t): t is DistType => TYPE_CODES.includes(t as DistType));
+  // Union of types that share an entry.
+  const group = new Map<DistType, Set<DistType>>(TYPE_CODES.map((t) => [t, new Set([t])]));
+  for (const p of purchases) {
+    const types = known(p.types);
+    const merged = new Set(types.flatMap((t) => [...group.get(t)!]));
+    for (const t of merged) group.set(t, merged);
+  }
+  const rows: ControlRow[] = [];
+  const done = new Set<Set<DistType>>();
+  for (const type of TYPE_CODES) {
+    const members = group.get(type)!;
+    if (done.has(members)) continue;
+    done.add(members);
+    const types = TYPE_CODES.filter((t) => members.has(t));
+    const entries = purchases.filter((p) => known(p.types).some((t) => members.has(t)));
+    const p = entries.length ? entries.reduce((sum, e) => sum + e.quantity, 0) : null;
+    const i = types.reduce((sum, t) => sum + (installed[t] ?? 0), 0);
+    const s = types.reduce((sum, t) => sum + (stock[t] ?? 0), 0);
+    if (p === null && !i && !s) continue;
     const unaccounted = p === null ? null : p - i - s;
-    return [
-      {
-        type,
-        purchased: p,
-        installed: i,
-        stock: s,
-        unaccounted,
-        tone: controlTone(p, unaccounted),
-      },
-    ];
-  });
+    rows.push({
+      types,
+      purchased: p,
+      installed: i,
+      stock: s,
+      unaccounted,
+      tone: controlTone(p, unaccounted),
+    });
+  }
+  return rows;
 }
 
 export function controlTotal(rows: ControlRow[]) {
@@ -68,9 +87,8 @@ export function controlTotal(rows: ControlRow[]) {
 
 export const hasMinus = (rows: ControlRow[]) => rows.some((r) => r.tone === "bad");
 
-export async function purchasedByType(): Promise<Record<string, number>> {
-  const rows = await db.distPurchase.groupBy({ by: ["type"], _sum: { quantity: true } });
-  return Object.fromEntries(rows.map((r) => [r.type, r._sum.quantity ?? 0]));
+export async function purchaseEntries(): Promise<PurchaseEntry[]> {
+  return db.distPurchase.findMany({ select: { types: true, quantity: true } });
 }
 
 export async function stockByType(): Promise<Record<string, number>> {
@@ -85,7 +103,7 @@ export async function stockByType(): Promise<Record<string, number>> {
 // The control table on what is loaded now.
 export async function equipmentControl() {
   const [purchased, installed, stock] = await Promise.all([
-    purchasedByType(),
+    purchaseEntries(),
     db.distUnit.groupBy({ by: ["type"], _sum: { units: true } }),
     stockByType(),
   ]);

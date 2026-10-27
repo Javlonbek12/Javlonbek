@@ -3,7 +3,7 @@ import { toDateString } from "@/lib/dates";
 import type { Prisma } from "@/lib/generated/prisma/client";
 
 import { parseGeometry, slotKey } from "./geometry";
-import type { Layout, SkuInfo } from "./layout";
+import { coveredSlots, type Layout, type SkuInfo } from "./layout";
 import type { Rule } from "./validate";
 
 export const planogramInclude = {
@@ -18,7 +18,7 @@ export type PlanogramRecord = Prisma.PlanogramGetPayload<{ include: typeof plano
 
 export function layoutFromSlots(
   slots: PlanogramRecord["slots"],
-  posmSpans: Map<string, number>,
+  posmSpans: Map<string, { span: number; rows: number }>,
 ): Layout {
   const layout: Layout = {};
   for (const slot of slots) {
@@ -26,9 +26,17 @@ export function layoutFromSlots(
     if (slot.kind === "SKU" && slot.skuId)
       layout[key] = { kind: "SKU", skuId: slot.skuId, badges: slot.badges };
     else if (slot.kind === "POSM" && slot.posmId)
-      layout[key] = { kind: "POSM", posmId: slot.posmId, span: posmSpans.get(slot.posmId) ?? 1 };
+      layout[key] = {
+        kind: "POSM",
+        posmId: slot.posmId,
+        span: posmSpans.get(slot.posmId)?.span ?? 1,
+        rows: posmSpans.get(slot.posmId)?.rows ?? 1,
+      };
     else layout[key] = { kind: "EMPTY" };
   }
+  // "Empty" marks under a POSM that now covers more (its height was raised) are dropped; a pack
+  // there stays and shows as an overlap.
+  for (const key of coveredSlots(layout)) if (layout[key]?.kind === "EMPTY") delete layout[key];
   return layout;
 }
 
@@ -84,8 +92,8 @@ export async function loadSkuInfos(): Promise<
 }
 
 export async function posmSpans() {
-  const posm = await db.posm.findMany({ select: { id: true, slotSpan: true } });
-  return new Map(posm.map((p) => [p.id, p.slotSpan]));
+  const posm = await db.posm.findMany({ select: { id: true, slotSpan: true, shelfSpan: true } });
+  return new Map(posm.map((p) => [p.id, { span: p.slotSpan, rows: p.shelfSpan }]));
 }
 
 export async function priceMap(priceListId: string | null): Promise<Map<string, number>> {

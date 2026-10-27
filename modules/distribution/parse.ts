@@ -61,7 +61,9 @@ export type ParsedPosm = {
 };
 
 export class DistributionParseError extends Error {
-  constructor(public readonly code: "noEquipment" | "noPosm" | "noOutlets" | "badFile") {
+  constructor(
+    public readonly code: "noEquipment" | "noPosm" | "noOutlets" | "noTemplate" | "badFile",
+  ) {
     super(code);
     this.name = "DistributionParseError";
   }
@@ -327,4 +329,146 @@ function posmFromSheet(sheet: ExcelJS.Worksheet): ParsedPosm[] {
     });
   }
   return items;
+}
+
+// ——— A POSM launch template (e.g. «POSM_ESSE_Change_1»): «Parameters» and «BOM Matrix» ———
+
+// The template's equipment codes. Display Group and Metawerk of one size share their POSM, so
+// the template counts them together: «L» is every L display but POSI's, and so on.
+export const TEMPLATE_CODES: Record<string, DistType[]> = {
+  L: ["DG_L", "MW25_L", "MW24_L"],
+  M: ["DG_M", "MW25_M", "MW24_M"],
+  C: ["DG_C"],
+  S: ["MW24_S"],
+  XL: ["POSI_XL"],
+  LP: ["POSI_L"],
+  MP: ["POSI_M"],
+  CP: ["POSI_C"],
+};
+
+export type TemplateEquipment = {
+  code: string;
+  label: string;
+  types: DistType[];
+  count: number;
+  reservePct: number | null;
+};
+
+export type TemplateSize = {
+  element: string;
+  type: DistType;
+  heightMm: number;
+  widthMm: number;
+  perUnit: number;
+  material: string | null;
+};
+
+export type ParsedTemplate = {
+  launch: string | null;
+  equipment: TemplateEquipment[];
+  sizes: TemplateSize[];
+  // BOM rows not taken into the catalog (no size).
+  skipped: string[];
+};
+
+// The catalog element of a BOM row: the name without the print («"Change 1mg"»), the equipment
+// («(L)», «POSI») and the like. Shelftalkers keep their shelf: «Shelftalker №3-4 …» is the
+// elements «Shelftalker №3» and «Shelftalker №4».
+export function bomElements(name: string): string[] {
+  if (/shelf\s*-?\s*talker/i.test(name)) {
+    const m = /№\s*(\d+)(?:\s*[-–]\s*(\d+))?/.exec(name);
+    if (!m) return ["Shelftalker"];
+    const from = Number(m[1]);
+    const to = m[2] ? Number(m[2]) : from;
+    return Array.from({ length: Math.max(1, to - from + 1) }, (_, i) => `Shelftalker №${from + i}`);
+  }
+  const clean = name
+    .replace(/"[^"]*"|«[^»]*»|“[^”]*”/g, " ")
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\b(POSI|Static)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return clean ? [clean] : [];
+}
+
+export async function parseLaunchTemplate(buffer: Buffer): Promise<ParsedTemplate> {
+  const book = await load(buffer);
+  const params = findSheet(book, (n) => n.startsWith("parameters") || n.startsWith("параметр"));
+  const bom = findSheet(book, (n) => n.startsWith("bom"));
+  if (!params && !bom) throw new DistributionParseError("noTemplate");
+
+  let launch: string | null = null;
+  const equipment: TemplateEquipment[] = [];
+  if (params) {
+    const grid = rows(params, Math.min(params.columnCount, 20));
+    for (const row of grid)
+      if (/^launch name/i.test(text(row[0] ?? null))) launch = text(row[1] ?? null) || null;
+    const head = headerOf(
+      grid,
+      { type: /equipment type/, code: /^code$/, count: /bwd count|count/ },
+      30,
+    );
+    if (head) {
+      const header = grid[head.row]!.map((c) => text(c).toLowerCase());
+      const reserveAt = header.findIndex((h) => /reserve/.test(h));
+      for (const row of grid.slice(head.row + 1)) {
+        const code = text(row[head.at.code!] ?? null).toUpperCase();
+        const types = TEMPLATE_CODES[code];
+        if (!types) continue;
+        equipment.push({
+          code,
+          label: text(row[head.at.type!] ?? null),
+          types,
+          count: num(row[head.at.count!] ?? null),
+          reservePct: reserveAt >= 0 ? num(row[reserveAt] ?? null) : null,
+        });
+      }
+    }
+  }
+
+  const sizes = new Map<string, TemplateSize>();
+  const skipped: string[] = [];
+  if (bom) {
+    const grid = rows(bom, Math.min(bom.columnCount, 30));
+    const head = headerOf(grid, { name: /posm name/, h: /^h\b/, w: /^w\b/ }, 30);
+    if (head) {
+      const header = grid[head.row]!.map((c) => text(c).toUpperCase());
+      const materialAt = header.findIndex((h) => /^MATERIAL/.test(h));
+      const columns = header.flatMap((h, i) => (TEMPLATE_CODES[h] ? [{ i, code: h }] : []));
+      for (const row of grid.slice(head.row + 1)) {
+        const name = text(row[head.at.name!] ?? null);
+        if (!name) continue;
+        const height = num(row[head.at.h!] ?? null);
+        const width = num(row[head.at.w!] ?? null);
+        const elements = bomElements(name);
+        if (!height || !width || elements.length === 0) {
+          skipped.push(name);
+          continue;
+        }
+        for (const { i, code } of columns) {
+          const coefficient = num(row[i] ?? null);
+          if (coefficient <= 0) continue;
+          for (const element of elements)
+            for (const type of TEMPLATE_CODES[code]!) {
+              const key = `${element}|${type}`;
+              const perUnit = coefficient / elements.length;
+              const known = sizes.get(key);
+              // The same element twice on a type (two dividers): one more piece, same size.
+              if (known) known.perUnit += perUnit;
+              else
+                sizes.set(key, {
+                  element,
+                  type,
+                  heightMm: height,
+                  widthMm: width,
+                  perUnit,
+                  material: materialAt >= 0 ? text(row[materialAt] ?? null) || null : null,
+                });
+            }
+        }
+      }
+    }
+  }
+  if (equipment.length === 0 && sizes.size === 0) throw new DistributionParseError("noTemplate");
+  return { launch, equipment, sizes: [...sizes.values()], skipped };
 }

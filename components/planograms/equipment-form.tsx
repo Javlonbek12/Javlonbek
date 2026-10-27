@@ -17,6 +17,9 @@ type Props = {
   channel: string;
   geometry: Geometry;
   locked: boolean;
+  // Types of the equipment file (BW) this model is, and every type with the model it is now.
+  distTypes: string[];
+  typeOptions: { code: string; label: string; owner: string | null }[];
 };
 
 // Equipment constructor: shelves with slot counts, offsets and grouping, plus a live preview.
@@ -145,6 +148,32 @@ export function EquipmentForm(props: Props) {
           </div>
         </div>
       </div>
+
+      <fieldset className="flex flex-col gap-2 rounded-lg border p-3">
+        <legend className="px-1 text-sm font-medium">
+          {t("planograms.library.equipment.distTypes")}
+        </legend>
+        <p className="text-muted-foreground text-xs">
+          {t("planograms.library.equipment.distTypesHint")}
+        </p>
+        <div className="grid gap-x-4 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3">
+          {props.typeOptions.map((o) => (
+            <label key={o.code} className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                name="distTypes"
+                value={o.code}
+                defaultChecked={props.distTypes.includes(o.code)}
+                className="size-4"
+              />
+              {o.label}
+              {o.owner && !props.distTypes.includes(o.code) && (
+                <span className="text-muted-foreground text-xs">({o.owner})</span>
+              )}
+            </label>
+          ))}
+        </div>
+      </fieldset>
 
       <Button type="submit" className="self-start">
         {t("planograms.library.equipment.save")}

@@ -36,6 +36,20 @@ export function PosmForm({ posm }: { posm: Posm | null }) {
         />
       </Label>
       <Label className="flex-col items-start">
+        {t("planograms.library.posm.shelfSpan")}
+        <Input
+          type="number"
+          name="shelfSpan"
+          min={1}
+          max={20}
+          defaultValue={posm?.shelfSpan ?? 1}
+          className="w-24"
+        />
+        <span className="text-muted-foreground text-xs font-normal">
+          {t("planograms.library.posm.shelfSpanHint")}
+        </span>
+      </Label>
+      <Label className="flex-col items-start">
         {t("planograms.library.posm.color")}
         <Input
           type="color"

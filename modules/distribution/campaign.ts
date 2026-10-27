@@ -14,7 +14,7 @@ import type { Actor } from "@/modules/core/permissions";
 import { detectFile } from "@/modules/content/files";
 import { safeFileName } from "@/modules/tasks/attachment-service";
 
-import { buildOrder, mm, perUnitKey, typeLabel, type BuilderLine } from "./builder";
+import { buildOrder, mm, perUnitKey, reserveLabel, typeLabel, type BuilderLine } from "./builder";
 import { equipmentUnits, loadCatalog } from "./catalog";
 import { canManageDistribution, canSeeDistribution, DistributionError } from "./service";
 import { byTsmName, NO_TSM, sortRegions, TYPE_CODES } from "./types";
@@ -169,6 +169,8 @@ export async function getCampaignFile(user: Viewer, fileId: string) {
 
 export type CompositionInput = {
   reservePct: number;
+  // Types whose reserve differs from reservePct.
+  reserveByType: Record<string, number>;
   withStock: boolean;
   elements: { elementId: string; types: string[]; perUnit: Record<string, number> }[];
 };
@@ -180,6 +182,9 @@ export async function saveComposition(actor: Actor & Viewer, id: string, input: 
   const valid =
     input.reservePct >= 0 &&
     input.reservePct <= 1 &&
+    Object.entries(input.reserveByType).every(
+      ([type, r]) => TYPE_CODES.includes(type as never) && Number.isFinite(r) && r >= 0 && r <= 1,
+    ) &&
     input.elements.every(
       (e) =>
         e.types.every((type) => TYPE_CODES.includes(type as never)) &&
@@ -190,7 +195,11 @@ export async function saveComposition(actor: Actor & Viewer, id: string, input: 
   await db.$transaction(async (tx) => {
     await tx.distOrder.update({
       where: { id },
-      data: { reservePct: input.reservePct, withStock: input.withStock },
+      data: {
+        reservePct: input.reservePct,
+        reserveByType: input.reserveByType,
+        withStock: input.withStock,
+      },
     });
     await tx.distCampaignElement.deleteMany({
       where: { orderId: id, elementId: { notIn: chosen.map((e) => e.elementId) } },
@@ -223,6 +232,7 @@ export async function campaignLines(id: string) {
         types: e.types,
         elements: [e.elementId],
         reservePct: order.reservePct,
+        reserveByType: (order.reserveByType ?? {}) as Record<string, number>,
         merge: true,
         perUnit,
       }),
@@ -238,18 +248,18 @@ export async function makeList(actor: Actor & Viewer, id: string) {
   assertManager(actor);
   const current = await loadOpen(id);
   if (current.orderedOn) throw new DistributionError("ordered");
-  const { order, lines } = await campaignLines(id);
+  const { lines } = await campaignLines(id);
   const usable = lines.filter((l) => l.quantity !== null && l.quantity > 0);
   if (usable.length === 0) throw new DistributionError("noLines");
   const existing = await db.distPosm.findMany({
     where: { orderId: id },
     include: { _count: { select: { shipments: true } } },
   });
-  // The reserve is added on top of the need and stays at the central warehouse (as before):
-  // what goes to the regions is the need itself.
-  const keep = order.reservePct / (1 + order.reservePct);
+  // The reserve (each line's type's own) is added on top of the need and stays at the central
+  // warehouse (as before): what goes to the regions is the need itself.
   await db.$transaction(async (tx) => {
     for (const [i, l] of usable.entries()) {
+      const keep = l.reservePct / (1 + l.reservePct);
       const before = existing.find((p) => p.name === l.name);
       const samePrice = before?.price != null && before.price === l.price;
       const data = {
@@ -264,7 +274,7 @@ export async function makeList(actor: Actor & Viewer, id: string) {
         reservePct: keep,
         base: "UNITS" as const,
         norm: l.perUnit,
-        normReserve: order.reservePct,
+        normReserve: l.reservePct,
         types: l.types,
         elementId: l.elementId,
         price: before?.priceConfirmedAt && !samePrice ? before.price : l.price,
@@ -600,7 +610,7 @@ export async function campaignListXlsx(c: Campaign) {
     "Материал",
     "Ед. оборудования",
     "Шт на ед.",
-    `Количество (+${Math.round(c.order.reservePct * 100)}% запас)`,
+    `Количество (+${reserveLabel(c.order as Parameters<typeof reserveLabel>[0])} запас)`,
     "Цена за шт, сум с НДС",
     "Сумма, сум с НДС",
     "Цена подтверждена",

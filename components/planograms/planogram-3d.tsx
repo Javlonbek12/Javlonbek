@@ -581,13 +581,16 @@ export function Planogram3D({ input }: { input: RenderInput }) {
               emissiveIntensity: 0.12,
             });
             const side = new THREE.MeshStandardMaterial({ color: cell.color, roughness: 0.5 });
+            // Over several shelves it hangs down in front of the lower ones.
+            const extra = ((cell.rows ?? 1) - 1) * SHELF_H;
+            const h = PACK.h * 0.7 + extra;
             box(
               w,
-              PACK.h * 0.7,
+              h,
               0.8,
               [side, side, side, side, front, side],
               x + (cell.span * SLOT) / 2,
-              boardY + PACK.h * 0.35,
+              boardY - extra + h / 2,
               packFrontZ - 0.4,
             );
           }

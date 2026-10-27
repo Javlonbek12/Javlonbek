@@ -38,6 +38,7 @@ export const planogramBundleSchema = z.object({
       name: z.string(),
       type: z.enum(["HEADER", "BANNER", "STICKER"]),
       slotSpan: z.number().int(),
+      shelfSpan: z.number().int().min(1).default(1),
       color: z.string().default("#16a34a"),
       image,
     }),
@@ -120,6 +121,7 @@ export async function loadPlanogramBundle(actor: Actor, input: unknown) {
       name: p.name,
       type: p.type,
       slotSpan: p.slotSpan,
+      shelfSpan: p.shelfSpan,
       color: p.color,
     });
     if (p.image) await saveImage(actor, "posm", saved.id, picture(p.image, "posm.png"));
@@ -174,11 +176,13 @@ export async function loadPlanogramBundle(actor: Actor, input: unknown) {
       } else if (slot.posm) {
         const posmId = posmIds.get(slot.posm);
         if (!posmId) throw new Error(`Unknown POSM ${slot.posm}`);
-        const span = slot.span ?? bundle.posm.find((x) => x.name === slot.posm)!.slotSpan;
+        const posm = bundle.posm.find((x) => x.name === slot.posm)!;
+        const span = slot.span ?? posm.slotSpan;
         layout[key] = {
           kind: "POSM",
           posmId,
           span: Math.min(span, geometry.shelves[slot.shelf]!.slots - slot.position),
+          rows: Math.min(posm.shelfSpan, geometry.shelves.length - slot.shelf),
         };
       } else layout[key] = { kind: "EMPTY" };
     }

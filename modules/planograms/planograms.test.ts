@@ -79,11 +79,11 @@ describe("geometry of the four equipment types", () => {
 
   it("a POSM banner covers several slots and may not overlap other items", () => {
     const g = geo("DISPLAY_L");
-    const layout: Layout = { "2:0": { kind: "POSM", posmId: "banner", span: 10 } };
+    const layout: Layout = { "2:0": { kind: "POSM", posmId: "banner", span: 10, rows: 1 } };
     expect(coveredSlots(layout).size).toBe(9);
     put(layout, 2, 3, "sku-1");
     expect(layoutProblems(layout, g)).toEqual(["overlap:2:3"]);
-    expect(layoutProblems({ "0:8": { kind: "POSM", posmId: "x", span: 3 } }, g)).toEqual([
+    expect(layoutProblems({ "0:8": { kind: "POSM", posmId: "x", span: 3, rows: 1 } }, g)).toEqual([
       "span:0:8",
     ]);
   });
@@ -167,7 +167,7 @@ describe("rules", () => {
   it("every slot is filled or deliberately empty; POSM-covered slots count as decided", () => {
     const g = geo("MODULE_9x2");
     const layout: Layout = {
-      "0:0": { kind: "POSM", posmId: "sticker", span: 2 },
+      "0:0": { kind: "POSM", posmId: "sticker", span: 2, rows: 1 },
       "0:2": { kind: "EMPTY" },
     };
     const v = validatePlanogram(layout, g, skus, [rule("ALL_SLOTS_DECIDED")]);
@@ -328,7 +328,7 @@ describe("mass operations", () => {
   });
 
   it("does not insert across a POSM", () => {
-    const layout: Layout = { "0:5": { kind: "POSM", posmId: "s", span: 2 } };
+    const layout: Layout = { "0:5": { kind: "POSM", posmId: "s", span: 2, rows: 1 } };
     expect(insertSku(layout, g, 0, 1, "sku-2", []).ok).toBe(false);
   });
 

@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { buildOrder, gapsOf, missing, type Catalog, type ElementSize } from "./builder";
+import {
+  buildOrder,
+  gapsOf,
+  missing,
+  reserveLabel,
+  type Catalog,
+  type ElementSize,
+} from "./builder";
 
 const size = (over: Partial<ElementSize>): ElementSize => ({
   type: "POSI_L",
@@ -44,6 +51,27 @@ const catalog: Catalog = {
 };
 
 describe("the order builder", () => {
+  it("takes each type's own reserve and keeps types with another reserve apart", () => {
+    const input = {
+      catalog,
+      units: { DG_L: 10, MW25_L: 10 },
+      types: ["DG_L", "MW25_L"],
+      elements: ["st"],
+      reservePct: 0.1,
+      merge: true,
+    };
+    // The same size merges into one line at 10%.
+    expect(buildOrder(input).map((l) => [l.types, l.quantity])).toEqual([[["DG_L", "MW25_L"], 22]]);
+    // Metawerk L at 20%: its own line.
+    const lines = buildOrder({ ...input, reserveByType: { MW25_L: 0.2 } });
+    expect(lines.map((l) => [l.types, l.quantity, l.reservePct])).toEqual([
+      [["DG_L"], 11, 0.1],
+      [["MW25_L"], 12, 0.2],
+    ]);
+    expect(reserveLabel({ reservePct: 0.1, reserveByType: { MW25_L: 0.2 } })).toBe("10–20%");
+    expect(reserveLabel({ reservePct: 0.1 })).toBe("10%");
+  });
+
   it("counts pieces per equipment with the reserve and prices them", () => {
     const lines = buildOrder({
       catalog,

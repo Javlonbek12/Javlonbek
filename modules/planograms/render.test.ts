@@ -33,6 +33,22 @@ describe("renderPlanogramSvg", () => {
     expect(svg).toContain("QIROL QAYTDI");
   });
 
+  it("draws a POSM over two shelves without the slots it hangs over", () => {
+    const svg = renderPlanogramSvg({
+      geometry: displayL,
+      cells: {
+        "1:0": { kind: "POSM", name: "COMBO", color: "#15803d", image: null, span: 5, rows: 2 },
+      },
+    });
+    const { shelfH, tagH } = planogramSize({ geometry: displayL, cells: {} });
+    // One block two shelves high (104 is the pack height).
+    expect(svg).toContain(`height="${104 + tagH + shelfH}" rx="6" fill="#15803d"`);
+    // The 10 slots under the block (5 on each shelf) are not drawn as empty ones.
+    const dashed = svg.match(/stroke-dasharray="4 3"/g)!.length;
+    const shelves = displayL.shelves.reduce((n, s) => n + s.slots, 0);
+    expect(dashed).toBe(shelves - 10);
+  });
+
   it("sizes a stepped LEGO by its widest shelf", () => {
     expect(planogramSize({ geometry: lego, cells: {} }).width).toBe(16 * 2 + 9 * 64);
   });

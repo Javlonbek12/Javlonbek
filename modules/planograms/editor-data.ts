@@ -23,6 +23,7 @@ export async function editorData(loaded: LoadedPlanogram) {
     name: p.name,
     type: p.type,
     span: p.slotSpan,
+    rows: p.shelfSpan,
     color: p.color,
     imageUrl: imageUrl("posm", p.id, p.imagePath),
   });

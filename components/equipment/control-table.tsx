@@ -11,6 +11,10 @@ const TONE: Record<ControlTone, string> = {
   none: "text-muted-foreground",
 };
 
+// A group bought as one: its types joined.
+export const typesLabel = (types: string[]) =>
+  types.map((type) => typeInfo(type)?.label ?? type).join(" + ");
+
 const signed = (n: number) => (n > 0.005 ? `+${fmt(n)}` : fmt(n));
 
 function Unaccounted({ row }: { row: Pick<ControlRow, "unaccounted" | "tone"> }) {
@@ -40,9 +44,9 @@ export function ControlTable({ rows }: { rows: ControlRow[] }) {
           t("equip.control.unaccounted"),
         ]}
         rows={rows.map((r) => ({
-          key: r.type,
+          key: r.types.join("+"),
           cells: [
-            typeInfo(r.type)?.label ?? r.type,
+            typesLabel(r.types),
             r.purchased === null ? "—" : fmt(r.purchased),
             fmt(r.installed),
             fmt(r.stock),

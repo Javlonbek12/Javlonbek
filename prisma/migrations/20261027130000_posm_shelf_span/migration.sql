@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Posm" ADD COLUMN     "shelfSpan" INTEGER NOT NULL DEFAULT 1;
+

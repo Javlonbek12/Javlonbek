@@ -13,6 +13,8 @@ import type { Actor } from "@/modules/core/permissions";
 
 import { canManagePlanograms } from "./access";
 import { PlanogramError } from "./errors";
+import { DIST_TYPES, TYPE_CODES } from "@/modules/distribution/types";
+
 import { geometrySchema } from "./geometry";
 import { sideColorOf } from "./side-color";
 
@@ -34,6 +36,11 @@ const equipmentSchema = z.object({
   name: z.string().trim().min(1).max(100),
   channel: z.string().trim().min(1).max(40),
   geometry: geometrySchema,
+  // Types of the equipment file (BW) this model is.
+  distTypes: z
+    .array(z.string())
+    .default([])
+    .refine((list) => list.every((t) => TYPE_CODES.includes(t as never))),
 });
 
 export type EquipmentInput = z.input<typeof equipmentSchema>;
@@ -43,13 +50,29 @@ export async function saveEquipment(actor: Actor, id: string | null, input: Equi
   const parsed = equipmentSchema.safeParse(input);
   if (!parsed.success) throw new PlanogramError("invalid");
   const data = { ...parsed.data, geometry: parsed.data.geometry as Prisma.InputJsonValue };
-  if (!id) return db.equipment.create({ data });
+  // A type is one model: taking it here takes it from any other.
+  const release = async (keep: string | null) => {
+    if (data.distTypes.length === 0) return;
+    const others = await db.equipment.findMany({
+      where: { distTypes: { hasSome: data.distTypes }, ...(keep ? { id: { not: keep } } : {}) },
+    });
+    for (const o of others)
+      await db.equipment.update({
+        where: { id: o.id },
+        data: { distTypes: o.distTypes.filter((t) => !data.distTypes.includes(t)) },
+      });
+  };
+  if (!id) {
+    await release(null);
+    return db.equipment.create({ data });
+  }
   // The shape of equipment that already has planograms can't change: their slots would break.
   const used = await db.planogram.count({ where: { equipmentId: id } });
   const current = await db.equipment.findUnique({ where: { id } });
   if (!current) throw new PlanogramError("notFound");
   if (used > 0 && JSON.stringify(current.geometry) !== JSON.stringify(parsed.data.geometry))
     throw new PlanogramError("inUse");
+  await release(id);
   const saved = await db.equipment.update({ where: { id }, data });
   await logActivity({
     actorId: actor.id,
@@ -58,6 +81,19 @@ export async function saveEquipment(actor: Actor, id: string | null, input: Equi
     entityId: saved.id,
   });
   return saved;
+}
+
+// Every type of the equipment file (BW) with the planogram model it is now (if any).
+export async function distTypeOptions() {
+  const models = await db.equipment.findMany({
+    where: { distTypes: { isEmpty: false } },
+    select: { name: true, distTypes: true },
+  });
+  return DIST_TYPES.map((t) => ({
+    code: t.code,
+    label: t.label,
+    owner: models.find((m) => m.distTypes.includes(t.code))?.name ?? null,
+  }));
 }
 
 export async function listEquipment() {
@@ -120,6 +156,7 @@ const posmSchema = z.object({
   name: z.string().trim().min(1).max(100),
   type: z.enum(["HEADER", "BANNER", "STICKER"]),
   slotSpan: z.number().int().min(1).max(40),
+  shelfSpan: z.number().int().min(1).max(20).default(1),
   color,
   archived: z.boolean().default(false),
 });

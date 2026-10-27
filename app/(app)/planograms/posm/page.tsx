@@ -29,6 +29,7 @@ export default async function PosmPage({ searchParams }: PageProps<"/planograms/
               <span className="flex-1 text-sm font-medium">{p.name}</span>
               <span className="text-muted-foreground text-xs">
                 {t(`planograms.library.posm.types.${p.type}`)} · {p.slotSpan}
+                {p.shelfSpan > 1 && ` × ${p.shelfSpan}`}
               </span>
             </Link>
           </li>

@@ -450,6 +450,10 @@ model Equipment {
   channel   String
   // { header: null | "horizontal" | "vertical", shelves: [{ slots, offset, group }] } — see modules/planograms/geometry.ts
   geometry  Json
+  // The equipment types of the equipment file (BW) this model is, e.g. ["DG_L", "MW25_L",
+  // "MW24_L"] for Display L MW/DG: one shared equipment for planograms and POSM distribution.
+  // A type belongs to one model at most.
+  distTypes String[] @default([])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -528,6 +532,8 @@ model Posm {
   type      PosmType
   // How many slots it covers on a shelf (ignored for HEADER).
   slotSpan  Int      @default(1)
+  // How many shelves it covers downwards (a combo box over two shelves); ignored for HEADER.
+  shelfSpan Int      @default(1)
   imagePath String?
   color     String   @default("#16a34a")
   archived  Boolean  @default(false)
@@ -971,7 +977,9 @@ model DistSkippedRow {
 // the control equation (bought = installed + in stock + unaccounted). Entered by hand only.
 model DistPurchase {
   id          String   @id @default(cuid())
-  type        String
+  // One type, or a group bought as one (e.g. Display L = DG L + Metawerk L): the control
+  // equation then checks the group as a whole.
+  types       String[]
   // Display MOD in 18-slot units, like everywhere else.
   quantity    Float
   date        DateTime @db.Date
@@ -980,8 +988,6 @@ model DistPurchase {
   createdById String
   createdBy   User     @relation("DistPurchaseCreatedBy", fields: [createdById], references: [id])
   createdAt   DateTime @default(now())
-
-  @@index([type])
 }
 
 // An equipment file waiting for confirmation: its control equation has a minus.
@@ -1013,6 +1019,8 @@ model DistOrder {
   kvFinalAt         DateTime?
   // The reserve added on top of the need when the list is made (0.1 = +10%).
   reservePct        Float     @default(0.1)
+  // Reserve by equipment type ({ "POSI_L": 0.2 }); a type not in it takes reservePct.
+  reserveByType Json?
   // Count equipment in warehouses too (the order is for all equipment, wherever it is).
   withStock         Boolean   @default(true)
   // The EAS approval document's fields (budget, texts, the printers compared): see eas.ts.

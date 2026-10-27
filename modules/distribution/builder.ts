@@ -74,6 +74,8 @@ export type BuilderLine = {
   perUnit: number | null;
   // units × pieces per unit + the reserve, rounded up; null while pieces per unit are unknown.
   quantity: number | null;
+  // The reserve in the quantity (the type's own, else the campaign's).
+  reservePct: number;
   price: number | null;
   sum: number | null;
   material: string | null;
@@ -87,6 +89,8 @@ export type BuilderInput = {
   types: string[];
   elements: string[];
   reservePct: number;
+  // Reserve by type, where it differs from reservePct.
+  reserveByType?: Record<string, number>;
   // One line for the types that share the same print size, pieces and price.
   merge: boolean;
   // Pieces per unit for this order, by "elementId.type": one or several, as the case needs.
@@ -95,11 +99,30 @@ export type BuilderInput = {
 
 export const perUnitKey = (elementId: string, type: string) => `${elementId}.${type}`;
 
+// A type's reserve: its own, else the campaign's.
+export const reserveOf = (
+  input: { reservePct: number; reserveByType?: Record<string, number> | null },
+  type: string,
+) => input.reserveByType?.[type] ?? input.reservePct;
+
+// The reserve as a label: "10%", or "10–20%" when it differs by type.
+export function reserveLabel(input: {
+  reservePct: number;
+  reserveByType?: Record<string, number> | null;
+}) {
+  const all = [input.reservePct, ...Object.values(input.reserveByType ?? {})].map((r) =>
+    Math.round(r * 100),
+  );
+  const low = Math.min(...all);
+  const high = Math.max(...all);
+  return low === high ? `${low}%` : `${low}–${high}%`;
+}
+
 const quantity = (units: number, perUnit: number | null, reservePct: number) =>
   perUnit === null ? null : Math.ceil(units * perUnit * (1 + reservePct) - 1e-9);
 
 export function buildOrder(input: BuilderInput): BuilderLine[] {
-  const { catalog, units, reservePct } = input;
+  const { catalog, units } = input;
   const types = TYPE_CODES.filter((t) => input.types.includes(t));
   const lines: BuilderLine[] = [];
   for (const element of catalog.elements.filter((e) => input.elements.includes(e.id))) {
@@ -110,6 +133,7 @@ export function buildOrder(input: BuilderInput): BuilderLine[] {
       if ((own ?? size?.perUnit) === 0) continue;
       const n = units[type] ?? 0;
       const perUnit = own ?? size?.perUnit ?? null;
+      const reservePct = reserveOf(input, type);
       const line: BuilderLine = {
         key: `${element.id}:${type}`,
         elementId: element.id,
@@ -121,6 +145,7 @@ export function buildOrder(input: BuilderInput): BuilderLine[] {
         widthMm: size?.widthMm ?? null,
         perUnit,
         quantity: quantity(n, perUnit, reservePct),
+        reservePct,
         price: size?.price ?? null,
         sum: null,
         material: size?.material ?? element.material,
@@ -133,6 +158,7 @@ export function buildOrder(input: BuilderInput): BuilderLine[] {
               l.heightMm === line.heightMm &&
               l.widthMm === line.widthMm &&
               l.perUnit === line.perUnit &&
+              l.reservePct === line.reservePct &&
               l.price === line.price &&
               l.material === line.material,
           )
@@ -140,7 +166,7 @@ export function buildOrder(input: BuilderInput): BuilderLine[] {
       if (same) {
         same.types.push(type);
         same.units += n;
-        same.quantity = quantity(same.units, same.perUnit, reservePct);
+        same.quantity = quantity(same.units, same.perUnit, same.reservePct);
         same.gaps = [...new Set([...same.gaps, ...line.gaps])];
       } else mine.push(line);
     }

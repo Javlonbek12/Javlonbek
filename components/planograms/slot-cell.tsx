@@ -5,6 +5,8 @@ import type { SlotContent } from "@/modules/planograms/layout";
 
 export const SLOT_W = 52;
 export const PACK_H = 84;
+// Shelf to shelf in the editor: a cell (PACK_H + 20, padding 4), the board (4 + 4), the gap 12.
+export const SHELF_PITCH = PACK_H + 20 + 4 + 8 + 12;
 
 export type EditorSku = {
   id: string;
@@ -24,6 +26,8 @@ export type EditorPosm = {
   name: string;
   type: string;
   span: number;
+  // Shelves it covers downwards.
+  rows: number;
   color: string;
   imageUrl: string | null;
 };
@@ -51,15 +55,18 @@ export function SlotView({
     violation && !selected && "ring-2 ring-red-500",
   );
   if (content?.kind === "POSM" && posm) {
-    return (
+    const rows = content.rows ?? 1;
+    const block = (
       <div
         className={cn(
           "flex items-center justify-center overflow-hidden rounded-md text-center text-[11px] font-bold text-white",
+          rows > 1 && "absolute top-0 left-0 z-10",
           ring,
         )}
         style={{
           width: posm.span * SLOT_W - 4,
-          height: PACK_H + 20,
+          // Over several shelves it hangs down over the lower ones.
+          height: PACK_H + 20 + (rows - 1) * SHELF_PITCH,
           background: posm.color,
           ...style,
         }}
@@ -71,6 +78,13 @@ export function SlotView({
         ) : (
           <span className="px-1">{posm.name}</span>
         )}
+      </div>
+    );
+    if (rows <= 1) return block;
+    // The shelf row keeps one shelf's height; the block overflows downwards.
+    return (
+      <div className="relative" style={{ width: posm.span * SLOT_W - 4, height: PACK_H + 20 }}>
+        {block}
       </div>
     );
   }

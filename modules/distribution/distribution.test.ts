@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { equipmentWorkbook, outletBaseWorkbook, posmWorkbook } from "@/tests/helpers/distribution";
+import {
+  equipmentWorkbook,
+  launchTemplateWorkbook,
+  outletBaseWorkbook,
+  posmWorkbook,
+} from "@/tests/helpers/distribution";
 
 import {
   controlItem,
@@ -22,7 +27,9 @@ import {
 } from "./compute";
 import {
   DistributionParseError,
+  bomElements,
   parseEquipmentFile,
+  parseLaunchTemplate,
   parseOutletBase,
   parsePosmList,
 } from "./parse";
@@ -274,11 +281,15 @@ describe("the TSM breakdown", () => {
 describe("the control equation", () => {
   it("leaves the unaccounted as the difference and colours it", () => {
     const rows = controlRows(
-      { POSI_L: 100, DG_C: 50, POSI_MOD: 2400 },
+      [
+        { types: ["POSI_L"], quantity: 100 },
+        { types: ["DG_C"], quantity: 50 },
+        { types: ["POSI_MOD"], quantity: 2400 },
+      ],
       { POSI_L: 90, DG_C: 52, POSI_MOD: 1074.67, MW24_S: 3 },
       { POSI_L: 9, POSI_MOD: 1246.5 },
     );
-    const by = Object.fromEntries(rows.map((r) => [r.type, r]));
+    const by = Object.fromEntries(rows.map((r) => [r.types.join("+"), r]));
     expect(by.POSI_L).toMatchObject({ unaccounted: 1, tone: "ok" });
     // A minus: duplicate rows or dismantled equipment left in the file.
     expect(by.DG_C).toMatchObject({ unaccounted: -2, tone: "bad" });
@@ -292,7 +303,37 @@ describe("the control equation", () => {
     expect(controlTone(10, 1)).toBe("ok");
     expect(controlTone(10, 1.5)).toBe("warn");
     expect(controlTotal(rows)).toMatchObject({ purchased: 2550, stock: 1255.5 });
-    expect(hasMinus(controlRows({}, { POSI_L: 5 }, {}))).toBe(false);
+    expect(hasMinus(controlRows([], { POSI_L: 5 }, {}))).toBe(false);
+  });
+
+  it("checks types bought together as one row", () => {
+    // As in the ESSE template: Display L = DG L + Metawerk L, 620 bought.
+    const rows = controlRows(
+      [
+        { types: ["DG_L", "MW25_L", "MW24_L"], quantity: 620 },
+        { types: ["POSI_M"], quantity: 700 },
+      ],
+      { DG_L: 191, MW25_L: 320, MW24_L: 99, POSI_M: 669, DG_C: 4 },
+      { DG_L: 5, MW25_L: 2, MW24_L: 2, POSI_M: 32 },
+    );
+    expect(rows.map((r) => [r.types.join("+"), r.purchased, r.unaccounted, r.tone])).toEqual([
+      ["POSI_M", 700, -1, "bad"],
+      ["DG_L+MW25_L+MW24_L", 620, 1, "ok"],
+      ["DG_C", null, null, "none"],
+    ]);
+    // A later entry for one type of the group still counts in the group.
+    const more = controlRows(
+      [
+        { types: ["DG_L", "MW25_L"], quantity: 500 },
+        { types: ["MW24_L"], quantity: 100 },
+        { types: ["MW25_L", "MW24_L"], quantity: 20 },
+      ],
+      { DG_L: 191, MW25_L: 320, MW24_L: 99 },
+      {},
+    );
+    expect(more.map((r) => [r.types.join("+"), r.purchased, r.unaccounted])).toEqual([
+      ["DG_L+MW25_L+MW24_L", 620, 10],
+    ]);
   });
 });
 
@@ -361,6 +402,32 @@ describe("the files", () => {
       [25, "unknownType"],
       [28, "noIdentity"],
     ]);
+  });
+
+  it("reads a POSM launch template: equipment groups and the BOM", async () => {
+    expect(bomElements('Shelftalker POSI №1-2 "Change 1mg" (C)')).toEqual([
+      "Shelftalker №1",
+      "Shelftalker №2",
+    ]);
+    expect(bomElements("Display Box POSI (XL)")).toEqual(["Display Box"]);
+    expect(bomElements('Divider "Ozgarmas Narx" (2 slot)')).toEqual(["Divider"]);
+    const t = await parseLaunchTemplate(await launchTemplateWorkbook());
+    expect(t.launch).toBe("Тестовый запуск");
+    expect(t.equipment.map((e) => [e.code, e.types, e.count])).toEqual([
+      ["L", ["DG_L", "MW25_L", "MW24_L"], 20],
+      ["LP", ["POSI_L"], 12],
+      ["C", ["DG_C"], 4],
+    ]);
+    const size = (element: string, type: string) =>
+      t.sizes.find((s) => s.element === element && s.type === type);
+    expect(size("Header", "MW24_L")).toMatchObject({ heightMm: 230, widthMm: 600, perUnit: 1 });
+    expect(size("Header", "POSI_L")).toMatchObject({ heightMm: 294, widthMm: 578 });
+    expect(size("Combo Box", "DG_L")).toMatchObject({ widthMm: 288 });
+    expect(size("Shelftalker №4", "DG_L")).toMatchObject({ widthMm: 310, perUnit: 1 });
+    // Two dividers on L, one on C.
+    expect(size("Divider", "DG_L")?.perUnit).toBe(2);
+    expect(size("Divider", "DG_C")?.perUnit).toBe(1);
+    expect(t.skipped).toEqual(["Jumbo Pack Header (тест)"]);
   });
 
   it("reads the outlet base and the POSM list", async () => {
