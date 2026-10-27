@@ -458,8 +458,16 @@ export async function saveCompositionAction(form: FormData) {
   const id = str(form, "id");
   await run(campaignPath(id, "#composition"), async () => {
     const reserve = Number(str(form, "reserve").replace(",", ".") || 0);
+    // rs:<type> = that type's own reserve, %; empty = the campaign's.
+    const reserveByType: Record<string, number> = {};
+    for (const key of form.keys()) {
+      const m = /^rs:(.+)$/.exec(key);
+      const v = str(form, key).replace(",", ".");
+      if (m && v !== "") reserveByType[m[1]!] = Number(v) / 100;
+    }
     await saveComposition(user, id, {
       reservePct: reserve / 100,
+      reserveByType,
       withStock: form.get("stock") === "1",
       elements: form.getAll("el").map((value) => {
         const elementId = String(value);

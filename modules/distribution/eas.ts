@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { logActivity } from "@/modules/core/activity/service";
 import type { Actor } from "@/modules/core/permissions";
 
+import { reserveLabel } from "./builder";
 import type { Campaign } from "./campaign";
 import { canManageDistribution, DistributionError } from "./service";
 
@@ -199,9 +200,9 @@ export function buildEas(c: Campaign, data: EasData) {
   const pieces = c.items.reduce((s, i) => s + i.ordered, 0);
   const coverage =
     data.coverage ||
-    `${units.toLocaleString("ru-RU")} equipment units, ${pieces.toLocaleString("ru-RU")} pcs including a ${Math.round(
-      c.order.reservePct * 100,
-    )}% reserve.`;
+    `${units.toLocaleString("ru-RU")} equipment units, ${pieces.toLocaleString("ru-RU")} pcs including a ${reserveLabel(
+      c.order as Parameters<typeof reserveLabel>[0],
+    )} reserve.`;
   const recommendedName = chosen
     ? chosen.legalName
       ? `"${chosen.name}" (${chosen.legalName})`

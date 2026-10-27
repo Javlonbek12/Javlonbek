@@ -54,6 +54,7 @@ export function CompositionPicker({
     selected: Record<string, string[]>;
     perUnit: Record<string, Record<string, number>>;
     reservePct: number;
+    reserveByType: Record<string, number>;
     withStock: boolean;
   };
   disabled: boolean;
@@ -63,6 +64,12 @@ export function CompositionPicker({
   const [selected, setSelected] = useState(initial.selected);
   const [perUnit, setPerUnit] = useState(initial.perUnit);
   const [reserve, setReserve] = useState(String(Math.round(initial.reservePct * 1000) / 10));
+  // Each type's own reserve, %; empty = the campaign's.
+  const [typeReserve, setTypeReserve] = useState<Record<string, string>>(
+    Object.fromEntries(
+      Object.entries(initial.reserveByType).map(([k, v]) => [k, String(Math.round(v * 1000) / 10)]),
+    ),
+  );
 
   const usedOn = (el: PickerElement, type: string) => el.sizes[type]?.perUnit !== 0;
   const isOn = (el: string, type: string) => selected[el]?.includes(type) ?? false;
@@ -80,10 +87,12 @@ export function CompositionPicker({
     const own = perUnit[el.id]?.[type];
     return own ?? el.sizes[type]?.perUnit ?? null;
   };
-  const reservePct = Math.max(0, Number(reserve.replace(",", ".")) || 0) / 100;
+  const percent = (value: string) => Math.max(0, Number(value.replace(",", ".")) || 0) / 100;
+  const reserveOf = (type: string) =>
+    typeReserve[type]?.trim() ? percent(typeReserve[type]!) : percent(reserve);
   const quantity = (el: PickerElement, type: PickerType) => {
     const p = pieces(el, type.code);
-    return p === null ? null : Math.ceil(type.units * p * (1 + reservePct) - 1e-9);
+    return p === null ? null : Math.ceil(type.units * p * (1 + reserveOf(type.code)) - 1e-9);
   };
   const setPieces = (el: string, type: string, value: string) =>
     setPerUnit((s) => {
@@ -134,6 +143,10 @@ export function CompositionPicker({
             ))}
           </span>
         ),
+      )}
+
+      {Object.entries(typeReserve).map(([type, value]) =>
+        value.trim() ? <input key={type} type="hidden" name={`rs:${type}`} value={value} /> : null,
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -393,6 +406,33 @@ export function CompositionPicker({
           />
           {t("dist.builder.withStock")}
         </label>
+      </div>
+      <div className="flex flex-col gap-2">
+        <span className="text-sm">{t("dist.campaign.reserveByType")}</span>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-3 lg:grid-cols-5">
+          {types
+            .filter((type) => type.units > 0)
+            .map((type) => (
+              <label key={type.code} className="flex items-center justify-between gap-2 text-xs">
+                <span className="truncate">{type.label}</span>
+                <span className="flex items-center gap-1">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="any"
+                    value={typeReserve[type.code] ?? ""}
+                    placeholder={reserve || "0"}
+                    onChange={(e) => setTypeReserve((s) => ({ ...s, [type.code]: e.target.value }))}
+                    disabled={disabled}
+                    aria-label={`${type.label} · ${t("dist.campaign.reserveByType")}`}
+                    className="h-7 w-16 px-1.5 text-xs"
+                  />
+                  %
+                </span>
+              </label>
+            ))}
+        </div>
       </div>
     </div>
   );

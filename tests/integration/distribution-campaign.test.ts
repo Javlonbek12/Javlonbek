@@ -79,6 +79,7 @@ describe("a POSM campaign", () => {
     // 3–4. Header on POSI L and DG C, 2 per DG C; +10 % reserve; equipment with stock.
     await saveComposition(owner, c.id, {
       reservePct: 0.1,
+      reserveByType: {},
       withStock: true,
       elements: [{ elementId: header.id, types: ["POSI_L", "DG_C"], perUnit: { DG_C: 2 } }],
     });
@@ -183,6 +184,7 @@ describe("the EAS document", () => {
     const c = await createCampaign(owner, { name: "Pine (тест)", description: "Запуск" });
     await saveComposition(owner, c.id, {
       reservePct: 0.1,
+      reserveByType: {},
       withStock: true,
       elements: [{ elementId: header.id, types: ["POSI_L"], perUnit: {} }],
     });

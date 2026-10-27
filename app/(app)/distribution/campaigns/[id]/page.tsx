@@ -302,6 +302,7 @@ export default async function DistributionCampaignPage({
                     ]),
                   ),
                   reservePct: order.reservePct,
+                  reserveByType: (order.reserveByType ?? {}) as Record<string, number>,
                   withStock: order.withStock,
                 }}
               />

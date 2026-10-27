@@ -2430,6 +2430,8 @@ export const en: Dictionary = {
       reserveStep: "4. Reserve, %",
       tooWide: "The print is wider than the equipment",
       pricesSaved: "Prices saved, lines confirmed: {count}.",
+      reserveByType:
+        "Reserve by equipment type, % — where a type has its own (e.g. 20% for POSI XL). Empty — the general one.",
       noList: "No list yet — choose the items above and press “Make the list”.",
       confirmed: "Price confirmed",
       quoteShort: "Quote",
