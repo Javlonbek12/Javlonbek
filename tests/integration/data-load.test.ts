@@ -95,6 +95,56 @@ describe("data-load: a whole planogram library and Connect rows at once", () => 
     expect(await db.priceList.count()).toBe(1);
   });
 
+  it("adds shelftalkers to a model in use and to its drafts that have none", async () => {
+    const owner = await withAccess(await createTestUser("OWNER"));
+    const image = await pixel();
+    await loadPlanogramBundle(owner, {
+      equipment: [
+        {
+          code: "TEST_DISPLAY",
+          name: "Тестовый дисплей",
+          channel: "POSI",
+          geometry: {
+            header: "horizontal",
+            shelves: [
+              { slots: 2, offset: 0, group: 0 },
+              { slots: 2, offset: 0, group: 0 },
+            ],
+          },
+        },
+      ],
+      planograms: [
+        { title: "Тестовая планограмма", equipment: "TEST_DISPLAY", channel: "POSI", slots: [] },
+      ],
+    });
+    const talkers: PlanogramBundle = {
+      posm: [
+        { name: "Тестовый шелфтокер 1", type: "SHELFTALKER", slotSpan: 1, image },
+        { name: "Тестовый шелфтокер 2", type: "SHELFTALKER", slotSpan: 1 },
+      ],
+      shelftalkers: [{ equipment: "TEST_DISPLAY", shelves: { "1": "Тестовый шелфтокер 1" } }],
+    };
+    expect(await loadPlanogramBundle(owner, talkers)).toContain(
+      "shelftalkers TEST_DISPLAY: shelves 1, planograms 1 of 1",
+    );
+    const equipment = await db.equipment.findUniqueOrThrow({ where: { code: "TEST_DISPLAY" } });
+    expect(
+      (equipment.geometry as { shelves: { talker?: boolean }[] }).shelves.map((s) => !!s.talker),
+    ).toEqual([false, true]);
+    const first = await db.posm.findFirstOrThrow({ where: { name: "Тестовый шелфтокер 1" } });
+    const planogram = await db.planogram.findFirstOrThrow();
+    expect(planogram.shelftalkers).toEqual({ "1": first.id });
+
+    // Shelftalkers chosen already stay.
+    talkers.shelftalkers = [
+      { equipment: "TEST_DISPLAY", shelves: { "1": "Тестовый шелфтокер 2" } },
+    ];
+    expect(await loadPlanogramBundle(owner, talkers)).toContain(
+      "shelftalkers TEST_DISPLAY: shelves 1, planograms 0 of 1",
+    );
+    expect((await db.planogram.findFirstOrThrow()).shelftalkers).toEqual({ "1": first.id });
+  });
+
   it("saves Connect rows sent as parsed records", async () => {
     const owner = await createTestUser("OWNER");
     const record = {
