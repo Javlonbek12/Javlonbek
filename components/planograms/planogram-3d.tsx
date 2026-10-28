@@ -538,6 +538,32 @@ export function Planogram3D({ input }: { input: RenderInput }) {
           cabinet.add(tagPlane);
         }
 
+        // The shelftalker: a printed strip hanging under the tag holder, the shelf wide.
+        const talker = shelf.talker ? input.shelftalkers?.[shelfIndex] : undefined;
+        if (talker) {
+          const h = 3.8; // 38 mm
+          const map = talker.image
+            ? imageTexture(THREE, talker.image)
+            : canvasTexture(THREE, Math.round(shelfW * 16), 60, (ctx) => {
+                ctx.fillStyle = talker.color;
+                ctx.fillRect(0, 0, ctx.canvas.width, 60);
+                ctx.fillStyle = "#ffffff";
+                ctx.textAlign = "center";
+                ctx.font = "bold 34px Onest, sans-serif";
+                ctx.fillText(talker.name, ctx.canvas.width / 2, 42, ctx.canvas.width * 0.92);
+              });
+          const strip = new THREE.Mesh(
+            new THREE.PlaneGeometry(shelfW, h),
+            new THREE.MeshStandardMaterial({ map, roughness: 0.5 }),
+          );
+          strip.position.set(
+            shelfLeft + shelfW / 2,
+            holderY - HOLDER_H / 2 - h / 2,
+            holderZ + 0.27,
+          );
+          cabinet.add(strip);
+        }
+
         // Group separators (modules of 3 and the like).
         if (shelf.group > 0)
           for (let g = shelf.group; g < shelf.slots; g += shelf.group)

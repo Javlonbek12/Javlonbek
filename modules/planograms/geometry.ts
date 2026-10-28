@@ -7,6 +7,8 @@ export const shelfSchema = z.object({
   slots: z.number().int().min(1).max(40),
   offset: z.number().int().min(0).max(40).default(0),
   group: z.number().int().min(0).max(40).default(0),
+  // The shelf's edge holds a shelftalker strip (under the price tags).
+  talker: z.boolean().optional(),
 });
 
 export const geometrySchema = z.object({

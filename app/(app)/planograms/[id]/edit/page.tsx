@@ -38,6 +38,7 @@ export default async function EditPlanogramPage({ params }: PageProps<"/planogra
           geometry={loaded.geometry}
           initialLayout={loaded.layout}
           initialHeaderId={loaded.record.headerPosmId}
+          initialShelftalkers={loaded.shelftalkers}
           rules={loaded.rules}
           save={saveLayoutAction}
           {...data}

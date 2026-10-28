@@ -24,7 +24,7 @@ import {
   replaceSkuEverywhere,
 } from "@/modules/planograms/mass";
 import { applyPriceList } from "@/modules/planograms/pricing";
-import { loadPlanogram } from "@/modules/planograms/repository";
+import { loadPlanogram, parseShelftalkers } from "@/modules/planograms/repository";
 import {
   approvePlanogram,
   archivePlanogram,
@@ -100,11 +100,14 @@ export async function saveLayoutAction(
   planogramId: string,
   layoutJson: string,
   headerPosmId: string | null,
+  shelftalkersJson?: string,
 ) {
   const user = await actor();
   try {
     const layout = JSON.parse(layoutJson) as Layout;
-    await saveLayout(user, idSchema.parse(planogramId), layout, headerPosmId);
+    const shelftalkers =
+      shelftalkersJson === undefined ? undefined : parseShelftalkers(JSON.parse(shelftalkersJson));
+    await saveLayout(user, idSchema.parse(planogramId), layout, headerPosmId, shelftalkers);
     revalidatePath(`/planograms/${planogramId}`);
     return { ok: true };
   } catch (error) {
@@ -248,7 +251,7 @@ export async function savePosmAction(formData: FormData) {
   await run(id ? `/planograms/posm/${id}` : "/planograms/posm", async () => {
     const saved = await savePosm(user, id, {
       name: str(formData, "name"),
-      type: str(formData, "type") as "HEADER" | "BANNER" | "STICKER",
+      type: str(formData, "type") as "HEADER" | "BANNER" | "STICKER" | "SHELFTALKER",
       slotSpan: Number(str(formData, "slotSpan")) || 1,
       shelfSpan: Number(str(formData, "shelfSpan")) || 1,
       color: str(formData, "color") || "#16a34a",

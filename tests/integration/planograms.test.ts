@@ -4,7 +4,7 @@ import { rm } from "node:fs/promises";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { db } from "@/lib/db";
-import { exportPdf, exportPptx, planogramPng } from "@/modules/planograms/export";
+import { exportPdf, exportPptx, planogramPng, planogramSvg } from "@/modules/planograms/export";
 import { importSkus, parseCsv, parseSpreadsheet } from "@/modules/planograms/import";
 import { saveEquipment, saveImage } from "@/modules/planograms/library";
 import {
@@ -320,5 +320,33 @@ describe("library import and pictures", () => {
     await expect(
       saveImage(owner, "sku", sku.id, new File(["not an image"], "x.png")),
     ).rejects.toMatchObject({ code: "badFile" });
+  });
+
+  it("keeps a shelftalker per shelf, carries it to a new version and draws it", async () => {
+    const { owner } = await setup();
+    const display = await equipment("DISPLAY_L");
+    const geometry = display.geometry as { header: null; shelves: { slots: number }[] };
+    // Shelftalkers can be set on equipment that already has planograms (no slot moves).
+    const pog = await createPlanogram(owner, { ...meta, title: "Тест", equipmentId: display.id });
+    await saveEquipment(owner, display.id, {
+      code: display.code,
+      name: display.name,
+      channel: display.channel,
+      geometry: {
+        ...geometry,
+        shelves: geometry.shelves.map((s, i) => ({ ...s, talker: i === 0 })),
+      },
+    });
+    const talker = await db.posm.create({
+      data: { name: "Шелфтокер (тест)", type: "SHELFTALKER", color: "#1d4ed8" },
+    });
+    await saveLayout(owner, pog.id, {}, null, { 0: talker.id });
+    expect((await loadPlanogram(pog.id))!.shelftalkers).toEqual({ 0: talker.id });
+    await expect(saveLayout(owner, pog.id, {}, null, { 99: talker.id })).rejects.toMatchObject({
+      code: "layout",
+    });
+    expect(await planogramSvg((await loadPlanogram(pog.id))!)).toContain(">Шелфтокер (тест)<");
+    const copy = await copyPlanogram(owner, pog.id);
+    expect((await loadPlanogram(copy.id))!.shelftalkers).toEqual({ 0: talker.id });
   });
 });

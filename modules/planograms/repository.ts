@@ -91,6 +91,17 @@ export async function loadSkuInfos(): Promise<
   }));
 }
 
+// The shelftalker of each shelf: { 0: posmId } from the stored JSON (bad entries dropped).
+export type Shelftalkers = Record<number, string>;
+
+export function parseShelftalkers(value: unknown): Shelftalkers {
+  const out: Shelftalkers = {};
+  if (value && typeof value === "object")
+    for (const [shelf, id] of Object.entries(value as Record<string, unknown>))
+      if (/^\d+$/.test(shelf) && typeof id === "string" && id) out[Number(shelf)] = id;
+  return out;
+}
+
 export async function posmSpans() {
   const posm = await db.posm.findMany({ select: { id: true, slotSpan: true, shelfSpan: true } });
   return new Map(posm.map((p) => [p.id, { span: p.slotSpan, rows: p.shelfSpan }]));
@@ -111,6 +122,7 @@ export async function loadPlanogram(id: string) {
     record,
     geometry: parseGeometry(record.equipment.geometry),
     layout: layoutFromSlots(record.slots, spans),
+    shelftalkers: parseShelftalkers(record.shelftalkers),
     rules: rulesFromRecords(record.rules),
     prices: await priceMap(record.priceListId),
   };

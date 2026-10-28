@@ -111,6 +111,16 @@ export async function buildRenderInput(
     }
   }
   const header = loaded.record.headerPosm;
+  const shelftalkers: NonNullable<RenderInput["shelftalkers"]> = {};
+  for (const [shelf, posmId] of Object.entries(loaded.shelftalkers)) {
+    const posm = posmById.get(posmId);
+    if (posm)
+      shelftalkers[Number(shelf)] = {
+        name: posm.name,
+        color: posm.color,
+        image: await picture("posm", posm.id, posm.imagePath, 120),
+      };
+  }
   return {
     geometry: loaded.geometry,
     cells,
@@ -122,6 +132,7 @@ export async function buildRenderInput(
           aspect: await imageAspect(header.imagePath),
         }
       : null,
+    shelftalkers,
     large: options.large,
     highlight: options.highlight,
   };

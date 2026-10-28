@@ -70,7 +70,15 @@ export async function saveEquipment(actor: Actor, id: string | null, input: Equi
   const used = await db.planogram.count({ where: { equipmentId: id } });
   const current = await db.equipment.findUnique({ where: { id } });
   if (!current) throw new PlanogramError("notFound");
-  if (used > 0 && JSON.stringify(current.geometry) !== JSON.stringify(parsed.data.geometry))
+  // Shelftalkers on the shelves don't move any slot: they may change anyway.
+  const shape = (g: unknown) => {
+    const parsed = geometrySchema.parse(g);
+    return JSON.stringify({
+      ...parsed,
+      shelves: parsed.shelves.map((shelf) => ({ ...shelf, talker: undefined })),
+    });
+  };
+  if (used > 0 && shape(current.geometry) !== shape(parsed.data.geometry))
     throw new PlanogramError("inUse");
   await release(id);
   const saved = await db.equipment.update({ where: { id }, data });
@@ -154,7 +162,7 @@ export async function saveSku(actor: Actor, id: string | null, input: SkuInput) 
 
 const posmSchema = z.object({
   name: z.string().trim().min(1).max(100),
-  type: z.enum(["HEADER", "BANNER", "STICKER"]),
+  type: z.enum(["HEADER", "BANNER", "STICKER", "SHELFTALKER"]),
   slotSpan: z.number().int().min(1).max(40),
   shelfSpan: z.number().int().min(1).max(20).default(1),
   color,

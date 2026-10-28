@@ -64,6 +64,26 @@ describe("renderPlanogramSvg", () => {
     ).toBe(288);
   });
 
+  it("draws a shelftalker on the shelves that hold one", () => {
+    const geometry = {
+      ...displayL,
+      shelves: displayL.shelves.map((shelf, i) => ({ ...shelf, talker: i < 2 })),
+    };
+    const input: RenderInput = {
+      geometry,
+      cells: {},
+      shelftalkers: { 0: { name: "Change 1mg (тест)", color: "#1d4ed8", image: null } },
+    };
+    const svg = renderPlanogramSvg(input);
+    // Shelf 1: its shelftalker; shelf 2: an empty strip; the others: none.
+    expect(svg).toContain(">Change 1mg (тест)<");
+    expect(svg.match(/fill="#e2e8f0"/g)).toHaveLength(1);
+    // Every shelf gets the strip's room, so the pitch stays the same.
+    expect(planogramSize(input).shelfH).toBe(
+      planogramSize({ geometry: displayL, cells: {} }).shelfH + 26,
+    );
+  });
+
   it("sizes a stepped LEGO by its widest shelf", () => {
     expect(planogramSize({ geometry: lego, cells: {} }).width).toBe(16 * 2 + 9 * 64);
   });
