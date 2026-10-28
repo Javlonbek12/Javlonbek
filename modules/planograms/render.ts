@@ -30,6 +30,8 @@ export type RenderInput = {
   // `aspect`: the picture's width / height — a horizontal header is as tall as its picture
   // needs to fill the width (within limits), not a thin strip.
   header?: { name: string; color: string; image: string | null; aspect?: number | null } | null;
+  // The shelftalker of each shelf that holds one (shelf index → picture).
+  shelftalkers?: Record<number, { name: string; color: string; image: string | null }>;
   // Outline colours for before/after comparison.
   highlight?: Map<string, "added" | "removed" | "moved" | "price">;
   // Bigger price tags for printing.
@@ -42,6 +44,8 @@ const GAP = 4;
 const PAD = 16;
 const SHELF_GAP = 14;
 const HEADER_H = 56;
+// A shelftalker strip under the price tags.
+const TALKER_H = 26;
 const VERTICAL_HEADER_W = 56;
 
 const HIGHLIGHT = {
@@ -74,7 +78,9 @@ function wrap(text: string, maxChars: number, maxLines: number): string[] {
 
 export function planogramSize(input: RenderInput) {
   const tagH = input.large ? 34 : 24;
-  const shelfH = PACK_H + tagH + SHELF_GAP;
+  // Shelves keep one pitch: with any shelftalker on the equipment, each gets room for one.
+  const talkerH = input.geometry.shelves.some((s) => s.talker) ? TALKER_H : 0;
+  const shelfH = PACK_H + tagH + talkerH + SHELF_GAP;
   const vertical = input.geometry.header === "vertical";
   const bandW = widthInSlots(input.geometry) * SLOT_W;
   const aspect = input.header?.image ? input.header.aspect : null;
@@ -92,12 +98,13 @@ export function planogramSize(input: RenderInput) {
     shelfH,
     headerH,
     headerBand,
+    talkerH,
   };
 }
 
 // The planogram as an SVG picture (no external files: images are data URIs).
 export function renderPlanogramSvg(input: RenderInput): string {
-  const { width, height, tagH, shelfH, headerH, headerBand } = planogramSize(input);
+  const { width, height, tagH, shelfH, headerH, headerBand, talkerH } = planogramSize(input);
   const font = `font-family="DejaVu Sans, Arial, sans-serif"`;
   const parts: string[] = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" ${font}>`,
@@ -139,9 +146,26 @@ export function renderPlanogramSvg(input: RenderInput): string {
   input.geometry.shelves.forEach((shelf, shelfIndex) => {
     const top = PAD + headerH + shelfIndex * shelfH;
     const left = PAD + shelf.offset * SLOT_W;
-    // The shelf board under the price tags.
+    // The shelftalker on the shelf's edge (stretched to the shelf: it is printed for it), then
+    // the shelf board.
+    const strip = top + PACK_H + tagH + 2;
+    if (shelf.talker) {
+      const talker = input.shelftalkers?.[shelfIndex];
+      const w = shelf.slots * SLOT_W;
+      parts.push(
+        `<rect x="${left}" y="${strip}" width="${w}" height="${talkerH - 4}" rx="2" fill="${talker?.color ?? "#e2e8f0"}"/>`,
+      );
+      if (talker?.image)
+        parts.push(
+          `<image href="${talker.image}" x="${left}" y="${strip}" width="${w}" height="${talkerH - 4}" preserveAspectRatio="none"/>`,
+        );
+      else if (talker)
+        parts.push(
+          `<text x="${left + w / 2}" y="${strip + talkerH / 2 + 2}" text-anchor="middle" font-size="12" font-weight="bold" fill="#fff">${escapeXml(talker.name)}</text>`,
+        );
+    }
     parts.push(
-      `<rect x="${left - 2}" y="${top + PACK_H + tagH + 2}" width="${shelf.slots * SLOT_W + 4}" height="4" fill="#94a3b8"/>`,
+      `<rect x="${left - 2}" y="${shelf.talker ? strip + talkerH - 4 : strip}" width="${shelf.slots * SLOT_W + 4}" height="4" fill="#94a3b8"/>`,
     );
     for (let position = 0; position < shelf.slots; position++) {
       const key = slotKey(shelfIndex, position);

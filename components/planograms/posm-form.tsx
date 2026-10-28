@@ -17,7 +17,7 @@ export function PosmForm({ posm }: { posm: Posm | null }) {
       <Label className="flex-col items-start">
         {t("planograms.library.posm.type")}
         <NativeSelect name="type" defaultValue={posm?.type ?? "STICKER"} className="w-full">
-          {(["HEADER", "BANNER", "STICKER"] as const).map((type) => (
+          {(["HEADER", "BANNER", "STICKER", "SHELFTALKER"] as const).map((type) => (
             <option key={type} value={type}>
               {t(`planograms.library.posm.types.${type}`)}
             </option>

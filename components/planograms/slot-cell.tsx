@@ -7,6 +7,8 @@ export const SLOT_W = 52;
 export const PACK_H = 84;
 // Shelf to shelf in the editor: a cell (PACK_H + 20, padding 4), the board (4 + 4), the gap 12.
 export const SHELF_PITCH = PACK_H + 20 + 4 + 8 + 12;
+// A shelftalker strip on a shelf's edge takes the board's place (4 px) in the editor.
+export const TALKER_H = 18;
 
 export type EditorSku = {
   id: string;
@@ -42,6 +44,7 @@ export function SlotView({
   selected,
   violation,
   style,
+  height,
 }: {
   content: SlotContent | undefined;
   sku?: EditorSku;
@@ -49,6 +52,8 @@ export function SlotView({
   selected?: boolean;
   violation?: boolean;
   style?: CSSProperties;
+  // A POSM over several shelves: its height (the shelves differ when some have shelftalkers).
+  height?: number;
 }) {
   const ring = cn(
     selected && "ring-2 ring-blue-500",
@@ -66,7 +71,7 @@ export function SlotView({
         style={{
           width: posm.span * SLOT_W - 4,
           // Over several shelves it hangs down over the lower ones.
-          height: PACK_H + 20 + (rows - 1) * SHELF_PITCH,
+          height: height ?? PACK_H + 20 + (rows - 1) * SHELF_PITCH,
           background: posm.color,
           ...style,
         }}

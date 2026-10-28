@@ -524,6 +524,8 @@ enum PosmType {
   BANNER
   // A sticker / wobbler taking one or more slots.
   STICKER
+  // A strip on a shelf's edge (under the price tags), the whole shelf wide.
+  SHELFTALKER
 }
 
 model Posm {
@@ -565,6 +567,8 @@ model Planogram {
   previousVersionId String?
   priceListId       String?
   headerPosmId      String?
+  // The shelftalker on each shelf that has one: { "0": posmId, "2": posmId } (shelf index).
+  shelftalkers      Json            @default("{}")
   isTemplate        Boolean         @default(false)
   // Free text, e.g. lighting notes.
   notes             String?
@@ -1020,7 +1024,7 @@ model DistOrder {
   // The reserve added on top of the need when the list is made (0.1 = +10%).
   reservePct        Float     @default(0.1)
   // Reserve by equipment type ({ "POSI_L": 0.2 }); a type not in it takes reservePct.
-  reserveByType Json?
+  reserveByType     Json?
   // Count equipment in warehouses too (the order is for all equipment, wherever it is).
   withStock         Boolean   @default(true)
   // The EAS approval document's fields (budget, texts, the printers compared): see eas.ts.

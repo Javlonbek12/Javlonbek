@@ -127,6 +127,27 @@ export function EquipmentForm(props: Props) {
         </Button>
       </fieldset>
 
+      {/* Shelftalkers don't move any slot: they can be set on equipment that has planograms. */}
+      <fieldset className="flex flex-col gap-2">
+        <legend className="mb-1 font-medium">{t("planograms.library.equipment.talkers")}</legend>
+        <p className="text-muted-foreground text-xs">
+          {t("planograms.library.equipment.talkersHint")}
+        </p>
+        <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+          {shelves.map((shelf, i) => (
+            <label key={i} className="flex items-center gap-1.5 text-sm">
+              <input
+                type="checkbox"
+                checked={shelf.talker ?? false}
+                onChange={(e) => update(i, { talker: e.target.checked })}
+                className="size-4"
+              />
+              {t("planograms.editor.shelf", { n: i + 1 })}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
       {/* Preview: one square per slot. */}
       <div className="overflow-x-auto rounded-lg border p-2" aria-hidden>
         {header === "horizontal" && (

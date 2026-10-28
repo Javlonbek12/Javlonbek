@@ -36,7 +36,7 @@ export const planogramBundleSchema = z.object({
   posm: z.array(
     z.object({
       name: z.string(),
-      type: z.enum(["HEADER", "BANNER", "STICKER"]),
+      type: z.enum(["HEADER", "BANNER", "STICKER", "SHELFTALKER"]),
       slotSpan: z.number().int(),
       shelfSpan: z.number().int().min(1).default(1),
       color: z.string().default("#16a34a"),

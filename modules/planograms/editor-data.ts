@@ -43,8 +43,9 @@ export async function editorData(loaded: LoadedPlanogram) {
       isMandatory: s.isMandatory,
       defaultBadges: s.defaultBadges,
     })),
-    posms: posms.filter((p) => p.type !== "HEADER").map(toPosm),
+    posms: posms.filter((p) => p.type !== "HEADER" && p.type !== "SHELFTALKER").map(toPosm),
     headers: posms.filter((p) => p.type === "HEADER").map(toPosm),
+    shelftalkers: posms.filter((p) => p.type === "SHELFTALKER").map(toPosm),
     prices: Object.fromEntries(loaded.prices),
     previous: previous
       ? {

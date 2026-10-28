@@ -24,7 +24,15 @@ import { coveredBelow, coveredSlots, type Layout, type SkuInfo } from "@/modules
 import { validatePlanogram, type Rule } from "@/modules/planograms/validate";
 
 import { moveCell, placeAt, removeAt, swapShelves, copyShelf, toggleBadge } from "./editor-ops";
-import { PACK_H, SLOT_W, SlotView, type EditorPosm, type EditorSku } from "./slot-cell";
+import {
+  PACK_H,
+  SHELF_PITCH,
+  SLOT_W,
+  SlotView,
+  TALKER_H,
+  type EditorPosm,
+  type EditorSku,
+} from "./slot-cell";
 
 type SaveResult = { ok: boolean; error?: string };
 
@@ -33,13 +41,21 @@ type Props = {
   geometry: Geometry;
   initialLayout: Layout;
   initialHeaderId: string | null;
+  // The shelftalker of each shelf that has one (shelf index → POSM).
+  initialShelftalkers: Record<number, string>;
   skus: EditorSku[];
   posms: EditorPosm[];
   headers: EditorPosm[];
+  shelftalkers: EditorPosm[];
   rules: Rule[];
   prices: Record<string, number>;
   previous: { layout: Layout; geometry: Geometry; prices: Record<string, number> } | null;
-  save: (planogramId: string, layout: string, headerPosmId: string | null) => Promise<SaveResult>;
+  save: (
+    planogramId: string,
+    layout: string,
+    headerPosmId: string | null,
+    shelftalkers: string,
+  ) => Promise<SaveResult>;
 };
 
 const BADGES = ["YANGI", "1mg", "2mg"];
@@ -126,6 +142,7 @@ export function PlanogramEditor(props: Props) {
     future: [] as Layout[],
   });
   const [headerId, setHeaderId] = useState(props.initialHeaderId);
+  const [talkers, setTalkers] = useState(props.initialShelftalkers);
   const [selection, setSelection] = useState<string[]>([]);
   const [brush, setBrush] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -136,9 +153,16 @@ export function PlanogramEditor(props: Props) {
 
   const skuById = useMemo(() => new Map(skus.map((s) => [s.id, s])), [skus]);
   const posmById = useMemo(
-    () => new Map([...posms, ...props.headers].map((p) => [p.id, p])),
-    [posms, props.headers],
+    () => new Map([...posms, ...props.headers, ...props.shelftalkers].map((p) => [p.id, p])),
+    [posms, props.headers, props.shelftalkers],
   );
+  // Shelf to shelf: a shelftalker strip is taller than the plain board.
+  const pitch = (shelf: number) =>
+    SHELF_PITCH + (geometry.shelves[shelf]?.talker ? TALKER_H - 4 : 0);
+  const posmHeight = (shelf: number, rows: number) =>
+    PACK_H +
+    20 +
+    Array.from({ length: rows - 1 }, (_, k) => pitch(shelf + k)).reduce((a, b) => a + b, 0);
   const layout = state.layout;
   const covered = coveredSlots(layout);
   // Under a POSM hanging from the shelf above: an empty place, the block is drawn over it.
@@ -248,7 +272,18 @@ export function PlanogramEditor(props: Props) {
 
   const onSave = () =>
     startTransition(async () => {
-      const result = await props.save(props.planogramId, JSON.stringify(layout), headerId);
+      // Only shelves that hold a shelftalker keep one.
+      const kept = Object.fromEntries(
+        Object.entries(talkers).filter(
+          ([shelf, id]) => id && geometry.shelves[Number(shelf)]?.talker,
+        ),
+      );
+      const result = await props.save(
+        props.planogramId,
+        JSON.stringify(layout),
+        headerId,
+        JSON.stringify(kept),
+      );
       setMessage(
         result.ok
           ? t("planograms.actions.saved")
@@ -467,14 +502,48 @@ export function PlanogramEditor(props: Props) {
                       <Copy className="size-3" />
                     </button>
                   </span>
+                  {shelf.talker && (
+                    <select
+                      value={talkers[shelfIndex] ?? ""}
+                      onChange={(e) => (
+                        setTalkers((s) => ({ ...s, [shelfIndex]: e.target.value })),
+                        setDirty(true)
+                      )}
+                      title={t("planograms.editor.shelftalker")}
+                      aria-label={`${t("planograms.editor.shelf", { n: shelfIndex + 1 })} · ${t("planograms.editor.shelftalker")}`}
+                      className="w-16 truncate rounded border bg-white text-[10px]"
+                    >
+                      <option value="">{t("planograms.editor.noShelftalker")}</option>
+                      {props.shelftalkers.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
-                <div
-                  className="flex border-b-4 border-slate-400 pb-1"
-                  style={{ marginLeft: shelf.offset * SLOT_W }}
-                >
-                  {Array.from({ length: shelf.slots }, (_, position) => {
-                    const key = slotKey(shelfIndex, position);
-                    if (below.has(key))
+                <div className="flex flex-col" style={{ marginLeft: shelf.offset * SLOT_W }}>
+                  <div className={cn("flex pb-1", !shelf.talker && "border-b-4 border-slate-400")}>
+                    {Array.from({ length: shelf.slots }, (_, position) => {
+                      const key = slotKey(shelfIndex, position);
+                      if (below.has(key))
+                        return (
+                          <div
+                            key={key}
+                            className={cn(
+                              shelf.group > 0 &&
+                                position > 0 &&
+                                position % shelf.group === 0 &&
+                                "ml-1 border-l-2 border-slate-300 pl-1",
+                            )}
+                          >
+                            <div className="p-0.5">
+                              <div style={{ width: SLOT_W - 4, height: PACK_H + 20 }} />
+                            </div>
+                          </div>
+                        );
+                      if (covered.has(key)) return null;
+                      const content = layout[key];
                       return (
                         <div
                           key={key}
@@ -485,37 +554,53 @@ export function PlanogramEditor(props: Props) {
                               "ml-1 border-l-2 border-slate-300 pl-1",
                           )}
                         >
-                          <div className="p-0.5">
-                            <div style={{ width: SLOT_W - 4, height: PACK_H + 20 }} />
-                          </div>
+                          <Cell id={key} onClick={(e) => onCellClick(key, e)}>
+                            <SlotView
+                              content={content}
+                              sku={content?.kind === "SKU" ? skuById.get(content.skuId) : undefined}
+                              posm={
+                                content?.kind === "POSM" ? posmById.get(content.posmId) : undefined
+                              }
+                              selected={selection.includes(key)}
+                              violation={badCells.has(key)}
+                              height={
+                                content?.kind === "POSM" && content.rows > 1
+                                  ? posmHeight(shelfIndex, content.rows)
+                                  : undefined
+                              }
+                            />
+                          </Cell>
                         </div>
                       );
-                    if (covered.has(key)) return null;
-                    const content = layout[key];
-                    return (
-                      <div
-                        key={key}
-                        className={cn(
-                          shelf.group > 0 &&
-                            position > 0 &&
-                            position % shelf.group === 0 &&
-                            "ml-1 border-l-2 border-slate-300 pl-1",
-                        )}
-                      >
-                        <Cell id={key} onClick={(e) => onCellClick(key, e)}>
-                          <SlotView
-                            content={content}
-                            sku={content?.kind === "SKU" ? skuById.get(content.skuId) : undefined}
-                            posm={
-                              content?.kind === "POSM" ? posmById.get(content.posmId) : undefined
-                            }
-                            selected={selection.includes(key)}
-                            violation={badCells.has(key)}
-                          />
-                        </Cell>
-                      </div>
-                    );
-                  })}
+                    })}
+                  </div>
+                  {shelf.talker && (
+                    // The shelftalker on the shelf's edge, the whole shelf wide.
+                    <div
+                      className="flex w-full items-center justify-center overflow-hidden rounded-sm border-b-2 border-slate-400 text-[9px] font-bold text-white"
+                      style={{
+                        height: TALKER_H,
+                        background: talkers[shelfIndex]
+                          ? (posmById.get(talkers[shelfIndex]!)?.color ?? "#94a3b8")
+                          : "#e2e8f0",
+                      }}
+                    >
+                      {talkers[shelfIndex] && posmById.get(talkers[shelfIndex]!)?.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={posmById.get(talkers[shelfIndex]!)!.imageUrl!}
+                          alt={posmById.get(talkers[shelfIndex]!)!.name}
+                          className="h-full w-full object-fill"
+                        />
+                      ) : (
+                        <span className="truncate px-1 text-slate-600">
+                          {talkers[shelfIndex]
+                            ? posmById.get(talkers[shelfIndex]!)?.name
+                            : t("planograms.editor.noShelftalker")}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

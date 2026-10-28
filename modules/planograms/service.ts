@@ -14,7 +14,13 @@ import { diffLayouts, type LayoutChange } from "./diff";
 import { PlanogramError } from "./errors";
 import { parseGeometry } from "./geometry";
 import { layoutProblems, type Layout } from "./layout";
-import { loadPlanogram, loadSkuInfos, slotsFromLayout, type LoadedPlanogram } from "./repository";
+import {
+  loadPlanogram,
+  loadSkuInfos,
+  slotsFromLayout,
+  type LoadedPlanogram,
+  type Shelftalkers,
+} from "./repository";
 import { DEFAULT_RULES, hasCritical, validatePlanogram, type Rule } from "./validate";
 
 function requireManager(actor: Actor) {
@@ -103,6 +109,7 @@ export async function createPlanogram(
   let layout: Layout = {};
   let rules: Rule[] = DEFAULT_RULES;
   let headerPosmId: string | null = null;
+  let shelftalkers: Prisma.InputJsonValue = {};
   if (input.templateId) {
     const template = await loadPlanogram(input.templateId);
     if (!template || template.record.equipmentId !== equipment.id)
@@ -110,6 +117,7 @@ export async function createPlanogram(
     layout = template.layout;
     rules = template.rules;
     headerPosmId = template.record.headerPosmId;
+    shelftalkers = template.shelftalkers;
   } else if (input.fill === "auto") {
     const skus = (await loadSkuInfos()).filter((s) => !s.archived);
     layout = autofill(geometry, skus).layout;
@@ -122,6 +130,7 @@ export async function createPlanogram(
         priceListId: meta.priceListId ?? (await latestPriceListId()),
         equipmentId: equipment.id,
         headerPosmId,
+        shelftalkers,
         createdById: actor.id,
         rules: {
           create: rules.map((r) => ({
@@ -161,6 +170,8 @@ export async function saveLayout(
   id: string,
   layout: Layout,
   headerPosmId: string | null,
+  // The shelftalker of each shelf (only shelves of the equipment); undefined keeps them.
+  shelftalkers?: Shelftalkers,
 ) {
   const loaded = await loadDraft(actor, id);
   if (layoutProblems(layout, loaded.geometry).length > 0) throw new PlanogramError("layout");
@@ -171,11 +182,25 @@ export async function saveLayout(
     if (content.kind === "POSM" && !posmIds.has(content.posmId)) throw new PlanogramError("layout");
   }
   if (headerPosmId && !posmIds.has(headerPosmId)) throw new PlanogramError("layout");
+  if (
+    shelftalkers &&
+    Object.entries(shelftalkers).some(
+      ([shelf, posmId]) => !loaded.geometry.shelves[Number(shelf)] || !posmIds.has(posmId),
+    )
+  )
+    throw new PlanogramError("layout");
 
   await db.$transaction([
     db.planogramSlot.deleteMany({ where: { planogramId: id } }),
     db.planogramSlot.createMany({ data: slotsFromLayout(id, layout) }),
-    db.planogram.update({ where: { id }, data: { headerPosmId, status: "DRAFT" } }),
+    db.planogram.update({
+      where: { id },
+      data: {
+        headerPosmId,
+        ...(shelftalkers ? { shelftalkers: shelftalkers as Prisma.InputJsonValue } : {}),
+        status: "DRAFT",
+      },
+    }),
   ]);
   await logActivity({
     actorId: actor.id,
@@ -322,6 +347,7 @@ export async function copyPlanogram(
         validTo: r.validTo,
         notes: r.notes,
         headerPosmId: options.equipmentId ? null : r.headerPosmId,
+        shelftalkers: options.equipmentId ? {} : (r.shelftalkers ?? {}),
         priceListId: options.priceListId === undefined ? r.priceListId : options.priceListId,
         isTemplate: options.isTemplate ?? false,
         status,
