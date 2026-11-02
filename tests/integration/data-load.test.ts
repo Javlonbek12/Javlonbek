@@ -143,6 +143,38 @@ describe("data-load: a whole planogram library and Connect rows at once", () => 
       "shelftalkers TEST_DISPLAY: shelves 1, planograms 0 of 1",
     );
     expect((await db.planogram.findFirstOrThrow()).shelftalkers).toEqual({ "1": first.id });
+
+    // With overwrite every planogram of the model gets them.
+    talkers.shelftalkers = [
+      { equipment: "TEST_DISPLAY", shelves: { "1": "Тестовый шелфтокер 2" }, overwrite: true },
+    ];
+    expect(await loadPlanogramBundle(owner, talkers)).toContain(
+      "shelftalkers TEST_DISPLAY: shelves 1, planograms 1 of 1",
+    );
+    const second = await db.posm.findFirstOrThrow({ where: { name: "Тестовый шелфтокер 2" } });
+    expect((await db.planogram.findFirstOrThrow()).shelftalkers).toEqual({ "1": second.id });
+  });
+
+  it("fills a new planogram from the SKU list when asked", async () => {
+    const owner = await withAccess(await createTestUser("OWNER"));
+    await loadPlanogramBundle(owner, {
+      equipment: [
+        {
+          code: "TEST_POG",
+          name: "Тестовый POG",
+          channel: "POSI",
+          geometry: { header: null, shelves: [{ slots: 4, offset: 0, group: 0 }] },
+        },
+      ],
+      skus: [
+        { code: "SKU-TEST-001", brand: "ESSE", name: "Тестовая пачка 1" },
+        { code: "SKU-TEST-002", brand: "PINE", name: "Тестовая пачка 2" },
+      ],
+      planograms: [{ title: "Тестовый POG", equipment: "TEST_POG", channel: "POSI", fill: "auto" }],
+    });
+    const planogram = await db.planogram.findFirstOrThrow({ where: { title: "Тестовый POG" } });
+    const loaded = await loadPlanogram(planogram.id);
+    expect(Object.values(loaded!.layout).filter((c) => c.kind === "SKU")).toHaveLength(4);
   });
 
   it("saves Connect rows sent as parsed records", async () => {
