@@ -74,24 +74,36 @@ export const planogramBundleSchema = z.object({
         project: z.string().nullable().default(null),
         notes: z.string().nullable().default(null),
         header: z.string().nullable().default(null),
-        slots: z.array(
-          z.object({
-            shelf: z.number().int(),
-            position: z.number().int(),
-            sku: z.string().optional(),
-            posm: z.string().optional(),
-            // How many slots this POSM covers here (the same banner is wider on bigger displays).
-            span: z.number().int().optional(),
-            badges: z.array(z.string()).default([]),
-          }),
-        ),
+        // "auto": the slots are left out and filled from the SKU list by brand order.
+        fill: z.enum(["empty", "auto"]).default("empty"),
+        slots: z
+          .array(
+            z.object({
+              shelf: z.number().int(),
+              position: z.number().int(),
+              sku: z.string().optional(),
+              posm: z.string().optional(),
+              // How many slots this POSM covers here (the same banner is wider on bigger displays).
+              span: z.number().int().optional(),
+              badges: z.array(z.string()).default([]),
+            }),
+          )
+          .default([]),
       }),
     )
     .default([]),
   // Shelftalkers of a model: shelf number (0 = top) → POSM name. The shelves get the shelftalker
-  // mark, and each draft planogram of the model without shelftalkers gets these.
+  // mark, and each draft planogram of the model without shelftalkers gets these (with overwrite,
+  // every planogram of the model that is not archived).
   shelftalkers: z
-    .array(z.object({ equipment: z.string(), shelves: z.record(z.string(), z.string()) }))
+    .array(
+      z.object({
+        equipment: z.string(),
+        shelves: z.record(z.string(), z.string()),
+        // Every planogram of the model gets them, approved and chosen by hand too.
+        overwrite: z.boolean().default(false),
+      }),
+    )
     .default([]),
 });
 export type PlanogramBundle = z.input<typeof planogramBundleSchema>;
@@ -182,8 +194,12 @@ export async function loadPlanogramBundle(actor: Actor, input: unknown) {
       priceListId,
       notes: p.notes,
       equipmentId,
-      fill: "empty",
+      fill: p.fill,
     });
+    if (p.fill === "auto") {
+      created++;
+      continue;
+    }
     const geometry = parseGeometry(
       (await db.equipment.findUniqueOrThrow({ where: { id: equipmentId } })).geometry,
     );
@@ -241,13 +257,17 @@ export async function loadPlanogramBundle(actor: Actor, input: unknown) {
         } as Prisma.InputJsonValue,
       },
     });
-    // Only drafts that have none yet: what is approved or chosen by hand stays as it is.
+    // Only drafts that have none yet, unless overwrite: what is approved or chosen by hand stays.
     const planograms = await db.planogram.findMany({
       where: { equipmentId: equipment.id, status: { not: "ARCHIVED" } },
     });
     let filled = 0;
     for (const p of planograms) {
-      if (p.status !== "DRAFT" || Object.keys(parseShelftalkers(p.shelftalkers)).length) continue;
+      if (
+        !t.overwrite &&
+        (p.status !== "DRAFT" || Object.keys(parseShelftalkers(p.shelftalkers)).length)
+      )
+        continue;
       await db.planogram.update({
         where: { id: p.id },
         data: { shelftalkers: shelftalkers as Prisma.InputJsonValue },
