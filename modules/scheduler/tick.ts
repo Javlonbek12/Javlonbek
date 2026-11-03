@@ -11,6 +11,7 @@ import { getSettings } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
 import { tagPendingContent } from "@/modules/content/tagging";
 import { CLOSED_STATUSES } from "@/modules/tasks/access";
+import { createRepeatCopies } from "@/modules/tasks/service";
 
 import { collectDigestData, defaultDigestWriter, isDigestEmpty, type DigestWriter } from "./digest";
 import { dueReminderDate, isDigestTime, localClock, overdueRange, weeklySummaryWeek } from "./plan";
@@ -170,6 +171,11 @@ export async function runSchedulerTick(now = new Date(), deps: TickDeps = {}) {
     }
   }
   await meetingReminders(now);
+  try {
+    await createRepeatCopies(now);
+  } catch (error) {
+    console.error("Repeating tasks failed", error);
+  }
   try {
     await tagPendingContent();
   } catch (error) {

@@ -26,6 +26,9 @@ import { visiblePlansWhere } from "./plan-service";
 import { availableTransitions, checkTransition } from "./status";
 import { canViewMeeting } from "@/modules/meetings/access";
 import { classifyByDueDate } from "./today";
+import type { RepeatInput } from "./repeat";
+import { copyMode, createDueCopies, setRepeat, startSeries } from "./repeat-service";
+import { withAccess } from "@/modules/core/access/actor";
 
 const dateField = z
   .string()
@@ -96,7 +99,13 @@ const taskData = (data: z.output<typeof taskInputSchema>) => ({
   estimateMinutes: data.estimateHours === null ? null : Math.round(data.estimateHours * 60),
 });
 
-export async function createTask(actor: Actor, input: TaskInput, mode: CreateMode = "draft") {
+export async function createTask(
+  actor: Actor,
+  input: TaskInput,
+  mode: CreateMode = "draft",
+  // repeat: the task starts a repeating series; seriesId: the task is a copy made for one.
+  options: { repeat?: RepeatInput | null; seriesId?: string } = {},
+) {
   const data = parseInput(input);
   let assigneeId = actor.id;
   if (!data.isPersonal) {
@@ -137,6 +146,7 @@ export async function createTask(actor: Actor, input: TaskInput, mode: CreateMod
       creatorId: actor.id,
       assigneeId,
       meetingId: data.meetingId ?? null,
+      seriesId: options.seriesId ?? null,
     },
   });
   await logActivity({
@@ -145,6 +155,15 @@ export async function createTask(actor: Actor, input: TaskInput, mode: CreateMod
     entityType: "Task",
     entityId: task.id,
   });
+  if (options.repeat) {
+    try {
+      await startSeries(actor.id, task.id, data.dueDate, options.repeat);
+    } catch (error) {
+      // A repeat that can't start (no due date) leaves no half-made task behind.
+      await db.task.delete({ where: { id: task.id } });
+      throw error;
+    }
+  }
 
   return target ? changeStatus(actor, task.id, target) : task;
 }
@@ -165,7 +184,13 @@ function comparable(value: unknown) {
   return value instanceof Date ? toDateString(value) : (value ?? null);
 }
 
-export async function updateTask(actor: Actor, taskId: string, input: TaskInput) {
+export async function updateTask(
+  actor: Actor,
+  taskId: string,
+  input: TaskInput,
+  // undefined: the repeat stays as it is; null: it stops.
+  repeat?: RepeatInput | null,
+) {
   const task = await db.task.findUnique({ where: { id: taskId } });
   if (!task || !canEditTask(actor, task)) throw new TaskError("forbidden");
   const data = parseInput({ ...input, isPersonal: task.isPersonal });
@@ -179,6 +204,14 @@ export async function updateTask(actor: Actor, taskId: string, input: TaskInput)
   }
 
   const next = { ...taskData(data), assigneeId };
+  if (repeat !== undefined) {
+    if (repeat && !next.dueDate) throw new TaskError("repeatDate");
+    await setRepeat(
+      actor.id,
+      { id: task.id, seriesId: task.seriesId, dueDate: next.dueDate },
+      repeat,
+    );
+  }
   const changes: Record<string, [unknown, unknown]> = {};
   for (const field of TRACKED_FIELDS) {
     const before = comparable(task[field]);
@@ -365,6 +398,7 @@ export async function getTaskDetail(actor: Actor, taskId: string) {
       plan: { select: { id: true, title: true } },
       meeting: { select: { id: true, title: true } },
       deleteRequestedBy: { select: { id: true, firstName: true, lastName: true } },
+      series: true,
     },
   });
   if (!task || !canViewTask(actor, task)) return null;
@@ -374,6 +408,7 @@ export async function getTaskDetail(actor: Actor, taskId: string) {
       plan: task.plan,
       meeting: task.meeting,
       deleteRequestedBy: task.deleteRequestedBy,
+      series: task.series,
     },
     transitions: availableTransitions(actor, task),
     canEdit: canEditTask(actor, task),
@@ -462,5 +497,29 @@ export async function listAssignableUsers() {
   return db.user.findMany({
     select: { id: true, firstName: true, lastName: true },
     orderBy: { firstName: "asc" },
+  });
+}
+
+// The scheduler's part: copies of repeating tasks whose day has come, made by the series creator.
+export async function createRepeatCopies(now = new Date()) {
+  return createDueCopies(now, async (creatorId, copy, seriesId) => {
+    const creator = await withAccess(await db.user.findUniqueOrThrow({ where: { id: creatorId } }));
+    await createTask(
+      creator,
+      {
+        title: copy.title,
+        description: copy.description,
+        isPersonal: copy.isPersonal,
+        assigneeId: copy.isPersonal ? null : copy.assigneeId,
+        startDate: copy.startDate,
+        dueDate: copy.dueDate,
+        priority: copy.priority as TaskInput["priority"],
+        project: copy.project,
+        planId: null,
+        estimateHours: copy.estimateMinutes === null ? null : copy.estimateMinutes / 60,
+      },
+      await copyMode(creatorId, copy),
+      { seriesId },
+    );
   });
 }
