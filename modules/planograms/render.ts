@@ -1,4 +1,4 @@
-import { slotKey, widthInSlots, type Geometry } from "./geometry";
+import { slotKey, type Geometry, type Shelf } from "./geometry";
 
 // Everything needed to draw one cell. Built from the database by export.ts.
 export type RenderCell =
@@ -47,6 +47,8 @@ const HEADER_H = 56;
 // A shelftalker strip under the price tags.
 const TALKER_H = 26;
 const VERTICAL_HEADER_W = 56;
+// Extra room between the sections of a module (a group of slots), with a line in it.
+const GROUP_GAP = 10;
 
 const HIGHLIGHT = {
   added: "#16a34a",
@@ -76,23 +78,39 @@ function wrap(text: string, maxChars: number, maxLines: number): string[] {
   return lines.slice(0, maxLines);
 }
 
+// Where a slot column starts. Sections of a module are set apart; a shelf without sections
+// (the short top row of a LEGO) follows the sections of the others, so its packs line up.
+function sectionOf(geometry: Geometry, shelf: Shelf) {
+  return shelf.group || (geometry.shelves.find((s) => s.group > 0)?.group ?? 0);
+}
+
+function columnX(group: number, column: number) {
+  return PAD + column * SLOT_W + (group > 0 ? Math.floor(column / group) * GROUP_GAP : 0);
+}
+
+export function slotX(geometry: Geometry, shelf: Shelf, position: number) {
+  return columnX(sectionOf(geometry, shelf), shelf.offset + position);
+}
+
+// The width of everything on the shelves.
+function shelvesWidth(geometry: Geometry) {
+  return Math.max(...geometry.shelves.map((s) => slotX(geometry, s, s.slots - 1) + SLOT_W - PAD));
+}
+
 export function planogramSize(input: RenderInput) {
   const tagH = input.large ? 34 : 24;
   // Shelves keep one pitch: with any shelftalker on the equipment, each gets room for one.
   const talkerH = input.geometry.shelves.some((s) => s.talker) ? TALKER_H : 0;
   const shelfH = PACK_H + tagH + talkerH + SHELF_GAP;
   const vertical = input.geometry.header === "vertical";
-  const bandW = widthInSlots(input.geometry) * SLOT_W;
+  const bandW = shelvesWidth(input.geometry);
   const aspect = input.header?.image ? input.header.aspect : null;
   const headerBand = aspect
     ? Math.round(Math.min(bandW * 0.45, Math.max(HEADER_H, bandW / aspect)))
     : HEADER_H;
   const headerH = input.geometry.header === "horizontal" ? headerBand + SHELF_GAP : 0;
   return {
-    width:
-      PAD * 2 +
-      widthInSlots(input.geometry) * SLOT_W +
-      (vertical ? VERTICAL_HEADER_W + GAP * 2 : 0),
+    width: PAD * 2 + bandW + (vertical ? VERTICAL_HEADER_W + GAP * 2 : 0),
     height: PAD * 2 + headerH + input.geometry.shelves.length * shelfH,
     tagH,
     shelfH,
@@ -145,13 +163,14 @@ export function renderPlanogramSvg(input: RenderInput): string {
 
   input.geometry.shelves.forEach((shelf, shelfIndex) => {
     const top = PAD + headerH + shelfIndex * shelfH;
-    const left = PAD + shelf.offset * SLOT_W;
+    const left = slotX(input.geometry, shelf, 0);
+    const shelfW = slotX(input.geometry, shelf, shelf.slots - 1) + SLOT_W - left;
     // The shelftalker on the shelf's edge (stretched to the shelf: it is printed for it), then
     // the shelf board.
     const strip = top + PACK_H + tagH + 2;
     if (shelf.talker) {
       const talker = input.shelftalkers?.[shelfIndex];
-      const w = shelf.slots * SLOT_W;
+      const w = shelfW;
       parts.push(
         `<rect x="${left}" y="${strip}" width="${w}" height="${talkerH - 4}" rx="2" fill="${talker?.color ?? "#e2e8f0"}"/>`,
       );
@@ -165,18 +184,19 @@ export function renderPlanogramSvg(input: RenderInput): string {
         );
     }
     parts.push(
-      `<rect x="${left - 2}" y="${shelf.talker ? strip + talkerH - 4 : strip}" width="${shelf.slots * SLOT_W + 4}" height="4" fill="#94a3b8"/>`,
+      `<rect x="${left - 2}" y="${shelf.talker ? strip + talkerH - 4 : strip}" width="${shelfW + 4}" height="4" fill="#94a3b8"/>`,
     );
     for (let position = 0; position < shelf.slots; position++) {
       const key = slotKey(shelfIndex, position);
       const cell = input.cells[key];
-      const x = left + position * SLOT_W;
-      if (hidden.has(key)) continue;
-      if (shelf.group > 0 && position > 0 && position % shelf.group === 0) {
+      const x = slotX(input.geometry, shelf, position);
+      if (shelf.group > 0 && position > 0 && (shelf.offset + position) % shelf.group === 0) {
+        const line = x - GROUP_GAP / 2;
         parts.push(
-          `<line x1="${x}" y1="${top}" x2="${x}" y2="${top + PACK_H + tagH}" stroke="#cbd5e1" stroke-width="2"/>`,
+          `<line x1="${line}" y1="${top}" x2="${line}" y2="${top + PACK_H + tagH}" stroke="#cbd5e1" stroke-width="2"/>`,
         );
       }
+      if (hidden.has(key)) continue;
       if (!cell) {
         parts.push(
           `<rect x="${x + GAP / 2}" y="${top}" width="${SLOT_W - GAP}" height="${PACK_H}" rx="4" fill="#f8fafc" stroke="#cbd5e1" stroke-dasharray="4 3"/>`,
@@ -191,7 +211,7 @@ export function renderPlanogramSvg(input: RenderInput): string {
         continue;
       }
       if (cell.kind === "POSM") {
-        const w = cell.span * SLOT_W - GAP;
+        const w = slotX(input.geometry, shelf, position + cell.span - 1) + SLOT_W - x - GAP;
         const h = PACK_H + tagH + ((cell.rows ?? 1) - 1) * shelfH;
         const target = (cell.rows ?? 1) > 1 ? overlay : parts;
         target.push(
@@ -264,7 +284,7 @@ export function renderPlanogramSvg(input: RenderInput): string {
       if (input.cells[key]?.kind === "SKU") continue;
       const mark = input.highlight?.get(key);
       if (mark) {
-        const x = left + position * SLOT_W + GAP / 2;
+        const x = slotX(input.geometry, shelf, position) + GAP / 2;
         parts.push(
           `<rect x="${x - 1}" y="${top - 1}" width="${SLOT_W - GAP + 2}" height="${PACK_H + tagH}" rx="5" fill="none" stroke="${HIGHLIGHT[mark]}" stroke-width="3"/>`,
         );

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { EQUIPMENT_FIXTURES } from "./fixtures";
-import { escapeXml, planogramSize, renderPlanogramSvg, type RenderInput } from "./render";
+import { escapeXml, planogramSize, renderPlanogramSvg, slotX, type RenderInput } from "./render";
 
 const lego = EQUIPMENT_FIXTURES.find((e) => e.code === "LEGO_21")!.geometry;
 const displayL = EQUIPMENT_FIXTURES.find((e) => e.code === "DISPLAY_L")!.geometry;
@@ -84,8 +84,19 @@ describe("renderPlanogramSvg", () => {
     );
   });
 
-  it("sizes a stepped LEGO by its widest shelf", () => {
-    expect(planogramSize({ geometry: lego, cells: {} }).width).toBe(16 * 2 + 9 * 64);
+  it("sizes a stepped LEGO by its widest shelf, with room between its sections", () => {
+    expect(planogramSize({ geometry: lego, cells: {} }).width).toBe(16 * 2 + 9 * 64 + 2 * 10);
+    // The short top row lines up with the middle section of the rows below.
+    expect(slotX(lego, lego.shelves[0]!, 0)).toBe(slotX(lego, lego.shelves[1]!, 3));
+  });
+
+  it("sets the sections of a module apart with a line", () => {
+    const module9x2 = EQUIPMENT_FIXTURES.find((e) => e.code === "MODULE_9x2")!.geometry;
+    const svg = renderPlanogramSvg({ geometry: module9x2, cells: {} });
+    expect(svg.match(/<line /g)).toHaveLength(4);
+    expect(
+      slotX(module9x2, module9x2.shelves[0]!, 3) - slotX(module9x2, module9x2.shelves[0]!, 2),
+    ).toBe(64 + 10);
   });
 
   it("escapes text so names can't break the picture", () => {

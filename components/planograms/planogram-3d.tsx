@@ -564,17 +564,18 @@ export function Planogram3D({ input }: { input: RenderInput }) {
           cabinet.add(strip);
         }
 
-        // Group separators (modules of 3 and the like).
+        // Section dividers (modules of 3 and the like): panels between the packs up to the
+        // shelf's front edge, so they show between the front facings.
         if (shelf.group > 0)
           for (let g = shelf.group; g < shelf.slots; g += shelf.group)
             box(
-              0.25,
+              0.5,
               PACK.h + 1,
-              boardDepth - 6,
+              boardDepth - 0.5,
               innerMaterial,
               shelfLeft + g * SLOT,
               boardY + (PACK.h + 1) / 2,
-              -1,
+              -0.25,
             );
 
         for (let position = 0; position < shelf.slots; position++) {
