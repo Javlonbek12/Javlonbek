@@ -17,6 +17,7 @@ import {
 } from "@/modules/tasks/delete-service";
 import { TaskError } from "@/modules/tasks/errors";
 import { createPlan } from "@/modules/tasks/plan-service";
+import type { RepeatInput } from "@/modules/tasks/repeat";
 import {
   CREATE_MODES,
   changeStatus,
@@ -58,12 +59,28 @@ function taskInputFromForm(formData: FormData): TaskInput {
   };
 }
 
+// The repeat part of the task form; an empty choice means no repeat.
+function repeatFromForm(formData: FormData): RepeatInput | null {
+  const frequency = str(formData, "repeat");
+  if (!frequency) return null;
+  const monthDay = str(formData, "repeatMonthDay");
+  return {
+    frequency: frequency as RepeatInput["frequency"],
+    interval: Number(str(formData, "repeatInterval") || 1),
+    weekdays: formData.getAll("repeatDay").map(Number),
+    monthDay: monthDay ? Number(monthDay) : null,
+    until: str(formData, "repeatUntil") || null,
+  };
+}
+
 export type TaskFormState = { error: string | null; values: Record<string, string> };
 
 function formValues(formData: FormData): Record<string, string> {
   const values: Record<string, string> = {};
   for (const [key, value] of formData.entries()) {
-    if (typeof value === "string" && !key.startsWith("$")) values[key] = value;
+    if (typeof value !== "string" || key.startsWith("$")) continue;
+    // Checkboxes with one name (the repeat's weekdays) keep every value.
+    values[key] = key in values ? `${values[key]},${value}` : value;
   }
   return values;
 }
@@ -80,6 +97,7 @@ export async function createTaskAction(
       user,
       taskInputFromForm(formData),
       mode in CREATE_MODES ? (mode as CreateMode) : "draft",
+      { repeat: repeatFromForm(formData) },
     );
     taskId = task.id;
   } catch (error) {
@@ -97,7 +115,7 @@ export async function updateTaskAction(
   const user = await actor();
   const taskId = idSchema.parse(str(formData, "taskId"));
   try {
-    await updateTask(user, taskId, taskInputFromForm(formData));
+    await updateTask(user, taskId, taskInputFromForm(formData), repeatFromForm(formData));
   } catch (error) {
     if (error instanceof TaskError) return { error: error.code, values: formValues(formData) };
     throw error;

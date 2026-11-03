@@ -6,7 +6,8 @@ export type TaskErrorCode =
   | "plan"
   | "fileTooLarge"
   | "requested"
-  | "noApprover";
+  | "noApprover"
+  | "repeatDate";
 
 // A task action that can't be done; `code` maps to tasks.errors.* in the i18n dictionary.
 export class TaskError extends Error {

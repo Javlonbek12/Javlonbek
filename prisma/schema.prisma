@@ -61,6 +61,7 @@ model User {
   tasksCreated       Task[]               @relation("TaskCreator")
   tasksAssigned      Task[]               @relation("TaskAssignee")
   taskDeleteRequests Task[]               @relation("TaskDeleteRequester")
+  taskSeries         TaskSeries[]         @relation("TaskSeriesCreator")
   plansCreated       Plan[]
   comments           Comment[]
   attachments        TaskAttachment[]
@@ -196,6 +197,8 @@ model Task {
   planId              String?
   // Set when the task came from meeting minutes.
   meetingId           String?
+  // A repeating task: every copy belongs to one series (see TaskSeries).
+  seriesId            String?
   // Project plan fields (see Project): phase, code from the plan ("T01"), who is responsible
   // per the plan (a group or role, e.g. "HO / аналитика"), milestone and risk marks.
   phaseId             String?
@@ -217,6 +220,7 @@ model Task {
   assignee          User             @relation("TaskAssignee", fields: [assigneeId], references: [id])
   plan              Plan?            @relation(fields: [planId], references: [id], onDelete: SetNull)
   meeting           Meeting?         @relation(fields: [meetingId], references: [id], onDelete: SetNull)
+  series            TaskSeries?      @relation(fields: [seriesId], references: [id], onDelete: SetNull)
   phase             ProjectPhase?    @relation(fields: [phaseId], references: [id], onDelete: SetNull)
   // "blockedBy": tasks that must be closed before this one can be DONE.
   blockedBy         TaskDependency[] @relation("DependencyBlocked")
@@ -229,6 +233,7 @@ model Task {
   @@index([dueDate])
   @@index([project])
   @@index([deleteRequestedAt])
+  @@index([seriesId])
 }
 
 model TaskDependency {
@@ -368,6 +373,39 @@ model SystemState {
 // ============================================================
 // meetings: meetings, participants, minutes
 // ============================================================
+
+enum RepeatFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
+// A repeating task. The next copy of its latest task is made by the scheduler on the copy's
+// start date (on its due date when the task has no start date); see modules/tasks/repeat.ts.
+model TaskSeries {
+  id        String          @id @default(cuid())
+  frequency RepeatFrequency
+  // Every N days / weeks / months / years.
+  interval  Int             @default(1)
+  // WEEKLY: 1 = Monday … 7 = Sunday (empty: the weekday of the first due date).
+  weekdays  Int[]
+  // MONTHLY: the day of the month (in a shorter month, its last day); null: the first due date's.
+  monthDay  Int?
+  // The due date of the first task: the counting starts from it.
+  anchor    DateTime        @db.Date
+  until     DateTime?       @db.Date
+  // The due date of the next copy; null when the series has ended or was stopped.
+  nextDate  DateTime?       @db.Date
+  creatorId String
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  creator User   @relation("TaskSeriesCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  tasks   Task[]
+
+  @@index([nextDate])
+}
 
 model Meeting {
   id              String   @id @default(cuid())

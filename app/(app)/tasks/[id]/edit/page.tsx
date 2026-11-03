@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { TaskForm } from "@/components/tasks/task-form";
+import { toDateString } from "@/lib/dates";
 import { t } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getTaskFormOptions } from "@/modules/tasks/form-options";
@@ -14,6 +15,8 @@ export default async function EditTaskPage({ params }: PageProps<"/tasks/[id]/ed
   const detail = await getTaskDetail(user, id);
   if (!detail || !detail.canEdit) notFound();
   const { task } = detail;
+  // A stopped or finished series shows as "don't repeat".
+  const series = task.series?.nextDate ? task.series : null;
   const options = await getTaskFormOptions(user);
 
   return (
@@ -35,6 +38,11 @@ export default async function EditTaskPage({ params }: PageProps<"/tasks/[id]/ed
           project: task.project ?? "",
           planId: task.planId ?? "",
           estimateHours: task.estimateMinutes === null ? "" : String(task.estimateMinutes / 60),
+          repeat: series?.frequency ?? "",
+          repeatInterval: series ? String(series.interval) : "",
+          repeatDay: series ? series.weekdays.join(",") : "",
+          repeatMonthDay: series?.monthDay ? String(series.monthDay) : "",
+          repeatUntil: series?.until ? toDateString(series.until) : "",
         }}
         {...options}
       />

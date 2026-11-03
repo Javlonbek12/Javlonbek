@@ -1,4 +1,4 @@
-import { Lock } from "lucide-react";
+import { Lock, Repeat } from "lucide-react";
 import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +26,11 @@ export function TaskRow({ task, today }: { task: TaskView; today: string }) {
         <StatusBadge status={task.status} />
         <PriorityBadge priority={task.priority} />
         {task.isPersonal && <Badge variant="outline">{t("tasks.fields.personalShort")}</Badge>}
+        {task.seriesId && (
+          <Badge variant="outline" title={t("tasks.repeat.title")}>
+            <Repeat className="size-3" aria-label={t("tasks.repeat.title")} />
+          </Badge>
+        )}
         {task.openBlockers > 0 && (
           <Badge variant="outline" className="border-destructive text-destructive">
             <Lock className="size-3" />

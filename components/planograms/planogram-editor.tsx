@@ -10,7 +10,7 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { ArrowDown, ArrowUp, Copy, Redo2, Undo2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useId, useMemo, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -133,9 +133,16 @@ function Cell({
   );
 }
 
+// The room between module sections in a row: ml-1 + border-l-2 + pl-1.
+const SECTION_GAP = 10;
+
 export function PlanogramEditor(props: Props) {
   const t = useT();
   const { geometry, skus, posms, rules } = props;
+  // A short row (the top of a LEGO) skips the room between the sections of the rows under it.
+  const section = geometry.shelves.find((s) => s.group > 0)?.group ?? 0;
+  const sectionGaps = (column: number) =>
+    section > 0 ? Math.floor(column / section) * SECTION_GAP : 0;
   const [state, setState] = useState({
     layout: props.initialLayout,
     past: [] as Layout[],
@@ -143,6 +150,8 @@ export function PlanogramEditor(props: Props) {
   });
   const [headerId, setHeaderId] = useState(props.initialHeaderId);
   const [talkers, setTalkers] = useState(props.initialShelftalkers);
+  // The same id on the server and in the browser (dnd-kit's own counter differs between them).
+  const dndId = useId();
   const [selection, setSelection] = useState<string[]>([]);
   const [brush, setBrush] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -293,7 +302,7 @@ export function PlanogramEditor(props: Props) {
     });
 
   return (
-    <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+    <DndContext id={dndId} sensors={sensors} onDragEnd={onDragEnd}>
       <div className="flex flex-col gap-3 lg:flex-row">
         <aside className="flex w-full shrink-0 flex-col gap-2 lg:w-60">
           <h3 className="text-sm font-medium">{t("planograms.editor.palette")}</h3>
@@ -522,7 +531,10 @@ export function PlanogramEditor(props: Props) {
                     </select>
                   )}
                 </div>
-                <div className="flex flex-col" style={{ marginLeft: shelf.offset * SLOT_W }}>
+                <div
+                  className="flex flex-col"
+                  style={{ marginLeft: shelf.offset * SLOT_W + sectionGaps(shelf.offset) }}
+                >
                   <div className={cn("flex pb-1", !shelf.talker && "border-b-4 border-slate-400")}>
                     {Array.from({ length: shelf.slots }, (_, position) => {
                       const key = slotKey(shelfIndex, position);

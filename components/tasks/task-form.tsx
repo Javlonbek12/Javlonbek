@@ -27,6 +27,100 @@ export type TaskFormProps = {
 };
 
 const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
+const FREQUENCIES = ["DAILY", "WEEKLY", "MONTHLY", "YEARLY"] as const;
+const WEEKDAYS = ["1", "2", "3", "4", "5", "6", "7"] as const;
+
+// How the task repeats (empty: it doesn't). Values come back as strings, like other fields.
+function RepeatFields({ values }: { values: Record<string, string> }) {
+  const t = useT();
+  const [frequency, setFrequency] = useState(values.repeat ?? "");
+  const days = (values.repeatDay ?? "").split(",");
+  return (
+    <Card className="gap-3">
+      <Label className="flex-col items-start">
+        {t("tasks.repeat.title")}
+        <NativeSelect
+          name="repeat"
+          value={frequency}
+          onChange={(e) => setFrequency(e.target.value)}
+          className="w-full"
+        >
+          <option value="">{t("tasks.repeat.none")}</option>
+          {FREQUENCIES.map((f) => (
+            <option key={f} value={f}>
+              {t(`tasks.repeat.${f}`)}
+            </option>
+          ))}
+        </NativeSelect>
+      </Label>
+      {frequency && (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <Label className="flex-col items-start">
+              {t("tasks.repeat.every")}
+              <div className="flex w-full items-center gap-2">
+                <Input
+                  type="number"
+                  name="repeatInterval"
+                  min={1}
+                  max={99}
+                  defaultValue={values.repeatInterval || "1"}
+                  className="w-20"
+                />
+                <span className="text-muted-foreground text-sm">
+                  {t(`tasks.repeat.unit.${frequency as (typeof FREQUENCIES)[number]}`)}
+                </span>
+              </div>
+            </Label>
+            <Label className="flex-col items-start">
+              {t("tasks.repeat.until")}
+              <Input type="date" name="repeatUntil" defaultValue={values.repeatUntil} />
+            </Label>
+          </div>
+          {frequency === "WEEKLY" && (
+            <fieldset className="flex flex-col gap-1.5 text-sm">
+              <legend className="mb-1.5 font-medium">{t("tasks.repeat.weekdays")}</legend>
+              <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                {WEEKDAYS.map((d) => (
+                  <label key={d} className="flex items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      name="repeatDay"
+                      value={d}
+                      defaultChecked={days.includes(d)}
+                      className="size-4"
+                    />
+                    {t(`tasks.repeat.days.${d}`)}
+                  </label>
+                ))}
+              </div>
+              <span className="text-muted-foreground text-xs">
+                {t("tasks.repeat.weekdaysHint")}
+              </span>
+            </fieldset>
+          )}
+          {frequency === "MONTHLY" && (
+            <Label className="flex-col items-start">
+              {t("tasks.repeat.monthDay")}
+              <Input
+                type="number"
+                name="repeatMonthDay"
+                min={1}
+                max={31}
+                defaultValue={values.repeatMonthDay}
+                className="w-24"
+              />
+              <span className="text-muted-foreground text-xs font-normal">
+                {t("tasks.repeat.monthDayHint")}
+              </span>
+            </Label>
+          )}
+          <p className="text-muted-foreground text-xs">{t("tasks.repeat.hint")}</p>
+        </>
+      )}
+    </Card>
+  );
+}
 
 export function TaskForm({
   action,
@@ -146,6 +240,7 @@ export function TaskForm({
           </NativeSelect>
         </Label>
       </Card>
+      <RepeatFields values={values} />
 
       <div className="flex flex-wrap gap-2">
         {!isNew ? (

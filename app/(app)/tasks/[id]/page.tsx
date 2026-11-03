@@ -1,4 +1,4 @@
-import { ExternalLink, FileText, Lock, Pencil } from "lucide-react";
+import { ExternalLink, FileText, Lock, Pencil, Repeat } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -25,7 +25,8 @@ import { getDependencies, listBlockerCandidates } from "@/modules/tasks/dependen
 import { projectOfTask } from "@/modules/projects/service";
 import { getTaskDetail, getTaskHistory } from "@/modules/tasks/service";
 import { isOverdue } from "@/modules/tasks/today";
-import { todayInTimezone } from "@/lib/dates";
+import { toDateString, todayInTimezone } from "@/lib/dates";
+import type { TaskSeries } from "@/lib/generated/prisma/client";
 
 import {
   addCommentAction,
@@ -62,6 +63,36 @@ function historyText(action: string, details: unknown): string {
     return `${label}: ${fields.join(", ")}`;
   }
   return label;
+}
+
+// "каждую неделю, по дням: пн, ср · до 31 дек. · следующая: 9 нояб."
+function repeatSummary(series: TaskSeries): string {
+  const unit = t(`tasks.repeat.unit.${series.frequency}`);
+  const parts = [
+    series.interval > 1
+      ? t("tasks.repeat.summary.everyN", { n: series.interval, unit })
+      : t(`tasks.repeat.summary.${series.frequency}`),
+  ];
+  if (series.frequency === "WEEKLY" && series.weekdays.length)
+    parts.push(
+      t("tasks.repeat.summary.on", {
+        days: [...series.weekdays]
+          .sort()
+          .map((d) => t(`tasks.repeat.days.${d}` as TranslationKey))
+          .join(", "),
+      }),
+    );
+  if (series.frequency === "MONTHLY" && series.monthDay)
+    parts.push(t("tasks.repeat.summary.monthDay", { day: series.monthDay }));
+  const text = [parts.join(", ")];
+  if (series.until)
+    text.push(t("tasks.repeat.summary.until", { date: formatDay(toDateString(series.until)) }));
+  text.push(
+    series.nextDate
+      ? t("tasks.repeat.summary.next", { date: formatDay(toDateString(series.nextDate)) })
+      : t("tasks.repeat.summary.stopped"),
+  );
+  return text.join(" · ");
 }
 
 function formatSize(bytes: number) {
@@ -208,6 +239,15 @@ export default async function TaskPage({ params, searchParams }: PageProps<"/tas
             <>
               <dt className="text-muted-foreground">{t("tasks.fields.startDate")}</dt>
               <dd>{formatDay(task.startDate)}</dd>
+            </>
+          )}
+          {task.series && (
+            <>
+              <dt className="text-muted-foreground">{t("tasks.repeat.title")}</dt>
+              <dd className="flex items-center gap-1.5">
+                <Repeat className="size-3.5 shrink-0" aria-hidden />
+                {repeatSummary(task.series)}
+              </dd>
             </>
           )}
           {task.estimateMinutes !== null && (
