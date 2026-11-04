@@ -27,7 +27,12 @@ type Person = { id: string; firstName: string; lastName: string | null };
 const name = (p: { firstName: string; lastName: string | null }) =>
   [p.firstName, p.lastName].filter(Boolean).join(" ");
 
-export function renderCardText(payload: DraftPayload, people: Person[]): string {
+// routes: what will happen to each task (routing v2), shown under it before saving.
+export function renderCardText(
+  payload: DraftPayload,
+  people: Person[],
+  routes: string[] = [],
+): string {
   const lines = [t("bot.card.title")];
   payload.tasks.forEach((task, i) => {
     const who = task.unresolved
@@ -44,6 +49,7 @@ export function renderCardText(payload: DraftPayload, people: Person[]): string 
       task.project ? `🏷 ${task.project}` : null,
     ].filter(Boolean);
     lines.push("", `${i + 1}. ${task.title}`, `   ${details.join(" · ")}`);
+    if (routes[i] && !task.unresolved) lines.push(`   ${routes[i]}`);
   });
   return lines.join("\n");
 }

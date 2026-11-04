@@ -6,7 +6,7 @@ import { notify } from "@/modules/core/notifications/service";
 import { updateSettings } from "@/modules/core/settings/service";
 import { digestTemplate } from "@/modules/scheduler/digest";
 import { claim, LAST_TICK_KEY, runSchedulerTick } from "@/modules/scheduler/tick";
-import { createTask } from "@/modules/tasks/service";
+import { changeStatus, createTask } from "@/modules/tasks/service";
 import { createTestUser, resetDb } from "@/tests/helpers/db";
 import { taskInput } from "@/tests/helpers/tasks";
 import { telegramMock } from "@/tests/helpers/telegram";
@@ -73,7 +73,7 @@ describe("scheduler", () => {
     await createTask(
       owner,
       taskInput({ title: "Отчёт", assigneeId: member.id, dueDate: "2026-10-03" }),
-      "approve",
+      "create",
     );
     // A draft (not approved) is never reminded about.
     await createTask(
@@ -81,11 +81,39 @@ describe("scheduler", () => {
       taskInput({ title: "Черновик", assigneeId: member.id, dueDate: "2026-10-03" }),
     );
 
-    await runSchedulerTick(new Date("2026-10-02T11:59:00Z"), { writeDigest }); // 16:59
+    // A Monday task is reminded about on Friday too: the reminder covers the weekend.
+    await createTask(
+      owner,
+      taskInput({ title: "Понедельник", assigneeId: member.id, dueDate: "2026-10-05" }),
+      "create",
+    );
+
+    // 2 Oct 2026 is a Friday: the reminder comes at 16:30.
+    await runSchedulerTick(new Date("2026-10-02T11:29:00Z"), { writeDigest }); // 16:29
     expect(await count(member.id, "due_reminder")).toBe(0);
-    await runSchedulerTick(new Date("2026-10-02T12:00:00Z"), { writeDigest }); // 17:00
+    await runSchedulerTick(new Date("2026-10-02T11:30:00Z"), { writeDigest }); // 16:30
     await runSchedulerTick(new Date("2026-10-02T12:30:00Z"), { writeDigest });
+    expect(await count(member.id, "due_reminder")).toBe(2);
+    // Nobody has started them yet: the author hears it too.
+    expect(await count(owner.id, "due_reminder")).toBe(2);
+  });
+
+  it("on weekdays reminds at 17:00 about tomorrow only", async () => {
+    const owner = await createTestUser("OWNER");
+    const member = await createTestUser("MEMBER");
+    await updateSettings(member.id, settings("Asia/Tashkent"));
+    const task = await createTask(
+      owner,
+      taskInput({ title: "Отчёт", assigneeId: member.id, dueDate: "2026-10-01" }),
+      "create",
+    );
+    await changeStatus(member, task.id, "IN_PROGRESS");
+    await runSchedulerTick(new Date("2026-09-30T11:59:00Z"), { writeDigest }); // Wed 16:59
+    expect(await count(member.id, "due_reminder")).toBe(0);
+    await runSchedulerTick(new Date("2026-09-30T12:00:00Z"), { writeDigest }); // 17:00
     expect(await count(member.id, "due_reminder")).toBe(1);
+    // Already started: the author is not reminded.
+    expect(await count(owner.id, "due_reminder")).toBe(0);
   });
 
   it("tells the assignee and the creator about an overdue task, once", async () => {
@@ -94,13 +122,23 @@ describe("scheduler", () => {
     await createTask(
       owner,
       taskInput({ title: "Просрочка", assigneeId: member.id, dueDate: "2026-10-01" }),
-      "approve",
+      "create",
     );
 
+    // With the morning digest on, overdue tasks are listed there, not sent one by one.
     await runSchedulerTick(new Date("2026-10-02T04:00:00Z"), { writeDigest }); // 09:00 Tashkent
+    expect(await count(member.id, "overdue")).toBe(0);
+
+    // Digest off: a separate notice, once a day, to the assignee and the author.
+    for (const user of [owner, member])
+      await updateSettings(user.id, settings("Asia/Tashkent", { disabledTypes: ["digest"] }));
     await runSchedulerTick(new Date("2026-10-02T05:00:00Z"), { writeDigest });
+    await runSchedulerTick(new Date("2026-10-02T06:00:00Z"), { writeDigest });
     expect(await count(member.id, "overdue")).toBe(1);
     expect(await count(owner.id, "overdue")).toBe(1);
+    // And again the next day while it stays overdue.
+    await runSchedulerTick(new Date("2026-10-03T04:00:00Z"), { writeDigest });
+    expect(await count(member.id, "overdue")).toBe(2);
   });
 
   it("sends the Friday team summary to the owner and to managers who see all team tasks", async () => {
@@ -112,7 +150,7 @@ describe("scheduler", () => {
       MANAGER: { modules: ["meetings"], taskScope: "all" },
       MEMBER: { modules: [], taskScope: "own" },
     });
-    await createTask(owner, taskInput({ assigneeId: member.id, dueDate: "2026-09-30" }), "approve");
+    await createTask(owner, taskInput({ assigneeId: member.id, dueDate: "2026-09-30" }), "create");
 
     await runSchedulerTick(new Date("2026-10-02T12:00:00Z"), { writeDigest }); // Friday 17:00
     await runSchedulerTick(new Date("2026-10-02T12:01:00Z"), { writeDigest });
@@ -124,11 +162,24 @@ describe("scheduler", () => {
     });
     expect(summary.body).toContain("🔥 Просрочено сейчас: 1");
 
-    // With the default "own people" setting the manager gets no whole-team summary.
+    // With the default "own people" setting the manager gets the summary of their own zone.
     await saveRoleConfig(owner, DEFAULT_ROLE_CONFIG);
     await runSchedulerTick(new Date("2026-10-09T12:00:00Z"), { writeDigest });
     expect(await count(owner.id, "weekly_summary")).toBe(2);
-    expect(await count(manager.id, "weekly_summary")).toBe(1);
+    expect(await count(manager.id, "weekly_summary")).toBe(2);
+    const zone = await db.notification.findFirstOrThrow({
+      where: { userId: manager.id, type: "weekly_summary" },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(zone.body).not.toContain("Просрочено сейчас: 1");
+
+    // "Only own tasks": no summary at all.
+    await saveRoleConfig(owner, {
+      ...DEFAULT_ROLE_CONFIG,
+      MANAGER: { ...DEFAULT_ROLE_CONFIG.MANAGER, taskScope: "own" },
+    });
+    await runSchedulerTick(new Date("2026-10-16T12:00:00Z"), { writeDigest });
+    expect(await count(manager.id, "weekly_summary")).toBe(2);
   });
 
   it("respects «turn off this type»", async () => {

@@ -2,13 +2,15 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { fromDateString, isDateString } from "@/lib/dates";
+import { t } from "@/lib/i18n";
 import { logActivity } from "@/modules/core/activity/service";
+import { notify } from "@/modules/core/notifications/service";
 import type { Actor } from "@/modules/core/permissions";
 
 import { canApprovePlanograms, canManagePlanograms } from "./access";
 import { PlanogramError } from "./errors";
 import { mergePriceLists, priceChanges, type PriceChange } from "./prices";
-import { copyPlanogram } from "./service";
+import { approvePlanogram, copyPlanogram } from "./service";
 
 export type PriceRow = { code: string; price: number };
 
@@ -106,17 +108,39 @@ export async function previewPriceList(priceListId: string): Promise<PricePrevie
     .filter((p) => p.changes.length > 0);
 }
 
-// Every affected planogram gets a new approved version with the new prices; old versions keep theirs.
+// Every affected planogram gets a new version with the new prices; old versions keep theirs. The
+// version is approved only if it passes the same check as any approval: with critical violations
+// (a price tag that no longer fits, say) it stays a draft, and the one applying the list and the
+// planogram's author hear it.
 export async function applyPriceList(actor: Actor, priceListId: string) {
   if (!canApprovePlanograms(actor.role)) throw new PlanogramError("forbidden");
   const preview = await previewPriceList(priceListId);
+  const list = await db.priceList.findUniqueOrThrow({ where: { id: priceListId } });
   const created: string[] = [];
+  const drafts: string[] = [];
   for (const item of preview) {
-    const version = await copyPlanogram(actor, item.planogramId, {
-      priceListId,
-      status: "APPROVED",
-    });
+    const version = await copyPlanogram(actor, item.planogramId, { priceListId });
     created.push(version.id);
+    try {
+      await approvePlanogram(actor, version.id);
+    } catch (error) {
+      if (!(error instanceof PlanogramError) || error.code !== "critical") throw error;
+      drafts.push(version.id);
+      const previous = await db.planogram.findUniqueOrThrow({
+        where: { id: item.planogramId },
+        select: { createdById: true },
+      });
+      for (const userId of new Set([actor.id, previous.createdById]))
+        await notify(userId, () => ({
+          type: "planogram",
+          title: t("notifications.events.planogramCriticalTitle"),
+          body: t("notifications.events.planogramCriticalBody", {
+            title: item.title,
+            list: list.name,
+          }),
+          link: `/planograms/${version.id}`,
+        }));
+    }
   }
   await db.priceList.update({ where: { id: priceListId }, data: { appliedAt: new Date() } });
   await logActivity({
@@ -124,9 +148,9 @@ export async function applyPriceList(actor: Actor, priceListId: string) {
     action: "price_list.applied",
     entityType: "PriceList",
     entityId: priceListId,
-    details: { planograms: created.length },
+    details: { planograms: created.length, drafts: drafts.length },
   });
-  return created;
+  return { created, drafts };
 }
 
 export async function listPriceLists() {

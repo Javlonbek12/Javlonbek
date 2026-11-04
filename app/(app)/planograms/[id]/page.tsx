@@ -111,7 +111,8 @@ export default async function PlanogramPage({
           )}
           {r.status === "DRAFT" && !r.isTemplate && step("submit", t("planograms.actions.submit"))}
           {approve &&
-            draft &&
+            (r.status === "PENDING_APPROVAL" ||
+              (r.status === "DRAFT" && r.createdById === user.id)) &&
             !r.isTemplate &&
             step("approve", t("planograms.actions.approve"), "default", critical)}
           {r.status === "PENDING_APPROVAL" &&

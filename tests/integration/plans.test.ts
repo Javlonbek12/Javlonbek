@@ -37,9 +37,9 @@ describe("plans", () => {
     const t1 = await createTask(
       owner,
       taskInput({ assigneeId: member.id, planId: week.id }),
-      "approve",
+      "create",
     );
-    await createTask(owner, taskInput({ assigneeId: member.id, planId: month.id }), "approve");
+    await createTask(owner, taskInput({ assigneeId: member.id, planId: month.id }), "create");
     await changeStatus(member, t1.id, "IN_PROGRESS");
     await changeStatus(member, t1.id, "IN_REVIEW");
     await changeStatus(owner, t1.id, "DONE");

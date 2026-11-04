@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 
 import type { ProposalState } from "@/app/(app)/meetings/actions";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,40 @@ type Props = {
   propose: (state: ProposalState, formData: FormData) => Promise<ProposalState>;
   create: (formData: FormData) => Promise<void>;
 };
+
+// The assignee picker with what will happen to the task for that person (routing v2).
+function AssigneeWithRoute({
+  name,
+  initial,
+  people,
+}: {
+  name: string;
+  initial: string;
+  people: { id: string; name: string; route: string }[];
+}) {
+  const t = useT();
+  const [value, setValue] = useState(initial);
+  const route =
+    value === "me" ? t("tasks.route.shortPersonal") : people.find((p) => p.id === value)?.route;
+  return (
+    <div className="flex flex-col gap-1">
+      <NativeSelect
+        name={name}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        aria-label={t("tasks.fields.assignee")}
+      >
+        <option value="me">{t("meetings.actions.me")}</option>
+        {people.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+      </NativeSelect>
+      {route && <span className="text-muted-foreground text-xs">{route}</span>}
+    </div>
+  );
+}
 
 // "Find tasks in the minutes": AI proposes rows, the user edits and confirms them.
 export function ActionItems({ meetingId, propose, create }: Props) {
@@ -58,18 +92,11 @@ export function ActionItems({ meetingId, propose, create }: Props) {
                 aria-label={t("tasks.fields.title")}
               />
               <div className="grid grid-cols-2 gap-2">
-                <NativeSelect
+                <AssigneeWithRoute
                   name={`assignee_${i}`}
-                  defaultValue={task.assigneeId ?? "me"}
-                  aria-label={t("tasks.fields.assignee")}
-                >
-                  <option value="me">{t("meetings.actions.me")}</option>
-                  {state.people.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </NativeSelect>
+                  initial={task.assigneeId ?? "me"}
+                  people={state.people}
+                />
                 <Input
                   type="date"
                   name={`due_${i}`}

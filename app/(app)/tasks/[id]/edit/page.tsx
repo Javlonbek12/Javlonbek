@@ -25,7 +25,6 @@ export default async function EditTaskPage({ params }: PageProps<"/tasks/[id]/ed
       <TaskForm
         action={updateTaskAction}
         isNew={false}
-        canApprove={false}
         initial={{
           taskId: task.id,
           title: task.title,

@@ -1,15 +1,20 @@
 import { addDays, fromDateString } from "@/lib/dates";
 import type { Prisma } from "@/lib/generated/prisma/client";
 
+import type { Route } from "@/modules/tasks/routing";
+
+import { routeFields } from "./routing";
 import type { ProjectTemplate } from "./templates";
 
-// Phases, tasks and dependencies of a template, dated from the anchor day.
+// Phases, tasks and dependencies of a template, dated from the anchor day. The tasks go along the
+// route from the creator to the assignee (routing v2). Returns how many tasks were made.
 export async function applyTemplate(
   tx: Prisma.TransactionClient,
   project: { id: string; name: string },
   template: ProjectTemplate,
   anchor: string,
   people: { creatorId: string; assigneeId: string },
+  route: Route,
   now = new Date(),
 ) {
   const byCode = new Map<string, string>();
@@ -29,8 +34,7 @@ export async function applyTemplate(
           description: task.result ? `Результат: ${task.result}` : null,
           creatorId: people.creatorId,
           assigneeId: people.assigneeId,
-          status: "APPROVED",
-          approvedAt: now,
+          ...routeFields(route, now),
           priority: task.milestone ? "HIGH" : "MEDIUM",
           project: project.name,
           phaseId: created.id,
@@ -44,6 +48,7 @@ export async function applyTemplate(
       byCode.set(task.code, row.id);
     }
   }
+  const count = byCode.size;
   for (const task of template.phases.flatMap((p) => p.tasks)) {
     for (const code of task.dependsOn ?? []) {
       await tx.taskDependency.create({
@@ -51,4 +56,5 @@ export async function applyTemplate(
       });
     }
   }
+  return count;
 }

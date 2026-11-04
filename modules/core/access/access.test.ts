@@ -39,8 +39,11 @@ describe("role access", () => {
     expect(oversees(manager("team", ["a", "b"]), foreign)).toBe(false);
     expect(canViewTask(manager("team", ["a"]), foreign)).toBe(false);
     expect(canViewTask(manager("own"), theirs)).toBe(false);
-    // Approving follows the same scope.
-    expect(availableTransitions(manager("team", ["a", "b"]), theirs)).toContain("APPROVED");
+    // Routing v2: the zone gives control (cancel), deciding follows the route (deciderIds).
+    expect(availableTransitions(manager("team", ["a", "b"]), theirs)).toEqual(["CANCELLED"]);
+    expect(
+      availableTransitions(manager("team", ["a", "b"]), { ...theirs, deciderIds: ["boss"] }),
+    ).toContain("APPROVED");
     expect(
       availableTransitions(manager("team", ["a", "b"]), { ...foreign, creatorId: "boss" }),
     ).not.toContain("APPROVED");

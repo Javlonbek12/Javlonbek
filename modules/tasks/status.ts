@@ -1,7 +1,7 @@
 import type { TaskStatus } from "@/lib/generated/prisma/client";
 import type { Actor } from "@/modules/core/permissions";
 
-import { isApprover, oversees, type TaskAccessInfo } from "./access";
+import { canAccept, canControl, canDecide, reviewerOf, type TaskAccessInfo } from "./access";
 
 // Team workflow: DRAFT → PENDING_APPROVAL → APPROVED → IN_PROGRESS → IN_REVIEW → DONE, plus CANCELLED.
 // Personal workflow skips approval: DRAFT → IN_PROGRESS → DONE.
@@ -27,40 +27,50 @@ function personalTransitions(actor: Actor, task: TaskAccessInfo): TaskStatus[] {
   }
 }
 
+// Routing v2: "PENDING_APPROVAL" from a draft means "send": the route decides whether the task
+// starts right away (APPROVED) or waits (see changeStatus). Nobody approves or accepts a task they
+// do themselves; the owner's own task closes when handed in.
 function teamTransitions(actor: Actor, task: TaskAccessInfo): TaskStatus[] {
-  // Approving and accepting: for tasks the actor oversees (role settings may narrow a manager to their team).
-  const approver = isApprover(actor.role) && oversees(actor, task);
   const creator = task.creatorId === actor.id;
   const assignee = task.assigneeId === actor.id;
-  const manages = creator || approver;
-  // Who accepts the result: the creator, unless they did the work themselves.
-  const reviewer = approver || (creator && !assignee);
+  const cancels = creator || canControl(actor, task);
   const result: TaskStatus[] = [];
 
   switch (task.status) {
     case "DRAFT":
       if (creator) result.push("PENDING_APPROVAL");
-      if (creator && approver) result.push("APPROVED");
       break;
     case "PENDING_APPROVAL":
-      if (approver) result.push("APPROVED");
-      if (manages) result.push("DRAFT");
+      // Approve («Утвердить», or «Принять задачу» for an assignee who decides themselves),
+      // decline back to the author with a reason, or (the author) take it back.
+      if (canDecide(actor, task)) result.push("APPROVED");
+      if (canDecide(actor, task) || creator) result.push("DRAFT");
       break;
     case "APPROVED":
       if (assignee) result.push("IN_PROGRESS");
       break;
     case "IN_PROGRESS":
-      if (assignee) result.push("IN_REVIEW");
+      if (assignee) result.push(reviewerOf(task) === null ? "DONE" : "IN_REVIEW");
       break;
     case "IN_REVIEW":
-      if (reviewer) result.push("DONE");
-      if (reviewer || assignee) result.push("IN_PROGRESS");
+      if (canAccept(actor, task)) result.push("DONE");
+      // Back to work: the reviewer with a reason, or the assignee taking it back.
+      if (canAccept(actor, task) || assignee) result.push("IN_PROGRESS");
       break;
     default:
       return [];
   }
-  if (manages) result.push("CANCELLED");
+  if (cancels) result.push("CANCELLED");
   return result;
+}
+
+// Moves that need a reason, sent to the other side: declining a request for approval, and
+// returning handed-in work. The author taking a task back, or the assignee, gives none.
+export function needsReason(actor: Actor, task: TaskAccessInfo, to: TaskStatus): boolean {
+  if (task.isPersonal) return false;
+  if (task.status === "PENDING_APPROVAL" && to === "DRAFT") return task.creatorId !== actor.id;
+  if (task.status === "IN_REVIEW" && to === "IN_PROGRESS") return task.assigneeId !== actor.id;
+  return false;
 }
 
 // Statuses the actor may move the task to right now (ignoring dependencies).

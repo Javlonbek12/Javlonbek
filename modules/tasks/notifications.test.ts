@@ -1,40 +1,55 @@
 import { describe, expect, it } from "vitest";
 
-import { statusChangeRecipients } from "./notifications";
+import { taskEventRecipients } from "./notifications";
 
-const task = { id: "t", title: "Т", isPersonal: false, creatorId: "owner", assigneeId: "member" };
-const ids = (notices: { userId: string; type: string }[]) =>
-  notices.map((n) => `${n.userId}:${n.type}`);
+const task = {
+  id: "t1",
+  title: "Тестовая задача",
+  isPersonal: false,
+  creatorId: "author",
+  assigneeId: "worker",
+  approvedAt: new Date(),
+  deciderIds: ["boss"],
+};
+const ids = (n: { userId: string }[]) => n.map((x) => x.userId);
 
-describe("statusChangeRecipients", () => {
-  it("asks approvers (except the actor) to approve", () => {
-    const notices = statusChangeRecipients(task, "DRAFT", "PENDING_APPROVAL", "owner", [
-      "owner",
-      "manager",
+describe("task notifications (routing v2)", () => {
+  it("started right away: the assignee, and their manager with a cancel button", () => {
+    const notices = taskEventRecipients(task, { kind: "started", teamNoticeId: "boss" }, "author");
+    expect(ids(notices)).toEqual(["worker", "boss"]);
+    expect(notices[1]!.type).toBe("task_team");
+    expect(notices[1]!.buttons?.[0]?.[0]?.data).toBe("t:t1:C");
+  });
+
+  it("waiting: only the deciders; a decline: the author", () => {
+    expect(ids(taskEventRecipients(task, { kind: "pending" }, "author"))).toEqual(["boss"]);
+    expect(ids(taskEventRecipients(task, { kind: "rejected", reason: "нет" }, "boss"))).toEqual([
+      "author",
     ]);
-    expect(ids(notices)).toEqual(["manager:task_pending_approval"]);
   });
 
-  it("tells the assignee about a newly approved task", () => {
-    const notices = statusChangeRecipients(task, "PENDING_APPROVAL", "APPROVED", "owner", [
-      "owner",
-    ]);
-    expect(ids(notices)).toEqual(["member:task_assigned"]);
-  });
-
-  it("tells the creator that work is ready for review", () => {
-    const notices = statusChangeRecipients(task, "IN_PROGRESS", "IN_REVIEW", "member", ["owner"]);
-    expect(ids(notices)).toEqual(["owner:task_status"]);
-  });
-
-  it("tells the assignee that the work was accepted", () => {
-    const notices = statusChangeRecipients(task, "IN_REVIEW", "DONE", "owner", ["owner"]);
-    expect(ids(notices)).toEqual(["member:task_status"]);
-  });
-
-  it("never notifies about personal tasks", () => {
+  it("started work: the author hears it; handed in: the reviewer", () => {
+    expect(ids(taskEventRecipients(task, { kind: "taken" }, "worker"))).toEqual(["author"]);
     expect(
-      statusChangeRecipients({ ...task, isPersonal: true }, "DRAFT", "IN_PROGRESS", "x", []),
-    ).toEqual([]);
+      ids(taskEventRecipients(task, { kind: "review", reviewerIds: ["author"] }, "worker")),
+    ).toEqual(["author"]);
+  });
+
+  it("cancelled while waiting: the deciders too, but not an assignee who never saw it", () => {
+    const waiting = { ...task, approvedAt: null };
+    expect(
+      ids(
+        taskEventRecipients(
+          waiting,
+          { kind: "cancelled", wasPending: true, reason: null },
+          "author",
+        ),
+      ),
+    ).toEqual(["boss"]);
+  });
+
+  it("nobody hears about their own action; personal tasks notify nobody", () => {
+    expect(ids(taskEventRecipients(task, { kind: "done" }, "author"))).toEqual(["worker"]);
+    expect(taskEventRecipients({ ...task, isPersonal: true }, { kind: "done" }, "x")).toEqual([]);
   });
 });

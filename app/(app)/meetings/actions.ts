@@ -20,7 +20,9 @@ import {
   type MeetingInput,
 } from "@/modules/meetings/service";
 import { createProposedTasks } from "@/modules/tasks/batch";
+import { routeHints } from "@/modules/tasks/route-hints";
 import { db } from "@/lib/db";
+import { t } from "@/lib/i18n";
 
 const allowAction = createRateLimiter({ limit: 60, windowMs: 60_000 });
 
@@ -112,7 +114,8 @@ export type ProposalState = {
         project: string | null;
       }[]
     | null;
-  people: { id: string; name: string }[];
+  // Route hints (routing v2): what happens to a task for each person; "me" = personal.
+  people: { id: string; name: string; route: string }[];
 };
 
 export async function proposeActionItemsAction(
@@ -121,9 +124,11 @@ export async function proposeActionItemsAction(
 ): Promise<ProposalState> {
   const user = await actor();
   const id = idSchema.parse(str(formData, "meetingId"));
+  const hints = await routeHints(user.id);
   const people = (await db.user.findMany({ orderBy: { firstName: "asc" } })).map((u) => ({
     id: u.id,
     name: displayName(u),
+    route: u.id === user.id ? t("tasks.route.shortPersonal") : (hints[u.id]?.plain.short ?? ""),
   }));
   try {
     const tasks = await proposeActionItems(user, id);

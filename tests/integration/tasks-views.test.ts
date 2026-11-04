@@ -23,7 +23,7 @@ describe("visibility rule in the database matches canViewTask", () => {
     const member = await createTestUser("MEMBER");
     const other = await createTestUser("MEMBER");
     const draft = await createTask(owner, taskInput({ assigneeId: member.id }));
-    const approved = await createTask(owner, taskInput({ assigneeId: member.id }), "approve");
+    const approved = await createTask(owner, taskInput({ assigneeId: member.id }), "create");
     const personal = await createTask(member, taskInput({ isPersonal: true }));
     const memberDraft = await createTask(member, taskInput({ assigneeId: other.id }));
 
@@ -56,7 +56,7 @@ describe("calendar and timeline", () => {
     await createTask(
       owner,
       taskInput({ title: "утверждена", assigneeId: owner.id, dueDate: "2026-10-05" }),
-      "approve",
+      "create",
     );
     await createTask(
       owner,
@@ -65,7 +65,7 @@ describe("calendar and timeline", () => {
     await createTask(
       owner,
       taskInput({ title: "чужая", assigneeId: member.id, dueDate: "2026-10-06" }),
-      "approve",
+      "create",
     );
 
     const calendar = await listTasksDueBetween(owner, "mine", "2026-10-01", "2026-11-01");
@@ -84,17 +84,17 @@ describe("calendar and timeline", () => {
         startDate: "2026-09-20",
         dueDate: "2026-10-03",
       }),
-      "approve",
+      "create",
     );
     const b = await createTask(
       owner,
       taskInput({ title: "B", assigneeId: owner.id, dueDate: "2026-10-10" }),
-      "approve",
+      "create",
     );
     await createTask(
       owner,
       taskInput({ title: "далеко", assigneeId: owner.id, dueDate: "2026-12-10" }),
-      "approve",
+      "create",
     );
     await addDependency(owner, b.id, a.id);
 
@@ -113,7 +113,7 @@ describe("editing and comments", () => {
     const task = await createTask(
       owner,
       taskInput({ title: "Было", assigneeId: member.id }),
-      "approve",
+      "create",
     );
 
     await updateTask(
@@ -144,6 +144,10 @@ describe("editing and comments", () => {
     await addComment(owner, draft.id, "Черновая мысль");
     expect(await db.notification.count({ where: { userId: member.id } })).toBe(0);
     await expect(addComment(member, draft.id, "?")).rejects.toMatchObject({ code: "forbidden" });
-    await changeStatus(owner, draft.id, "APPROVED");
+    // Sent from the draft: the owner's task starts right away and the assignee can join in.
+    await expect(changeStatus(owner, draft.id, "PENDING_APPROVAL")).resolves.toMatchObject({
+      status: "APPROVED",
+    });
+    await expect(addComment(member, draft.id, "Принято")).resolves.toBeTruthy();
   });
 });

@@ -1,7 +1,8 @@
 import { db } from "@/lib/db";
 import { type Access, withAccess } from "@/modules/core/access/actor";
 import { getRoleConfig } from "@/modules/core/access/config";
-import { formatDay, fromDateString } from "@/lib/dates";
+import { formatDay, fromDateString, todayInTimezone } from "@/lib/dates";
+import { getEnv } from "@/lib/env";
 
 import { Prisma, type User } from "@/lib/generated/prisma/client";
 import { t } from "@/lib/i18n";
@@ -10,11 +11,21 @@ import { deliverDeferredNotifications, notify } from "@/modules/core/notificatio
 import { getSettings } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
 import { tagPendingContent } from "@/modules/content/tagging";
-import { CLOSED_STATUSES } from "@/modules/tasks/access";
+import { CLOSED_STATUSES, reviewerOf } from "@/modules/tasks/access";
+import { purgeDeletedTasks } from "@/modules/tasks/delete-service";
+import { migrateToRoutingV2 } from "@/modules/tasks/migrate-v2";
 import { createRepeatCopies } from "@/modules/tasks/service";
 
 import { collectDigestData, defaultDigestWriter, isDigestEmpty, type DigestWriter } from "./digest";
-import { dueReminderDate, isDigestTime, localClock, overdueRange, weeklySummaryWeek } from "./plan";
+import {
+  dueReminderDates,
+  isDigestTime,
+  localClock,
+  OVERDUE_TIME,
+  overdueRange,
+  weeklySummaryWeek,
+  workdaysBetween,
+} from "./plan";
 import { weeklySummaryText } from "./weekly";
 
 export const LAST_TICK_KEY = "scheduler.lastTick";
@@ -32,11 +43,18 @@ export async function claim(userId: string, kind: string, key: string): Promise<
   }
 }
 
-// Tasks that should produce reminders: personal ones, or team ones after approval.
-const remindable: Prisma.TaskWhereInput = {
-  status: { notIn: CLOSED_STATUSES },
-  OR: [{ isPersonal: true }, { approvedAt: { not: null } }],
-};
+// Tasks someone is responsible for reminding about (routing v2): what they do, and as the author
+// a team task nobody has started yet (or that waits), and as a decider one that waits for them.
+function remindersFor(userId: string, authorStatuses: Prisma.EnumTaskStatusFilter["in"]) {
+  return {
+    status: { notIn: CLOSED_STATUSES },
+    OR: [
+      { assigneeId: userId, OR: [{ isPersonal: true }, { approvedAt: { not: null } }] },
+      { creatorId: userId, isPersonal: false, status: { in: authorStatuses } },
+      { deciderIds: { has: userId }, status: "PENDING_APPROVAL" },
+    ],
+  } satisfies Prisma.TaskWhereInput;
+}
 
 async function digestFor(user: User, today: string, writer: DigestWriter) {
   if (!(await claim(user.id, "digest", today))) return;
@@ -50,12 +68,18 @@ async function digestFor(user: User, today: string, writer: DigestWriter) {
   }));
 }
 
-async function dueRemindersFor(user: User, dueDate: string) {
+// The assignee, and the author while nobody has started it: once per task and due date.
+async function dueRemindersFor(user: User, dueDates: string[]) {
+  if (dueDates.length === 0) return;
   const tasks = await db.task.findMany({
-    where: { ...remindable, assigneeId: user.id, dueDate: fromDateString(dueDate) },
-    select: { id: true, title: true },
+    where: {
+      ...remindersFor(user.id, ["APPROVED", "PENDING_APPROVAL"]),
+      dueDate: { in: dueDates.map(fromDateString) },
+    },
+    select: { id: true, title: true, dueDate: true },
   });
   for (const task of tasks) {
+    const dueDate = task.dueDate!.toISOString().slice(0, 10);
     if (!(await claim(user.id, "due_reminder", `${task.id}:${dueDate}`))) continue;
     await notify(user.id, () => ({
       type: "due_reminder",
@@ -69,13 +93,20 @@ async function dueRemindersFor(user: User, dueDate: string) {
   }
 }
 
-// Overdue: the assignee and (for team tasks) the creator, once per task and due date.
-async function overdueFor(user: User, range: { from: string; to: string }) {
+// Overdue: the assignee and (for team tasks) the author; for a task still waiting, the author and
+// whoever decides. Every day, but only for people with the morning digest turned off: the digest
+// already lists what is overdue.
+async function overdueFor(user: User, range: { from: string; to: string }, today: string) {
   const tasks = await db.task.findMany({
     where: {
-      ...remindable,
+      ...remindersFor(user.id, [
+        "DRAFT",
+        "PENDING_APPROVAL",
+        "APPROVED",
+        "IN_PROGRESS",
+        "IN_REVIEW",
+      ]),
       dueDate: { gte: fromDateString(range.from), lt: fromDateString(range.to) },
-      OR: [{ assigneeId: user.id }, { creatorId: user.id, isPersonal: false }],
     },
     select: {
       id: true,
@@ -86,7 +117,7 @@ async function overdueFor(user: User, range: { from: string; to: string }) {
   });
   for (const task of tasks) {
     const due = task.dueDate!.toISOString().slice(0, 10);
-    if (!(await claim(user.id, "overdue", `${task.id}:${due}`))) continue;
+    if (!(await claim(user.id, "overdue", `${task.id}:${due}:${today}`))) continue;
     await notify(user.id, () => ({
       type: "overdue",
       title: t("notifications.events.overdueTitle"),
@@ -100,18 +131,73 @@ async function overdueFor(user: User, range: { from: string; to: string }) {
   }
 }
 
-async function weeklyFor(user: User, weekStart: string, today: string) {
-  // The summary covers the whole team: only for people who see all team tasks.
-  const scope = (user as User & { access?: Access }).access?.taskScope ?? "all";
-  const seesAll = user.role === "OWNER" || (user.role === "MANAGER" && scope === "all");
-  if (!seesAll || !(await claim(user.id, "weekly_summary", weekStart))) return;
+async function weeklyFor(user: User & { access: Access }, weekStart: string, today: string) {
+  // The owner and every manager who sees team tasks get the summary of their own zone.
+  const seesTeam =
+    user.role === "OWNER" || (user.role === "MANAGER" && user.access.taskScope !== "own");
+  if (!seesTeam || !(await claim(user.id, "weekly_summary", weekStart))) return;
   await notify(user.id, async () => ({
     type: "weekly_summary",
     title: t("notifications.events.weeklyTitle"),
-    body: await weeklySummaryText(weekStart, today),
+    body: await weeklySummaryText(weekStart, today, user),
     link: "/tasks?scope=team",
   }));
 }
+
+// Waiting for a decision (routing v2): after one working day whoever decides or accepts hears it;
+// after three the owner and the author do. Counted in the default time zone, from 09:00.
+async function decisionReminders(now: Date) {
+  const tz = getEnv().DEFAULT_TIMEZONE;
+  const clock = localClock(now, tz);
+  if (clock.minutes < OVERDUE_TIME) return;
+  const waiting = await db.task.findMany({
+    where: { isPersonal: false, status: { in: ["PENDING_APPROVAL", "IN_REVIEW"] } },
+  });
+  if (waiting.length === 0) return;
+  const owners = (await db.user.findMany({ where: { role: "OWNER" }, select: { id: true } })).map(
+    (u) => u.id,
+  );
+  const names = new Map(
+    (await db.user.findMany({ select: { id: true, firstName: true, lastName: true } })).map((u) => [
+      u.id,
+      displayName(u),
+    ]),
+  );
+  for (const task of waiting) {
+    const days = workdaysBetween(todayInTimezone(tz, task.statusChangedAt), clock.date);
+    const deciders =
+      task.status === "PENDING_APPROVAL" ? task.deciderIds : [reviewerOf(task)].filter(isId);
+    const key = `${task.id}:${task.statusChangedAt.toISOString()}`;
+    if (days >= 1)
+      for (const userId of deciders) {
+        if (!(await claim(userId, "task_waiting", `${key}:1`))) continue;
+        await notify(userId, () => ({
+          type: "task_waiting",
+          title: t("notifications.events.taskWaitingTitle"),
+          body: t("notifications.events.taskBody", {
+            title: task.title,
+            name: names.get(task.creatorId) ?? "",
+          }),
+          link: `/tasks/${task.id}`,
+        }));
+      }
+    if (days >= 3)
+      for (const userId of new Set([...owners, task.creatorId])) {
+        if (!(await claim(userId, "task_waiting", `${key}:3`))) continue;
+        await notify(userId, () => ({
+          type: "task_waiting",
+          title: t("notifications.events.taskEscalationTitle"),
+          body: t("notifications.events.taskEscalationBody", {
+            title: task.title,
+            name: deciders.map((id) => names.get(id) ?? "?").join(", "),
+          }),
+          link: `/tasks/${task.id}`,
+        }));
+      }
+  }
+}
+
+const isId = (id: string | null): id is string => id !== null;
 
 export const MEETING_REMINDER_MINUTES = 15;
 
@@ -159,10 +245,10 @@ export async function runSchedulerTick(now = new Date(), deps: TickDeps = {}) {
       const settings = await getSettings(user.id);
       const clock = localClock(now, settings.timezone);
       if (isDigestTime(clock, settings.digestTime)) await digestFor(user, clock.date, writer);
-      const tomorrow = dueReminderDate(clock);
-      if (tomorrow) await dueRemindersFor(user, tomorrow);
+      await dueRemindersFor(user, dueReminderDates(clock));
       const overdue = overdueRange(clock);
-      if (overdue) await overdueFor(user, overdue);
+      if (overdue && settings.disabledTypes.includes("digest"))
+        await overdueFor(user, overdue, clock.date);
       const week = weeklySummaryWeek(clock);
       if (week) await weeklyFor(user, week, clock.date);
     } catch (error) {
@@ -171,6 +257,13 @@ export async function runSchedulerTick(now = new Date(), deps: TickDeps = {}) {
     }
   }
   await meetingReminders(now);
+  try {
+    await migrateToRoutingV2(now);
+    await decisionReminders(now);
+    await purgeDeletedTasks(now);
+  } catch (error) {
+    console.error("Task routing reminders failed", error);
+  }
   try {
     await createRepeatCopies(now);
   } catch (error) {

@@ -3,6 +3,8 @@ import { minutesOfDayInTimezone } from "@/lib/time";
 
 // Fixed local times for reminders (minutes from midnight).
 export const DUE_REMINDER_TIME = 17 * 60; // the day before the due date
+// On Friday a little earlier (not together with the weekly summary), for the whole weekend.
+export const FRIDAY_REMINDER_TIME = 16 * 60 + 30;
 export const OVERDUE_TIME = 9 * 60; // the morning after the due date
 export const WEEKLY_SUMMARY_TIME = 17 * 60; // Friday
 // A digest that is more than 4 hours late (e.g. the worker was down) is skipped.
@@ -23,9 +25,23 @@ export function isDigestTime(clock: LocalClock, digestTime: number): boolean {
   return clock.minutes >= digestTime && clock.minutes < digestTime + DIGEST_WINDOW_MINUTES;
 }
 
-// Due date of tasks to remind about now (tomorrow), or null if it's not reminder time yet.
-export function dueReminderDate(clock: LocalClock): string | null {
-  return clock.minutes >= DUE_REMINDER_TIME ? addDays(clock.date, 1) : null;
+// Due dates to remind about now: tomorrow from 17:00 on working days; on Friday from 16:30 the
+// weekend and Monday; nothing at the weekend.
+export function dueReminderDates(clock: LocalClock): string[] {
+  if (clock.weekday <= 3) return clock.minutes >= DUE_REMINDER_TIME ? [addDays(clock.date, 1)] : [];
+  if (clock.weekday === 4 && clock.minutes >= FRIDAY_REMINDER_TIME)
+    return [1, 2, 3].map((d) => addDays(clock.date, d));
+  return [];
+}
+
+// Working days (Monday to Friday) between two dates: after `from`, up to and including `to`.
+export function workdaysBetween(from: string, to: string): number {
+  let count = 0;
+  for (let day = addDays(from, 1); day <= to; day = addDays(day, 1)) {
+    const weekday = (new Date(`${day}T00:00:00Z`).getUTCDay() + 6) % 7;
+    if (weekday < 5) count++;
+  }
+  return count;
 }
 
 // Range of due dates [from, to) that count as "newly overdue" now, or null before 09:00.

@@ -12,6 +12,7 @@ import {
 } from "@/modules/bot/conversation";
 import type { DraftPayload } from "@/modules/bot/draft-card";
 import { MockStt } from "@/modules/stt";
+import { requestTaskDeletion } from "@/modules/tasks/delete-service";
 import { changeStatus, createTask } from "@/modules/tasks/service";
 import { PHRASES, TODAY } from "@/tests/fixtures/phrases";
 import { resetDb } from "@/tests/helpers/db";
@@ -82,13 +83,27 @@ describe("confirmation card actions", () => {
     expect(await db.botDraft.count()).toBe(0);
   });
 
-  it("a MEMBER's task for a colleague goes to approval", async () => {
+  it("the card shows each task's route; a task for another team waits for its manager", async () => {
+    const users = await createFixtureTeam();
+    await db.user.update({ where: { id: users.dilnoza.id }, data: { managerId: users.sardor.id } });
+    const phrase = PHRASES[1]; // for Dilnoza
+    const reply = await handleText(users.aziz, 9000002n, phrase.text, depsFor(phrase));
+    expect(reply.text).toContain("↪ на утверждение: Sardor");
+    const saved = await handleCallback(users.aziz, `d:${reply.draftId}:save`);
+    expect(saved.text).toContain("Отправлено на утверждение: 1");
+    expect(await db.task.findFirstOrThrow()).toMatchObject({
+      status: "PENDING_APPROVAL",
+      deciderIds: [users.sardor.id],
+    });
+  });
+
+  it("a task for a colleague in the same team starts right away", async () => {
     const users = await createFixtureTeam();
     const phrase = PHRASES[1]; // for Dilnoza
     const reply = await handleText(users.aziz, 9000002n, phrase.text, depsFor(phrase));
-    const saved = await handleCallback(users.aziz, `d:${reply.draftId}:save`);
-    expect(saved.text).toContain("Отправлено на утверждение: 1");
-    expect((await db.task.findFirstOrThrow()).status).toBe("PENDING_APPROVAL");
+    expect(reply.text).toContain("↪ сразу");
+    await handleCallback(users.aziz, `d:${reply.draftId}:save`);
+    expect((await db.task.findFirstOrThrow()).status).toBe("APPROVED");
   });
 
   it("asks with buttons when the name is ambiguous, then saves", async () => {
@@ -209,8 +224,9 @@ describe("commands and natural requests", () => {
     );
     const pending = await createTask(
       users.aziz,
-      taskInput({ title: "На утверждение", assigneeId: users.aziz.id }),
-      "submit",
+      taskInput({ title: "На утверждение", assigneeId: users.dilnoza.id }),
+      "create",
+      { needsApproval: true },
     );
 
     const today = await showList(users.owner, "today", NOW);
@@ -229,12 +245,57 @@ describe("commands and natural requests", () => {
     );
   });
 
+  it("declining from /pending asks for the reason and sends it to the author", async () => {
+    const users = await createFixtureTeam();
+    const pending = await createTask(
+      users.aziz,
+      taskInput({ title: "Нужна причина", assigneeId: users.dilnoza.id }),
+      "create",
+      { needsApproval: true },
+    );
+    const ask = await handleCallback(users.owner, `t:${pending.id}:D`);
+    expect(ask.text).toContain("Напишите причину");
+    expect((await db.task.findUniqueOrThrow({ where: { id: pending.id } })).status).toBe(
+      "PENDING_APPROVAL",
+    );
+    const done = await handleText(
+      users.owner,
+      CHAT,
+      "Сначала закроем прошлую",
+      depsFor(PHRASES[0]),
+    );
+    expect(done.text).toContain("Черновик");
+    const notice = await db.notification.findFirst({
+      where: { userId: users.aziz.id, title: "Задача отклонена" },
+    });
+    expect(notice?.body).toContain("Сначала закроем прошлую");
+  });
+
+  it("asks to delete come with Delete / Keep buttons in /pending", async () => {
+    const users = await createFixtureTeam();
+    const task = await createTask(
+      users.aziz,
+      taskInput({ title: "Лишняя", assigneeId: users.dilnoza.id }),
+      "create",
+    );
+    await changeStatus(users.dilnoza, task.id, "IN_PROGRESS");
+    await requestTaskDeletion(users.aziz, task.id, "Дубль");
+    const list = await showList(users.owner, "pending", NOW);
+    expect(list.text).toContain("Просят удалить");
+    const row = list.buttons!.find((r) => r[0]!.data === `x:${task.id}:y`)!;
+    expect(row[1]!.data).toBe(`x:${task.id}:n`);
+    const kept = await handleCallback(users.owner, `x:${task.id}:n`);
+    expect(kept.text).toContain("осталась");
+    expect(await db.task.count({ where: { id: task.id } })).toBe(1);
+  });
+
   it("a MEMBER pressing an approve button gets a polite refusal", async () => {
     const users = await createFixtureTeam();
     const pending = await createTask(
       users.aziz,
       taskInput({ assigneeId: users.dilnoza.id }),
-      "submit",
+      "create",
+      { needsApproval: true },
     );
     const reply = await handleCallback(users.dilnoza, `t:${pending.id}:A`);
     expect(reply.text).toBe("Это действие вам недоступно.");
@@ -280,7 +341,7 @@ describe("commands and natural requests", () => {
     const task = await createTask(
       users.owner,
       taskInput({ title: "Выставить дисплей", assigneeId: users.aziz.id }),
-      "approve",
+      "create",
     );
     const close: InterpretedCommand = {
       intent: "complete",

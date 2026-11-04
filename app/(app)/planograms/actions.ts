@@ -265,8 +265,8 @@ export async function applyPriceListAction(formData: FormData) {
   const user = await actor();
   const id = idSchema.parse(str(formData, "priceListId"));
   await run(`/planograms/prices/${id}`, async () => {
-    const created = await applyPriceList(user, id);
-    return `/planograms/prices/${id}?created=${created.length}`;
+    const { created, drafts } = await applyPriceList(user, id);
+    return `/planograms/prices/${id}?created=${created.length}&drafts=${drafts.length}`;
   });
 }
 

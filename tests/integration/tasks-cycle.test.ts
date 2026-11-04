@@ -16,32 +16,24 @@ import { telegramMock } from "@/tests/helpers/telegram";
 const TODAY = "2026-10-02";
 const mine = parseTaskFilters({ scope: "mine" });
 
-// Stage 2 "done" scenario: create a task for an employee, the employee sees it only after
-// approval, does it, and the creator accepts it.
+// Routing v2: a task down the hierarchy starts right away, the assignee does it and hands it in,
+// the author accepts. Approval comes in only when the author disposes of someone else's time.
 describe("full task cycle", () => {
   beforeEach(async () => {
     await resetDb();
     telegramMock.mockClear();
   });
 
-  it("member creates → manager approves → member works → creator accepts", async () => {
+  it("owner creates → it starts right away → member works → the author accepts", async () => {
     const owner = await createTestUser("OWNER");
     const member = await createTestUser("MEMBER");
 
-    // OWNER creates a task for the member and sends it for approval.
     const task = await createTask(
       owner,
       taskInput({ title: "Подготовить отчёт", assigneeId: member.id, dueDate: TODAY }),
-      "submit",
+      "create",
     );
-    expect(task.status).toBe("PENDING_APPROVAL");
-
-    // The member does not see it yet.
-    expect(await listTasks(member, mine, TODAY)).toEqual([]);
-    expect(await getTaskDetail(member, task.id)).toBeNull();
-
-    // OWNER approves: now the member sees it and is notified.
-    await changeStatus(owner, task.id, "APPROVED");
+    expect(task).toMatchObject({ status: "APPROVED", reviewerId: owner.id, deciderIds: [] });
     expect((await listTasks(member, mine, TODAY)).map((t) => t.id)).toEqual([task.id]);
     const assigned = await db.notification.findFirst({
       where: { userId: member.id, type: "task_assigned" },
@@ -49,42 +41,50 @@ describe("full task cycle", () => {
     expect(assigned?.link).toBe(`/tasks/${task.id}`);
     expect((await getTodayOverview(member, TODAY)).dueToday.map((t) => t.id)).toEqual([task.id]);
 
-    // The member does the work and hands it in.
+    // Taking it on and handing it in: the author hears both.
     await changeStatus(member, task.id, "IN_PROGRESS");
     await changeStatus(member, task.id, "IN_REVIEW");
     expect(await db.notification.count({ where: { userId: owner.id, type: "task_status" } })).toBe(
-      1,
+      2,
     );
     expect((await getTodayOverview(owner, TODAY)).waiting.map((t) => t.id)).toEqual([task.id]);
 
-    // The member cannot accept their own work; OWNER accepts.
+    // The assignee never judges their own work; sending back needs a reason.
     await expect(changeStatus(member, task.id, "DONE")).rejects.toMatchObject({
       code: "forbidden",
     });
+    await expect(changeStatus(owner, task.id, "IN_PROGRESS")).rejects.toMatchObject({
+      code: "reason",
+    });
+    await changeStatus(owner, task.id, "IN_PROGRESS", { reason: "Добавьте итоги за квартал" });
+    expect(
+      await db.comment.findFirst({ where: { taskId: task.id, authorId: owner.id } }),
+    ).toMatchObject({ body: expect.stringContaining("Добавьте итоги за квартал") });
+    await changeStatus(member, task.id, "IN_REVIEW");
     const done = await changeStatus(owner, task.id, "DONE");
-    expect(done.status).toBe("DONE");
+    expect(done).toMatchObject({ status: "DONE", acceptedById: owner.id });
     expect(done.completedAt).not.toBeNull();
 
-    // History keeps every step.
     const history = await db.activityLog.findMany({
       where: { entityId: task.id },
       orderBy: { createdAt: "asc" },
     });
-    expect(history.map((h) => h.action)).toEqual([
+    // Every step is kept, the route start and the reason included.
+    expect(history.map((h) => (h.details as { to?: string } | null)?.to ?? h.action)).toEqual([
       "task.created",
-      "task.status_changed",
-      "task.status_changed",
-      "task.status_changed",
-      "task.status_changed",
-      "task.status_changed",
+      "APPROVED",
+      "IN_PROGRESS",
+      "IN_REVIEW",
+      "IN_PROGRESS",
+      "IN_REVIEW",
+      "DONE",
     ]);
+    expect(history[4]!.details).toMatchObject({ reason: "Добавьте итоги за квартал" });
   });
 
-  it("a MEMBER's team task needs a MANAGER to approve it", async () => {
+  it("inside the team a task starts right away; the manager hears it with a cancel button", async () => {
     await createTestUser("OWNER");
     const manager = await createTestUser("MANAGER");
-    // By default a manager oversees only their own people (Settings → Roles).
-    const otherManager = await createTestUser("MANAGER");
     const member = await createTestUser("MEMBER");
     const colleague = await createTestUser("MEMBER");
     await db.user.updateMany({
@@ -92,33 +92,72 @@ describe("full task cycle", () => {
       data: { managerId: manager.id },
     });
 
-    const task = await createTask(member, taskInput({ assigneeId: colleague.id }), "submit");
-    await expect(changeStatus(member, task.id, "APPROVED")).rejects.toMatchObject({
-      code: "forbidden",
+    const task = await createTask(member, taskInput({ assigneeId: colleague.id }), "create");
+    expect(task).toMatchObject({ status: "APPROVED", reviewerId: member.id });
+    const notice = await db.notification.findFirst({
+      where: { userId: manager.id, type: "task_team" },
     });
-    expect(
-      await db.notification.count({ where: { userId: manager.id, type: "task_pending_approval" } }),
-    ).toBe(1);
-    expect(
-      await db.notification.count({
-        where: { userId: otherManager.id, type: "task_pending_approval" },
-      }),
-    ).toBe(0);
-    await expect(changeStatus(manager, task.id, "APPROVED")).resolves.toMatchObject({
-      status: "APPROVED",
+    expect(notice?.link).toBe(`/tasks/${task.id}`);
+    // The manager may cancel it (their zone), but has nothing to approve.
+    await expect(changeStatus(manager, task.id, "CANCELLED")).resolves.toMatchObject({
+      status: "CANCELLED",
     });
   });
 
-  it("a MEMBER cannot create an already approved team task", async () => {
+  it("a task for another team waits for that team's manager; a decline needs a reason", async () => {
     await createTestUser("OWNER");
+    const managerA = await createTestUser("MANAGER");
+    const managerB = await createTestUser("MANAGER");
     const member = await createTestUser("MEMBER");
-    await expect(
-      createTask(member, taskInput({ assigneeId: member.id }), "approve"),
-    ).rejects.toMatchObject({
+    const foreign = await createTestUser("MEMBER");
+    await db.user.update({ where: { id: member.id }, data: { managerId: managerA.id } });
+    await db.user.update({ where: { id: foreign.id }, data: { managerId: managerB.id } });
+    const task = await createTask(member, taskInput({ assigneeId: foreign.id }), "create");
+    expect(task).toMatchObject({ status: "PENDING_APPROVAL", deciderIds: [managerB.id] });
+    expect(await getTaskDetail(foreign, task.id)).toBeNull();
+    expect(
+      await db.notification.count({
+        where: { userId: managerB.id, type: "task_pending_approval" },
+      }),
+    ).toBe(1);
+    expect(
+      await db.notification.count({
+        where: { userId: managerA.id, type: "task_pending_approval" },
+      }),
+    ).toBe(0);
+    await expect(changeStatus(managerA, task.id, "APPROVED")).rejects.toMatchObject({
       code: "forbidden",
     });
-    // Nothing is saved when the first step is not allowed.
-    expect(await db.task.count()).toBe(0);
+    await expect(changeStatus(managerB, task.id, "DRAFT")).rejects.toMatchObject({
+      code: "reason",
+    });
+    await changeStatus(managerB, task.id, "DRAFT", { reason: "У сотрудника отпуск" });
+    const rejected = await db.notification.findFirst({
+      where: { userId: member.id, type: "task_status" },
+    });
+    expect(rejected?.body).toContain("У сотрудника отпуск");
+  });
+
+  it("a request to a manager is decided by the manager; «Требует утверждения» goes up", async () => {
+    await createTestUser("OWNER");
+    const manager = await createTestUser("MANAGER");
+    const member = await createTestUser("MEMBER");
+    const colleague = await createTestUser("MEMBER");
+    await db.user.updateMany({
+      where: { id: { in: [member.id, colleague.id] } },
+      data: { managerId: manager.id },
+    });
+
+    const up = await createTask(member, taskInput({ assigneeId: manager.id }), "create");
+    expect(up).toMatchObject({ status: "PENDING_APPROVAL", deciderIds: [manager.id] });
+    await expect(changeStatus(manager, up.id, "APPROVED")).resolves.toMatchObject({
+      status: "APPROVED",
+    });
+
+    const flagged = await createTask(member, taskInput({ assigneeId: colleague.id }), "create", {
+      needsApproval: true,
+    });
+    expect(flagged).toMatchObject({ status: "PENDING_APPROVAL", deciderIds: [manager.id] });
   });
 });
 

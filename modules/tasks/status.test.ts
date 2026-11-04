@@ -3,102 +3,117 @@ import { describe, expect, it } from "vitest";
 import type { TaskStatus } from "@/lib/generated/prisma/client";
 
 import type { TaskAccessInfo } from "./access";
-import { availableTransitions, checkTransition } from "./status";
+import { availableTransitions, checkTransition, needsReason } from "./status";
 
 const owner = { id: "owner", role: "OWNER" as const };
-const manager = { id: "manager", role: "MANAGER" as const };
+// Manager of «member» (role settings: own team).
+const manager = {
+  id: "manager",
+  role: "MANAGER" as const,
+  access: { modules: [], taskScope: "team" as const, teamIds: ["member", "other"] },
+};
 const member = { id: "member", role: "MEMBER" as const };
 const other = { id: "other", role: "MEMBER" as const };
 
-function team(status: TaskStatus, creatorId = "owner", assigneeId = "member"): TaskAccessInfo {
-  return { isPersonal: false, creatorId, assigneeId, status, approvedAt: null };
+function team(
+  status: TaskStatus,
+  creatorId = "owner",
+  assigneeId = "member",
+  extra: Partial<TaskAccessInfo> = {},
+): TaskAccessInfo {
+  return { isPersonal: false, creatorId, assigneeId, status, approvedAt: null, ...extra };
 }
 
 function personal(status: TaskStatus, authorId = "member"): TaskAccessInfo {
   return { isPersonal: true, creatorId: authorId, assigneeId: authorId, status, approvedAt: null };
 }
 
-describe("team task transitions", () => {
-  it("creator submits a draft; an OWNER/MANAGER creator may approve right away", () => {
+describe("team task transitions (routing v2)", () => {
+  it("the author sends a draft (the route picks the status) or cancels it", () => {
     expect(availableTransitions(member, team("DRAFT", "member", "other"))).toEqual([
       "PENDING_APPROVAL",
       "CANCELLED",
     ]);
-    expect(availableTransitions(owner, team("DRAFT"))).toEqual([
-      "PENDING_APPROVAL",
-      "APPROVED",
-      "CANCELLED",
-    ]);
+    expect(availableTransitions(other, team("DRAFT", "member", "other"))).toEqual([]);
   });
 
-  it("only OWNER/MANAGER approve; MEMBER never approves", () => {
-    const pending = team("PENDING_APPROVAL", "member", "other");
-    expect(availableTransitions(manager, pending)).toContain("APPROVED");
+  it("only those the route named (and the owner) decide; the author may take it back", () => {
+    const pending = team("PENDING_APPROVAL", "member", "other", { deciderIds: ["manager"] });
+    expect(availableTransitions(manager, pending)).toEqual(["APPROVED", "DRAFT", "CANCELLED"]);
     expect(availableTransitions(owner, pending)).toContain("APPROVED");
-    expect(availableTransitions(member, pending)).not.toContain("APPROVED");
+    expect(availableTransitions(member, pending)).toEqual(["DRAFT", "CANCELLED"]);
     expect(availableTransitions(other, pending)).toEqual([]);
+    // A manager in the zone but not named does not approve.
+    expect(availableTransitions(manager, { ...pending, deciderIds: ["someone"] })).not.toContain(
+      "APPROVED",
+    );
   });
 
-  it("an approver can send a pending task back to draft", () => {
-    expect(availableTransitions(manager, team("PENDING_APPROVAL"))).toContain("DRAFT");
+  it("a request up the lines: the assignee accepts or declines it", () => {
+    const up = team("PENDING_APPROVAL", "member", "manager", { deciderIds: ["manager"] });
+    expect(availableTransitions(manager, up)).toEqual(["APPROVED", "DRAFT"]);
   });
 
-  it("only the assignee starts work and sends it for review", () => {
+  it("declining and returning work need a reason; the author or assignee taking back do not", () => {
+    const pending = team("PENDING_APPROVAL", "member", "other", { deciderIds: ["manager"] });
+    expect(needsReason(manager, pending, "DRAFT")).toBe(true);
+    expect(needsReason(member, pending, "DRAFT")).toBe(false);
+    const review = team("IN_REVIEW", "owner", "member");
+    expect(needsReason(owner, review, "IN_PROGRESS")).toBe(true);
+    expect(needsReason(member, review, "IN_PROGRESS")).toBe(false);
+  });
+
+  it("only the assignee starts work and hands it in", () => {
     expect(availableTransitions(member, team("APPROVED"))).toEqual(["IN_PROGRESS"]);
     expect(availableTransitions(owner, team("APPROVED"))).toEqual(["CANCELLED"]);
     expect(availableTransitions(member, team("IN_PROGRESS"))).toEqual(["IN_REVIEW"]);
   });
 
-  it("the creator accepts (DONE) or returns the work; the assignee cannot accept own work", () => {
+  it("the author accepts; the owner or a manager in the zone instead; never the assignee", () => {
     expect(availableTransitions(owner, team("IN_REVIEW"))).toEqual([
       "DONE",
       "IN_PROGRESS",
       "CANCELLED",
     ]);
     expect(availableTransitions(member, team("IN_REVIEW"))).toEqual(["IN_PROGRESS"]);
+    expect(availableTransitions(manager, team("IN_REVIEW", "other", "member"))).toContain("DONE");
   });
 
-  it("a MEMBER who made a task for themselves needs a manager to accept it", () => {
-    const own = team("IN_REVIEW", "member", "member");
-    expect(availableTransitions(member, own)).not.toContain("DONE");
+  it("one's own task is accepted by the nearest manager only (not by other managers)", () => {
+    const own = team("IN_REVIEW", "member", "member", { reviewerId: "manager" });
     expect(availableTransitions(manager, own)).toContain("DONE");
+    expect(availableTransitions(member, own)).toEqual(["IN_PROGRESS", "CANCELLED"]);
+    const elsewhere = { ...own, reviewerId: "boss" };
+    expect(availableTransitions(manager, elsewhere)).not.toContain("DONE");
   });
 
-  it("closed tasks have no transitions", () => {
-    expect(availableTransitions(owner, team("DONE"))).toEqual([]);
-    expect(availableTransitions(owner, team("CANCELLED"))).toEqual([]);
-  });
-});
-
-describe("personal task transitions", () => {
-  it("skip approval: DRAFT → IN_PROGRESS → DONE", () => {
-    expect(availableTransitions(member, personal("DRAFT"))).toEqual(["IN_PROGRESS", "CANCELLED"]);
-    expect(availableTransitions(member, personal("IN_PROGRESS"))).toContain("DONE");
-    expect(availableTransitions(member, personal("DRAFT"))).not.toContain("PENDING_APPROVAL");
+  it("a manager never controls a task they do themselves", () => {
+    const up = team("APPROVED", "member", "manager");
+    expect(availableTransitions(manager, up)).toEqual(["IN_PROGRESS"]);
   });
 
-  it("nobody but the author can change them, not even OWNER", () => {
-    expect(availableTransitions(owner, personal("DRAFT"))).toEqual([]);
+  it("the owner's own task closes when handed in", () => {
+    const own = team("IN_PROGRESS", "owner", "owner");
+    expect(availableTransitions(owner, own)).toEqual(["DONE", "CANCELLED"]);
   });
-});
 
-describe("checkTransition", () => {
-  it("blocks DONE while blocking tasks are open", () => {
+  it("a task can't be accepted while a blocking task is open", () => {
     expect(checkTransition(owner, team("IN_REVIEW"), "DONE", 1)).toEqual({
       ok: false,
       reason: "blocked",
     });
     expect(checkTransition(owner, team("IN_REVIEW"), "DONE", 0)).toEqual({ ok: true });
   });
+});
 
-  it("other transitions are not affected by blockers", () => {
-    expect(checkTransition(member, team("APPROVED"), "IN_PROGRESS", 3)).toEqual({ ok: true });
-  });
-
-  it("rejects transitions the actor is not allowed to make", () => {
-    expect(checkTransition(member, team("PENDING_APPROVAL"), "APPROVED", 0)).toEqual({
-      ok: false,
-      reason: "forbidden",
-    });
+describe("personal task transitions", () => {
+  it("only the author moves it, without approval", () => {
+    expect(availableTransitions(member, personal("DRAFT"))).toEqual(["IN_PROGRESS", "CANCELLED"]);
+    expect(availableTransitions(member, personal("IN_PROGRESS"))).toEqual([
+      "DONE",
+      "DRAFT",
+      "CANCELLED",
+    ]);
+    expect(availableTransitions(owner, personal("IN_PROGRESS"))).toEqual([]);
   });
 });

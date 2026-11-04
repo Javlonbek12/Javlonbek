@@ -7,8 +7,12 @@ import { notify } from "@/modules/core/notifications/service";
 import type { Actor } from "@/modules/core/permissions";
 import { displayName } from "@/modules/core/users/display-name";
 
+import { withAccess } from "@/modules/core/access/actor";
+import { getRoleConfig } from "@/modules/core/access/config";
+
 import { canViewTask } from "./access";
 import { TaskError } from "./errors";
+import { mentionedUserIds } from "./mentions";
 
 const bodySchema = z.string().trim().min(1).max(2000);
 
@@ -28,16 +32,24 @@ export async function addComment(actor: Actor, taskId: string, body: string) {
     entityId: taskId,
   });
 
-  // Creator and assignee hear about it, if they can see the task and didn't write it.
+  // Creator and assignee hear about it, and anyone @mentioned (routing v2), if they can see the
+  // task and didn't write it.
   const author = await db.user.findUniqueOrThrow({ where: { id: actor.id } });
-  const recipients = await db.user.findMany({
-    where: { id: { in: [task.creatorId, task.assigneeId].filter((id) => id !== actor.id) } },
-  });
+  const people = await db.user.findMany();
+  const mentioned = new Set(mentionedUserIds(text.data, people));
+  const recipients = people.filter(
+    (user) =>
+      user.id !== actor.id &&
+      (mentioned.has(user.id) || user.id === task.creatorId || user.id === task.assigneeId),
+  );
+  const config = recipients.length ? await getRoleConfig() : undefined;
   for (const user of recipients) {
-    if (!canViewTask(user, task)) continue;
+    if (!canViewTask(await withAccess(user, config), task)) continue;
     await notify(user.id, () => ({
       type: "task_comment",
-      title: t("notifications.events.taskCommentTitle"),
+      title: mentioned.has(user.id)
+        ? t("notifications.events.taskMentionTitle")
+        : t("notifications.events.taskCommentTitle"),
       body: t("notifications.events.taskCommentBody", {
         title: task.title,
         name: displayName(author),

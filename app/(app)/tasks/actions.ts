@@ -14,6 +14,7 @@ import {
   deleteTask,
   requestTaskDeletion,
   resolveTaskDeletion,
+  restoreTask,
 } from "@/modules/tasks/delete-service";
 import { TaskError } from "@/modules/tasks/errors";
 import { createPlan } from "@/modules/tasks/plan-service";
@@ -97,7 +98,7 @@ export async function createTaskAction(
       user,
       taskInputFromForm(formData),
       mode in CREATE_MODES ? (mode as CreateMode) : "draft",
-      { repeat: repeatFromForm(formData) },
+      { repeat: repeatFromForm(formData), needsApproval: formData.get("needsApproval") === "on" },
     );
     taskId = task.id;
   } catch (error) {
@@ -143,7 +144,13 @@ export async function changeStatusAction(formData: FormData) {
   const to = statusSchema.parse(str(formData, "to"));
   // "Withdraw and edit": back to draft, then straight to the edit form.
   const then = str(formData, "then") === "edit" ? "/edit" : "";
-  await onTaskPage(taskId, () => changeStatus(user, taskId, to), then);
+  const reason = str(formData, "reason").trim().slice(0, 1000) || null;
+  const despiteCancelled = formData.get("despiteCancelled") === "on";
+  await onTaskPage(
+    taskId,
+    () => changeStatus(user, taskId, to, { reason, despiteCancelled }),
+    then,
+  );
 }
 
 // For the kanban board: returns the result instead of redirecting.
@@ -244,7 +251,7 @@ async function runDelete(
 export async function deleteTaskAction(formData: FormData) {
   const user = await actor();
   const taskId = idSchema.parse(str(formData, "taskId"));
-  await runDelete(taskId, () => deleteTask(user, taskId), "", true);
+  await runDelete(taskId, () => deleteTask(user, taskId, str(formData, "reason")), "", true);
 }
 
 export async function requestDeleteTaskAction(formData: FormData) {
@@ -268,4 +275,19 @@ export async function resolveDeleteTaskAction(formData: FormData) {
     decision === "withdraw" ? "withdrawn" : "rejected",
     decision === "approve",
   );
+}
+
+// The owner brings a deleted team task back from the bin.
+export async function restoreTaskAction(formData: FormData) {
+  const user = await actor();
+  const id = idSchema.parse(str(formData, "id"));
+  let target = `/tasks/${id}`;
+  try {
+    await restoreTask(user, id);
+  } catch (error) {
+    if (!(error instanceof TaskError)) throw error;
+    target = `/tasks/trash?error=${error.code}`;
+  }
+  revalidatePath("/tasks", "layout");
+  redirect(target);
 }

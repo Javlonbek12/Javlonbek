@@ -4,8 +4,11 @@ import { db } from "@/lib/db";
 import {
   deleteTask,
   getDeleteMode,
+  listDeletedTasks,
+  purgeDeletedTasks,
   requestTaskDeletion,
   resolveTaskDeletion,
+  restoreTask,
 } from "@/modules/tasks/delete-service";
 import { TaskError } from "@/modules/tasks/errors";
 import { changeStatus, createTask } from "@/modules/tasks/service";
@@ -25,7 +28,7 @@ describe("deleting tasks", () => {
     const task = await createTask(
       member,
       taskInput({ title: "Тестовая задача", assigneeId: member.id }),
-      "submit",
+      "create",
     );
     expect(await getDeleteMode(other, task.id)).toBe("none");
     await expect(deleteTask(other, task.id)).rejects.toBeInstanceOf(TaskError);
@@ -34,80 +37,121 @@ describe("deleting tasks", () => {
     expect(await exists(task.id)).toBe(false);
   });
 
-  it("a comment counts as progress", async () => {
-    await createTestUser("OWNER");
-    const member = await createTestUser("MEMBER");
-    const task = await createTask(
-      member,
-      taskInput({ title: "Тестовая задача", assigneeId: member.id }),
-      "submit",
-    );
-    await addComment(member, task.id, "Тестовый комментарий");
-    expect(await getDeleteMode(member, task.id)).toBe("request");
-  });
-
-  it("after approval the employee asks, the manager deletes or keeps", async () => {
+  it("only what others did counts as movement", async () => {
     const owner = await createTestUser("OWNER");
     const member = await createTestUser("MEMBER");
     const task = await createTask(
       member,
       taskInput({ title: "Тестовая задача", assigneeId: member.id }),
-      "submit",
+      "create",
     );
-    await changeStatus(owner, task.id, "APPROVED");
-
+    // Own comments and own work on an own task: still deleted right away.
+    await addComment(member, task.id, "Тестовый комментарий");
+    await changeStatus(member, task.id, "IN_PROGRESS");
+    expect(await getDeleteMode(member, task.id)).toBe("direct");
+    // Someone else's comment: now the author asks.
+    await addComment(owner, task.id, "Тестовый комментарий владельца");
     expect(await getDeleteMode(member, task.id)).toBe("request");
-    await expect(deleteTask(member, task.id)).rejects.toBeInstanceOf(TaskError);
+  });
 
-    // Ask → the owner is notified; asking twice is refused.
-    await requestTaskDeletion(member, task.id, "Тестовая причина");
+  it("after the assignee's work the author asks, the manager deletes or keeps", async () => {
+    await createTestUser("OWNER");
+    const manager = await createTestUser("MANAGER");
+    const author = await createTestUser("MEMBER");
+    const worker = await createTestUser("MEMBER");
+    await db.user.updateMany({
+      where: { id: { in: [author.id, worker.id] } },
+      data: { managerId: manager.id },
+    });
+    const task = await createTask(
+      author,
+      taskInput({ title: "Тестовая задача", assigneeId: worker.id }),
+      "create",
+    );
+    expect(await getDeleteMode(author, task.id)).toBe("direct");
+    await changeStatus(worker, task.id, "IN_PROGRESS");
+
+    expect(await getDeleteMode(author, task.id)).toBe("request");
+    expect(await getDeleteMode(worker, task.id)).toBe("request");
+    await expect(deleteTask(author, task.id)).rejects.toBeInstanceOf(TaskError);
+
+    // Ask → the manager is notified (not the assignee); asking twice is refused.
+    await requestTaskDeletion(author, task.id, "Тестовая причина");
     expect(
-      await db.notification.count({ where: { userId: owner.id, type: "task_delete_request" } }),
+      await db.notification.count({ where: { userId: manager.id, type: "task_delete_request" } }),
     ).toBe(1);
-    await expect(requestTaskDeletion(member, task.id, "")).rejects.toMatchObject({
+    expect(
+      await db.notification.count({ where: { userId: worker.id, type: "task_delete_request" } }),
+    ).toBe(0);
+    await expect(requestTaskDeletion(author, task.id, "")).rejects.toMatchObject({
       code: "requested",
     });
-    // The employee can't approve their own request.
-    await expect(resolveTaskDeletion(member, task.id, true)).rejects.toBeInstanceOf(TaskError);
+    await expect(resolveTaskDeletion(author, task.id, true)).rejects.toBeInstanceOf(TaskError);
 
-    // Kept: the request is cleared and the employee hears about it.
-    await resolveTaskDeletion(owner, task.id, false);
+    // Kept: the request is cleared; the author and the assignee hear it.
+    await resolveTaskDeletion(manager, task.id, false);
     expect(await db.task.findUniqueOrThrow({ where: { id: task.id } })).toMatchObject({
       deleteRequestedAt: null,
       deleteRequestedById: null,
     });
-    expect(
-      await db.notification.count({
-        where: { userId: member.id, title: "Удаление задачи отклонено" },
-      }),
-    ).toBe(1);
+    for (const user of [author, worker])
+      expect(
+        await db.notification.count({
+          where: { userId: user.id, title: "Удаление задачи отклонено" },
+        }),
+      ).toBe(1);
 
-    // Withdrawn by the employee.
-    await requestTaskDeletion(member, task.id, "");
-    await resolveTaskDeletion(member, task.id, false);
+    // Withdrawn by the author.
+    await requestTaskDeletion(author, task.id, "");
+    await resolveTaskDeletion(author, task.id, false);
     expect((await db.task.findUniqueOrThrow({ where: { id: task.id } })).deleteRequestedAt).toBe(
       null,
     );
 
-    // Approved: the task is gone.
-    await requestTaskDeletion(member, task.id, "");
-    await resolveTaskDeletion(owner, task.id, true);
+    // Approved: the task goes to the bin.
+    await requestTaskDeletion(author, task.id, "Дубль");
+    await resolveTaskDeletion(manager, task.id, true);
     expect(await exists(task.id)).toBe(false);
+    expect(await db.deletedTask.findUnique({ where: { id: task.id } })).toMatchObject({
+      reason: "Дубль",
+      deletedById: manager.id,
+    });
   });
 
-  it("the overseer deletes right away; a personal task only by its author", async () => {
+  it("the overseer deletes right away into the bin; the owner restores; personal: only the author", async () => {
     const owner = await createTestUser("OWNER");
     const member = await createTestUser("MEMBER");
     const team = await createTask(
-      member,
+      owner,
       taskInput({ title: "Тестовая задача", assigneeId: member.id }),
-      "submit",
+      "create",
     );
-    await changeStatus(owner, team.id, "APPROVED");
     await changeStatus(member, team.id, "IN_PROGRESS");
+    await addComment(member, team.id, "Тестовый комментарий");
     expect(await getDeleteMode(owner, team.id)).toBe("direct");
-    await deleteTask(owner, team.id);
+    await deleteTask(owner, team.id, "Больше не нужна");
     expect(await exists(team.id)).toBe(false);
+    expect(
+      await db.notification.findFirst({
+        where: { userId: member.id, body: { contains: "Больше не нужна" } },
+      }),
+    ).not.toBeNull();
+
+    expect((await listDeletedTasks(owner)).map((row) => row.id)).toEqual([team.id]);
+    await expect(listDeletedTasks(member)).rejects.toBeInstanceOf(TaskError);
+    await expect(restoreTask(member, team.id)).rejects.toBeInstanceOf(TaskError);
+    await restoreTask(owner, team.id);
+    expect(await db.task.findUniqueOrThrow({ where: { id: team.id } })).toMatchObject({
+      status: "IN_PROGRESS",
+      assigneeId: member.id,
+    });
+    expect(await db.comment.count({ where: { taskId: team.id } })).toBe(1);
+    expect(await db.deletedTask.count()).toBe(0);
+
+    // The bin keeps tasks for the days set (30 by default).
+    await deleteTask(owner, team.id);
+    expect(await purgeDeletedTasks(new Date(Date.now() + 29 * 86_400_000))).toBe(0);
+    expect(await purgeDeletedTasks(new Date(Date.now() + 31 * 86_400_000))).toBe(1);
 
     const personal = await createTask(
       member,
@@ -118,5 +162,6 @@ describe("deleting tasks", () => {
     expect(await getDeleteMode(member, personal.id)).toBe("direct");
     await deleteTask(member, personal.id);
     expect(await exists(personal.id)).toBe(false);
+    expect(await db.deletedTask.count()).toBe(0);
   });
 });

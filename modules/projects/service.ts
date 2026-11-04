@@ -9,6 +9,7 @@ import { displayName } from "@/modules/core/users/display-name";
 import { canEditTask, CLOSED_STATUSES, visibleTasksWhere } from "@/modules/tasks/access";
 
 import { applyTemplate } from "./apply-template";
+import { notifyPlanTasks, planRoute } from "./routing";
 import {
   milestones,
   problemsByPriority,
@@ -189,6 +190,9 @@ export async function createProject(
   if (fields.leadId && !(await db.user.findUnique({ where: { id: fields.leadId } })))
     throw new ProjectError("invalid");
   const color = (await db.project.count()) % 8;
+  const assigneeId = fields.leadId ?? actor.id;
+  const route = template?.anchor && anchorDate ? await planRoute(actor.id, assigneeId) : null;
+  let made = 0;
   const project = await db.$transaction(
     async (tx) => {
       const created = await tx.project.create({
@@ -200,22 +204,21 @@ export async function createProject(
           anchorDate: template?.anchor && anchorDate ? fromDateString(anchorDate) : null,
         },
       });
-      if (template?.anchor && anchorDate)
-        await applyTemplate(
+      if (template?.anchor && anchorDate && route)
+        made = await applyTemplate(
           tx,
           created,
           template,
           anchorDate,
-          {
-            creatorId: actor.id,
-            assigneeId: fields.leadId ?? actor.id,
-          },
+          { creatorId: actor.id, assigneeId },
+          route,
           now,
         );
       return created;
     },
     { timeout: 30_000 },
   );
+  if (route) await notifyPlanTasks(route, actor.id, assigneeId, project.name, made);
   await logActivity({
     actorId: actor.id,
     action: "project.created",

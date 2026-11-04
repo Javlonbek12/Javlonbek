@@ -10,6 +10,9 @@ type TaskForNotice = {
   isPersonal: boolean;
   creatorId: string;
   assigneeId: string;
+  approvedAt: Date | null;
+  deciderIds?: string[];
+  reviewerId?: string | null;
 };
 
 type Notice = {
@@ -26,6 +29,7 @@ export const STATUS_CODES = {
   D: "DRAFT",
   F: "DONE",
   W: "IN_PROGRESS",
+  C: "CANCELLED",
 } as const satisfies Record<string, TaskStatus>;
 
 export function statusButton(
@@ -36,59 +40,98 @@ export function statusButton(
   return { text, data: `t:${taskId}:${code}` };
 }
 
-// Who should hear about a status change. Personal tasks never notify anyone.
-export function statusChangeRecipients(
-  task: TaskForNotice,
-  from: TaskStatus,
-  to: TaskStatus,
-  actorId: string,
-  approverIds: string[],
-): Notice[] {
+// What happened to a team task (routing v2, «Уведомления»).
+export type TaskEvent =
+  // Started right away by the route: the assignee, and the assignee's nearest manager (teamNoticeId).
+  | { kind: "started"; teamNoticeId: string | null }
+  | { kind: "pending" }
+  | { kind: "approved" }
+  | { kind: "rejected"; reason: string }
+  | { kind: "withdrawn" }
+  | { kind: "taken" }
+  | { kind: "review"; reviewerIds: string[] }
+  | { kind: "done" }
+  | { kind: "rework"; reason: string | null }
+  | { kind: "cancelled"; wasPending: boolean; reason: string | null }
+  | { kind: "reassigned"; previousAssigneeId: string; previousSaw: boolean };
+
+// The assignee hears about a task only once they can see it.
+const assigneeSees = (task: TaskForNotice) =>
+  task.approvedAt !== null ||
+  task.assigneeId === task.creatorId ||
+  (task.deciderIds ?? []).includes(task.assigneeId);
+
+// Who should hear about it. Personal tasks never notify anyone; nobody hears about their own
+// action, and everyone at most once.
+export function taskEventRecipients(task: TaskForNotice, event: TaskEvent, actorId: string) {
   if (task.isPersonal) return [];
   const notices: Notice[] = [];
-  const statusTitle = () =>
+  const add = (userId: string | null | undefined, type: NotificationType, title: () => string) => {
+    if (userId) notices.push({ userId, type, title });
+  };
+  const status = (to: TaskStatus) => () =>
     t("notifications.events.taskStatusTitle", { status: t(`tasks.status.${to}`) });
+  const assigned = () => t("notifications.events.taskAssignedTitle");
+  const deciders = task.deciderIds ?? [];
 
-  if (to === "PENDING_APPROVAL") {
-    for (const id of approverIds) {
-      notices.push({
-        userId: id,
-        type: "task_pending_approval",
-        title: () => t("notifications.events.taskPendingTitle"),
-      });
-    }
-  } else if (to === "APPROVED") {
-    notices.push({
-      userId: task.assigneeId,
-      type: "task_assigned",
-      title: () => t("notifications.events.taskAssignedTitle"),
-    });
-    notices.push({
-      userId: task.creatorId,
-      type: "task_status",
-      title: () => t("notifications.events.taskApprovedTitle"),
-    });
-  } else if (to === "IN_REVIEW") {
-    const reviewers = task.creatorId === task.assigneeId ? approverIds : [task.creatorId];
-    for (const id of reviewers) {
-      notices.push({
-        userId: id,
-        type: "task_status",
-        title: () => t("notifications.events.taskReviewTitle"),
-      });
-    }
-  } else if (to === "DRAFT" && from === "PENDING_APPROVAL") {
-    notices.push({ userId: task.creatorId, type: "task_status", title: statusTitle });
-  } else if (
-    to === "DONE" ||
-    to === "CANCELLED" ||
-    (to === "IN_PROGRESS" && from === "IN_REVIEW")
-  ) {
-    notices.push({ userId: task.assigneeId, type: "task_status", title: statusTitle });
-    notices.push({ userId: task.creatorId, type: "task_status", title: statusTitle });
+  switch (event.kind) {
+    case "started":
+      add(task.assigneeId, "task_assigned", assigned);
+      if (event.teamNoticeId)
+        notices.push({
+          userId: event.teamNoticeId,
+          type: "task_team",
+          title: () => t("notifications.events.taskTeamTitle"),
+          buttons: [[statusButton(t("bot.actions.cancelTask"), task.id, "C")]],
+        });
+      break;
+    case "pending":
+      for (const id of deciders)
+        add(id, "task_pending_approval", () => t("notifications.events.taskPendingTitle"));
+      break;
+    case "approved":
+      add(task.assigneeId, "task_assigned", assigned);
+      add(task.creatorId, "task_status", () => t("notifications.events.taskApprovedTitle"));
+      break;
+    case "rejected":
+      add(task.creatorId, "task_status", () => t("notifications.events.taskRejectedTitle"));
+      break;
+    case "withdrawn":
+      for (const id of deciders)
+        add(id, "task_status", () => t("notifications.events.taskWithdrawnTitle"));
+      break;
+    case "taken":
+      add(task.creatorId, "task_status", () => t("notifications.events.taskTakenTitle"));
+      break;
+    case "review":
+      for (const id of event.reviewerIds)
+        add(id, "task_status", () => t("notifications.events.taskReviewTitle"));
+      break;
+    case "done":
+      add(task.assigneeId, "task_status", status("DONE"));
+      add(task.creatorId, "task_status", status("DONE"));
+      break;
+    case "rework":
+      add(task.assigneeId, "task_status", () => t("notifications.events.taskReworkTitle"));
+      add(task.creatorId, "task_status", () => t("notifications.events.taskReworkTitle"));
+      break;
+    case "cancelled":
+      if (assigneeSees(task)) add(task.assigneeId, "task_status", status("CANCELLED"));
+      add(task.creatorId, "task_status", status("CANCELLED"));
+      if (event.wasPending) for (const id of deciders) add(id, "task_status", status("CANCELLED"));
+      break;
+    case "reassigned":
+      if (task.approvedAt !== null) add(task.assigneeId, "task_assigned", assigned);
+      else
+        for (const id of deciders)
+          add(id, "task_pending_approval", () => t("notifications.events.taskPendingTitle"));
+      if (event.previousSaw)
+        add(event.previousAssigneeId, "task_status", () =>
+          t("notifications.events.taskUnassignedTitle"),
+        );
+      break;
   }
 
-  // Nobody is notified about their own action, and everyone at most once.
   const seen = new Set<string>([actorId]);
   return notices.filter((notice) => {
     if (seen.has(notice.userId)) return false;
@@ -97,14 +140,31 @@ export function statusChangeRecipients(
   });
 }
 
-export async function sendTaskNotices(notices: Notice[], task: TaskForNotice, actorName: string) {
+export async function sendTaskNotices(
+  notices: Notice[],
+  task: TaskForNotice,
+  actorName: string,
+  reason?: string | null,
+) {
   for (const notice of notices) {
     await notify(notice.userId, () => ({
       type: notice.type,
       title: notice.title(),
-      body: t("notifications.events.taskBody", { title: task.title, name: actorName }),
+      body: reason
+        ? t("notifications.events.taskReasonBody", { title: task.title, name: actorName, reason })
+        : t("notifications.events.taskBody", { title: task.title, name: actorName }),
       link: `/tasks/${task.id}`,
       telegramButtons: notice.buttons,
     }));
   }
+}
+
+export async function notifyTaskEvent(
+  task: TaskForNotice,
+  event: TaskEvent,
+  actorId: string,
+  actorName: string,
+) {
+  const reason = "reason" in event ? event.reason : null;
+  await sendTaskNotices(taskEventRecipients(task, event, actorId), task, actorName, reason);
 }

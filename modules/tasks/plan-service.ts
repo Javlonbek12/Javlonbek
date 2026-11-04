@@ -6,7 +6,7 @@ import type { Prisma } from "@/lib/generated/prisma/client";
 import { PlanLevel } from "@/lib/generated/prisma/enums";
 import type { Actor } from "@/modules/core/permissions";
 
-import { isApprover, visibleTasksWhere } from "./access";
+import { isApprover, oversight, visibleTasksWhere } from "./access";
 import { TaskError } from "./errors";
 import {
   canBeParent,
@@ -40,7 +40,9 @@ export async function createPlan(actor: Actor, input: PlanInput) {
   if (!parsed.success) throw new TaskError("invalid");
   const data = parsed.data;
   // Team plans are set by OWNER/MANAGER; anyone can keep personal plans.
-  if (!data.isPersonal && !isApprover(actor.role)) throw new TaskError("forbidden");
+  // A team plan is made by whoever sees the team's tasks: not a manager limited to their own.
+  if (!data.isPersonal && (!isApprover(actor.role) || oversight(actor) === "none"))
+    throw new TaskError("forbidden");
 
   const periodStart = normalizePeriodStart(data.level, data.date);
   if (data.parentId) {

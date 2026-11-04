@@ -17,7 +17,9 @@ import { createTestUser, resetDb } from "@/tests/helpers/db";
 const TZ = "Asia/Tashkent";
 const TODAY = "2026-10-07";
 
+// A plan loaded with its history: what is «Готово» there is done already.
 const plan = (): ProjectImport => ({
+  historical: true,
   name: "Тестовый проект",
   team: "Тестовая команда",
   lead: "Тестовый руководитель",
@@ -80,6 +82,9 @@ describe("projects", () => {
       ["T04", "APPROVED", false, false],
     ]);
     expect(tasks.every((t) => t.assigneeId === lead.id && t.creatorId === owner.id)).toBe(true);
+    expect(tasks[0]!.historical).toBe(true);
+    // The lead hears about the plan's tasks once, not task by task.
+    expect(await db.notification.count({ where: { userId: lead.id } })).toBe(1);
     expect(tasks.every((t) => t.project === "Тестовый проект" && t.approvedAt)).toBe(true);
     expect(tasks[0]).toMatchObject({
       priority: "HIGH",
@@ -106,6 +111,19 @@ describe("projects", () => {
     expect(await importProject({ ...plan(), replace: true })).toMatchObject({ replaced: true });
     expect(await db.task.count()).toBe(4);
     expect(await db.project.count()).toBe(1);
+
+    // A new plan (not history): «Готово» waits for the author to accept, «Отложено» is a label.
+    const fresh = plan();
+    fresh.historical = false;
+    fresh.tasks[3]!.status = "Отложено";
+    await importProject({ ...fresh, replace: true });
+    const again = await db.task.findMany({ orderBy: { code: "asc" } });
+    expect(again[0]).toMatchObject({
+      status: "IN_REVIEW",
+      reviewerId: owner.id,
+      historical: false,
+    });
+    expect(again[3]).toMatchObject({ status: "APPROVED", labels: ["отложено"] });
   });
 
   it("without a matching lead assigns tasks to the owner; rejects bad plans", async () => {

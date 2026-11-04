@@ -104,12 +104,12 @@ describe("statistics from real tasks", () => {
     const late = await createTask(
       owner,
       taskInput({ assigneeId: employee.id, dueDate: "2020-01-01" }),
-      "approve",
+      "create",
     );
     const done = await createTask(
       owner,
       taskInput({ assigneeId: employee.id, dueDate: "2099-01-01" }),
-      "approve",
+      "create",
     );
     await changeStatus(employee, done.id, "IN_PROGRESS");
     await changeStatus(employee, done.id, "IN_REVIEW");

@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { dueReminderDate, isDigestTime, localClock, overdueRange, weeklySummaryWeek } from "./plan";
+import {
+  dueReminderDates,
+  isDigestTime,
+  localClock,
+  overdueRange,
+  weeklySummaryWeek,
+  workdaysBetween,
+} from "./plan";
 
 // Friday 2026-10-02, 03:35 UTC.
 const now = new Date("2026-10-02T03:35:00Z");
@@ -39,11 +46,25 @@ describe("morning digest", () => {
 });
 
 describe("reminders", () => {
-  it("reminds about tomorrow's tasks from 17:00", () => {
-    expect(dueReminderDate({ date: "2026-10-02", minutes: 16 * 60 + 59, weekday: 4 })).toBeNull();
-    expect(dueReminderDate({ date: "2026-10-02", minutes: 17 * 60, weekday: 4 })).toBe(
+  it("reminds about tomorrow's tasks from 17:00; on Friday from 16:30 for the weekend", () => {
+    expect(dueReminderDates({ date: "2026-10-01", minutes: 16 * 60 + 59, weekday: 3 })).toEqual([]);
+    expect(dueReminderDates({ date: "2026-10-01", minutes: 17 * 60, weekday: 3 })).toEqual([
+      "2026-10-02",
+    ]);
+    expect(dueReminderDates({ date: "2026-10-02", minutes: 16 * 60 + 29, weekday: 4 })).toEqual([]);
+    expect(dueReminderDates({ date: "2026-10-02", minutes: 16 * 60 + 30, weekday: 4 })).toEqual([
       "2026-10-03",
-    );
+      "2026-10-04",
+      "2026-10-05",
+    ]);
+    expect(dueReminderDates({ date: "2026-10-03", minutes: 18 * 60, weekday: 5 })).toEqual([]);
+  });
+
+  it("counts working days", () => {
+    // Friday → Monday: one working day; Monday → Thursday: three.
+    expect(workdaysBetween("2026-10-02", "2026-10-05")).toBe(1);
+    expect(workdaysBetween("2026-10-05", "2026-10-08")).toBe(3);
+    expect(workdaysBetween("2026-10-05", "2026-10-05")).toBe(0);
   });
 
   it("reports overdue tasks from 09:00 for the last 7 days", () => {

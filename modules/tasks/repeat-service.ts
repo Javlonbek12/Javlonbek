@@ -1,7 +1,6 @@
 import { db } from "@/lib/db";
 import { daysBetween, fromDateString, toDateString, todayInTimezone } from "@/lib/dates";
 import type { TaskSeries } from "@/lib/generated/prisma/client";
-import { withAccess } from "@/modules/core/access/actor";
 import { getSettings } from "@/modules/core/settings/service";
 
 import { TaskError } from "./errors";
@@ -12,7 +11,6 @@ import {
   type RepeatInput,
   type RepeatRule,
 } from "./repeat";
-import { availableTransitions } from "./status";
 
 // At most this many copies of one series per scheduler pass (after a long pause, it catches up
 // over the next minutes instead of flooding at once).
@@ -119,6 +117,8 @@ type CreateCopy = (
     estimateMinutes: number | null;
   },
   seriesId: string,
+  // The latest task of the series is still open: the copy says so, and its author hears it once.
+  previousOpenId: string | null,
 ) => Promise<unknown>;
 
 // Makes the copies whose day has come (in the series creator's time zone). Each copy repeats the
@@ -167,6 +167,7 @@ export async function createDueCopies(now: Date, createCopy: CreateCopy) {
             estimateMinutes: latest.estimateMinutes,
           },
           s.id,
+          i === 0 && !["DONE", "CANCELLED"].includes(latest.status) ? latest.id : null,
         );
         made++;
         due = following;
@@ -179,14 +180,8 @@ export async function createDueCopies(now: Date, createCopy: CreateCopy) {
   return made;
 }
 
-// How a copy enters the workflow: a personal task as a draft (to do); a team task approved at
-// once when its creator may approve it, otherwise sent for approval.
-export async function copyMode(
-  creatorId: string,
-  copy: { isPersonal: boolean; assigneeId: string },
-): Promise<"draft" | "approve" | "submit"> {
-  if (copy.isPersonal) return "draft";
-  const creator = await withAccess(await db.user.findUniqueOrThrow({ where: { id: creatorId } }));
-  const draft = { ...copy, creatorId, status: "DRAFT" as const, approvedAt: null };
-  return availableTransitions(creator, draft).includes("APPROVED") ? "approve" : "submit";
+// How a copy enters the workflow: a personal task as a draft (to do); a team task along its route,
+// worked out on the day of the copy by the reporting lines of that day (routing v2).
+export function copyMode(copy: { isPersonal: boolean }): "draft" | "create" {
+  return copy.isPersonal ? "draft" : "create";
 }
