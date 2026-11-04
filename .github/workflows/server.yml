@@ -7,9 +7,8 @@ name: Server
 #   deploy  - copy the current code and restart (also runs by itself after green CI on main)
 #   logs    - last 200 log lines of one service
 #   backup  - make a backup now
-#   backup-export - the latest backup (database + files), encrypted for a public key made on the
-#     owner's own computer, as a file of the run (kept 1 day). "data" is {"key": "<PEM public key>"}.
-#     Only the private key on that computer opens it, so the public repository can hold it.
+#   backup-export - the latest backup (database + files) as a password-protected 7z file of the
+#     run (kept 1 day), to download to one's own computer. The password is the BACKUP_PASSWORD secret.
 #   restart - restart all services
 #   demo-add / demo-remove - add or remove test tasks and test employees (after deploy)
 #   org-import / org-replace - load the org chart from the JSON in "data" (replace = drop the current one)
@@ -21,7 +20,8 @@ name: Server
 #     (deploy/data/X.enc with AES-256, its key in X.enc.key encrypted with that public key), so only
 #     the server can read it. "data" is {"file": "deploy/data/X.enc"}.
 # Secrets: VPS_HOST, VPS_USER (root), VPS_SSH_KEY; for setup also TELEGRAM_BOT_TOKEN,
-# TELEGRAM_BOT_USERNAME, ANTHROPIC_API_KEY. Variable (optional): DOMAIN. See docs/SETUP-SERVER.md.
+# TELEGRAM_BOT_USERNAME, ANTHROPIC_API_KEY; for backup-export BACKUP_PASSWORD. Variable (optional):
+# DOMAIN. See docs/SETUP-SERVER.md.
 on:
   workflow_dispatch:
     inputs:
@@ -114,6 +114,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           DOMAIN: ${{ vars.DOMAIN }}
           ORG_DATA: ${{ inputs.data }}
+          BACKUP_PASSWORD: ${{ secrets.BACKUP_PASSWORD }}
         run: |
           case "$ACTION" in
             status)
@@ -171,21 +172,23 @@ jobs:
                 | docker compose -f docker-compose.prod.yml run --rm -T app node --import tsx scripts/data-load.ts; \
                 status=\$?; rm -f /tmp/$name /tmp/$name.key; exit \$status" ;;
             backup-export)
+              # The latest backup (database + files) in a 7z archive with AES-256 and hidden file
+              # names, locked with the BACKUP_PASSWORD secret that only the owner knows (opens in
+              # 7-Zip on Windows). The repository is public: the backup never leaves without it.
               set -o pipefail
-              printf '%s' "$ORG_DATA" | jq -r .key > /tmp/owner.pub
-              openssl pkey -pubin -in /tmp/owner.pub -noout 2> /dev/null || { echo "Not a public key"; exit 1; }
+              if [ "${#BACKUP_PASSWORD}" -lt 12 ]; then
+                echo "Add the BACKUP_PASSWORD secret (at least 12 characters) first."; exit 1
+              fi
               db="$(ssh vps 'ls -t ~/assistant-backups/db-*.sql.gz 2> /dev/null | head -1')"
               [ -n "$db" ] || { echo "No backups yet: run backup first"; exit 1; }
               stamp="$(basename "$db" .sql.gz)"
               stamp="${stamp#db-}"
-              mkdir -p export
-              # A one-time AES key for the file, itself encrypted with the owner's public key.
-              openssl rand -hex 32 > /tmp/pass
+              command -v 7z > /dev/null || sudo apt-get install -y -q p7zip-full > /dev/null
+              mkdir -p /tmp/backup export
               ssh vps "cd ~/assistant-backups && tar -cf - db-$stamp.sql.gz \$(ls uploads-$stamp.tar.gz 2> /dev/null)" \
-                | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass file:/tmp/pass -out "export/backup-$stamp.tar.enc"
-              openssl pkeyutl -encrypt -pubin -inkey /tmp/owner.pub -pkeyopt rsa_padding_mode:oaep \
-                -in /tmp/pass -out "export/backup-$stamp.tar.enc.key"
-              rm -f /tmp/pass
+                | tar -xf - -C /tmp/backup
+              (cd /tmp/backup && 7z a -t7z -mhe=on -p"$BACKUP_PASSWORD" "$GITHUB_WORKSPACE/export/backup-$stamp.7z" . > /dev/null)
+              rm -rf /tmp/backup
               ls -l export ;;
             restart)
               ssh vps 'cd ~/assistant && docker compose -f docker-compose.prod.yml restart && docker compose -f docker-compose.prod.yml ps' ;;
