@@ -40,7 +40,7 @@ describe("repeating tasks", () => {
         startDate: "2026-11-02",
         dueDate: "2026-11-06",
       }),
-      "approve",
+      "create",
       { repeat: weekly },
     );
     const { seriesId } = await db.task.findUniqueOrThrow({ where: { id: first.id } });

@@ -16,7 +16,7 @@ describe("dependencies", () => {
     const owner = await createTestUser("OWNER");
     const member = await createTestUser("MEMBER");
     const make = (title: string) =>
-      createTask(owner, taskInput({ title, assigneeId: member.id }), "approve");
+      createTask(owner, taskInput({ title, assigneeId: member.id }), "create");
     return { owner, member, a: await make("A"), b: await make("B"), c: await make("C") };
   }
 
@@ -29,9 +29,15 @@ describe("dependencies", () => {
     await expect(changeStatus(owner, b.id, "DONE")).rejects.toMatchObject({ code: "blocked" });
     expect((await getTaskDetail(owner, b.id))?.task.openBlockers).toBe(1);
 
-    // Once A is closed (cancelled counts as closed), B can be accepted.
+    // Once A is closed B can be accepted, but a cancelled A needs a conscious «despite».
     await changeStatus(owner, a.id, "CANCELLED");
-    await expect(changeStatus(owner, b.id, "DONE")).resolves.toMatchObject({ status: "DONE" });
+    await expect(changeStatus(owner, b.id, "DONE")).rejects.toMatchObject({
+      code: "cancelledDependency",
+    });
+    expect((await getTaskDetail(owner, b.id))?.cancelledBlockers).toBe(1);
+    await expect(
+      changeStatus(owner, b.id, "DONE", { despiteCancelled: true }),
+    ).resolves.toMatchObject({ status: "DONE" });
   });
 
   it("rejects links that would make a loop", async () => {

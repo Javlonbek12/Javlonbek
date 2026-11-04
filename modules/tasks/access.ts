@@ -7,6 +7,9 @@ export type TaskAccessInfo = {
   assigneeId: string;
   status: TaskStatus;
   approvedAt: Date | null;
+  // Routing v2 (modules/tasks/routing.ts): who decides while it waits, who accepts the result.
+  deciderIds?: string[];
+  reviewerId?: string | null;
 };
 
 export const CLOSED_STATUSES: TaskStatus[] = ["DONE", "CANCELLED"];
@@ -40,13 +43,46 @@ export function oversees(
   return scope.includes(task.creatorId) || scope.includes(task.assigneeId);
 }
 
+// Who accepts the result: the author; for one's own task, the nearest manager (stored by the route);
+// nobody for the owner's own task (handing it in closes it).
+export function reviewerOf(task: Pick<TaskAccessInfo, "creatorId" | "assigneeId" | "reviewerId">) {
+  return task.reviewerId ?? (task.creatorId !== task.assigneeId ? task.creatorId : null);
+}
+
 // Who sees a task:
 // - personal: only its author (even OWNER does not see others' personal tasks);
-// - team: the creator, whoever oversees it (OWNER, MANAGER per settings), and the assignee once approved.
+// - team: the creator, whoever oversees it (OWNER, MANAGER per settings), whoever decides on it or
+//   accepts its result, and the assignee once approved.
 export function canViewTask(actor: Actor, task: TaskAccessInfo): boolean {
   if (task.isPersonal) return task.creatorId === actor.id;
   if (task.creatorId === actor.id || oversees(actor, task)) return true;
+  if (task.deciderIds?.includes(actor.id) || task.reviewerId === actor.id) return true;
   return task.assigneeId === actor.id && task.approvedAt !== null;
+}
+
+// Controls a team task (returns, cancels, accepts instead of the author, deletes): the owner, and
+// a manager in whose zone it is — but never the one who does the work.
+export function canControl(actor: Actor, task: TaskAccessInfo): boolean {
+  if (task.isPersonal) return false;
+  if (actor.role === "OWNER") return true;
+  return oversees(actor, task) && task.assigneeId !== actor.id;
+}
+
+// Decides on a task waiting for approval: whoever the route named, and the owner.
+export function canDecide(actor: Actor, task: TaskAccessInfo): boolean {
+  return (
+    !task.isPersonal &&
+    task.status === "PENDING_APPROVAL" &&
+    (actor.role === "OWNER" || (task.deciderIds ?? []).includes(actor.id))
+  );
+}
+
+// Accepts the handed-in result: the reviewer; instead of them the owner, or a manager in the zone
+// when author and assignee differ. Never the assignee.
+export function canAccept(actor: Actor, task: TaskAccessInfo): boolean {
+  if (task.isPersonal || task.status !== "IN_REVIEW" || task.assigneeId === actor.id) return false;
+  if (reviewerOf(task) === actor.id || actor.role === "OWNER") return true;
+  return task.creatorId !== task.assigneeId && canControl(actor, task);
 }
 
 // The same rule as canViewTask, as a database filter.
@@ -54,6 +90,8 @@ export function visibleTasksWhere(actor: Actor): Prisma.TaskWhereInput {
   const rules: Prisma.TaskWhereInput[] = [
     { creatorId: actor.id },
     { isPersonal: false, assigneeId: actor.id, approvedAt: { not: null } },
+    { isPersonal: false, deciderIds: { has: actor.id } },
+    { isPersonal: false, reviewerId: actor.id },
   ];
   const scope = oversight(actor);
   if (scope === "all") rules.push({ isPersonal: false });
@@ -66,10 +104,10 @@ export function visibleTasksWhere(actor: Actor): Prisma.TaskWhereInput {
   return { OR: rules };
 }
 
-// Fields (title, dates, assignee...) are edited by the creator or whoever oversees the task
+// Fields (title, dates, assignee...) are edited by the creator or whoever controls the task
 // (personal: only the author), and only while the task is not closed.
 export function canEditTask(actor: Actor, task: TaskAccessInfo): boolean {
   if (isClosed(task.status)) return false;
   if (task.isPersonal) return task.creatorId === actor.id;
-  return task.creatorId === actor.id || oversees(actor, task);
+  return task.creatorId === actor.id || canControl(actor, task);
 }

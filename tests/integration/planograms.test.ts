@@ -114,14 +114,17 @@ describe("planogram lifecycle (stage 7 «done» scenario)", () => {
   }, 60_000);
 
   it("everyone builds planograms and sends them for approval; only OWNER/MANAGER approve", async () => {
-    const { member } = await setup();
+    const { owner, member } = await setup();
     const pog = await createPlanogram(member, {
       ...meta,
       title: "От сотрудника (тест)",
       equipmentId: (await equipment("POG_MINI")).id,
       fill: "auto",
     });
+    // Someone else's draft is approved only once its author sends it; the manager hears that.
+    await expect(approvePlanogram(owner, pog.id)).rejects.toMatchObject({ code: "notDraft" });
     await submitForApproval(member, pog.id);
+    expect(await db.notification.count({ where: { userId: owner.id, type: "planogram" } })).toBe(1);
     await returnToDraft(member, pog.id);
     await submitForApproval(member, pog.id);
     await expect(approvePlanogram(member, pog.id)).rejects.toMatchObject({ code: "forbidden" });
@@ -135,6 +138,13 @@ describe("planogram lifecycle (stage 7 «done» scenario)", () => {
     expect((await db.planogram.findUniqueOrThrow({ where: { id: pog.id } })).status).toBe(
       "PENDING_APPROVAL",
     );
+    // Approved: the author hears it.
+    await approvePlanogram(owner, pog.id);
+    expect(
+      await db.notification.count({
+        where: { userId: member.id, type: "planogram", title: "Планограмма утверждена" },
+      }),
+    ).toBe(1);
   });
 
   it("new price list → preview → new versions of all approved planograms; old versions keep old prices", async () => {
@@ -171,8 +181,9 @@ describe("planogram lifecycle (stage 7 «done» scenario)", () => {
     const sku1 = await skuByCode("SKU-TEST-001");
     expect(preview[0].changes).toEqual([{ skuId: sku1.id, from: 31000, to: 33000 }]);
 
-    const created = await applyPriceList(owner, list.id);
+    const { created, drafts } = await applyPriceList(owner, list.id);
     expect(created).toHaveLength(2);
+    expect(drafts).toEqual([]);
     const newA = (await loadPlanogram(created[0]))!;
     expect(newA.record).toMatchObject({ status: "APPROVED", version: 2, priceListId: list.id });
     expect(newA.prices.get(sku1.id)).toBe(33000);

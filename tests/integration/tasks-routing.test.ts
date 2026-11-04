@@ -1,0 +1,163 @@
+import { beforeEach, describe, expect, it } from "vitest";
+
+import { db } from "@/lib/db";
+import { runSchedulerTick } from "@/modules/scheduler/tick";
+import { addComment } from "@/modules/tasks/comment-service";
+import { migrateToRoutingV2 } from "@/modules/tasks/migrate-v2";
+import { saveTaskSettings } from "@/modules/tasks/settings";
+import { changeStatus, createTask, getTaskDetail, updateTask } from "@/modules/tasks/service";
+import { createTestUser, resetDb } from "@/tests/helpers/db";
+import { taskInput } from "@/tests/helpers/tasks";
+
+const writeDigest = async () => "Текст дайджеста";
+const count = (userId: string, type: string) => db.notification.count({ where: { userId, type } });
+
+// A small company: the owner, a manager with two people, an employee straight under the owner.
+async function company() {
+  const owner = await createTestUser("OWNER", { firstName: "Тестовладелец" });
+  const manager = await createTestUser("MANAGER");
+  const a1 = await createTestUser("MEMBER");
+  const a2 = await createTestUser("MEMBER");
+  const loose = await createTestUser("MEMBER");
+  await db.user.updateMany({
+    where: { id: { in: [a1.id, a2.id] } },
+    data: { managerId: manager.id },
+  });
+  return { owner, manager, a1, a2, loose };
+}
+
+describe("routing v2", () => {
+  beforeEach(resetDb);
+
+  it("the owner's flag makes a team approve tasks inside it", async () => {
+    const { owner, manager, a1, a2 } = await company();
+    await saveTaskSettings(owner, { teamApproval: [manager.id], trashDays: 30 });
+    const task = await createTask(a1, taskInput({ assigneeId: a2.id }), "create");
+    expect(task).toMatchObject({ status: "PENDING_APPROVAL", deciderIds: [manager.id] });
+    // The assignee doesn't see it while it waits.
+    expect(await getTaskDetail(a2, task.id)).toBeNull();
+    await changeStatus(manager, task.id, "APPROVED");
+    expect(await getTaskDetail(a2, task.id)).not.toBeNull();
+  });
+
+  it("a new assignee recomputes the route; after «В работе» the assignee is fixed", async () => {
+    const { manager, a1, a2, loose } = await company();
+    const task = await createTask(a1, taskInput({ assigneeId: a2.id }), "create");
+    expect(task.status).toBe("APPROVED");
+
+    // To someone outside the team: now it waits (for the owner, the loose employee's manager).
+    const moved = await updateTask(a1, task.id, taskInput({ assigneeId: loose.id }));
+    expect(moved).toMatchObject({ status: "PENDING_APPROVAL", assigneeId: loose.id });
+    expect(
+      await db.notification.count({ where: { userId: a2.id, title: "Вас сняли с задачи" } }),
+    ).toBe(1);
+
+    await updateTask(a1, task.id, taskInput({ assigneeId: a2.id }));
+    await changeStatus(a2, task.id, "IN_PROGRESS");
+    await expect(
+      updateTask(manager, task.id, taskInput({ assigneeId: a1.id })),
+    ).rejects.toMatchObject({ code: "assigneeLocked" });
+  });
+
+  it("an own task is accepted by the nearest manager; the owner's closes on hand-in", async () => {
+    const { owner, manager, a1 } = await company();
+    const own = await createTask(a1, taskInput({ assigneeId: a1.id }), "create");
+    expect(own).toMatchObject({ status: "APPROVED", reviewerId: manager.id });
+    await changeStatus(a1, own.id, "IN_PROGRESS");
+    await changeStatus(a1, own.id, "IN_REVIEW");
+    await expect(changeStatus(a1, own.id, "DONE")).rejects.toMatchObject({ code: "forbidden" });
+    await expect(changeStatus(manager, own.id, "DONE")).resolves.toMatchObject({ status: "DONE" });
+
+    const owners = await createTask(owner, taskInput({ assigneeId: owner.id }), "create");
+    expect(owners.reviewerId).toBeNull();
+    await changeStatus(owner, owners.id, "IN_PROGRESS");
+    await expect(changeStatus(owner, owners.id, "DONE")).resolves.toMatchObject({
+      status: "DONE",
+    });
+  });
+
+  it("waiting: after a working day the decider hears it, after three the owner and the author", async () => {
+    const { owner, manager, a1, loose } = await company();
+    // Wed 30 Sep 2026, 10:00 Tashkent.
+    const task = await createTask(a1, taskInput({ assigneeId: loose.id }), "create");
+    expect(task.deciderIds).toEqual([owner.id]);
+    await db.task.update({
+      where: { id: task.id },
+      data: { statusChangedAt: new Date("2026-09-30T05:00:00Z") },
+    });
+
+    await runSchedulerTick(new Date("2026-09-30T10:00:00Z"), { writeDigest });
+    expect(await count(owner.id, "task_waiting")).toBe(0);
+    // Thursday 09:00: one working day.
+    await runSchedulerTick(new Date("2026-10-01T04:00:00Z"), { writeDigest });
+    await runSchedulerTick(new Date("2026-10-01T05:00:00Z"), { writeDigest });
+    expect(await count(owner.id, "task_waiting")).toBe(1);
+    expect(await count(a1.id, "task_waiting")).toBe(0);
+    // Monday 5 Oct: three working days (the weekend doesn't count).
+    await runSchedulerTick(new Date("2026-10-04T04:00:00Z"), { writeDigest });
+    expect(await count(a1.id, "task_waiting")).toBe(0);
+    await runSchedulerTick(new Date("2026-10-05T04:00:00Z"), { writeDigest });
+    expect(await count(a1.id, "task_waiting")).toBe(1);
+    expect(await count(manager.id, "task_waiting")).toBe(0);
+  });
+
+  it("@mentions in a comment reach those who can see the task", async () => {
+    const { owner, manager, a1, a2, loose } = await company();
+    await db.user.update({ where: { id: a2.id }, data: { telegramUsername: "tester_two" } });
+    const task = await createTask(a1, taskInput({ assigneeId: a1.id }), "create");
+    await addComment(a1, task.id, `@tester_two и @${owner.firstName}, гляньте`);
+    expect(
+      await db.notification.count({
+        where: { userId: owner.id, title: "Вас упомянули в комментарии" },
+      }),
+    ).toBe(1);
+    // A colleague who can't see the task isn't told about it.
+    expect(await count(a2.id, "task_comment")).toBe(0);
+    expect(await count(loose.id, "task_comment")).toBe(0);
+    expect(await count(manager.id, "task_comment")).toBe(0);
+  });
+
+  it("the rollout re-routes waiting tasks once and tells who it concerns", async () => {
+    const { owner, manager, a1, a2, loose } = await company();
+    // Tasks made under the old rules: everything waited for approval.
+    const old = (assigneeId: string) =>
+      db.task.create({
+        data: {
+          title: "Старая задача",
+          creatorId: a1.id,
+          assigneeId,
+          status: "PENDING_APPROVAL",
+        },
+      });
+    const inTeam = await old(a2.id);
+    const outside = await old(loose.id);
+    const started = await db.task.create({
+      data: { title: "В работе", creatorId: owner.id, assigneeId: a1.id, status: "IN_PROGRESS" },
+    });
+
+    expect(await migrateToRoutingV2(new Date("2026-11-05T05:00:00Z"))).toMatchObject({
+      done: true,
+      approved: 1,
+    });
+    expect(await db.task.findUniqueOrThrow({ where: { id: inTeam.id } })).toMatchObject({
+      status: "APPROVED",
+      reviewerId: a1.id,
+    });
+    expect(await db.task.findUniqueOrThrow({ where: { id: outside.id } })).toMatchObject({
+      status: "PENDING_APPROVAL",
+      deciderIds: [owner.id],
+    });
+    expect((await db.task.findUniqueOrThrow({ where: { id: started.id } })).reviewerId).toBe(
+      owner.id,
+    );
+    for (const user of [a1, a2])
+      expect(
+        await db.notification.count({
+          where: { userId: user.id, title: "Задача утверждена автоматически по новым правилам" },
+        }),
+      ).toBe(1);
+    expect(await count(manager.id, "task_status")).toBe(0);
+    // Only once.
+    expect(await migrateToRoutingV2()).toMatchObject({ done: false });
+  });
+});

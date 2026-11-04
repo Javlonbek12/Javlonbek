@@ -11,6 +11,7 @@ import {
   RotateCcw,
   Search,
   Star,
+  Trash2,
   User,
   Users,
   type LucideIcon,
@@ -137,6 +138,14 @@ export default async function TaskListPage({ searchParams }: PageProps<"/tasks">
       {params.deleted === "1" && (
         <p className="rounded-md bg-emerald-500/10 p-3 text-sm text-emerald-800 dark:text-emerald-300">
           {t("tasks.remove.done")}
+          {user.role === "OWNER" && (
+            <>
+              {" "}
+              <Link href="/tasks/trash" className="underline">
+                {t("tasks.trash.title")}
+              </Link>
+            </>
+          )}
         </p>
       )}
       {/* A plain GET form: filters live in the URL and work without JavaScript. */}
@@ -356,6 +365,15 @@ export default async function TaskListPage({ searchParams }: PageProps<"/tasks">
           )}
         </section>
       ))}
+      {user.role === "OWNER" && (
+        <Link
+          href="/tasks/trash"
+          className="text-muted-foreground hover:text-foreground flex items-center gap-1.5 self-start text-sm"
+        >
+          <Trash2 className="size-4" />
+          {t("tasks.trash.title")}
+        </Link>
+      )}
     </div>
   );
 }

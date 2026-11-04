@@ -29,7 +29,7 @@ describe("attachments API", () => {
     const owner = await createTestUser("OWNER");
     const member = await createTestUser("MEMBER");
     const outsider = await createTestUser("MEMBER");
-    const task = await createTask(owner, taskInput({ assigneeId: member.id }), "approve");
+    const task = await createTask(owner, taskInput({ assigneeId: member.id }), "create");
 
     const form = new FormData();
     form.set("file", new File(["план продаж"], "Отчёт Q4.txt", { type: "text/plain" }));

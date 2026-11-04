@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { TaskFormState } from "@/app/(app)/tasks/actions";
 import { type TranslationKey } from "@/lib/i18n";
 import { useT } from "@/components/locale-provider";
+import type { RouteHint } from "@/modules/tasks/route-hints";
 
 type Option = { id: string; label: string; isPersonal?: boolean };
 
@@ -20,7 +21,8 @@ export type TaskFormProps = {
   initial: Record<string, string>;
   // Create form: true; edit form: false (kind of task can't change).
   isNew: boolean;
-  canApprove: boolean;
+  // Create form: what happens to a team task for each possible assignee (routing v2).
+  routes?: Record<string, { plain: RouteHint; flagged: RouteHint }>;
   users: Option[];
   plans: Option[];
   projects: string[];
@@ -126,7 +128,7 @@ export function TaskForm({
   action,
   initial,
   isNew,
-  canApprove,
+  routes,
   users,
   plans,
   projects,
@@ -135,6 +137,9 @@ export function TaskForm({
   const [state, formAction, pending] = useActionState(action, { error: null, values: initial });
   const values = state.values;
   const [isPersonal, setIsPersonal] = useState(values.isPersonal === "on");
+  const [assigneeId, setAssigneeId] = useState(values.assigneeId ?? "");
+  const [needsApproval, setNeedsApproval] = useState(values.needsApproval === "on");
+  const route = routes?.[assigneeId]?.[needsApproval ? "flagged" : "plain"];
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
@@ -171,7 +176,8 @@ export function TaskForm({
             <NativeSelect
               name="assigneeId"
               required
-              defaultValue={values.assigneeId}
+              value={assigneeId}
+              onChange={(e) => setAssigneeId(e.target.value)}
               className="w-full"
             >
               {users.map((user) => (
@@ -258,19 +264,8 @@ export function TaskForm({
           </>
         ) : (
           <>
-            {canApprove && (
-              <Button type="submit" name="mode" value="approve" disabled={pending}>
-                {t("tasks.create.approve")}
-              </Button>
-            )}
-            <Button
-              type="submit"
-              name="mode"
-              value="submit"
-              variant={canApprove ? "outline" : "default"}
-              disabled={pending}
-            >
-              {t("tasks.create.submit")}
+            <Button type="submit" name="mode" value="create" disabled={pending}>
+              {t("tasks.create.create")}
             </Button>
             <Button type="submit" name="mode" value="draft" variant="outline" disabled={pending}>
               {t("tasks.create.draft")}
@@ -278,6 +273,34 @@ export function TaskForm({
           </>
         )}
       </div>
+      {isNew && !isPersonal && (
+        <div className="flex flex-col gap-2 text-sm">
+          {route && (
+            <p
+              className={
+                route.status === "APPROVED"
+                  ? "text-muted-foreground"
+                  : "rounded-md bg-amber-500/10 p-2 text-amber-800 dark:text-amber-300"
+              }
+            >
+              {route.text}
+            </p>
+          )}
+          <Label className="font-normal">
+            <input
+              type="checkbox"
+              name="needsApproval"
+              className="size-4"
+              checked={needsApproval}
+              onChange={(e) => setNeedsApproval(e.target.checked)}
+            />
+            {t("tasks.route.needsApproval")}
+          </Label>
+          <span className="text-muted-foreground text-xs">
+            {t("tasks.route.needsApprovalHint")}
+          </span>
+        </div>
+      )}
     </form>
   );
 }

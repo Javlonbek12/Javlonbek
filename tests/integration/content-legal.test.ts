@@ -107,6 +107,17 @@ describe("content: lawyer, withdrawing, moving", () => {
     await withdrawPost(author, post.id);
     expect(await status(post.id)).toBe("DRAFT");
     await expect(withdrawPost(author, post.id)).rejects.toBeInstanceOf(ContentError);
+    expect(
+      await db.notification.count({ where: { userId: author.id, title: "Пост снят с проверки" } }),
+    ).toBe(0);
+
+    // Whoever added the post takes it back: the author hears it.
+    await submitForReview(author, post.id);
+    await withdrawPost(owner, post.id);
+    expect(await status(post.id)).toBe("DRAFT");
+    expect(
+      await db.notification.count({ where: { userId: author.id, title: "Пост снят с проверки" } }),
+    ).toBe(1);
   });
 
   it("moves a post to another day: everyone with the section", async () => {

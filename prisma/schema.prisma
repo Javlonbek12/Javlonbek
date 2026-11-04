@@ -199,6 +199,21 @@ model Task {
   meetingId           String?
   // A repeating task: every copy belongs to one series (see TaskSeries).
   seriesId            String?
+  // Routing (modules/tasks/routing.ts): who decides while the task waits for approval, who
+  // accepts the result (null: the author, or nobody for the owner's own task), who approved it
+  // (null: the route started it right away) and who accepted it.
+  deciderIds          String[]
+  reviewerId          String?
+  approvedById        String?
+  acceptedById        String?
+  // The author asked for approval even where the route starts the task right away.
+  needsApproval       Boolean      @default(false)
+  // When the status last changed: waiting for a decision is counted from it.
+  statusChangedAt     DateTime     @default(now())
+  // Labels such as «отложено» from a project plan.
+  labels              String[]
+  // Imported as already done (a project plan's history), accepted by nobody here.
+  historical          Boolean      @default(false)
   // Project plan fields (see Project): phase, code from the plan ("T01"), who is responsible
   // per the plan (a group or role, e.g. "HO / аналитика"), milestone and risk marks.
   phaseId             String?
@@ -234,6 +249,19 @@ model Task {
   @@index([project])
   @@index([deleteRequestedAt])
   @@index([seriesId])
+}
+
+// A deleted team task kept for a while (Настройки → дней хранения), so the owner can restore it:
+// the task row with its comments, files, links and dependencies as they were.
+model DeletedTask {
+  id          String   @id
+  title       String
+  data        Json
+  deletedById String
+  reason      String?
+  deletedAt   DateTime @default(now())
+
+  @@index([deletedAt])
 }
 
 model TaskDependency {

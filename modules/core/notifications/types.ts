@@ -19,6 +19,9 @@ export const NOTIFICATION_TYPES = [
   "content_approved",
   "content_legal",
   "task_delete_request",
+  "task_team",
+  "task_waiting",
+  "planogram",
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];

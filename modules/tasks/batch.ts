@@ -2,7 +2,6 @@ import { t, type TranslationKey } from "@/lib/i18n";
 import type { TaskPriority } from "@/lib/generated/prisma/enums";
 import type { Actor } from "@/modules/core/permissions";
 
-import { isApprover } from "./access";
 import { TaskError } from "./errors";
 import { createTask } from "./service";
 
@@ -15,8 +14,8 @@ export type ProposedTask = {
   project: string | null;
 };
 
-// Creates tasks confirmed in a card (bot or meeting page): own tasks are personal,
-// others' are approved right away by OWNER/MANAGER or sent for approval by a MEMBER.
+// Creates tasks confirmed in a card (bot or meeting page): own tasks are personal, others' go along
+// their route (routing v2): right away inside the team, for approval to another team or upwards.
 export async function createProposedTasks(actor: Actor, tasks: ProposedTask[], meetingId?: string) {
   let saved = 0;
   let pending = 0;
@@ -39,7 +38,7 @@ export async function createProposedTasks(actor: Actor, tasks: ProposedTask[], m
           estimateHours: null,
           meetingId: meetingId ?? null,
         },
-        personal ? "draft" : isApprover(actor.role) ? "approve" : "submit",
+        personal ? "draft" : "create",
       );
       saved += 1;
       if (created.status === "PENDING_APPROVAL") pending += 1;

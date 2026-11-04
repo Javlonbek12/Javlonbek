@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { PriorityBadge, StatusBadge } from "@/components/tasks/task-badges";
+import { TaskActions } from "@/components/tasks/task-actions";
 import { TaskDeleteControl } from "@/components/tasks/task-delete";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ import { getSettings } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
 import { isClosed, oversees } from "@/modules/tasks/access";
 import { getDeleteMode } from "@/modules/tasks/delete-service";
+import { getTaskSettings } from "@/modules/tasks/settings";
 import { listAttachments, MAX_FILE_MB } from "@/modules/tasks/attachment-service";
 import { listComments } from "@/modules/tasks/comment-service";
 import { getDependencies, listBlockerCandidates } from "@/modules/tasks/dependency-service";
@@ -107,19 +109,29 @@ export default async function TaskPage({ params, searchParams }: PageProps<"/tas
   const { error, notice } = await searchParams;
   const detail = await getTaskDetail(user, id);
   if (!detail) notFound();
-  const { task, transitions, canEdit } = detail;
+  const { task, transitions, buttons, route, cancelledBlockers, canEdit } = detail;
 
-  const [settings, deps, candidates, comments, attachments, history, project, deleteMode] =
-    await Promise.all([
-      getSettings(user.id),
-      getDependencies(user, id),
-      canEdit ? listBlockerCandidates(user, id) : Promise.resolve([]),
-      listComments(id),
-      listAttachments(id),
-      getTaskHistory(id),
-      projectOfTask(task),
-      getDeleteMode(user, id),
-    ]);
+  const [
+    settings,
+    deps,
+    candidates,
+    comments,
+    attachments,
+    history,
+    project,
+    deleteMode,
+    taskSettings,
+  ] = await Promise.all([
+    getSettings(user.id),
+    getDependencies(user, id),
+    canEdit ? listBlockerCandidates(user, id) : Promise.resolve([]),
+    listComments(id),
+    listAttachments(id),
+    getTaskHistory(id),
+    projectOfTask(task),
+    getDeleteMode(user, id),
+    getTaskSettings(),
+  ]);
   const NOTICES = ["sent", "rejected", "withdrawn"] as const;
   const shownNotice = NOTICES.find((n) => n === notice);
   const deleteRequest = task.deleteRequestedAt
@@ -220,7 +232,32 @@ export default async function TaskPage({ params, searchParams }: PageProps<"/tas
           {task.atRisk && !isClosed(task.status) && (
             <Badge className="bg-amber-500 text-white">{t("projects.risk.badge")}</Badge>
           )}
+          {task.needsApproval && (
+            <Badge variant="outline">{t("tasks.decision.needsApproval")}</Badge>
+          )}
+          {task.historical && <Badge variant="outline">{t("tasks.decision.historical")}</Badge>}
+          {task.labels.map((label) => (
+            <Badge key={label} variant="secondary">
+              {label}
+            </Badge>
+          ))}
         </div>
+        {(route.deciders.length > 0 || route.reviewer || route.approvedBy || route.acceptedBy) && (
+          <ul className="text-muted-foreground flex flex-col gap-0.5 text-sm">
+            {route.deciders.length > 0 && (
+              <li className="font-medium text-amber-700 dark:text-amber-300">
+                {t("tasks.decision.waiting", { names: route.deciders.join(", ") })}
+              </li>
+            )}
+            {route.approvedBy && (
+              <li>{t("tasks.decision.approvedBy", { name: route.approvedBy })}</li>
+            )}
+            {route.reviewer && <li>{t("tasks.decision.reviewer", { name: route.reviewer })}</li>}
+            {route.acceptedBy && (
+              <li>{t("tasks.decision.acceptedBy", { name: route.acceptedBy })}</li>
+            )}
+          </ul>
+        )}
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
           {!task.isPersonal && (
             <>
@@ -303,42 +340,13 @@ export default async function TaskPage({ params, searchParams }: PageProps<"/tas
         {task.description && <p className="text-sm whitespace-pre-wrap">{task.description}</p>}
         {(transitions.length > 0 || (project && canEdit && !isClosed(task.status))) && (
           <div className="flex flex-wrap gap-2 border-t pt-3">
-            {transitions.map((to) => {
-              // The creator takes their task back from approval to change it.
-              const withdraw =
-                to === "DRAFT" && task.status === "PENDING_APPROVAL" && task.creatorId === user.id;
-              // The assignee takes their work back from review.
-              const unsubmit =
-                to === "IN_PROGRESS" &&
-                task.status === "IN_REVIEW" &&
-                task.assigneeId === user.id &&
-                task.creatorId !== user.id;
-              return (
-                <form key={to} action={changeStatusAction}>
-                  {hidden}
-                  <input type="hidden" name="to" value={to} />
-                  {withdraw && <input type="hidden" name="then" value="edit" />}
-                  <Button
-                    type="submit"
-                    size="sm"
-                    variant={
-                      withdraw || unsubmit
-                        ? "outline"
-                        : to === "CANCELLED" || to === "DRAFT"
-                          ? "ghost"
-                          : "default"
-                    }
-                    disabled={to === "DONE" && task.openBlockers > 0}
-                  >
-                    {withdraw
-                      ? t("tasks.withdraw.approval")
-                      : unsubmit
-                        ? t("tasks.withdraw.review")
-                        : t(`tasks.action.${to}`)}
-                  </Button>
-                </form>
-              );
-            })}
+            <TaskActions
+              taskId={task.id}
+              buttons={buttons}
+              action={changeStatusAction}
+              openBlockers={task.openBlockers}
+              cancelledBlockers={cancelledBlockers}
+            />
             {project && canEdit && !isClosed(task.status) && (
               <form action={setTaskRiskAction}>
                 {hidden}
@@ -360,6 +368,7 @@ export default async function TaskPage({ params, searchParams }: PageProps<"/tas
           taskId={task.id}
           mode={deleteMode}
           requested={task.deleteRequestedAt !== null}
+          trashDays={task.isPersonal ? null : taskSettings.trashDays}
         />
       </Card>
 

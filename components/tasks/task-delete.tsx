@@ -12,10 +12,13 @@ export function TaskDeleteControl({
   taskId,
   mode,
   requested,
+  trashDays,
 }: {
   taskId: string;
   mode: DeleteMode;
   requested: boolean;
+  // A team task deleted right away goes to the bin for this many days (null: a personal task).
+  trashDays: number | null;
 }) {
   if (mode === "none" || (mode === "request" && requested)) return null;
   const direct = mode === "direct";
@@ -30,14 +33,18 @@ export function TaskDeleteControl({
           {direct ? t("tasks.remove.title") : t("tasks.remove.requestTitle")}
         </span>
         <span className="text-muted-foreground text-xs">
-          {direct ? t("tasks.remove.direct") : t("tasks.remove.requestHint")}
+          {!direct
+            ? t("tasks.remove.requestHint")
+            : trashDays === null
+              ? t("tasks.remove.direct")
+              : t("tasks.remove.directTeam", { days: trashDays })}
         </span>
         <form
           action={direct ? deleteTaskAction : requestDeleteTaskAction}
           className="flex flex-col gap-2"
         >
           <input type="hidden" name="taskId" value={taskId} />
-          {!direct && (
+          {(!direct || trashDays !== null) && (
             <label className="flex flex-col gap-1 text-xs">
               {t("tasks.remove.reason")}
               <Textarea name="reason" rows={2} maxLength={500} />

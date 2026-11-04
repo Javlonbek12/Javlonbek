@@ -42,6 +42,11 @@ export default async function PriceListPage({
         show={query.created}
         text={t("planograms.library.prices.created", { count: String(query.created) })}
       />
+      {typeof query.drafts === "string" && query.drafts !== "0" && (
+        <p className="text-sm text-amber-700">
+          {t("planograms.library.prices.drafts", { count: query.drafts })}
+        </p>
+      )}
       {typeof query.unknown === "string" && (
         <p className="text-sm text-amber-700">
           {t("planograms.library.prices.unknown", { codes: query.unknown })}

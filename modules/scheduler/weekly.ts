@@ -2,14 +2,22 @@ import { db } from "@/lib/db";
 import { addDays, formatDay, fromDateString } from "@/lib/dates";
 import { t } from "@/lib/i18n";
 import { displayName } from "@/modules/core/users/display-name";
-import { CLOSED_STATUSES } from "@/modules/tasks/access";
+import type { Actor } from "@/modules/core/permissions";
+import { CLOSED_STATUSES, visibleTasksWhere } from "@/modules/tasks/access";
 
-// Friday summary for OWNER/MANAGER: team tasks only (personal tasks are private).
-export async function weeklySummaryText(weekStart: string, today: string): Promise<string> {
+// Friday summary for the owner and managers: team tasks of their own zone (personal tasks are
+// private). Without an actor: the whole team.
+export async function weeklySummaryText(
+  weekStart: string,
+  today: string,
+  actor?: Actor,
+): Promise<string> {
   const from = fromDateString(weekStart);
   const to = fromDateString(addDays(weekStart, 7));
+  const zone = actor ? visibleTasksWhere(actor) : {};
   const teamTasks = await db.task.findMany({
     where: {
+      AND: [zone],
       isPersonal: false,
       approvedAt: { not: null },
       OR: [{ status: { notIn: CLOSED_STATUSES } }, { completedAt: { gte: from, lt: to } }],
@@ -21,7 +29,9 @@ export async function weeklySummaryText(weekStart: string, today: string): Promi
       assignee: { select: { id: true, firstName: true, lastName: true } },
     },
   });
-  const pending = await db.task.count({ where: { isPersonal: false, status: "PENDING_APPROVAL" } });
+  const pending = await db.task.count({
+    where: { AND: [zone], isPersonal: false, status: "PENDING_APPROVAL" },
+  });
   const isOverdue = (task: (typeof teamTasks)[number]) =>
     !CLOSED_STATUSES.includes(task.status) &&
     task.dueDate !== null &&

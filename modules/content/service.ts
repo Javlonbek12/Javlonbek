@@ -301,11 +301,21 @@ async function reviewersOf(post: { createdById: string }, actor: Actor) {
 }
 
 // The author takes the post back from review (planner's or lawyer's) to change it.
+// Whoever added the post (a planner) may take it back too: then its author hears it (routing v2).
 export async function withdrawPost(actor: Actor, id: string) {
-  const { rights } = await load(actor, id);
+  const { post, rights } = await load(actor, id);
   if (!rights.withdraw) throw new ContentError("state");
   await db.contentPost.update({ where: { id }, data: { status: "DRAFT" } });
   await log(actor, "content.withdrawn", id);
+  if (post.authorId && post.authorId !== actor.id) {
+    const name = displayName(await db.user.findUniqueOrThrow({ where: { id: actor.id } }));
+    await notify(post.authorId, () => ({
+      type: "content_feedback",
+      title: t("notifications.events.contentWithdrawnTitle"),
+      body: t("notifications.events.contentWithdrawnBody", { title: post.title, name }),
+      link: `/content/${id}`,
+    }));
+  }
 }
 
 // Returned by the planner (review) or by the lawyer (legal check).

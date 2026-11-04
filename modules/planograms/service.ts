@@ -5,8 +5,12 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { fromDateString, isDateString } from "@/lib/dates";
 import type { Prisma } from "@/lib/generated/prisma/client";
+import { t } from "@/lib/i18n";
 import { logActivity } from "@/modules/core/activity/service";
+import { notify } from "@/modules/core/notifications/service";
 import type { Actor } from "@/modules/core/permissions";
+import { displayName } from "@/modules/core/users/display-name";
+import { loadRouting, nearestManager } from "@/modules/tasks/routing";
 
 import { canApprovePlanograms, canManagePlanograms } from "./access";
 import { autofill } from "./autofill";
@@ -253,6 +257,35 @@ export async function updateRules(actor: Actor, id: string, rules: Rule[]) {
   );
 }
 
+// Who hears about a planogram sent for approval: the sender's nearest manager (the owner when
+// there is none or they can't approve planograms), as with tasks (routing v2).
+async function approverFor(senderId: string) {
+  const { people } = await loadRouting();
+  const manager = nearestManager(people, senderId);
+  const person = people.find((p) => p.id === manager);
+  if (person && person.id !== senderId && canApprovePlanograms(person.role)) return [person.id];
+  return people.filter((p) => p.role === "OWNER" && p.id !== senderId).map((p) => p.id);
+}
+
+async function notifyPlanogram(userIds: string[], actor: Actor, id: string, title: () => string) {
+  const [planogram, author] = await Promise.all([
+    db.planogram.findUniqueOrThrow({ where: { id }, select: { title: true } }),
+    db.user.findUniqueOrThrow({ where: { id: actor.id } }),
+  ]);
+  for (const userId of new Set(userIds)) {
+    if (userId === actor.id) continue;
+    await notify(userId, () => ({
+      type: "planogram",
+      title: title(),
+      body: t("notifications.events.taskBody", {
+        title: planogram.title,
+        name: displayName(author),
+      }),
+      link: `/planograms/${id}`,
+    }));
+  }
+}
+
 export async function submitForApproval(actor: Actor, id: string) {
   const loaded = await loadDraft(actor, id);
   if (loaded.record.isTemplate) throw new PlanogramError("invalid");
@@ -263,6 +296,9 @@ export async function submitForApproval(actor: Actor, id: string) {
     entityType: "Planogram",
     entityId: id,
   });
+  await notifyPlanogram(await approverFor(actor.id), actor, id, () =>
+    t("notifications.events.planogramPendingTitle"),
+  );
 }
 
 // Approval is blocked while critical rule violations remain. The previously approved
@@ -271,7 +307,10 @@ export async function approvePlanogram(actor: Actor, id: string, now = new Date(
   requireApprover(actor);
   const loaded = await loadPlanogram(id);
   if (!loaded) throw new PlanogramError("notFound");
-  if (loaded.record.status !== "PENDING_APPROVAL" && loaded.record.status !== "DRAFT")
+  // «На утверждении» means something: someone else's draft is approved only once they send it
+  // (an approver's own draft can be approved straight away).
+  const ownDraft = loaded.record.status === "DRAFT" && loaded.record.createdById === actor.id;
+  if (loaded.record.status !== "PENDING_APPROVAL" && !ownDraft)
     throw new PlanogramError("notDraft");
   if (loaded.record.isTemplate) throw new PlanogramError("invalid");
   if (hasCritical(await validateStored(loaded))) throw new PlanogramError("critical");
@@ -296,11 +335,18 @@ export async function approvePlanogram(actor: Actor, id: string, now = new Date(
     entityType: "Planogram",
     entityId: id,
   });
+  await notifyPlanogram([loaded.record.createdById], actor, id, () =>
+    t("notifications.events.planogramApprovedTitle"),
+  );
 }
 
 export async function returnToDraft(actor: Actor, id: string) {
   const loaded = await loadDraft(actor, id);
   await db.planogram.update({ where: { id: loaded.record.id }, data: { status: "DRAFT" } });
+  if (loaded.record.status === "PENDING_APPROVAL")
+    await notifyPlanogram([loaded.record.createdById], actor, id, () =>
+      t("notifications.events.planogramReturnedTitle"),
+    );
 }
 
 export async function archivePlanogram(actor: Actor, id: string) {

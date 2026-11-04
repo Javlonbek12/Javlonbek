@@ -8,27 +8,30 @@ import { logActivity } from "@/modules/core/activity/service";
 import type { Actor } from "@/modules/core/permissions";
 import { displayName } from "@/modules/core/users/display-name";
 
-import { approverIdsFor } from "@/modules/core/access/approvers";
-
 import {
   canEditTask,
   canViewTask,
   CLOSED_STATUSES,
-  isApprover,
+  isClosed,
+  reviewerOf,
   oversight,
   visibleTasksWhere,
 } from "./access";
 import { TaskError } from "./errors";
 import { filtersWhere, scopeWhere, type Scope, type TaskFilters, type TaskSort } from "./filters";
-import { sendTaskNotices, statusChangeRecipients } from "./notifications";
+import { notifyTaskEvent, type TaskEvent } from "./notifications";
+import { loadRouting, resolveRoute } from "./routing";
 import { quickCounts, smartSort } from "./sort";
 import { visiblePlansWhere } from "./plan-service";
-import { availableTransitions, checkTransition } from "./status";
+import { taskButtons } from "./buttons";
+import { availableTransitions, checkTransition, needsReason } from "./status";
 import { canViewMeeting } from "@/modules/meetings/access";
 import { classifyByDueDate } from "./today";
 import type { RepeatInput } from "./repeat";
 import { copyMode, createDueCopies, setRepeat, startSeries } from "./repeat-service";
 import { withAccess } from "@/modules/core/access/actor";
+import { notify } from "@/modules/core/notifications/service";
+import { t } from "@/lib/i18n";
 
 const dateField = z
   .string()
@@ -67,10 +70,11 @@ export const taskInputSchema = z
 
 export type TaskInput = z.input<typeof taskInputSchema>;
 
+// "create" sends a team task along its route (it starts right away or waits for a decision);
+// "start" starts a personal one; "draft" keeps either as a draft.
 export const CREATE_MODES = {
   draft: null,
-  submit: "PENDING_APPROVAL",
-  approve: "APPROVED",
+  create: "PENDING_APPROVAL",
   start: "IN_PROGRESS",
 } as const satisfies Record<string, TaskStatus | null>;
 
@@ -103,8 +107,18 @@ export async function createTask(
   actor: Actor,
   input: TaskInput,
   mode: CreateMode = "draft",
-  // repeat: the task starts a repeating series; seriesId: the task is a copy made for one.
-  options: { repeat?: RepeatInput | null; seriesId?: string } = {},
+  // repeat: the task starts a repeating series; seriesId: the task is a copy made for one;
+  // needsApproval: the author asks for approval even where the route starts it right away;
+  // extra: project plan fields.
+  options: {
+    repeat?: RepeatInput | null;
+    seriesId?: string;
+    needsApproval?: boolean;
+    extra?: Pick<
+      Prisma.TaskUncheckedCreateInput,
+      "phaseId" | "code" | "responsible" | "isMilestone" | "atRisk" | "labels" | "historical"
+    >;
+  } = {},
 ) {
   const data = parseInput(input);
   let assigneeId = actor.id;
@@ -142,11 +156,13 @@ export async function createTask(
   const task = await db.task.create({
     data: {
       ...taskData(data),
+      ...options.extra,
       isPersonal: data.isPersonal,
       creatorId: actor.id,
       assigneeId,
       meetingId: data.meetingId ?? null,
       seriesId: options.seriesId ?? null,
+      needsApproval: !data.isPersonal && (options.needsApproval ?? false),
     },
   });
   await logActivity({
@@ -198,6 +214,9 @@ export async function updateTask(
 
   let assigneeId = task.assigneeId;
   if (!task.isPersonal && data.assigneeId && data.assigneeId !== task.assigneeId) {
+    // Only before work starts: the route is worked out again for the new assignee.
+    if (!["DRAFT", "PENDING_APPROVAL", "APPROVED"].includes(task.status))
+      throw new TaskError("assigneeLocked");
     const assignee = await db.user.findUnique({ where: { id: data.assigneeId } });
     if (!assignee) throw new TaskError("invalid");
     assigneeId = assignee.id;
@@ -220,7 +239,31 @@ export async function updateTask(
   }
   if (Object.keys(changes).length === 0) return task;
 
-  const updated = await db.task.update({ where: { id: taskId }, data: next });
+  const reroute =
+    changes.assigneeId && task.status !== "DRAFT"
+      ? await routeFor(task.creatorId, assigneeId, task.needsApproval)
+      : null;
+  const updated = await db.task.update({
+    where: { id: taskId },
+    data: {
+      ...next,
+      ...(changes.assigneeId && task.status === "DRAFT"
+        ? {
+            reviewerId: (await routeFor(task.creatorId, assigneeId, task.needsApproval)).reviewerId,
+          }
+        : {}),
+      ...(reroute
+        ? {
+            status: reroute.status,
+            deciderIds: reroute.deciderIds,
+            reviewerId: reroute.reviewerId,
+            approvedAt: reroute.status === "APPROVED" ? (task.approvedAt ?? new Date()) : null,
+            approvedById: reroute.status === "APPROVED" ? task.approvedById : null,
+            statusChangedAt: reroute.status === task.status ? task.statusChangedAt : new Date(),
+          }
+        : {}),
+    },
+  });
   await logActivity({
     actorId: actor.id,
     action: "task.updated",
@@ -229,16 +272,26 @@ export async function updateTask(
     details: changes as Prisma.InputJsonValue,
   });
 
-  // A new assignee of an already approved task must learn about it.
-  if (changes.assigneeId && task.approvedAt && assigneeId !== actor.id) {
-    const notices = statusChangeRecipients(updated, "PENDING_APPROVAL", "APPROVED", actor.id, []);
-    await sendTaskNotices(
-      notices.filter((n) => n.userId === assigneeId),
+  // The new assignee (or, if the task now waits, whoever decides) and the one taken off hear it.
+  if (reroute) {
+    const previousSaw =
+      task.approvedAt !== null ||
+      task.creatorId === task.assigneeId ||
+      task.deciderIds.includes(task.assigneeId);
+    await notifyTaskEvent(
       updated,
+      { kind: "reassigned", previousAssigneeId: task.assigneeId, previousSaw },
+      actor.id,
       await actorName(actor.id),
     );
   }
   return updated;
+}
+
+// The route of a team task from its author to an assignee, by today's reporting lines.
+async function routeFor(authorId: string, assigneeId: string, needsApproval: boolean) {
+  const { people, settings } = await loadRouting();
+  return resolveRoute(people, settings, authorId, assigneeId, needsApproval);
 }
 
 async function actorName(userId: string) {
@@ -251,18 +304,63 @@ export async function countOpenBlockers(taskId: string) {
   });
 }
 
-export async function changeStatus(actor: Actor, taskId: string, to: TaskStatus, now = new Date()) {
+// Blocking tasks that were cancelled: accepting needs a conscious «despite» (not silently, as if
+// the precondition were done).
+export async function countCancelledBlockers(taskId: string) {
+  return db.taskDependency.count({
+    where: { blockedId: taskId, blocker: { status: "CANCELLED" } },
+  });
+}
+
+export type StatusOptions = {
+  // Why: required to decline a request for approval or to return handed-in work.
+  reason?: string | null;
+  // Accept although a blocking task was cancelled.
+  despiteCancelled?: boolean;
+  now?: Date;
+};
+
+export async function changeStatus(
+  actor: Actor,
+  taskId: string,
+  requested: TaskStatus,
+  options: StatusOptions = {},
+) {
+  const now = options.now ?? new Date();
   const task = await db.task.findUnique({ where: { id: taskId } });
   if (!task || !canViewTask(actor, task)) throw new TaskError("forbidden");
-  const check = checkTransition(actor, task, to, await countOpenBlockers(taskId));
+  const check = checkTransition(actor, task, requested, await countOpenBlockers(taskId));
   if (!check.ok) throw new TaskError(check.reason);
+  const reason = options.reason?.trim().slice(0, 2000) || null;
+  if (needsReason(actor, task, requested) && !reason) throw new TaskError("reason");
+  if (
+    requested === "DONE" &&
+    !task.isPersonal &&
+    !options.despiteCancelled &&
+    (await countCancelledBlockers(taskId)) > 0
+  )
+    throw new TaskError("cancelledDependency");
+
+  // Sending a team draft: the route decides whether it starts right away or waits.
+  const route =
+    !task.isPersonal && task.status === "DRAFT" && requested === "PENDING_APPROVAL"
+      ? await routeFor(task.creatorId, task.assigneeId, task.needsApproval)
+      : null;
+  const to: TaskStatus = route ? route.status : requested;
 
   const updated = await db.task.update({
     where: { id: taskId },
     data: {
       status: to,
-      approvedAt: to === "APPROVED" && !task.approvedAt ? now : undefined,
+      statusChangedAt: now,
+      ...(route ? { deciderIds: route.deciderIds, reviewerId: route.reviewerId } : {}),
+      ...(to === "APPROVED" && !task.approvedAt
+        ? { approvedAt: now, approvedById: route ? null : actor.id }
+        : {}),
+      // Back to draft: nobody decides on it any more.
+      ...(to === "DRAFT" ? { deciderIds: [] } : {}),
       completedAt: to === "DONE" ? now : null,
+      acceptedById: to === "DONE" && !task.isPersonal ? actor.id : null,
     },
   });
   await logActivity({
@@ -270,18 +368,50 @@ export async function changeStatus(actor: Actor, taskId: string, to: TaskStatus,
     action: "task.status_changed",
     entityType: "Task",
     entityId: taskId,
-    details: { from: task.status, to },
+    details: { from: task.status, to, ...(reason ? { reason } : {}) },
   });
+  if (reason && !task.isPersonal)
+    await db.comment.create({ data: { taskId, authorId: actor.id, body: reason } });
 
-  const notices = statusChangeRecipients(
-    updated,
-    task.status,
-    to,
-    actor.id,
-    await approverIdsFor(updated),
-  );
-  await sendTaskNotices(notices, updated, await actorName(actor.id));
+  const event = statusEvent(task, updated, actor, route?.teamNoticeId ?? null, reason);
+  if (event) await notifyTaskEvent(event.task, event.event, actor.id, await actorName(actor.id));
   return updated;
+}
+
+// The notification a status change makes (routing v2, «Уведомления»).
+function statusEvent(
+  before: Task,
+  after: Task,
+  actor: Actor,
+  teamNoticeId: string | null,
+  reason: string | null,
+): { task: Task; event: TaskEvent } | null {
+  const from = before.status;
+  const to = after.status;
+  if (from === "DRAFT" && to === "APPROVED")
+    return { task: after, event: { kind: "started", teamNoticeId } };
+  if (to === "PENDING_APPROVAL") return { task: after, event: { kind: "pending" } };
+  if (from === "PENDING_APPROVAL" && to === "APPROVED")
+    return { task: after, event: { kind: "approved" } };
+  if (from === "PENDING_APPROVAL" && to === "DRAFT")
+    // Deciders are cleared on the way back: the withdrawal goes to the ones it had.
+    return before.creatorId === actor.id
+      ? { task: before, event: { kind: "withdrawn" } }
+      : { task: after, event: { kind: "rejected", reason: reason ?? "" } };
+  if (from === "APPROVED" && to === "IN_PROGRESS") return { task: after, event: { kind: "taken" } };
+  if (to === "IN_REVIEW") {
+    const reviewer = reviewerOf(after);
+    return { task: after, event: { kind: "review", reviewerIds: reviewer ? [reviewer] : [] } };
+  }
+  if (to === "DONE") return { task: after, event: { kind: "done" } };
+  if (from === "IN_REVIEW" && to === "IN_PROGRESS")
+    return { task: after, event: { kind: "rework", reason } };
+  if (to === "CANCELLED")
+    return {
+      task: before,
+      event: { kind: "cancelled", wasPending: from === "PENDING_APPROVAL", reason },
+    };
+  return null;
 }
 
 const listInclude = {
@@ -402,6 +532,22 @@ export async function getTaskDetail(actor: Actor, taskId: string) {
     },
   });
   if (!task || !canViewTask(actor, task)) return null;
+  const transitions = availableTransitions(actor, task);
+  // Who the route names (to decide, to accept the result) and who did, by name.
+  const reviewerId = task.isPersonal ? null : reviewerOf(task);
+  const ids = [...task.deciderIds, reviewerId, task.approvedById, task.acceptedById].filter(
+    (id): id is string => id !== null,
+  );
+  const people = ids.length
+    ? await db.user.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, firstName: true, lastName: true },
+      })
+    : [];
+  const name = (id: string | null) => {
+    const person = id ? people.find((p) => p.id === id) : null;
+    return person ? displayName(person) : null;
+  };
   return {
     task: {
       ...toTaskView(task),
@@ -410,7 +556,19 @@ export async function getTaskDetail(actor: Actor, taskId: string) {
       deleteRequestedBy: task.deleteRequestedBy,
       series: task.series,
     },
-    transitions: availableTransitions(actor, task),
+    transitions,
+    buttons: taskButtons(actor, task, transitions),
+    route: {
+      deciders:
+        task.status === "PENDING_APPROVAL"
+          ? task.deciderIds.map(name).filter((n): n is string => n !== null)
+          : [],
+      reviewer: reviewerId && !isClosed(task.status) ? name(reviewerId) : null,
+      approvedBy: task.approvedById !== task.creatorId ? name(task.approvedById) : null,
+      acceptedBy: task.status === "DONE" ? name(task.acceptedById) : null,
+    },
+    cancelledBlockers:
+      transitions.includes("DONE") && !task.isPersonal ? await countCancelledBlockers(task.id) : 0,
     canEdit: canEditTask(actor, task),
   };
 }
@@ -448,20 +606,27 @@ export async function getTodayOverview(actor: Actor, today: string) {
   });
   const { dueToday, overdue } = classifyByDueDate(mine.map(toTaskView), today);
 
-  // "Waiting for my decision": tasks I can approve or accept as done.
+  // "Waiting for my decision": tasks the route gave me to decide on or to accept (owners and those
+  // who oversee can also act on others', but those are not theirs to wait on).
   const candidates = await db.task.findMany({
     where: {
       AND: [
         visibleTasksWhere(actor),
-        { isPersonal: false, status: { in: ["PENDING_APPROVAL", "IN_REVIEW"] } },
-        isApprover(actor.role) ? {} : { creatorId: actor.id },
+        {
+          isPersonal: false,
+          OR: [
+            { status: "PENDING_APPROVAL", deciderIds: { has: actor.id } },
+            { status: "IN_REVIEW", NOT: { assigneeId: actor.id } },
+          ],
+        },
       ],
     },
     include: listInclude,
-    orderBy: { updatedAt: "asc" },
+    orderBy: { statusChangedAt: "asc" },
   });
   const waiting = candidates
     .filter((task: Task) => {
+      if (task.status === "IN_REVIEW" && reviewerOf(task) !== actor.id) return false;
       const transitions = availableTransitions(actor, task);
       return transitions.includes("APPROVED") || transitions.includes("DONE");
     })
@@ -502,9 +667,9 @@ export async function listAssignableUsers() {
 
 // The scheduler's part: copies of repeating tasks whose day has come, made by the series creator.
 export async function createRepeatCopies(now = new Date()) {
-  return createDueCopies(now, async (creatorId, copy, seriesId) => {
+  return createDueCopies(now, async (creatorId, copy, seriesId, previousOpenId) => {
     const creator = await withAccess(await db.user.findUniqueOrThrow({ where: { id: creatorId } }));
-    await createTask(
+    const task = await createTask(
       creator,
       {
         title: copy.title,
@@ -518,8 +683,19 @@ export async function createRepeatCopies(now = new Date()) {
         planId: null,
         estimateHours: copy.estimateMinutes === null ? null : copy.estimateMinutes / 60,
       },
-      await copyMode(creatorId, copy),
-      { seriesId },
+      copyMode(copy),
+      { seriesId, extra: previousOpenId ? { labels: [PREVIOUS_OPEN_LABEL] } : undefined },
     );
+    if (previousOpenId)
+      await notify(creatorId, () => ({
+        type: "task_status",
+        title: t("notifications.events.taskPreviousOpenTitle"),
+        body: t("notifications.events.taskBody", { title: copy.title, name: displayName(creator) }),
+        link: `/tasks/${previousOpenId}`,
+      }));
+    return task;
   });
 }
+
+// The label on a copy made while the previous task of its series was still open.
+export const PREVIOUS_OPEN_LABEL = "предыдущая не закрыта";

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { db } from "@/lib/db";
+import { createTask } from "@/modules/tasks/service";
 import { daysBetween, fromDateString, isDateString, toDateString } from "@/lib/dates";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { logActivity } from "@/modules/core/activity/service";
@@ -90,7 +91,6 @@ export async function saveProjectTask(
   projectId: string,
   taskId: string | null,
   input: z.input<typeof taskSchema>,
-  now = new Date(),
 ) {
   const project = await managed(actor, projectId);
   const parsed = taskSchema.safeParse(input);
@@ -119,22 +119,33 @@ export async function saveProjectTask(
     });
     return taskId;
   }
-  const task = await db.task.create({
-    data: {
-      ...data,
-      creatorId: actor.id,
-      assigneeId: project.leadId ?? actor.id,
-      status: "APPROVED",
-      approvedAt: now,
+  // A new task of the plan goes along the route like any task (routing v2): the project lead
+  // hears «Вам назначена задача», or whoever decides gets it for approval.
+  const assigneeId = project.leadId ?? actor.id;
+  const task = await createTask(
+    actor,
+    {
+      title: rest.title,
+      description: null,
+      isPersonal: false,
+      assigneeId,
+      startDate: startDate ?? null,
+      dueDate: dueDate ?? null,
+      priority: "MEDIUM",
       project: project.name,
+      planId: null,
+      estimateHours: null,
     },
-  });
-  await logActivity({
-    actorId: actor.id,
-    action: "task.created",
-    entityType: "Task",
-    entityId: task.id,
-  });
+    "create",
+    {
+      extra: {
+        phaseId: phaseId ?? null,
+        code: rest.code ?? null,
+        responsible: rest.responsible ?? null,
+        isMilestone: rest.isMilestone,
+      },
+    },
+  );
   return task.id;
 }
 

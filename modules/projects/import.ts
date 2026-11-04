@@ -2,8 +2,12 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { fromDateString, isDateString } from "@/lib/dates";
+import type { Prisma } from "@/lib/generated/prisma/client";
 import type { TaskPriority, TaskStatus } from "@/lib/generated/prisma/enums";
+import type { Route } from "@/modules/tasks/routing";
 import { matchUser } from "@/modules/org/import";
+
+import { notifyPlanTasks, planRoute, routeFields } from "./routing";
 
 // Loads a whole project plan at once (e.g. from the Excel plan the owner sent), as JSON:
 // { "name": "...", "team": "...", "lead": "<person's name>", "phases": [{ "title": "...", "due": "2026-10-05" }],
@@ -16,13 +20,17 @@ import { matchUser } from "@/modules/org/import";
 const text = (max: number) => z.string().trim().max(max).optional();
 const date = z.string().refine(isDateString, "date must be YYYY-MM-DD").optional();
 
-const STATUSES: Record<string, { status: TaskStatus; atRisk?: boolean }> = {
-  "не начато": { status: "APPROVED" },
-  "в работе": { status: "IN_PROGRESS" },
-  готово: { status: "DONE" },
-  риск: { status: "IN_PROGRESS", atRisk: true },
-  отложено: { status: "APPROVED" },
-};
+// Plan statuses (routing v2): «не начато» and «отложено» (with that label) go along the route like
+// a new task; «в работе» and «риск» are in progress; «готово» waits for the plan's owner to accept
+// it — straight to done only when loading history ("historical": true), and marked so.
+const STATUSES: Record<string, { status: TaskStatus | "ROUTE"; atRisk?: boolean; label?: string }> =
+  {
+    "не начато": { status: "ROUTE" },
+    "в работе": { status: "IN_PROGRESS" },
+    готово: { status: "IN_REVIEW" },
+    риск: { status: "IN_PROGRESS", atRisk: true },
+    отложено: { status: "ROUTE", label: "отложено" },
+  };
 const PRIORITIES: Record<string, TaskPriority> = {
   низкий: "LOW",
   средний: "MEDIUM",
@@ -36,6 +44,8 @@ export const projectImportSchema = z.object({
   lead: text(120),
   description: text(2000),
   replace: z.boolean().optional(),
+  // Past work: «готово» becomes done right away (not waiting for acceptance).
+  historical: z.boolean().optional(),
   phases: z.array(z.object({ title: z.string().trim().min(1).max(200), due: date })).max(50),
   tasks: z
     .array(
@@ -81,8 +91,9 @@ export async function importProject(input: unknown, now = new Date()) {
   const leadId = plan.lead ? matchUser(plan.lead, users) : null;
   const assigneeId = leadId ?? owner.id;
   const color = existing ? existing.color : (await db.project.count()) % 8;
+  const route = await planRoute(owner.id, assigneeId);
 
-  return db.$transaction(
+  const result = await db.$transaction(
     async (tx) => {
       if (existing) {
         await tx.task.deleteMany({ where: { project: plan.name } });
@@ -114,7 +125,6 @@ export async function importProject(input: unknown, now = new Date()) {
           task.participants && `Участники: ${task.participants}`,
           task.result && `Результат: ${task.result}`,
           task.comment && `Комментарий: ${task.comment}`,
-          task.status?.toLowerCase() === "отложено" && "Отложено",
         ]
           .filter(Boolean)
           .join("\n");
@@ -124,7 +134,8 @@ export async function importProject(input: unknown, now = new Date()) {
             description: description || null,
             creatorId: owner.id,
             assigneeId,
-            status: mapped.status,
+            ...statusFields(mapped.status, route, plan.historical ?? false, now),
+            labels: mapped.label ? [mapped.label] : [],
             atRisk: mapped.atRisk ?? false,
             priority: PRIORITIES[(task.priority ?? "").toLowerCase()] ?? "MEDIUM",
             project: plan.name,
@@ -134,8 +145,6 @@ export async function importProject(input: unknown, now = new Date()) {
             isMilestone: task.milestone ?? false,
             startDate: task.start ? fromDateString(task.start) : null,
             dueDate: task.due ? fromDateString(task.due) : null,
-            approvedAt: now,
-            completedAt: mapped.status === "DONE" ? now : null,
           },
         });
         if (task.code) byCode.set(task.code, created.id);
@@ -163,4 +172,27 @@ export async function importProject(input: unknown, now = new Date()) {
     },
     { timeout: 60_000 },
   );
+  await notifyPlanTasks(route, owner.id, assigneeId, plan.name, plan.tasks.length);
+  return result;
+}
+
+// The fields of a plan task in this status: a new one goes along the route; one already started
+// was approved; a finished one waits for acceptance (or, for history, is done and marked).
+function statusFields(
+  status: TaskStatus | "ROUTE",
+  route: Route,
+  historical: boolean,
+  now: Date,
+): Partial<Prisma.TaskUncheckedCreateInput> {
+  if (status === "ROUTE") return routeFields(route, now);
+  const started = {
+    reviewerId: route.reviewerId,
+    approvedAt: now,
+    statusChangedAt: now,
+  };
+  if (status !== "IN_REVIEW") return { ...started, status };
+  // Nobody accepts the owner's own task: handing it in closes it.
+  if (historical || route.reviewerId === null)
+    return { ...started, status: "DONE", completedAt: now, historical };
+  return { ...started, status: "IN_REVIEW" };
 }
