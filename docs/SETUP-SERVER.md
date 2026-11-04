@@ -75,6 +75,7 @@ GitHub → вкладка **Actions** → слева **Server** → **Run workfl
 | `deploy` | обновить код и перезапустить (после слияния в `main` — само) |
 | `logs` | 200 последних строк журнала службы из поля `service` |
 | `backup` | сделать бэкап сейчас |
+| `backup-export` | последний бэкап (база + файлы), зашифрованный вашим открытым ключом, — файлом `backup` этого запуска на 1 день; в поле `data`: `{"key": "<открытый ключ PEM>"}`. Открыть может только закрытый ключ на вашем компьютере (см. раздел 10) |
 | `restart` | перезапустить все службы |
 | `demo-add` | добавить тестовые задачи (≈ 20) и 4 тестовых сотрудников — проект «Тестовые данные» |
 | `demo-remove` | удалить все тестовые задачи и тестовых сотрудников (настоящие данные не трогаются) |
@@ -273,6 +274,26 @@ crontab -e
 
 > Копии лежат на том же сервере. Раз в неделю скачивайте свежую копию к себе:
 > `scp assistant@1.2.3.4:~/assistant-backups/db-*.sql.gz .` (команда на вашем компьютере).
+
+Без SSH-доступа с вашего компьютера — через GitHub, зашифрованно (репозиторий открытый, поэтому
+бэкап туда кладётся только так):
+
+```bash
+# один раз, на вашем компьютере: пара ключей; backup-key.pem никому не отдавайте
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -out backup-key.pem
+openssl pkey -in backup-key.pem -pubout          # этот открытый ключ — в поле data
+```
+
+GitHub → Actions → Server → `backup-export`, `data`: `{"key": "-----BEGIN PUBLIC KEY-----\n…"}`.
+Скачайте файл `backup` со страницы запуска, распакуйте и расшифруйте:
+
+```bash
+openssl pkeyutl -decrypt -inkey backup-key.pem -pkeyopt rsa_padding_mode:oaep -in backup-*.tar.enc.key -out pass
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass file:pass -in backup-*.tar.enc | tar -xf -
+rm pass
+```
+
+Получатся те же `db-….sql.gz` и `uploads-….tar.gz`, что лежат на сервере.
 
 ### Восстановление из копии
 
