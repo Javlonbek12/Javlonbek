@@ -724,6 +724,8 @@ export const en: Dictionary = {
       next: "Forward",
       more: "{count} more",
       weekdays: "Mon,Tue,Wed,Thu,Fri,Sat,Sun",
+      planned: "appears {date}",
+      plannedHint: "Upcoming repeat (not created yet)",
     },
     timeline: {
       hint: "A bar runs from the start date to the due date. An arrow means “blocks”.",
@@ -1070,6 +1072,38 @@ export const en: Dictionary = {
         save: "Save POSM",
       },
       prices: {
+        sheet: "Prices",
+        helpSheet: "How to fill in",
+        helpFrom: "Prices are taken from the latest price list: {list}.",
+        helpEdit:
+          "Change only the «Цена» (price) column, in sum, as a whole number. You may delete rows: they keep their old prices.",
+        helpUpload:
+          "Upload the file on the «Price lists» page: a new price list appears, showing which planograms change.",
+        download: "Download the template with current prices",
+        current: "Current prices",
+        listPrices: "Prices of this price list",
+        currentHint:
+          "Every SKU with its price in the latest price list «{list}». Change the prices you need and save: a new price list is made, as with an uploaded file.",
+        currentEmpty: "There are no price lists yet: enter prices and save the first one.",
+        listHint:
+          "Every SKU with this price list's price and the difference from the previous one, «{list}».",
+        listHintFirst: "Every SKU with this price list's price.",
+        editable: "The price list isn't applied yet: you can change its prices right here.",
+        readonly:
+          "The price list is applied to planograms, so its prices don't change. New prices go in «Current prices».",
+        code: "Code",
+        brand: "Brand",
+        skuName: "Name",
+        format: "Format",
+        price: "Price, sum",
+        before: "Was",
+        noPrice: "no price",
+        filter: "Find by code, brand or name",
+        changed: "Prices changed: {count}",
+        saveNew: "Save as a new price list",
+        saveList: "Save prices",
+        edited: "Prices saved: {count}.",
+        orUpload: "…or upload a filled-in template",
         title: "Price lists",
         new: "New price list (price increase)",
         name: "Name",
@@ -1122,6 +1156,9 @@ export const en: Dictionary = {
       notFound: "Not found.",
       fileTooLarge: "The file is too large.",
       badFile: "Couldn't read the file. An Excel (.xlsx) or CSV file with headers is needed.",
+      noChanges: "The prices didn't change, so there is nothing to save.",
+      applied:
+        "This price list has already been applied to planograms. Change prices in the «Current prices» table: a new price list is saved.",
     },
   },
   reports: {

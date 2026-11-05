@@ -29,7 +29,8 @@ import { availableTransitions, checkTransition, needsReason } from "./status";
 import { canViewMeeting } from "@/modules/meetings/access";
 import { classifyByDueDate } from "./today";
 import type { RepeatInput } from "./repeat";
-import { copyMode, createDueCopies, setRepeat, startSeries } from "./repeat-service";
+import { occurrencesBetween, copyDay } from "./repeat";
+import { copyMode, createDueCopies, ruleOf, setRepeat, startSeries } from "./repeat-service";
 import { withAccess } from "@/modules/core/access/actor";
 import { notify } from "@/modules/core/notifications/service";
 import { t } from "@/lib/i18n";
@@ -475,6 +476,43 @@ const scheduledWhere: Prisma.TaskWhereInput = {
   status: { not: "CANCELLED" },
   OR: [{ isPersonal: true }, { approvedAt: { not: null } }],
 };
+
+// Copies of repeating tasks that don't exist yet (they are made on their start day), for the
+// calendar: each series whose latest task the actor sees (and that fits the «Мои / Вся команда»
+// choice) shows its next due dates in [from, to), like the latest task, with the day it appears.
+export async function listPlannedRepeats(actor: Actor, scope: Scope, from: string, to: string) {
+  const series = await db.taskSeries.findMany({
+    where: { nextDate: { not: null, lt: fromDateString(to) } },
+  });
+  const planned: { key: string; dueDate: string; appearsOn: string; task: TaskView }[] = [];
+  for (const s of series) {
+    const latest = await db.task.findFirst({
+      where: { seriesId: s.id },
+      orderBy: [{ dueDate: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }],
+      select: { id: true },
+    });
+    if (!latest) continue;
+    const task = await db.task.findFirst({
+      where: { AND: [{ id: latest.id }, visibleTasksWhere(actor), scopeWhere(scope, actor)] },
+      include: listInclude,
+    });
+    if (!task) continue;
+    const span =
+      task.startDate && task.dueDate
+        ? Math.max(0, Math.round((task.dueDate.getTime() - task.startDate.getTime()) / 86_400_000))
+        : 0;
+    for (const due of occurrencesBetween(ruleOf(s), toDateString(s.nextDate!), from, to))
+      planned.push({
+        key: `${s.id}:${due}`,
+        dueDate: due,
+        appearsOn: copyDay(due, span),
+        task: toTaskView(task),
+      });
+  }
+  return planned.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+}
+
+export type PlannedRepeat = Awaited<ReturnType<typeof listPlannedRepeats>>[number];
 
 export async function listTasksDueBetween(actor: Actor, scope: Scope, from: string, to: string) {
   const tasks = await db.task.findMany({

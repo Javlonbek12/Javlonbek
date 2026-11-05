@@ -1,4 +1,13 @@
-import { CalendarDays, ChevronLeft, ChevronRight, Folder, Lock, Users, Video } from "lucide-react";
+import {
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Folder,
+  Lock,
+  Repeat,
+  Users,
+  Video,
+} from "lucide-react";
 import Link from "next/link";
 
 import { Ring } from "@/components/dashboard/ring";
@@ -25,7 +34,12 @@ import {
   shiftCalendar,
 } from "@/modules/tasks/calendar";
 import { parseTaskFilters } from "@/modules/tasks/filters";
-import { listTasksDueBetween, type TaskView } from "@/modules/tasks/service";
+import {
+  listPlannedRepeats,
+  listTasksDueBetween,
+  type PlannedRepeat,
+  type TaskView,
+} from "@/modules/tasks/service";
 import { isOverdue } from "@/modules/tasks/today";
 
 type Meeting = Awaited<ReturnType<typeof listMeetingsBetween>>[number];
@@ -95,6 +109,35 @@ function TaskItem({ task, today, compact }: { task: TaskView; today: string; com
   );
 }
 
+// A copy of a repeating task that doesn't exist yet: it appears on its start day. Faint and dashed,
+// with that day; it opens the latest task of the series.
+function PlannedItem({ item, compact }: { item: PlannedRepeat; compact?: boolean }) {
+  const body = (
+    <>
+      <span className="flex items-center gap-1.5 font-medium">
+        <Repeat className="size-3 shrink-0" />
+        <span className="truncate">{item.task.title}</span>
+      </span>
+      <span className="truncate pl-4 text-[11px] opacity-80">
+        {t("tasks.calendar.planned", { date: formatDay(item.appearsOn) })}
+      </span>
+    </>
+  );
+  const className =
+    "text-muted-foreground border-muted-foreground/40 flex flex-col gap-0.5 rounded-lg border border-dashed px-2 py-1.5 text-xs";
+  return compact ? (
+    <span className={cn(className, "hidden md:flex")}>{body}</span>
+  ) : (
+    <Link
+      href={`/tasks/${item.task.id}`}
+      title={t("tasks.calendar.plannedHint")}
+      className={cn(className, "hover:bg-accent/60")}
+    >
+      {body}
+    </Link>
+  );
+}
+
 function MeetingItem({
   meeting,
   timezone,
@@ -135,8 +178,9 @@ export default async function CalendarPage({ searchParams }: PageProps<"/tasks/c
   const { scope } = parseTaskFilters(params);
   const { days, from, to } = calendarRange(mode, date);
   const { timezone } = await getSettings(user.id);
-  const [tasks, todayTasks, meetings] = await Promise.all([
+  const [tasks, planned, todayTasks, meetings] = await Promise.all([
     listTasksDueBetween(user, scope, from, to),
+    listPlannedRepeats(user, scope, from, to),
     listTasksDueBetween(user, scope, today, addDays(today, 1)),
     // Meetings: "mine" = I take part; "team" = every meeting I can see.
     listMeetingsBetween(
@@ -153,6 +197,9 @@ export default async function CalendarPage({ searchParams }: PageProps<"/tasks/c
   }
   const byDay = new Map<string, TaskView[]>();
   for (const task of tasks) byDay.set(task.dueDate!, [...(byDay.get(task.dueDate!) ?? []), task]);
+  const plannedByDay = new Map<string, PlannedRepeat[]>();
+  for (const item of planned)
+    plannedByDay.set(item.dueDate, [...(plannedByDay.get(item.dueDate) ?? []), item]);
 
   const href = (next: Partial<{ mode: string; date: string; scope: string }>) =>
     `/tasks/calendar?${new URLSearchParams({ mode, date, scope, ...next })}`;
@@ -299,10 +346,12 @@ export default async function CalendarPage({ searchParams }: PageProps<"/tasks/c
             <div className="grid grid-cols-7">
               {days.map((day, i) => {
                 const list = byDay.get(day) ?? [];
+                const future = plannedByDay.get(day) ?? [];
                 const dayMeetings = meetingsByDay.get(day) ?? [];
                 const inMonth = day.slice(0, 7) === date.slice(0, 7);
-                const total = list.length + dayMeetings.length;
+                const total = list.length + future.length + dayMeetings.length;
                 const shown = Math.max(0, 3 - dayMeetings.slice(0, 2).length);
+                const shownPlanned = Math.max(0, shown - list.length);
                 return (
                   <Link
                     key={day}
@@ -332,10 +381,20 @@ export default async function CalendarPage({ searchParams }: PageProps<"/tasks/c
                     {list.slice(0, shown).map((task) => (
                       <TaskItem key={task.id} task={task} today={today} compact />
                     ))}
-                    {total > dayMeetings.slice(0, 2).length + shown && (
+                    {future.slice(0, shownPlanned).map((item) => (
+                      <PlannedItem key={item.key} item={item} compact />
+                    ))}
+                    {total >
+                      dayMeetings.slice(0, 2).length +
+                        Math.min(list.length, shown) +
+                        Math.min(future.length, shownPlanned) && (
                       <span className="text-muted-foreground hidden pl-1 text-[11px] md:block">
                         {t("tasks.calendar.more", {
-                          count: total - dayMeetings.slice(0, 2).length - shown,
+                          count:
+                            total -
+                            dayMeetings.slice(0, 2).length -
+                            Math.min(list.length, shown) -
+                            Math.min(future.length, shownPlanned),
                         })}
                       </span>
                     )}
@@ -376,6 +435,9 @@ export default async function CalendarPage({ searchParams }: PageProps<"/tasks/c
                 {(byDay.get(day) ?? []).map((task) => (
                   <TaskItem key={task.id} task={task} today={today} />
                 ))}
+                {(plannedByDay.get(day) ?? []).map((item) => (
+                  <PlannedItem key={item.key} item={item} />
+                ))}
               </section>
             ))}
           </div>
@@ -386,7 +448,12 @@ export default async function CalendarPage({ searchParams }: PageProps<"/tasks/c
             {(meetingsByDay.get(date) ?? []).map((m) => (
               <MeetingItem key={m.id} meeting={m} timezone={timezone} />
             ))}
-            {(byDay.get(date) ?? []).length === 0 && !meetingsByDay.has(date) ? (
+            {(plannedByDay.get(date) ?? []).map((item) => (
+              <PlannedItem key={item.key} item={item} />
+            ))}
+            {(byDay.get(date) ?? []).length === 0 &&
+            !meetingsByDay.has(date) &&
+            !plannedByDay.has(date) ? (
               <p className="text-muted-foreground bg-card rounded-2xl border p-6 text-center text-sm">
                 {t("tasks.empty")}
               </p>
@@ -491,6 +558,10 @@ export default async function CalendarPage({ searchParams }: PageProps<"/tasks/c
               {t(`tasks.look.${label}`)}
             </span>
           ))}
+          <span className="flex items-center gap-2.5 text-sm">
+            <span className="border-muted-foreground/60 size-3 rounded-full border border-dashed" />
+            {t("tasks.calendar.plannedHint")}
+          </span>
         </div>
       </aside>
     </div>

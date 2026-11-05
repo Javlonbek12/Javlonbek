@@ -23,6 +23,7 @@ import {
   insertSkuEverywhere,
   replaceSkuEverywhere,
 } from "@/modules/planograms/mass";
+import { savePricesAsNewList, updatePriceListPrices } from "@/modules/planograms/price-table";
 import { applyPriceList } from "@/modules/planograms/pricing";
 import { loadPlanogram, parseShelftalkers } from "@/modules/planograms/repository";
 import {
@@ -313,5 +314,34 @@ export async function approveAllPendingAction() {
       }
     }
     return `/planograms/mass?approved=${approved}`;
+  });
+}
+
+// Prices typed in the price table: a new price list from «Актуальные цены», or the prices of a
+// list that isn't applied yet, changed in place.
+export async function savePricesAction(formData: FormData) {
+  const user = await actor();
+  const edits = new Map<string, number | null>();
+  for (const [key, value] of formData.entries()) {
+    if (!key.startsWith("price.") || typeof value !== "string") continue;
+    const text = value.replace(/[\s\u00a0]/g, "").replace(",", ".");
+    edits.set(key.slice("price.".length), text ? Number(text) : null);
+  }
+  const listId = str(formData, "listId");
+  if (listId) {
+    const id = idSchema.parse(listId);
+    await run(`/planograms/prices/${id}`, async () => {
+      const count = await updatePriceListPrices(user, id, edits);
+      return `/planograms/prices/${id}?edited=${count}`;
+    });
+    return;
+  }
+  await run("/planograms/prices", async () => {
+    const list = await savePricesAsNewList(
+      user,
+      { name: str(formData, "name"), effectiveFrom: str(formData, "effectiveFrom") },
+      edits,
+    );
+    return `/planograms/prices/${list.id}`;
   });
 }

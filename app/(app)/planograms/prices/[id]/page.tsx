@@ -10,9 +10,12 @@ import { t } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { canApprovePlanograms } from "@/modules/planograms/access";
 import { formatPrice } from "@/modules/planograms/prices";
+import { PriceTable } from "@/components/planograms/price-table";
+import { canManagePlanograms } from "@/modules/planograms/access";
+import { priceTable } from "@/modules/planograms/price-table";
 import { previewPriceList } from "@/modules/planograms/pricing";
 
-import { applyPriceListAction } from "../../actions";
+import { applyPriceListAction, savePricesAction } from "../../actions";
 
 export default async function PriceListPage({
   params,
@@ -23,7 +26,8 @@ export default async function PriceListPage({
   const query = await searchParams;
   const list = await db.priceList.findUnique({ where: { id } });
   if (!list) notFound();
-  const preview = await previewPriceList(id);
+  const [preview, table] = await Promise.all([previewPriceList(id), priceTable(id)]);
+  const editable = !list.appliedAt && canManagePlanograms(user.role);
   const skus = await db.sku.findMany({
     where: { id: { in: preview.flatMap((p) => p.changes.map((c) => c.skuId)) } },
   });
@@ -38,6 +42,10 @@ export default async function PriceListPage({
         {formatDay(toDateString(list.effectiveFrom))}
       </h2>
       <PlanogramErrorNote error={query.error} />
+      <SavedNote
+        show={query.edited}
+        text={t("planograms.library.prices.edited", { count: String(query.edited) })}
+      />
       <SavedNote
         show={query.created}
         text={t("planograms.library.prices.created", { count: String(query.created) })}
@@ -95,6 +103,27 @@ export default async function PriceListPage({
           <Button type="submit">{t("planograms.library.prices.apply")}</Button>
         </form>
       )}
+
+      <Card className="gap-3">
+        <CardTitle>{t("planograms.library.prices.listPrices")}</CardTitle>
+        <p className="text-muted-foreground text-sm">
+          {table.previous
+            ? t("planograms.library.prices.listHint", { list: table.previous.name })
+            : t("planograms.library.prices.listHintFirst")}{" "}
+          {editable
+            ? t("planograms.library.prices.editable")
+            : list.appliedAt
+              ? t("planograms.library.prices.readonly")
+              : ""}
+        </p>
+        <PriceTable
+          rows={table.rows}
+          editable={editable}
+          action={savePricesAction}
+          hidden={{ listId: list.id }}
+          submit={t("planograms.library.prices.saveList")}
+        />
+      </Card>
     </div>
   );
 }
