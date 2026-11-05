@@ -1,6 +1,8 @@
+import { Download } from "lucide-react";
 import Link from "next/link";
 
 import { PlanogramErrorNote } from "@/components/planograms/error-note";
+import { PriceTable } from "@/components/planograms/price-table";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,18 +11,29 @@ import { formatDay, toDateString } from "@/lib/dates";
 import { t } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { canManagePlanograms } from "@/modules/planograms/access";
+import { priceTable } from "@/modules/planograms/price-table";
 import { listPriceLists } from "@/modules/planograms/pricing";
+
+import { savePricesAction } from "../actions";
 
 export default async function PricesPage({ searchParams }: PageProps<"/planograms/prices">) {
   const user = await requireUser();
   const { error } = await searchParams;
-  const lists = await listPriceLists();
+  const [lists, current] = await Promise.all([listPriceLists(), priceTable()]);
   return (
     <div className="flex flex-col gap-4">
       <PlanogramErrorNote error={error} />
       {canManagePlanograms(user.role) && (
         <Card className="gap-2">
-          <CardTitle>{t("planograms.library.prices.new")}</CardTitle>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardTitle>{t("planograms.library.prices.new")}</CardTitle>
+            <Button asChild variant="outline" size="sm">
+              <a href="/api/planograms/price-lists/template">
+                <Download />
+                {t("planograms.library.prices.download")}
+              </a>
+            </Button>
+          </div>
           <p className="text-muted-foreground text-xs">{t("planograms.library.prices.hint")}</p>
           <form
             action="/api/planograms/price-lists"
@@ -73,6 +86,33 @@ export default async function PricesPage({ searchParams }: PageProps<"/planogram
           </li>
         ))}
       </ul>
+
+      <Card className="gap-3">
+        <CardTitle>{t("planograms.library.prices.current")}</CardTitle>
+        <p className="text-muted-foreground text-sm">
+          {current.list
+            ? t("planograms.library.prices.currentHint", { list: current.list.name })
+            : t("planograms.library.prices.currentEmpty")}
+        </p>
+        <PriceTable
+          rows={current.rows}
+          editable={canManagePlanograms(user.role)}
+          action={savePricesAction}
+          submit={t("planograms.library.prices.saveNew")}
+          head={
+            <>
+              <Label className="flex-col items-start">
+                {t("planograms.library.prices.name")}
+                <Input name="name" required maxLength={100} className="w-56" />
+              </Label>
+              <Label className="flex-col items-start">
+                {t("planograms.library.prices.effectiveFrom")}
+                <Input type="date" name="effectiveFrom" required />
+              </Label>
+            </>
+          }
+        />
+      </Card>
     </div>
   );
 }

@@ -7,7 +7,9 @@ export type PlanogramErrorCode =
   | "inUse"
   | "notFound"
   | "fileTooLarge"
-  | "badFile";
+  | "badFile"
+  | "noChanges"
+  | "applied";
 
 // `code` maps to planograms.errors.* in the i18n dictionary.
 export class PlanogramError extends Error {
