@@ -13,7 +13,9 @@ export function TaskDeleteControl({
   mode,
   requested,
   trashDays,
+  back,
 }: {
+  back?: string;
   taskId: string;
   mode: DeleteMode;
   requested: boolean;
@@ -44,6 +46,7 @@ export function TaskDeleteControl({
           className="flex flex-col gap-2"
         >
           <input type="hidden" name="taskId" value={taskId} />
+          {back && <input type="hidden" name="back" value={back} />}
           {(!direct || trashDays !== null) && (
             <label className="flex flex-col gap-1 text-xs">
               {t("tasks.remove.reason")}

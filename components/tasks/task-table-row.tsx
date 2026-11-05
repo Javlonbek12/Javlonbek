@@ -1,5 +1,6 @@
 import { AlertCircle, CalendarDays, Folder, Lock, Minus, Repeat } from "lucide-react";
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { daysBetween, formatDay } from "@/lib/dates";
@@ -24,19 +25,37 @@ export const initials = (person: { firstName: string; lastName?: string | null }
 
 // One task in the list: title with badges and a line of the description, the due date (with
 // "overdue by N days" / "in N days"), importance, project and the assignee.
-export function TaskTableRow({ task, today }: { task: TaskView; today: string }) {
+// The list opens the task in the panel next to it (`href`); the round button before the title
+// (`circle`) takes the next step towards closing it.
+export function TaskTableRow({
+  task,
+  today,
+  href,
+  circle,
+  selected = false,
+}: {
+  task: TaskView;
+  today: string;
+  href?: string;
+  circle?: ReactNode;
+  selected?: boolean;
+}) {
   const overdue = isOverdue(task, today);
   const days = task.dueDate ? daysBetween(today, task.dueDate) : null;
   return (
     <li
       className={cn(
-        "bg-card shadow-card hover:border-primary/30 relative rounded-2xl border transition-colors",
+        "bg-card shadow-card hover:border-primary/30 relative flex items-start rounded-2xl border transition-colors",
         overdue && "border-l-destructive border-l-4",
+        selected && "border-primary ring-primary/30 ring-2",
       )}
     >
+      {circle && <div className="py-4 pl-3.5 md:self-center md:py-0 md:pl-4">{circle}</div>}
       <Link
-        href={`/tasks/${task.id}`}
-        className="grid gap-x-5 gap-y-2.5 p-3.5 md:grid-cols-[minmax(0,1fr)_8.5rem_7.5rem_minmax(0,10rem)_minmax(0,11rem)] md:items-center md:px-5"
+        href={href ?? `/tasks/${task.id}`}
+        scroll={false}
+        aria-current={selected ? "true" : undefined}
+        className="grid min-w-0 flex-1 gap-x-5 gap-y-2.5 p-3.5 md:grid-cols-[minmax(0,1fr)_8.5rem_7.5rem_minmax(0,10rem)_minmax(0,11rem)] md:items-center md:px-5"
       >
         <span className="flex min-w-0 flex-col gap-1">
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">

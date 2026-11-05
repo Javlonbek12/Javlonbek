@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
+import { QuickCircle } from "@/components/tasks/quick-circle";
+import { TaskPanel } from "@/components/tasks/task-panel";
 import { TaskTableRow } from "@/components/tasks/task-table-row";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -32,9 +34,12 @@ import {
   listProjects,
   listTaskPeople,
   listTasks,
+  type TaskView,
 } from "@/modules/tasks/service";
 import { displayName } from "@/modules/core/users/display-name";
 import { bucketOf, BUCKETS } from "@/modules/tasks/sort";
+import { withParams } from "@/modules/tasks/back";
+import { quickTarget } from "@/modules/tasks/quick";
 
 // Quick filters: each one sets the due date and importance filters. Each has its colour and icon.
 const CHIPS = [
@@ -133,8 +138,30 @@ export default async function TaskListPage({ searchParams }: PageProps<"/tasks">
         })).filter((g) => g.tasks.length)
       : null;
 
-  return (
-    <div className="flex flex-col gap-4">
+  // The task opened next to the list (?task=…): the list stays, the panel shows the card.
+  const listHref = hrefWith(filters, {});
+  const openId = typeof params.task === "string" ? params.task : null;
+  const here = openId ? withParams(listHref, { task: openId }) : listHref;
+  const rowProps = (task: TaskView) => {
+    const target = quickTarget(user, task);
+    return {
+      href: withParams(listHref, { task: task.id }),
+      selected: task.id === openId,
+      circle: (
+        <QuickCircle
+          taskId={task.id}
+          status={task.status}
+          target={target}
+          accepts={target === "DONE" && !task.isPersonal && task.assigneeId !== user.id}
+          blocked={target === "DONE" && task.openBlockers > 0}
+          back={here}
+        />
+      ),
+    };
+  };
+
+  const list = (
+    <div className="flex min-w-0 flex-col gap-4">
       {params.deleted === "1" && (
         <p className="rounded-md bg-emerald-500/10 p-3 text-sm text-emerald-800 dark:text-emerald-300">
           {t("tasks.remove.done")}
@@ -359,7 +386,7 @@ export default async function TaskListPage({ searchParams }: PageProps<"/tasks">
           ) : (
             <ul className="flex flex-col gap-2">
               {group.tasks.map((task) => (
-                <TaskTableRow key={task.id} task={task} today={today} />
+                <TaskTableRow key={task.id} task={task} today={today} {...rowProps(task)} />
               ))}
             </ul>
           )}
@@ -375,5 +402,12 @@ export default async function TaskListPage({ searchParams }: PageProps<"/tasks">
         </Link>
       )}
     </div>
+  );
+  if (!openId) return list;
+  return (
+    <>
+      {list}
+      <TaskPanel user={user} taskId={openId} base={here} closeHref={listHref} params={params} />
+    </>
   );
 }

@@ -11,6 +11,7 @@ import { displayName } from "@/modules/core/users/display-name";
 import {
   canEditTask,
   canViewTask,
+  canControl,
   CLOSED_STATUSES,
   isClosed,
   reviewerOf,
@@ -592,22 +593,9 @@ export async function listProjects(actor: Actor) {
   return rows.map((row) => row.project!).filter(Boolean);
 }
 
-export async function getTodayOverview(actor: Actor, today: string) {
-  const mine = await db.task.findMany({
-    where: {
-      AND: [
-        visibleTasksWhere(actor),
-        { assigneeId: actor.id, status: { notIn: CLOSED_STATUSES } },
-        { dueDate: { lte: fromDateString(today) } },
-      ],
-    },
-    include: listInclude,
-    orderBy: [{ dueDate: "asc" }, { priority: "desc" }],
-  });
-  const { dueToday, overdue } = classifyByDueDate(mine.map(toTaskView), today);
-
-  // "Waiting for my decision": tasks the route gave me to decide on or to accept (owners and those
-  // who oversee can also act on others', but those are not theirs to wait on).
+// "Waiting for my decision": tasks the route gave me to decide on or to accept (owners and those
+// who oversee can also act on others', but those are not theirs to wait on).
+export async function listWaitingDecisions(actor: Actor) {
   const candidates = await db.task.findMany({
     where: {
       AND: [
@@ -624,13 +612,62 @@ export async function getTodayOverview(actor: Actor, today: string) {
     include: listInclude,
     orderBy: { statusChangedAt: "asc" },
   });
-  const waiting = candidates
+  return candidates
     .filter((task: Task) => {
       if (task.status === "IN_REVIEW" && reviewerOf(task) !== actor.id) return false;
       const transitions = availableTransitions(actor, task);
       return transitions.includes("APPROVED") || transitions.includes("DONE");
     })
     .map(toTaskView);
+}
+
+// Everything that waits for the actor's decision (the «Ждут решения» view): tasks to approve,
+// work to accept, and requests to delete tasks they control.
+export async function listDecisions(actor: Actor) {
+  const [waiting, removals] = await Promise.all([
+    listWaitingDecisions(actor),
+    db.task.findMany({
+      where: {
+        AND: [
+          visibleTasksWhere(actor),
+          {
+            isPersonal: false,
+            deleteRequestedAt: { not: null },
+            NOT: { deleteRequestedById: actor.id },
+          },
+        ],
+      },
+      include: listInclude,
+      orderBy: { deleteRequestedAt: "asc" },
+    }),
+  ]);
+  return {
+    approve: waiting.filter((task) => task.status === "PENDING_APPROVAL"),
+    accept: waiting.filter((task) => task.status === "IN_REVIEW"),
+    remove: removals.filter((task) => canControl(actor, task)).map(toTaskView),
+  };
+}
+
+export async function countDecisions(actor: Actor) {
+  const { approve, accept, remove } = await listDecisions(actor);
+  return approve.length + accept.length + remove.length;
+}
+
+export async function getTodayOverview(actor: Actor, today: string) {
+  const mine = await db.task.findMany({
+    where: {
+      AND: [
+        visibleTasksWhere(actor),
+        { assigneeId: actor.id, status: { notIn: CLOSED_STATUSES } },
+        { dueDate: { lte: fromDateString(today) } },
+      ],
+    },
+    include: listInclude,
+    orderBy: [{ dueDate: "asc" }, { priority: "desc" }],
+  });
+  const { dueToday, overdue } = classifyByDueDate(mine.map(toTaskView), today);
+
+  const waiting = await listWaitingDecisions(actor);
 
   return { dueToday, overdue, waiting };
 }

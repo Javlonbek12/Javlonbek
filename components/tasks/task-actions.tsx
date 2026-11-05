@@ -13,7 +13,13 @@ export function TaskActions({
   action,
   openBlockers,
   cancelledBlockers,
+  back,
+  only,
 }: {
+  // Where to come back after the change (the page, or the list with the panel open).
+  back?: string;
+  // Only these buttons (the panel's main button); all by default.
+  only?: (button: TaskButton) => boolean;
   taskId: string;
   buttons: TaskButton[];
   action: (formData: FormData) => Promise<void>;
@@ -23,11 +29,12 @@ export function TaskActions({
   const hidden = (button: TaskButton) => (
     <>
       <input type="hidden" name="taskId" value={taskId} />
+      {back && <input type="hidden" name="back" value={back} />}
       <input type="hidden" name="to" value={button.to} />
       {button.then && <input type="hidden" name="then" value={button.then} />}
     </>
   );
-  return buttons.map((button) => {
+  return buttons.filter(only ?? (() => true)).map((button) => {
     const blocked = button.to === "DONE" && openBlockers > 0;
     const despite = button.to === "DONE" && cancelledBlockers > 0;
     if (!button.reason && !despite)

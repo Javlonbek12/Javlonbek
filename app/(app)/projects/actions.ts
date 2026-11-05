@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { safeBack, withParams } from "@/modules/tasks/back";
 import { requireUser } from "@/modules/core/auth/current-user";
 import {
   deletePhase,
@@ -72,8 +73,9 @@ export async function setTaskRiskAction(form: FormData) {
     if (!(error instanceof ProjectError)) throw error;
   }
   revalidatePath("/projects", "layout");
-  revalidatePath(`/tasks/${taskId}`);
-  redirect(`/tasks/${taskId}`);
+  revalidatePath("/tasks", "layout");
+  // Back to the task page or to the list with the task panel open.
+  redirect(withParams(safeBack(str(form, "back"), `/tasks/${encodeURIComponent(taskId)}`), {}));
 }
 
 async function planAction(

@@ -2,6 +2,7 @@
 
 import {
   CalendarDays,
+  ClipboardCheck,
   ChartNoAxesGantt,
   Columns3,
   ListChecks,
@@ -21,9 +22,11 @@ const TABS = [
   { href: "/tasks/calendar", key: "tasks.views.calendar", icon: CalendarDays },
   { href: "/tasks/timeline", key: "tasks.views.timeline", icon: ChartNoAxesGantt },
   { href: "/tasks/plans", key: "tasks.views.plans", icon: NotebookTabs },
+  { href: "/tasks/decide", key: "tasks.views.decide", icon: ClipboardCheck },
 ] as const;
 
-export function TaskTabs() {
+// `decisions`: how many tasks wait for the user's decision (shown on «Ждут решения»).
+export function TaskTabs({ decisions }: { decisions: number }) {
   const t = useT();
   const pathname = usePathname();
   const active = (href: string) =>
@@ -62,6 +65,11 @@ export function TaskTabs() {
               >
                 <Icon className="size-4" />
                 {t(key)}
+                {href === "/tasks/decide" && decisions > 0 && (
+                  <span className="rounded-full bg-amber-500 px-1.5 text-xs font-semibold text-white">
+                    {decisions}
+                  </span>
+                )}
               </Link>
             </li>
           ))}

@@ -4,8 +4,17 @@ import { db } from "@/lib/db";
 import { runSchedulerTick } from "@/modules/scheduler/tick";
 import { addComment } from "@/modules/tasks/comment-service";
 import { migrateToRoutingV2 } from "@/modules/tasks/migrate-v2";
+import { completeTask, updateTaskField } from "@/modules/tasks/quick-actions";
 import { saveTaskSettings } from "@/modules/tasks/settings";
-import { changeStatus, createTask, getTaskDetail, updateTask } from "@/modules/tasks/service";
+import { requestTaskDeletion } from "@/modules/tasks/delete-service";
+import {
+  changeStatus,
+  countDecisions,
+  createTask,
+  getTaskDetail,
+  listDecisions,
+  updateTask,
+} from "@/modules/tasks/service";
 import { createTestUser, resetDb } from "@/tests/helpers/db";
 import { taskInput } from "@/tests/helpers/tasks";
 
@@ -99,6 +108,67 @@ describe("routing v2", () => {
     await runSchedulerTick(new Date("2026-10-05T04:00:00Z"), { writeDigest });
     expect(await count(a1.id, "task_waiting")).toBe(1);
     expect(await count(manager.id, "task_waiting")).toBe(0);
+  });
+
+  it("the panel changes one field at a time under the same rules", async () => {
+    const { owner, a1, a2, loose } = await company();
+    const task = await createTask(
+      a1,
+      taskInput({ assigneeId: a2.id, dueDate: "2026-11-10", project: "Тестовый проект" }),
+      "create",
+    );
+    await updateTaskField(a1, task.id, "priority", "URGENT");
+    await updateTaskField(a1, task.id, "dueDate", "2026-11-12");
+    expect(await db.task.findUniqueOrThrow({ where: { id: task.id } })).toMatchObject({
+      priority: "URGENT",
+      project: "Тестовый проект",
+      dueDate: new Date("2026-11-12T00:00:00Z"),
+    });
+    // A new assignee outside the team: the route is worked out again.
+    expect(await updateTaskField(a1, task.id, "assigneeId", loose.id)).toMatchObject({
+      status: "PENDING_APPROVAL",
+      deciderIds: [owner.id],
+    });
+    // Someone who can't edit it can't change a field either.
+    await expect(updateTaskField(a2, task.id, "priority", "LOW")).rejects.toMatchObject({
+      code: "forbidden",
+    });
+
+    // The round button: the assignee hands in, the author accepts.
+    await updateTaskField(a1, task.id, "assigneeId", a2.id);
+    expect(await completeTask(a2, task.id)).toBe("IN_REVIEW");
+    expect(await completeTask(a1, task.id)).toBe("DONE");
+  });
+
+  it("«Ждут решения»: what to approve, what to accept, what they ask to delete", async () => {
+    const { manager, a1, a2 } = await company();
+    const flagged = await createTask(
+      a1,
+      taskInput({ title: "Утвердить", assigneeId: a2.id }),
+      "create",
+      {
+        needsApproval: true,
+      },
+    );
+    const own = await createTask(a1, taskInput({ title: "Принять", assigneeId: a1.id }), "create");
+    await changeStatus(a1, own.id, "IN_PROGRESS");
+    await changeStatus(a1, own.id, "IN_REVIEW");
+    const doomed = await createTask(
+      a1,
+      taskInput({ title: "Удалить", assigneeId: a2.id }),
+      "create",
+    );
+    await changeStatus(a2, doomed.id, "IN_PROGRESS");
+    await requestTaskDeletion(a1, doomed.id, "Дубль");
+
+    const decisions = await listDecisions(manager);
+    expect(decisions.approve.map((t) => t.id)).toEqual([flagged.id]);
+    expect(decisions.accept.map((t) => t.id)).toEqual([own.id]);
+    expect(decisions.remove.map((t) => t.id)).toEqual([doomed.id]);
+    expect(await countDecisions(manager)).toBe(3);
+    // The one who asked doesn't decide on their own request; the employees decide nothing here.
+    expect(await countDecisions(a1)).toBe(0);
+    expect(await countDecisions(a2)).toBe(0);
   });
 
   it("@mentions in a comment reach those who can see the task", async () => {
