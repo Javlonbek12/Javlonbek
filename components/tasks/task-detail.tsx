@@ -91,7 +91,15 @@ function historyText(action: string, details: unknown): string {
 }
 
 // "каждую неделю, по дням: пн, ср · до 31 дек. · следующая: 9 нояб."
-function repeatSummary(series: TaskSeries): string {
+// A date of the rule, with its year when it is not this year («до 5 дек. 2027»).
+function ruleDay(value: Date, today: string): string {
+  const day = toDateString(value);
+  return day.slice(0, 4) === today.slice(0, 4)
+    ? formatDay(day)
+    : `${formatDay(day)} ${day.slice(0, 4)}`;
+}
+
+function repeatSummary(series: TaskSeries, today: string): string {
   const unit = t(`tasks.repeat.unit.${series.frequency}`);
   const parts = [
     series.interval > 1
@@ -111,10 +119,10 @@ function repeatSummary(series: TaskSeries): string {
     parts.push(t("tasks.repeat.summary.monthDay", { day: series.monthDay }));
   const text = [parts.join(", ")];
   if (series.until)
-    text.push(t("tasks.repeat.summary.until", { date: formatDay(toDateString(series.until)) }));
+    text.push(t("tasks.repeat.summary.until", { date: ruleDay(series.until, today) }));
   text.push(
     series.nextDate
-      ? t("tasks.repeat.summary.next", { date: formatDay(toDateString(series.nextDate)) })
+      ? t("tasks.repeat.summary.next", { date: ruleDay(series.nextDate, today) })
       : t("tasks.repeat.summary.stopped"),
   );
   return text.join(" · ");
@@ -304,7 +312,7 @@ export async function TaskDetail({
             <dt className="text-muted-foreground">{t("tasks.repeat.title")}</dt>
             <dd className="flex items-center gap-1.5">
               <Repeat className="size-3.5 shrink-0" aria-hidden />
-              {repeatSummary(task.series)}
+              {repeatSummary(task.series, today)}
             </dd>
           </>
         )}

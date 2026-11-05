@@ -90,3 +90,19 @@ export function nextOccurrence(rule: RepeatRule, after: string): string | null {
 export function copyDay(dueDate: string, span: number): string {
   return addDays(dueDate, -span);
 }
+
+// The due dates of a series' future copies inside [from, to): from the next one not made yet
+// (`nextDate`), as many as the rule gives, at most `limit`. For the calendar, which shows them
+// before they exist.
+export function occurrencesBetween(
+  rule: RepeatRule,
+  nextDate: string | null,
+  from: string,
+  to: string,
+  limit = 62,
+): string[] {
+  const dates: string[] = [];
+  for (let due = nextDate; due && due < to && dates.length < limit; due = nextOccurrence(rule, due))
+    if (due >= from) dates.push(due);
+  return dates;
+}

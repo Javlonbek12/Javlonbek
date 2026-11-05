@@ -724,6 +724,8 @@ export const en: Dictionary = {
       next: "Forward",
       more: "{count} more",
       weekdays: "Mon,Tue,Wed,Thu,Fri,Sat,Sun",
+      planned: "appears {date}",
+      plannedHint: "Upcoming repeat (not created yet)",
     },
     timeline: {
       hint: "A bar runs from the start date to the due date. An arrow means “blocks”.",

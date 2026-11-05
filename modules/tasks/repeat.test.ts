@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { nextOccurrence, weekdayOf, type RepeatRule } from "./repeat";
+import { nextOccurrence, occurrencesBetween, weekdayOf, type RepeatRule } from "./repeat";
 
 const rule = (r: Partial<RepeatRule>): RepeatRule => ({
   frequency: "DAILY",
@@ -85,5 +85,27 @@ describe("repeating tasks: next due date", () => {
     expect(nextOccurrence(rule({ frequency: "WEEKLY", weekdays: [5] }), "2026-11-25")).toBe(
       "2026-11-27",
     );
+  });
+});
+
+describe("future copies for the calendar", () => {
+  it("lists the due dates of copies not made yet inside the shown range", () => {
+    const monthly = rule({ frequency: "MONTHLY", anchor: "2026-11-11" });
+    expect(occurrencesBetween(monthly, "2026-12-11", "2027-03-01", "2027-04-05")).toEqual([
+      "2027-03-11",
+    ]);
+    expect(occurrencesBetween(monthly, "2026-12-11", "2026-11-30", "2027-02-01")).toEqual([
+      "2026-12-11",
+      "2027-01-11",
+    ]);
+  });
+
+  it("stops at «Повторять до» and when the series has ended", () => {
+    const until = rule({ frequency: "MONTHLY", anchor: "2026-11-11", until: "2027-01-31" });
+    expect(occurrencesBetween(until, "2026-12-11", "2026-11-01", "2027-06-01")).toEqual([
+      "2026-12-11",
+      "2027-01-11",
+    ]);
+    expect(occurrencesBetween(until, null, "2026-11-01", "2027-06-01")).toEqual([]);
   });
 });

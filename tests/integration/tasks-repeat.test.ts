@@ -3,7 +3,12 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/lib/db";
 import { toDateString } from "@/lib/dates";
 import { TaskError } from "@/modules/tasks/errors";
-import { createRepeatCopies, createTask, updateTask } from "@/modules/tasks/service";
+import {
+  createRepeatCopies,
+  createTask,
+  listPlannedRepeats,
+  updateTask,
+} from "@/modules/tasks/service";
 import { createTestUser, resetDb } from "@/tests/helpers/db";
 import { taskInput } from "@/tests/helpers/tasks";
 import { telegramMock } from "@/tests/helpers/telegram";
@@ -123,5 +128,28 @@ describe("repeating tasks", () => {
     await db.task.delete({ where: { id: task.id } });
     expect(await createRepeatCopies(at("2026-11-20"))).toBe(0);
     expect((await db.taskSeries.findFirstOrThrow()).nextDate).toBeNull();
+  });
+
+  it("the calendar shows copies not made yet to those who see the series", async () => {
+    const owner = await createTestUser("OWNER");
+    const member = await createTestUser("MEMBER");
+    const other = await createTestUser("MEMBER");
+    await createTask(
+      owner,
+      taskInput({
+        title: "Ежемесячная сверка",
+        assigneeId: member.id,
+        startDate: "2026-11-05",
+        dueDate: "2026-11-11",
+      }),
+      "create",
+      { repeat: { ...weekly, frequency: "MONTHLY" } },
+    );
+    const march = await listPlannedRepeats(member, "mine", "2027-03-01", "2027-04-05");
+    expect(march.map((p) => [p.dueDate, p.appearsOn, p.task.title])).toEqual([
+      ["2027-03-11", "2027-03-05", "Ежемесячная сверка"],
+    ]);
+    expect(await listPlannedRepeats(other, "mine", "2027-03-01", "2027-04-05")).toEqual([]);
+    expect(await listPlannedRepeats(owner, "team", "2027-03-01", "2027-04-05")).toHaveLength(1);
   });
 });
