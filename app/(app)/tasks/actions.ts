@@ -17,7 +17,14 @@ import {
   restoreTask,
 } from "@/modules/tasks/delete-service";
 import { TaskError } from "@/modules/tasks/errors";
+import { safeBack, withParams } from "@/modules/tasks/back";
 import { createPlan } from "@/modules/tasks/plan-service";
+import {
+  completeTask,
+  PANEL_FIELDS,
+  updateTaskField,
+  type PanelField,
+} from "@/modules/tasks/quick-actions";
 import type { RepeatInput } from "@/modules/tasks/repeat";
 import {
   CREATE_MODES,
@@ -125,8 +132,15 @@ export async function updateTaskAction(
   redirect(`/tasks/${taskId}`);
 }
 
-// Runs a task action from the task card and comes back with ?error=<code> on failure.
-async function onTaskPage(taskId: string, run: () => Promise<unknown>, then = "") {
+// Runs a task action from the task card (its page, or the panel next to the list) and goes back
+// to where the form was sent from, with ?error=<code> on failure.
+async function onTaskPage(
+  formData: FormData,
+  taskId: string,
+  run: () => Promise<unknown>,
+  then = "",
+) {
+  const back = safeBack(str(formData, "back"), `/tasks/${encodeURIComponent(taskId)}`);
   let error: string | null = null;
   try {
     await run();
@@ -135,7 +149,8 @@ async function onTaskPage(taskId: string, run: () => Promise<unknown>, then = ""
     error = e.code;
   }
   revalidatePath("/", "layout");
-  redirect(`/tasks/${encodeURIComponent(taskId)}${error ? `?error=${error}` : then}`);
+  if (error) redirect(withParams(back, { error }));
+  redirect(then ? `/tasks/${encodeURIComponent(taskId)}${then}` : withParams(back, {}));
 }
 
 export async function changeStatusAction(formData: FormData) {
@@ -147,6 +162,7 @@ export async function changeStatusAction(formData: FormData) {
   const reason = str(formData, "reason").trim().slice(0, 1000) || null;
   const despiteCancelled = formData.get("despiteCancelled") === "on";
   await onTaskPage(
+    formData,
     taskId,
     () => changeStatus(user, taskId, to, { reason, despiteCancelled }),
     then,
@@ -173,7 +189,7 @@ export async function addDependencyAction(formData: FormData) {
   const user = await actor();
   const taskId = idSchema.parse(str(formData, "taskId"));
   const blockerId = str(formData, "blockerId");
-  await onTaskPage(taskId, async () => {
+  await onTaskPage(formData, taskId, async () => {
     if (!blockerId) throw new TaskError("invalid");
     await addDependency(user, taskId, blockerId);
   });
@@ -183,19 +199,19 @@ export async function removeDependencyAction(formData: FormData) {
   const user = await actor();
   const taskId = idSchema.parse(str(formData, "taskId"));
   const blockerId = idSchema.parse(str(formData, "blockerId"));
-  await onTaskPage(taskId, () => removeDependency(user, taskId, blockerId));
+  await onTaskPage(formData, taskId, () => removeDependency(user, taskId, blockerId));
 }
 
 export async function addCommentAction(formData: FormData) {
   const user = await actor();
   const taskId = idSchema.parse(str(formData, "taskId"));
-  await onTaskPage(taskId, () => addComment(user, taskId, str(formData, "body")));
+  await onTaskPage(formData, taskId, () => addComment(user, taskId, str(formData, "body")));
 }
 
 export async function addLinkAction(formData: FormData) {
   const user = await actor();
   const taskId = idSchema.parse(str(formData, "taskId"));
-  await onTaskPage(taskId, () =>
+  await onTaskPage(formData, taskId, () =>
     addLinkAttachment(user, taskId, str(formData, "title"), str(formData, "url")),
   );
 }
@@ -203,7 +219,7 @@ export async function addLinkAction(formData: FormData) {
 export async function removeAttachmentAction(formData: FormData) {
   const user = await actor();
   const taskId = idSchema.parse(str(formData, "taskId"));
-  await onTaskPage(taskId, () =>
+  await onTaskPage(formData, taskId, () =>
     removeAttachment(user, idSchema.parse(str(formData, "attachmentId"))),
   );
 }
@@ -230,18 +246,24 @@ export async function createPlanAction(formData: FormData) {
 }
 
 // Deletion: right away (own untouched task, or as the overseer), or as a request up the hierarchy.
+// A deleted task leaves the view it was deleted from: the panel closes, the page goes to the list.
 async function runDelete(
+  formData: FormData,
   taskId: string,
   change: () => Promise<unknown>,
   done: string,
   gone: boolean,
 ) {
-  let target = gone ? `/tasks?deleted=1` : `/tasks/${taskId}?notice=${done}`;
+  const back = safeBack(str(formData, "back"), `/tasks/${encodeURIComponent(taskId)}`);
+  const list = /^\/tasks(\/decide)?(\?|$)/.test(back)
+    ? withParams(back, { task: null, tab: null })
+    : "/tasks";
+  let target = gone ? withParams(list, { deleted: "1" }) : withParams(back, { notice: done });
   try {
     await change();
   } catch (error) {
     if (!(error instanceof TaskError)) throw error;
-    target = `/tasks/${taskId}?error=${error.code}`;
+    target = withParams(back, { error: error.code });
   }
   revalidatePath("/tasks", "layout");
   revalidatePath("/");
@@ -251,13 +273,20 @@ async function runDelete(
 export async function deleteTaskAction(formData: FormData) {
   const user = await actor();
   const taskId = idSchema.parse(str(formData, "taskId"));
-  await runDelete(taskId, () => deleteTask(user, taskId, str(formData, "reason")), "", true);
+  await runDelete(
+    formData,
+    taskId,
+    () => deleteTask(user, taskId, str(formData, "reason")),
+    "",
+    true,
+  );
 }
 
 export async function requestDeleteTaskAction(formData: FormData) {
   const user = await actor();
   const taskId = idSchema.parse(str(formData, "taskId"));
   await runDelete(
+    formData,
     taskId,
     () => requestTaskDeletion(user, taskId, str(formData, "reason")),
     "sent",
@@ -270,6 +299,7 @@ export async function resolveDeleteTaskAction(formData: FormData) {
   const taskId = idSchema.parse(str(formData, "taskId"));
   const decision = str(formData, "decision");
   await runDelete(
+    formData,
     taskId,
     () => resolveTaskDeletion(user, taskId, decision === "approve"),
     decision === "withdraw" ? "withdrawn" : "rejected",
@@ -289,5 +319,33 @@ export async function restoreTaskAction(formData: FormData) {
     target = `/tasks/trash?error=${error.code}`;
   }
   revalidatePath("/tasks", "layout");
+  redirect(target);
+}
+
+// «Изменить» in the task panel: one field at a time.
+export async function updateTaskFieldAction(formData: FormData) {
+  const user = await actor();
+  const taskId = idSchema.parse(str(formData, "taskId"));
+  const field = str(formData, "field");
+  if (!(PANEL_FIELDS as readonly string[]).includes(field)) throw new Error("Unknown field");
+  await onTaskPage(formData, taskId, () =>
+    updateTaskField(user, taskId, field as PanelField, str(formData, "value")),
+  );
+}
+
+// The round button in a task row: the next allowed step towards closing the task. When it can't
+// be taken (a blocking task, a cancelled one to confirm), the task panel opens with the reason.
+export async function quickCloseAction(formData: FormData) {
+  const user = await actor();
+  const taskId = idSchema.parse(str(formData, "taskId"));
+  const back = safeBack(str(formData, "back"), "/tasks");
+  let target = withParams(back, {});
+  try {
+    await completeTask(user, taskId);
+  } catch (error) {
+    if (!(error instanceof TaskError)) throw error;
+    target = withParams(back, { task: taskId, error: error.code });
+  }
+  revalidatePath("/", "layout");
   redirect(target);
 }

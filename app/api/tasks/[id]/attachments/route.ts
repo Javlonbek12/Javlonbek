@@ -4,6 +4,7 @@ import { getEnv } from "@/lib/env";
 import { createRateLimiter } from "@/lib/rate-limit";
 import { getUserFromRequest } from "@/modules/core/auth/request-user";
 import { addFileAttachment } from "@/modules/tasks/attachment-service";
+import { safeBack, withParams } from "@/modules/tasks/back";
 import { TaskError } from "@/modules/tasks/errors";
 
 const allowUpload = createRateLimiter({ limit: 20, windowMs: 60_000 });
@@ -18,8 +19,20 @@ export async function POST(
   if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
   if (!allowUpload(user.id)) return Response.json({ error: "too many requests" }, { status: 429 });
 
-  const back = new URL(`/tasks/${encodeURIComponent(id)}`, getEnv().APP_URL);
-  const file = (await request.formData()).get("file");
+  const form = await request.formData();
+  // Back to where the form was sent from: the task page or the list with the task panel open.
+  const backField = form.get("back");
+  const back = new URL(
+    withParams(
+      safeBack(
+        typeof backField === "string" ? backField : null,
+        `/tasks/${encodeURIComponent(id)}`,
+      ),
+      {},
+    ),
+    getEnv().APP_URL,
+  );
+  const file = form.get("file");
   if (!(file instanceof File)) {
     back.searchParams.set("error", "invalid");
     return NextResponse.redirect(back, 303);

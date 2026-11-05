@@ -453,7 +453,7 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
           hint={t("today.waitingHint")}
           tasks={waiting}
           empty={t("home.dashboard.waitingEmpty")}
-          href="/tasks?scope=all&status=PENDING_APPROVAL"
+          href="/tasks/decide"
         />
         <Card className="gap-3 md:col-span-2 xl:col-span-1">
           <SectionTitle

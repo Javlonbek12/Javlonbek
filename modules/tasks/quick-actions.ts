@@ -1,13 +1,29 @@
 import { db } from "@/lib/db";
 import { toDateString } from "@/lib/dates";
-import type { TaskStatus } from "@/lib/generated/prisma/client";
+import type { Task, TaskStatus } from "@/lib/generated/prisma/client";
 import { normalizeName } from "@/modules/bot/match";
 import type { Actor } from "@/modules/core/permissions";
 
 import { CLOSED_STATUSES, visibleTasksWhere } from "./access";
 import { TaskError } from "./errors";
-import { changeStatus, updateTask } from "./service";
+import { changeStatus, updateTask, type TaskInput } from "./service";
 import { availableTransitions } from "./status";
+
+// The task's fields as they are, in the shape the edit form sends.
+function currentInput(task: Task): TaskInput {
+  return {
+    title: task.title,
+    description: task.description,
+    isPersonal: task.isPersonal,
+    assigneeId: task.assigneeId,
+    startDate: task.startDate ? toDateString(task.startDate) : null,
+    dueDate: task.dueDate ? toDateString(task.dueDate) : null,
+    priority: task.priority,
+    project: task.project,
+    planId: task.planId,
+    estimateHours: task.estimateMinutes === null ? null : task.estimateMinutes / 60,
+  };
+}
 
 // Moves the due date, keeping every other field as it is.
 export async function setDueDate(actor: Actor, taskId: string, dueDate: string) {
@@ -15,17 +31,30 @@ export async function setDueDate(actor: Actor, taskId: string, dueDate: string) 
   if (!task) throw new TaskError("forbidden");
   const start = task.startDate ? toDateString(task.startDate) : null;
   return updateTask(actor, taskId, {
-    title: task.title,
-    description: task.description,
-    isPersonal: task.isPersonal,
-    assigneeId: task.assigneeId,
+    ...currentInput(task),
     startDate: start && start <= dueDate ? start : null,
     dueDate,
-    priority: task.priority,
-    project: task.project,
-    planId: task.planId,
-    estimateHours: task.estimateMinutes === null ? null : task.estimateMinutes / 60,
   });
+}
+
+// One field changed from the task panel («Изменить»); everything else stays as it is, the same
+// rules as the edit form apply (the assignee only before «В работе», the route is worked out again).
+export const PANEL_FIELDS = ["assigneeId", "dueDate", "startDate", "priority", "project"] as const;
+export type PanelField = (typeof PANEL_FIELDS)[number];
+
+export async function updateTaskField(
+  actor: Actor,
+  taskId: string,
+  field: PanelField,
+  value: string,
+) {
+  const task = await db.task.findUnique({ where: { id: taskId } });
+  if (!task) throw new TaskError("forbidden");
+  const input = currentInput(task);
+  if (field === "priority") input.priority = value as TaskInput["priority"];
+  else if (field === "assigneeId") input.assigneeId = value || task.assigneeId;
+  else input[field] = value.trim() || null;
+  return updateTask(actor, taskId, input);
 }
 
 // "Close the task": the furthest step the actor may take — accept it (DONE) if allowed,
