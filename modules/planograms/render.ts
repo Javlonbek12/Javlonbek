@@ -1,4 +1,5 @@
 import { slotKey, type Geometry, type Shelf } from "./geometry";
+import { talkerRuns, tallPosmSlots } from "./layout";
 
 // Everything needed to draw one cell. Built from the database by export.ts.
 export type RenderCell =
@@ -235,51 +236,62 @@ export function planogramScene(input: RenderInput) {
         for (let i = 0; i < cell.span; i++) hidden.add(slotKey(s + r, p + i));
     }
   const overlay: SceneItem[] = [];
+  const tall = tallPosmSlots(input.cells);
+  // Where a shelf's board is (its top): under the price tags, or under the shelftalker strip.
+  const boardTop = (shelfIndex: number) => {
+    const shelf = input.geometry.shelves[shelfIndex];
+    const strip = PAD + headerH + shelfIndex * shelfH + PACK_H + tagH + 2;
+    return shelf?.talker ? strip + talkerH - 4 : strip;
+  };
 
   input.geometry.shelves.forEach((shelf, shelfIndex) => {
     const top = PAD + headerH + shelfIndex * shelfH;
     const left = slotX(input.geometry, shelf, 0);
     const shelfW = slotX(input.geometry, shelf, shelf.slots - 1) + SLOT_W - left;
-    // The shelftalker on the shelf's edge (stretched to the shelf: it is printed for it), then
-    // the shelf board.
+    // The shelftalker on the shelf's edge (stretched to its stretch of the shelf: it is printed
+    // for it), then the shelf board. Behind a combo box over several shelves it is shorter.
     const strip = top + PACK_H + tagH + 2;
     if (shelf.talker) {
       const talker = input.shelftalkers?.[shelfIndex];
       const label = { part: "talker" as const, shelf: shelfIndex, name: talker?.name };
-      items.push({
-        type: "rect",
-        ...label,
-        x: left,
-        y: strip,
-        w: shelfW,
-        h: talkerH - 4,
-        rx: 2,
-        fill: talker?.color ?? "#e2e8f0",
-        texts:
-          talker && !talker.image
-            ? [
-                {
-                  x: left + shelfW / 2,
-                  y: strip + talkerH / 2 + 2,
-                  text: talker.name,
-                  size: 12,
-                  bold: true,
-                  color: "#fff",
-                },
-              ]
-            : undefined,
-      });
-      if (talker?.image)
+      for (const run of talkerRuns(shelfIndex, shelf.slots, tall)) {
+        const x = slotX(input.geometry, shelf, run.from);
+        const w = slotX(input.geometry, shelf, run.to) + SLOT_W - x;
         items.push({
-          type: "image",
+          type: "rect",
           ...label,
-          x: left,
+          x,
           y: strip,
-          w: shelfW,
+          w,
           h: talkerH - 4,
-          href: talker.image,
-          fit: "none",
+          rx: 2,
+          fill: talker?.color ?? "#e2e8f0",
+          texts:
+            talker && !talker.image
+              ? [
+                  {
+                    x: x + w / 2,
+                    y: strip + talkerH / 2 + 2,
+                    text: talker.name,
+                    size: 12,
+                    bold: true,
+                    color: "#fff",
+                  },
+                ]
+              : undefined,
         });
+        if (talker?.image)
+          items.push({
+            type: "image",
+            ...label,
+            x,
+            y: strip,
+            w,
+            h: talkerH - 4,
+            href: talker.image,
+            fit: "none",
+          });
+      }
     }
     items.push({
       type: "rect",
@@ -347,8 +359,11 @@ export function planogramScene(input: RenderInput) {
       }
       if (cell.kind === "POSM") {
         const w = slotX(input.geometry, shelf, position + cell.span - 1) + SLOT_W - x - GAP;
-        const h = PACK_H + tagH + ((cell.rows ?? 1) - 1) * shelfH;
-        const target = (cell.rows ?? 1) > 1 ? overlay : items;
+        // Over several shelves it stands on the lowest one, down to its edge: level with that
+        // shelf's shelftalker.
+        const rows = cell.rows ?? 1;
+        const h = rows > 1 ? boardTop(shelfIndex + rows - 1) - top : PACK_H + tagH;
+        const target = rows > 1 ? overlay : items;
         const label = { part: "posm" as const, ...at, name: cell.name };
         target.push({
           type: "rect",

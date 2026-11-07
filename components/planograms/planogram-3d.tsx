@@ -9,6 +9,7 @@ import { useT } from "@/components/locale-provider";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { slotKey, widthInSlots } from "@/modules/planograms/geometry";
+import { talkerRuns, tallPosmSlots } from "@/modules/planograms/layout";
 import type { RenderInput } from "@/modules/planograms/render";
 import {
   DEFAULT_PACK,
@@ -28,6 +29,7 @@ const SHELF_H = 13; // shelf to shelf
 const BOARD_T = 1.6; // shelf board thickness
 const HOLDER_H = 2.6; // the price-tag holder on the board's front edge
 const TAG_H = 2.1;
+const TALKER_3D_H = 3.8; // a shelftalker strip, 38 mm
 const SIDE = 2; // cabinet walls
 const DEPTH = 32;
 const BASE_H = 42;
@@ -475,6 +477,8 @@ export function Planogram3D({ input }: { input: RenderInput }) {
       const packFrontZ = boardDepth / 2 - 0.8; // just behind the tag holder
       const rows = depthRows(boardDepth - 4, PACK.d);
 
+      // Places behind a POSM over several shelves: no shelftalker there.
+      const tall = tallPosmSlots(cells);
       geometry.shelves.forEach((shelf, shelfIndex) => {
         // Shelf boards from the top down; boardY is the top surface the packs stand on.
         const boardY = BASE_H + shelvesH - (shelfIndex + 1) * SHELF_H;
@@ -538,31 +542,33 @@ export function Planogram3D({ input }: { input: RenderInput }) {
           cabinet.add(tagPlane);
         }
 
-        // The shelftalker: a printed strip hanging under the tag holder, the shelf wide.
+        // The shelftalker: a printed strip hanging under the tag holder, along the places not
+        // behind a POSM over several shelves (a combo box covers the edge there).
         const talker = shelf.talker ? input.shelftalkers?.[shelfIndex] : undefined;
-        if (talker) {
-          const h = 3.8; // 38 mm
-          const map = talker.image
-            ? imageTexture(THREE, talker.image)
-            : canvasTexture(THREE, Math.round(shelfW * 16), 60, (ctx) => {
-                ctx.fillStyle = talker.color;
-                ctx.fillRect(0, 0, ctx.canvas.width, 60);
-                ctx.fillStyle = "#ffffff";
-                ctx.textAlign = "center";
-                ctx.font = "bold 34px Onest, sans-serif";
-                ctx.fillText(talker.name, ctx.canvas.width / 2, 42, ctx.canvas.width * 0.92);
-              });
-          const strip = new THREE.Mesh(
-            new THREE.PlaneGeometry(shelfW, h),
-            new THREE.MeshStandardMaterial({ map, roughness: 0.5 }),
-          );
-          strip.position.set(
-            shelfLeft + shelfW / 2,
-            holderY - HOLDER_H / 2 - h / 2,
-            holderZ + 0.27,
-          );
-          cabinet.add(strip);
-        }
+        if (talker)
+          for (const run of talkerRuns(shelfIndex, shelf.slots, tall)) {
+            const runW = (run.to - run.from + 1) * SLOT;
+            const map = talker.image
+              ? imageTexture(THREE, talker.image)
+              : canvasTexture(THREE, Math.round(runW * 16), 60, (ctx) => {
+                  ctx.fillStyle = talker.color;
+                  ctx.fillRect(0, 0, ctx.canvas.width, 60);
+                  ctx.fillStyle = "#ffffff";
+                  ctx.textAlign = "center";
+                  ctx.font = "bold 34px Onest, sans-serif";
+                  ctx.fillText(talker.name, ctx.canvas.width / 2, 42, ctx.canvas.width * 0.92);
+                });
+            const strip = new THREE.Mesh(
+              new THREE.PlaneGeometry(runW, TALKER_3D_H),
+              new THREE.MeshStandardMaterial({ map, roughness: 0.5 }),
+            );
+            strip.position.set(
+              shelfLeft + run.from * SLOT + runW / 2,
+              holderY - HOLDER_H / 2 - TALKER_3D_H / 2,
+              holderZ + 0.27,
+            );
+            cabinet.add(strip);
+          }
 
         // Section dividers (modules of 3 and the like): panels between the packs up to the
         // shelf's front edge, so they show between the front facings.
@@ -613,18 +619,36 @@ export function Planogram3D({ input }: { input: RenderInput }) {
               emissiveIntensity: 0.12,
             });
             const side = new THREE.MeshStandardMaterial({ color: cell.color, roughness: 0.5 });
-            // Over several shelves it hangs down in front of the lower ones.
-            const extra = ((cell.rows ?? 1) - 1) * SHELF_H;
-            const h = PACK.h * 0.7 + extra;
-            box(
-              w,
-              h,
-              0.8,
-              [side, side, side, side, front, side],
-              x + (cell.span * SLOT) / 2,
-              boardY - extra + h / 2,
-              packFrontZ - 0.4,
-            );
+            const rowsOf = cell.rows ?? 1;
+            if (rowsOf > 1) {
+              // Over several shelves it stands in front of their edges, down to the lowest
+              // shelf's edge: level with that shelf's shelftalker.
+              const lowest = shelfIndex + rowsOf - 1;
+              const lowestBoard = boardY - (rowsOf - 1) * SHELF_H;
+              const bottom =
+                lowestBoard - HOLDER_H + 0.4 - (geometry.shelves[lowest]?.talker ? TALKER_3D_H : 0);
+              const top = boardY + PACK.h * 0.7;
+              box(
+                w,
+                top - bottom,
+                0.8,
+                [side, side, side, side, front, side],
+                x + (cell.span * SLOT) / 2,
+                bottom + (top - bottom) / 2,
+                holderZ + 0.75,
+              );
+            } else {
+              const h = PACK.h * 0.7;
+              box(
+                w,
+                h,
+                0.8,
+                [side, side, side, side, front, side],
+                x + (cell.span * SLOT) / 2,
+                boardY + h / 2,
+                packFrontZ - 0.4,
+              );
+            }
           }
         }
       });

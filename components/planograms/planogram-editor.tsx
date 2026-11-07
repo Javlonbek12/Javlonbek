@@ -20,7 +20,14 @@ import { cn } from "@/lib/utils";
 import { describeChange, describeViolation } from "@/modules/planograms/describe";
 import { diffLayouts } from "@/modules/planograms/diff";
 import { slotKey, widthInSlots, type Geometry } from "@/modules/planograms/geometry";
-import { coveredBelow, coveredSlots, type Layout, type SkuInfo } from "@/modules/planograms/layout";
+import {
+  coveredBelow,
+  coveredSlots,
+  talkerRuns,
+  tallPosmSlots,
+  type Layout,
+  type SkuInfo,
+} from "@/modules/planograms/layout";
 import { validatePlanogram, type Rule } from "@/modules/planograms/validate";
 
 import { moveCell, placeAt, removeAt, swapShelves, copyShelf, toggleBadge } from "./editor-ops";
@@ -168,12 +175,22 @@ export function PlanogramEditor(props: Props) {
   // Shelf to shelf: a shelftalker strip is taller than the plain board.
   const pitch = (shelf: number) =>
     SHELF_PITCH + (geometry.shelves[shelf]?.talker ? TALKER_H - 4 : 0);
+  // A POSM over several shelves reaches the lowest one's edge (cell padding, the row's padding,
+  // then its shelftalker or board): level with that shelf's shelftalker.
   const posmHeight = (shelf: number, rows: number) =>
     PACK_H +
     20 +
-    Array.from({ length: rows - 1 }, (_, k) => pitch(shelf + k)).reduce((a, b) => a + b, 0);
+    Array.from({ length: rows - 1 }, (_, k) => pitch(shelf + k)).reduce((a, b) => a + b, 0) +
+    2 +
+    4 +
+    (geometry.shelves[shelf + rows - 1]?.talker ? TALKER_H : 4);
   const layout = state.layout;
   const covered = coveredSlots(layout);
+  // Behind such a POSM the shelf has no shelftalker (it is printed shorter there).
+  const tall = tallPosmSlots(layout);
+  // Where a place starts in its row: the slots before it and the room between module sections.
+  const placeLeft = (shelf: { group: number }, position: number) =>
+    position * SLOT_W + (shelf.group > 0 ? Math.floor(position / shelf.group) * SECTION_GAP : 0);
   // Under a POSM hanging from the shelf above: an empty place, the block is drawn over it.
   const below = coveredBelow(layout);
 
@@ -587,30 +604,38 @@ export function PlanogramEditor(props: Props) {
                     })}
                   </div>
                   {shelf.talker && (
-                    // The shelftalker on the shelf's edge, the whole shelf wide.
-                    <div
-                      className="flex w-full items-center justify-center overflow-hidden rounded-sm border-b-2 border-slate-400 text-[9px] font-bold text-white"
-                      style={{
-                        height: TALKER_H,
-                        background: talkers[shelfIndex]
-                          ? (posmById.get(talkers[shelfIndex]!)?.color ?? "#94a3b8")
-                          : "#e2e8f0",
-                      }}
-                    >
-                      {talkers[shelfIndex] && posmById.get(talkers[shelfIndex]!)?.imageUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={posmById.get(talkers[shelfIndex]!)!.imageUrl!}
-                          alt={posmById.get(talkers[shelfIndex]!)!.name}
-                          className="h-full w-full object-fill"
-                        />
-                      ) : (
-                        <span className="truncate px-1 text-slate-600">
-                          {talkers[shelfIndex]
-                            ? posmById.get(talkers[shelfIndex]!)?.name
-                            : t("planograms.editor.noShelftalker")}
-                        </span>
-                      )}
+                    // The shelftalker on the shelf's edge, along the places not behind a POSM
+                    // over several shelves (a combo box).
+                    <div className="relative w-full" style={{ height: TALKER_H }}>
+                      {talkerRuns(shelfIndex, shelf.slots, tall).map((run) => (
+                        <div
+                          key={run.from}
+                          className="absolute top-0 flex items-center justify-center overflow-hidden rounded-sm border-b-2 border-slate-400 text-[9px] font-bold text-white"
+                          style={{
+                            left: placeLeft(shelf, run.from),
+                            width: placeLeft(shelf, run.to) + SLOT_W - placeLeft(shelf, run.from),
+                            height: TALKER_H,
+                            background: talkers[shelfIndex]
+                              ? (posmById.get(talkers[shelfIndex]!)?.color ?? "#94a3b8")
+                              : "#e2e8f0",
+                          }}
+                        >
+                          {talkers[shelfIndex] && posmById.get(talkers[shelfIndex]!)?.imageUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={posmById.get(talkers[shelfIndex]!)!.imageUrl!}
+                              alt={posmById.get(talkers[shelfIndex]!)!.name}
+                              className="h-full w-full object-fill"
+                            />
+                          ) : (
+                            <span className="truncate px-1 text-slate-600">
+                              {talkers[shelfIndex]
+                                ? posmById.get(talkers[shelfIndex]!)?.name
+                                : t("planograms.editor.noShelftalker")}
+                            </span>
+                          )}
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>

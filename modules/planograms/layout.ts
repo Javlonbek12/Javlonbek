@@ -28,6 +28,37 @@ export function posmArea(key: string, span: number, rows: number): string[] {
   return out;
 }
 
+// The places of POSM items standing over several shelves (a combo box): their front covers the
+// shelf edges there, so no shelftalker runs under them (it is printed shorter, e.g. 310 mm).
+export function tallPosmSlots(
+  cells: Record<string, { kind: string; span?: number; rows?: number }>,
+): Set<string> {
+  const out = new Set<string>();
+  for (const [key, cell] of Object.entries(cells))
+    if (cell.kind === "POSM" && (cell.rows ?? 1) > 1)
+      for (const k of posmArea(key, cell.span ?? 1, cell.rows ?? 1)) out.add(k);
+  return out;
+}
+
+// Where a shelf's shelftalker runs: the stretches of its places not behind such an item.
+export function talkerRuns(
+  shelf: number,
+  slots: number,
+  tall: Set<string>,
+): { from: number; to: number }[] {
+  const runs: { from: number; to: number }[] = [];
+  let start = -1;
+  for (let position = 0; position <= slots; position++) {
+    const free = position < slots && !tall.has(slotKey(shelf, position));
+    if (free && start < 0) start = position;
+    if (!free && start >= 0) {
+      runs.push({ from: start, to: position - 1 });
+      start = -1;
+    }
+  }
+  return runs;
+}
+
 // Slot keys hidden under a multi-slot POSM item (not including its first slot).
 export function coveredSlots(layout: Layout): Set<string> {
   const covered = new Set<string>();
