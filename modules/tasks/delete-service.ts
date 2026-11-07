@@ -38,11 +38,11 @@ type TaskForDelete = Pick<
 export type DeleteMode = "direct" | "request" | "none";
 
 // Someone other than the author has put work into the task: the assignee started it (or further),
-// someone commented, added a file or ticked a step, or approved it (not the route on its own). The
-// author's own work on their own task is no movement.
+// someone commented, added a file, ticked a step or changed the notes, or approved it (not the
+// route on its own). The author's own work on their own task is no movement.
 export function hasProgress(
   task: TaskForDelete,
-  counts: { comments: number; files: number; steps?: number },
+  counts: { comments: number; files: number; steps?: number; notes?: boolean },
 ) {
   return (
     (task.assigneeId !== task.creatorId &&
@@ -50,6 +50,7 @@ export function hasProgress(
     counts.comments > 0 ||
     counts.files > 0 ||
     (counts.steps ?? 0) > 0 ||
+    counts.notes === true ||
     (task.approvedById !== null && task.approvedById !== task.creatorId)
   );
 }
@@ -68,12 +69,16 @@ async function load(taskId: string) {
   if (!task) throw new TaskError("forbidden");
   // Only what others did counts: the author's own comments and files are no reason to ask.
   const others = { not: task.creatorId };
-  const [comments, files, steps] = await Promise.all([
+  const [comments, files, steps, note] = await Promise.all([
     db.comment.count({ where: { taskId, authorId: others } }),
     db.taskAttachment.count({ where: { taskId, uploadedById: others } }),
     db.taskStep.count({ where: { taskId, doneAt: { not: null }, doneById: others } }),
+    db.taskNote.findUnique({ where: { taskId }, select: { editedByOthersAt: true } }),
   ]);
-  return { task, progress: hasProgress(task, { comments, files, steps }) };
+  return {
+    task,
+    progress: hasProgress(task, { comments, files, steps, notes: !!note?.editedByOthersAt }),
+  };
 }
 
 // What the task page shows: the delete button, the request form, or nothing.
@@ -102,14 +107,15 @@ async function removeForGood(actor: Actor, task: Task, reason: string | null) {
     await db.task.delete({ where: { id: task.id } });
     await rm(filesOf(task.id), { recursive: true, force: true });
   } else {
-    const [comments, attachments, blockers, blocks, steps] = await Promise.all([
+    const [comments, attachments, blockers, blocks, steps, note] = await Promise.all([
       db.comment.findMany({ where: { taskId: task.id } }),
       db.taskAttachment.findMany({ where: { taskId: task.id } }),
       db.taskDependency.findMany({ where: { blockedId: task.id } }),
       db.taskDependency.findMany({ where: { blockerId: task.id } }),
       db.taskStep.findMany({ where: { taskId: task.id } }),
+      db.taskNote.findUnique({ where: { taskId: task.id } }),
     ]);
-    const data = { task, comments, attachments, blockers, blocks, steps };
+    const data = { task, comments, attachments, blockers, blocks, steps, note };
     await db.$transaction([
       db.deletedTask.upsert({
         where: { id: task.id },
@@ -193,8 +199,9 @@ type Snapshot = {
   attachments: Record<string, unknown>[];
   blockers: { blockerId: string; blockedId: string; createdAt: string }[];
   blocks: { blockerId: string; blockedId: string; createdAt: string }[];
-  // Missing in tasks deleted before steps existed.
+  // Missing in tasks deleted before steps (notes) existed.
   steps?: Record<string, unknown>[];
+  note?: Record<string, unknown> | null;
 };
 
 const DATE_FIELDS = [
@@ -268,6 +275,18 @@ export async function restoreTask(actor: Actor, id: string) {
           responsibleId: userIds.has(s.responsibleId as string) ? s.responsibleId : null,
           doneById: userIds.has(s.doneById as string) ? s.doneById : null,
         })) as Prisma.TaskStepCreateManyInput[],
+    }),
+    db.taskNote.createMany({
+      data: data.note
+        ? [
+            {
+              ...revive(data.note, ["editedByOthersAt", "createdAt", "updatedAt"]),
+              updatedById: userIds.has(data.note.updatedById as string)
+                ? (data.note.updatedById as string)
+                : null,
+            } as Prisma.TaskNoteCreateManyInput,
+          ]
+        : [],
     }),
     db.taskDependency.createMany({
       data: [...data.blockers, ...data.blocks]

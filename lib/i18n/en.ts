@@ -506,6 +506,7 @@ export const en: Dictionary = {
       tabs: {
         description: "Description",
         work: "Work",
+        notes: "Notes",
         files: "Files",
         comments: "Comments",
         history: "History",
@@ -520,6 +521,32 @@ export const en: Dictionary = {
       },
       noDescription: "No description.",
       reroute: "Changing the assignee works the route out again.",
+    },
+    notes: {
+      empty: "No notes yet.",
+      emptyEdit: "No notes yet. Click to write: a plan, links, agreements.",
+      placeholder:
+        "Write as usual. Formatting is on the buttons above: heading, bold, lists, checklist.",
+      edit: "Edit",
+      done: "Done",
+      shared: "The notes are shared: everyone who sees the task can read and change them.",
+      saving: "Saving…",
+      saved: "Saved",
+      unsaved: "Unsaved changes",
+      failed: "Not saved — check the connection. Trying again.",
+      lastBy: "Changed by {name} · {when}",
+      conflict: "While you were writing, {name} changed the notes.",
+      takeTheirs: "Show their version",
+      keepMine: "Save mine over it",
+      readOnly: "The task is closed: the notes are read-only.",
+      tool: {
+        heading: "Heading",
+        bold: "Bold (Ctrl+B)",
+        italic: "Italic (Ctrl+I)",
+        bullet: "List",
+        number: "Numbered list",
+        check: "Checklist",
+      },
     },
     steps: {
       progress: "{done} of {total}",
@@ -622,6 +649,7 @@ export const en: Dictionary = {
       cancelledDependency:
         "A blocking task was cancelled: remove the link or tick “Accept despite the cancelled link”.",
       tooManySteps: "A task can have at most 50 steps.",
+      noteTooLong: "The notes are too long: 20,000 characters at most.",
     },
     route: {
       started: "The task goes straight to the assignee; their manager sees it in the team.",
@@ -746,6 +774,7 @@ export const en: Dictionary = {
         step_removed: "removed a step",
         step_done: "ticked a step",
         step_undone: "unticked a step",
+        note_saved: "changed the notes",
       },
     },
     calendar: {

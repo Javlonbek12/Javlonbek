@@ -64,6 +64,7 @@ model User {
   taskSeries         TaskSeries[]         @relation("TaskSeriesCreator")
   taskStepsOwned     TaskStep[]           @relation("TaskStepResponsible")
   taskStepsDone      TaskStep[]           @relation("TaskStepDoneBy")
+  taskNotesEdited    TaskNote[]           @relation("TaskNoteEditor")
   plansCreated       Plan[]
   comments           Comment[]
   attachments        TaskAttachment[]
@@ -245,6 +246,7 @@ model Task {
   comments          Comment[]
   attachments       TaskAttachment[]
   steps             TaskStep[]
+  note              TaskNote?
 
   @@index([assigneeId, status])
   @@index([creatorId])
@@ -275,6 +277,23 @@ model TaskStep {
   doneBy      User? @relation("TaskStepDoneBy", fields: [doneById], references: [id], onDelete: SetNull)
 
   @@index([taskId, position])
+}
+
+// The task's shared notes («Заметки»): one text per task, written by anyone who sees the task.
+// Light formatting in the text itself (modules/tasks/note-format.ts). `version` grows with every
+// save, so a save made over someone else's newer one is refused instead of wiping it.
+model TaskNote {
+  taskId           String    @id
+  text             String
+  version          Int       @default(1)
+  updatedById      String?
+  // When someone other than the task's author last changed the notes: movement for deletion.
+  editedByOthersAt DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  task      Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  updatedBy User? @relation("TaskNoteEditor", fields: [updatedById], references: [id], onDelete: SetNull)
 }
 
 // A deleted team task kept for a while (Настройки → дней хранения), so the owner can restore it:
