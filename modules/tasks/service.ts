@@ -34,6 +34,7 @@ import { occurrencesBetween, copyDay } from "./repeat";
 import { copyMode, createDueCopies, ruleOf, setRepeat, startSeries } from "./repeat-service";
 import { copySteps, stepProgress } from "./step-rules";
 import { dropCoAssigneeRequests, listCoAssigneeDecisions } from "./co-assignees";
+import { stopTimersOnTask } from "./time-rules";
 import { withAccess } from "@/modules/core/access/actor";
 import { notify } from "@/modules/core/notifications/service";
 import { t } from "@/lib/i18n";
@@ -395,6 +396,8 @@ export async function changeStatus(
   if (reason && !task.isPersonal)
     await db.comment.create({ data: { taskId, authorId: actor.id, body: reason } });
   if (isClosed(to) && !task.isPersonal) await dropCoAssigneeRequests(taskId);
+  // A closed task: nobody works on it any more, its timers stop.
+  if (isClosed(to)) await stopTimersOnTask(taskId, now);
 
   const event = statusEvent(task, updated, actor, route?.teamNoticeId ?? null, reason);
   if (event) await notifyTaskEvent(event.task, event.event, actor.id, await actorName(actor.id));

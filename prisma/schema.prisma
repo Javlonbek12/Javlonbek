@@ -67,6 +67,7 @@ model User {
   taskNotesEdited    TaskNote[]              @relation("TaskNoteEditor")
   coAssigneeAsked    TaskCoAssigneeRequest[] @relation("CoAssigneeCandidate")
   coAssigneeAsking   TaskCoAssigneeRequest[] @relation("CoAssigneeRequester")
+  taskTime           TaskTimeEntry[]
   plansCreated       Plan[]
   comments           Comment[]
   attachments        TaskAttachment[]
@@ -252,6 +253,7 @@ model Task {
   attachments        TaskAttachment[]
   steps              TaskStep[]
   note               TaskNote?
+  timeEntries        TaskTimeEntry[]
   coAssigneeRequests TaskCoAssigneeRequest[]
 
   @@index([assigneeId, status])
@@ -288,6 +290,27 @@ model TaskStep {
 // The task's shared notes («Заметки»): one text per task, written by anyone who sees the task.
 // Light formatting in the text itself (modules/tasks/note-format.ts). `version` grows with every
 // save, so a save made over someone else's newer one is refused instead of wiping it.
+// Time spent on a task (BACKLOG item 24, step 5): a timer that runs (endedAt null) or ran, or time
+// added by hand. Seen in the task only for now; kept for a report later. See modules/tasks/time.ts.
+model TaskTimeEntry {
+  id        String    @id @default(cuid())
+  taskId    String
+  userId    String
+  startedAt DateTime
+  // Null while the timer runs.
+  endedAt   DateTime?
+  // Set when the timer stops or the time is added by hand.
+  minutes   Int       @default(0)
+  manual    Boolean   @default(false)
+  createdAt DateTime  @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([userId, endedAt])
+}
+
 model TaskNote {
   taskId           String    @id
   text             String

@@ -16,8 +16,10 @@ import {
   addDependencyAction,
   addCoAssigneeAction,
   addLinkAction,
+  addTimeAction,
   decideCoAssigneeAction,
   removeCoAssigneeAction,
+  removeTimeEntryAction,
   setTaskLabelsAction,
   withdrawCoAssigneeRequestAction,
   changeStatusAction,
@@ -29,6 +31,7 @@ import {
 import { setTaskRiskAction } from "@/app/(app)/projects/actions";
 import { AssigneePicker } from "@/components/tasks/assignee-picker";
 import { CoAssigneePicker } from "@/components/tasks/co-assignee-picker";
+import { TimeTracker } from "@/components/tasks/time-tracker";
 import { DetailTabs } from "@/components/tasks/detail-tabs";
 import { QuickCircle } from "@/components/tasks/quick-circle";
 import { StepsTab } from "@/components/tasks/steps-tab";
@@ -39,6 +42,7 @@ import { TaskDeleteControl } from "@/components/tasks/task-delete";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { daysBetween, formatDay, toDateString, todayInTimezone } from "@/lib/dates";
@@ -73,6 +77,8 @@ import {
   stepProgress,
 } from "@/modules/tasks/step-rules";
 import { canLabelTask, knownLabels } from "@/modules/tasks/labels";
+import { getTaskTime } from "@/modules/tasks/time";
+import { durationText } from "@/modules/tasks/time-format";
 import {
   canDecideCoAssignee,
   canJoin,
@@ -106,6 +112,12 @@ function historyText(action: string, details: unknown): string {
   if (action === "task.status_changed" && details && typeof details === "object") {
     const { from, to } = details as { from: string; to: string };
     return `${label}: ${t(`tasks.status.${from}` as TranslationKey)} → ${t(`tasks.status.${to}` as TranslationKey)}`;
+  }
+  if (action.startsWith("task.time_") && details && typeof details === "object") {
+    const { minutes } = details as { minutes?: number };
+    if (typeof minutes !== "number") return label;
+    const d = durationText(minutes);
+    return `${label}: ${t(d.key, d.values)}`;
   }
   if (action.startsWith("task.coassignee_") && details && typeof details === "object") {
     const { name } = details as { name?: string };
@@ -258,6 +270,7 @@ export async function TaskDetail({
     co,
     coPeople,
     coHints,
+    time,
   ] = await Promise.all([
     getSettings(user.id),
     getDependencies(user, task.id),
@@ -279,6 +292,7 @@ export async function TaskDetail({
     task.isPersonal ? Promise.resolve(null) : getCoAssignees(task),
     coManage ? listAssignableUsers() : Promise.resolve([]),
     coManage ? coAssigneeHints(user.id) : Promise.resolve({} as Record<string, string>),
+    getTaskTime(task, user),
   ]);
   const labelable = canLabelTask(user, task);
   const tz = settings.timezone;
@@ -1098,6 +1112,113 @@ export async function TaskDetail({
               <span className="text-muted-foreground">—</span>
             )}
           </Field>
+        )}
+        {(time.canTrack || time.entries.length > 0) && (
+          <div className="grid grid-cols-[7.5rem_minmax(0,1fr)] items-start gap-x-3 gap-y-1 py-2 text-sm">
+            <span className="text-muted-foreground pt-1">{t("tasks.time.title")}</span>
+            <div className="flex min-w-0 flex-col gap-2">
+              <TimeTracker
+                taskId={task.id}
+                back={back("description")}
+                totalMinutes={time.totalMinutes}
+                running={time.running}
+                estimateMinutes={task.estimateMinutes}
+                canTrack={time.canTrack}
+                workingNow={time.people
+                  .filter((p) => p.running && p.id !== user.id)
+                  .map((p) => p.name)}
+              />
+              <details className="group">
+                <summary className="text-primary cursor-pointer list-none text-xs font-medium [&::-webkit-details-marker]:hidden">
+                  {time.entries.length > 0 ? t("tasks.time.entries") : t("tasks.time.add")}
+                </summary>
+                <div className="mt-2 flex flex-col gap-3">
+                  {time.people.length > 1 && (
+                    <p className="text-muted-foreground text-xs">
+                      {time.people
+                        .map((p) => {
+                          const d = durationText(p.minutes);
+                          return `${p.name} — ${t(d.key, d.values)}`;
+                        })
+                        .join(" · ")}
+                    </p>
+                  )}
+                  {time.entries.length > 0 && (
+                    <ul className="flex flex-col gap-1">
+                      {time.entries.map((e) => {
+                        const d = durationText(e.minutes);
+                        return (
+                          <li key={e.id} className="flex items-center justify-between gap-2">
+                            <span className="min-w-0">
+                              <span className="font-medium">{t(d.key, d.values)}</span>{" "}
+                              <span className="text-muted-foreground text-xs">
+                                · {e.name} · {formatDay(toDateString(new Date(e.at)))}
+                                {e.manual && ` · ${t("tasks.time.manual")}`}
+                                {e.running && ` · ${t("tasks.time.running")}`}
+                              </span>
+                            </span>
+                            {e.mine && time.canTrack && !e.running && (
+                              <form action={removeTimeEntryAction}>
+                                {hidden("description")}
+                                <input type="hidden" name="entryId" value={e.id} />
+                                <Button type="submit" size="sm" variant="ghost">
+                                  {t("tasks.time.remove")}
+                                </Button>
+                              </form>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                  {time.canTrack && (
+                    <form action={addTimeAction} className="flex flex-wrap items-end gap-2">
+                      {hidden("description")}
+                      <Label className="flex-col items-start text-xs">
+                        {t("tasks.time.hours")}
+                        <Input
+                          type="number"
+                          name="hours"
+                          min={0}
+                          max={24}
+                          defaultValue={0}
+                          className="w-20"
+                        />
+                      </Label>
+                      <Label className="flex-col items-start text-xs">
+                        {t("tasks.time.minutes")}
+                        <Input
+                          type="number"
+                          name="minutes"
+                          min={0}
+                          max={59}
+                          step={5}
+                          defaultValue={30}
+                          className="w-20"
+                        />
+                      </Label>
+                      <Label className="flex-col items-start text-xs">
+                        {t("tasks.time.day")}
+                        <Input
+                          type="date"
+                          name="day"
+                          max={today}
+                          defaultValue={today}
+                          className="w-40"
+                        />
+                      </Label>
+                      <Button type="submit" size="sm" variant="outline">
+                        {t("tasks.time.addButton")}
+                      </Button>
+                      <span className="text-muted-foreground w-full text-xs">
+                        {t("tasks.time.hint")}
+                      </span>
+                    </form>
+                  )}
+                </div>
+              </details>
+            </div>
+          </div>
         )}
       </div>
 

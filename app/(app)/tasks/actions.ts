@@ -27,6 +27,8 @@ import {
 } from "@/modules/tasks/quick-actions";
 import type { RepeatInput } from "@/modules/tasks/repeat";
 import { setTaskLabels } from "@/modules/tasks/labels";
+import { addTime, removeTimeEntry, startTimer, stopTimer } from "@/modules/tasks/time";
+import { getUserToday } from "@/modules/core/settings/service";
 import {
   addCoAssignee,
   decideCoAssignee,
@@ -471,6 +473,39 @@ export async function tickStepAction(formData: FormData) {
   const taskId = idSchema.parse(str(formData, "taskId"));
   const stepId = idSchema.parse(str(formData, "stepId"));
   await onTaskPage(formData, taskId, () => tickStep(user, stepId, str(formData, "done") === "1"));
+}
+
+// ---------- time («Время») ----------
+
+export async function startTimerAction(formData: FormData) {
+  const user = await actor();
+  const taskId = idSchema.parse(str(formData, "taskId"));
+  await onTaskPage(formData, taskId, () => startTimer(user, taskId));
+}
+
+export async function stopTimerAction(formData: FormData) {
+  const user = await actor();
+  const taskId = idSchema.parse(str(formData, "taskId"));
+  await onTaskPage(formData, taskId, () => stopTimer(user, taskId));
+}
+
+// Time added by hand: hours and minutes on a day (today unless another is given).
+export async function addTimeAction(formData: FormData) {
+  const user = await actor();
+  const taskId = idSchema.parse(str(formData, "taskId"));
+  const hours = Number(str(formData, "hours") || 0);
+  const minutes = Number(str(formData, "minutes") || 0);
+  const today = await getUserToday(user.id);
+  await onTaskPage(formData, taskId, () =>
+    addTime(user, taskId, Math.round(hours * 60 + minutes), str(formData, "day") || today, today),
+  );
+}
+
+export async function removeTimeEntryAction(formData: FormData) {
+  const user = await actor();
+  const taskId = idSchema.parse(str(formData, "taskId"));
+  const entryId = idSchema.parse(str(formData, "entryId"));
+  await onTaskPage(formData, taskId, () => removeTimeEntry(user, entryId));
 }
 
 // ---------- notes («Заметки») ----------
