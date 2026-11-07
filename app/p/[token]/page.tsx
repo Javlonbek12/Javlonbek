@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { PlanogramPicture } from "@/components/planograms/planogram-picture";
 import { formatDay, toDateString } from "@/lib/dates";
 import { db } from "@/lib/db";
 import { t } from "@/lib/i18n";
@@ -39,9 +40,9 @@ export default async function PublicPlanogramPage({
         {loaded.record.approvedAt &&
           ` · ${t("planograms.public.approved", { date: formatDay(toDateString(loaded.record.approvedAt)) })}`}
       </p>
-      <div
-        className="overflow-x-auto rounded-lg border bg-white p-2 print:overflow-visible print:border-0 [&_svg]:h-auto [&_svg]:max-w-none print:[&_svg]:max-w-full"
-        dangerouslySetInnerHTML={{ __html: svg }}
+      <PlanogramPicture
+        svg={svg}
+        className="print:overflow-visible print:border-0 [&_svg]:h-auto print:[&_svg]:max-w-full"
       />
       {loaded.record.notes && <p className="text-sm whitespace-pre-wrap">{loaded.record.notes}</p>}
       {changes.length > 0 && (

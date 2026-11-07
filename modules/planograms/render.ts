@@ -1,5 +1,6 @@
 import { slotKey, type Geometry, type Shelf } from "./geometry";
 import { talkerRuns, tallPosmSlots } from "./layout";
+import { tagFontSize } from "./tag-size";
 
 // Everything needed to draw one cell. Built from the database by export.ts.
 export type RenderCell =
@@ -476,12 +477,7 @@ export function planogramScene(input: RenderInput) {
       const tagY = onTalker ? strip + 3 : top + PACK_H + 2;
       const tagBadges = cell.badges.filter((b) => !BADGE_ON_PACK.has(b));
       const tagText = [cell.price, ...tagBadges].filter(Boolean).join(" ") || "—";
-      // Long tags ("28 000 1mg") get a smaller font so they fit the pack width.
-      const baseSize = input.large ? 14 : 10;
-      const fontSize = Math.min(
-        baseSize,
-        Math.max(6, Math.floor((packW - 4) / (tagText.length * 0.62))),
-      );
+      const fontSize = tagFontSize(tagText, packW, input.large ? 14 : 10);
       items.push({
         type: "rect",
         part: "tag",

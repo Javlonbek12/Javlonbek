@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { createPlan, getPlanDetail, listPlansWithProgress } from "@/modules/tasks/plan-service";
+import { db } from "@/lib/db";
+import {
+  createPlan,
+  deletePlan,
+  getPlanDetail,
+  listPlansWithProgress,
+  updatePlan,
+} from "@/modules/tasks/plan-service";
 import { changeStatus, createTask } from "@/modules/tasks/service";
 import { createTestUser, resetDb } from "@/tests/helpers/db";
 import { taskInput } from "@/tests/helpers/tasks";
@@ -110,5 +117,163 @@ describe("plans", () => {
     ).rejects.toMatchObject({
       code: "plan",
     });
+  });
+
+  it("edits a plan: title, period and parent; nested plans must still fit", async () => {
+    const owner = await createTestUser("OWNER");
+    const manager = await createTestUser("MANAGER");
+    const year = await createPlan(owner, {
+      title: "",
+      level: "YEAR",
+      date: "2026-01-01",
+      parentId: null,
+      isPersonal: false,
+    });
+    const october = await createPlan(owner, {
+      title: "",
+      level: "MONTH",
+      date: "2026-10-01",
+      parentId: null,
+      isPersonal: false,
+    });
+    const week = await createPlan(owner, {
+      title: "Запуск",
+      level: "WEEK",
+      date: "2026-10-12",
+      parentId: october.id,
+      isPersonal: false,
+    });
+
+    // A title that was just the period follows the new period; the plan joins the year.
+    const november = await updatePlan(owner, october.id, {
+      title: october.title,
+      level: "MONTH",
+      date: "2026-10-20",
+      parentId: year.id,
+    });
+    expect(november.parentId).toBe(year.id);
+    expect(november.title).toBe(october.title);
+    // The week of 12 Oct does not fit into November.
+    await expect(
+      updatePlan(owner, october.id, {
+        title: october.title,
+        level: "MONTH",
+        date: "2026-11-03",
+        parentId: null,
+      }),
+    ).rejects.toMatchObject({ code: "planChildren" });
+    // A month with weeks cannot become a week either.
+    await expect(
+      updatePlan(owner, october.id, {
+        title: "",
+        level: "WEEK",
+        date: "2026-10-05",
+        parentId: null,
+      }),
+    ).rejects.toMatchObject({ code: "planChildren" });
+    // The week moves within the month and keeps its own title.
+    const moved = await updatePlan(owner, week.id, {
+      title: "Запуск ESSE",
+      level: "WEEK",
+      date: "2026-10-21",
+      parentId: october.id,
+    });
+    expect(moved.title).toBe("Запуск ESSE");
+    expect(moved.periodStart.toISOString().slice(0, 10)).toBe("2026-10-19");
+    // A week cannot hang under a year.
+    await expect(
+      updatePlan(owner, week.id, {
+        title: "",
+        level: "WEEK",
+        date: "2026-10-21",
+        parentId: year.id,
+      }),
+    ).rejects.toMatchObject({ code: "plan" });
+    // Another manager neither edits nor deletes someone else's team plan.
+    await expect(
+      updatePlan(manager, week.id, {
+        title: "x",
+        level: "WEEK",
+        date: "2026-10-21",
+        parentId: null,
+      }),
+    ).rejects.toMatchObject({ code: "forbidden" });
+    await expect(deletePlan(manager, week.id)).rejects.toMatchObject({ code: "forbidden" });
+    expect((await getPlanDetail(manager, week.id))?.canManage).toBe(false);
+    expect((await getPlanDetail(owner, week.id))?.canManage).toBe(true);
+  });
+
+  it("the owner edits a team plan of a manager; a personal plan only its author", async () => {
+    const owner = await createTestUser("OWNER");
+    const manager = await createTestUser("MANAGER");
+    const team = await createPlan(manager, {
+      title: "Команда",
+      level: "WEEK",
+      date: "2026-10-05",
+      parentId: null,
+      isPersonal: false,
+    });
+    const mine = await createPlan(manager, {
+      title: "Моё",
+      level: "WEEK",
+      date: "2026-10-05",
+      parentId: null,
+      isPersonal: true,
+    });
+    const renamed = await updatePlan(owner, team.id, {
+      title: "Команда 2",
+      level: "WEEK",
+      date: "2026-10-05",
+      parentId: null,
+    });
+    expect(renamed.title).toBe("Команда 2");
+    // A title that was just the period follows the new period.
+    const moved = await updatePlan(manager, mine.id, {
+      title: "",
+      level: "WEEK",
+      date: "2026-10-14",
+      parentId: null,
+    });
+    expect(moved.title).toMatch(/^Неделя 42 /);
+    const again = await updatePlan(manager, mine.id, {
+      title: moved.title,
+      level: "WEEK",
+      date: "2026-10-21",
+      parentId: null,
+    });
+    expect(again.title).toMatch(/^Неделя 43 /);
+    await expect(deletePlan(owner, mine.id)).rejects.toMatchObject({ code: "forbidden" });
+    expect((await deletePlan(manager, mine.id)).tasks).toBe(0);
+  });
+
+  it("deleting a plan keeps its tasks and nested plans", async () => {
+    const owner = await createTestUser("OWNER");
+    const member = await createTestUser("MEMBER");
+    const month = await createPlan(owner, {
+      title: "",
+      level: "MONTH",
+      date: "2026-10-01",
+      parentId: null,
+      isPersonal: false,
+    });
+    const week = await createPlan(owner, {
+      title: "",
+      level: "WEEK",
+      date: "2026-10-05",
+      parentId: month.id,
+      isPersonal: false,
+    });
+    const task = await createTask(
+      owner,
+      taskInput({ assigneeId: member.id, planId: month.id }),
+      "create",
+    );
+
+    expect(await deletePlan(owner, month.id)).toEqual({ tasks: 1 });
+    expect(await db.plan.findUnique({ where: { id: month.id } })).toBeNull();
+    expect((await db.task.findUniqueOrThrow({ where: { id: task.id } })).planId).toBeNull();
+    expect((await db.plan.findUniqueOrThrow({ where: { id: week.id } })).parentId).toBeNull();
+    const log = await db.activityLog.findFirstOrThrow({ where: { action: "plan.deleted" } });
+    expect(log.details).toMatchObject({ tasks: 1 });
   });
 });

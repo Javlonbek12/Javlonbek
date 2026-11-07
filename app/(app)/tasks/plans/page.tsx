@@ -15,7 +15,7 @@ import { createPlanAction } from "../actions";
 
 export default async function PlansPage({ searchParams }: PageProps<"/tasks/plans">) {
   const user = await requireUser();
-  const { error } = await searchParams;
+  const { error, deleted } = await searchParams;
   const [plans, today] = await Promise.all([listPlansWithProgress(user), getUserToday(user.id)]);
   const canTeam = isApprover(user.role);
   // Plans whose parent is not visible are shown at the top level.
@@ -33,6 +33,11 @@ export default async function PlansPage({ searchParams }: PageProps<"/tasks/plan
             : error === "forbidden"
               ? t("plans.errors.forbidden")
               : t(`tasks.errors.${error}` as TranslationKey)}
+        </p>
+      )}
+      {typeof deleted === "string" && (
+        <p role="status" className="bg-primary/10 rounded-md p-3 text-sm">
+          {t("plans.deleted", { count: Number(deleted) || 0 })}
         </p>
       )}
       {plans.length === 0 ? (

@@ -8,6 +8,7 @@ import {
   ListChecks,
   NotebookTabs,
   Plus,
+  Timer,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -23,6 +24,7 @@ const TABS = [
   { href: "/tasks/timeline", key: "tasks.views.timeline", icon: ChartNoAxesGantt },
   { href: "/tasks/plans", key: "tasks.views.plans", icon: NotebookTabs },
   { href: "/tasks/decide", key: "tasks.views.decide", icon: ClipboardCheck },
+  { href: "/tasks/time", key: "tasks.views.time", icon: Timer },
 ] as const;
 
 // `decisions`: how many tasks wait for the user's decision (shown on «Ждут решения»).
@@ -30,7 +32,10 @@ export function TaskTabs({ decisions }: { decisions: number }) {
   const t = useT();
   const pathname = usePathname();
   const active = (href: string) =>
-    href === "/tasks" ? pathname === "/tasks" : pathname.startsWith(href);
+    // "/tasks/time" must not light up on "/tasks/timeline".
+    href === "/tasks"
+      ? pathname === "/tasks"
+      : pathname === href || pathname.startsWith(`${href}/`);
 
   return (
     <div className="flex flex-col gap-4">

@@ -422,6 +422,7 @@ export const en: Dictionary = {
       timeline: "Timeline",
       plans: "Plans",
       decide: "Awaiting decision",
+      time: "Time",
     },
     decide: {
       title: "Awaiting my decision",
@@ -556,6 +557,28 @@ export const en: Dictionary = {
       hm: "{h} h {m} min",
       h: "{h} h",
       m: "{m} min",
+    },
+    timeReport: {
+      title: "Who spent how much time",
+      subtitle: "{from} – {to}",
+      hint: "Timer time and time added by hand — on the tasks you see. A timer running now gets into the report once it is stopped.",
+      total: "Total time",
+      tasks: "Tasks",
+      people: "People",
+      empty: "No time recorded in this period.",
+      excel: "Download Excel",
+      share: "{percent}% of all time",
+      taskCount: "tasks: {count}",
+      sheet: {
+        people: "By person",
+        tasks: "By task",
+        person: "Person",
+        task: "Task",
+        status: "Status",
+        hours: "Hours",
+        estimate: "Planned, h",
+        count: "Tasks",
+      },
     },
     coAssignees: {
       title: "Co-assignees",
@@ -696,6 +719,7 @@ export const en: Dictionary = {
       invalid: "Check the form fields.",
       cycle: "This link would create a loop.",
       plan: "This plan can't be chosen for the task.",
+      planChildren: "Nested plans won't fit into the new period: move or delete them first.",
       fileTooLarge: "The file is too large (up to {mb} MB).",
       requested: "A deletion request has already been sent.",
       noApprover: "Nobody can confirm the deletion: there is no manager above this task.",
@@ -894,6 +918,17 @@ export const en: Dictionary = {
     errors: {
       parent: "The parent plan must be one level higher and include this period.",
       forbidden: "Team plans are created by a manager or the owner.",
+      manage: "A plan is changed and deleted by its author; a team plan also by the owner.",
+    },
+    edit: "Edit plan",
+    save: "Save",
+    saved: "Plan saved.",
+    deleted: "Plan deleted. Its tasks stay, now without a plan: {count}.",
+    remove: {
+      button: "Delete plan",
+      title: "Delete the plan?",
+      hint: "The plan's tasks ({count}) are not deleted — they just leave the plan. Nested plans become standalone.",
+      yes: "Yes, delete",
     },
   },
   digest: {
@@ -1162,6 +1197,10 @@ export const en: Dictionary = {
         title: "Title",
         subtitle: "Subtitle",
       },
+    },
+    picture: {
+      fit: "Fit to screen",
+      actual: "Actual size",
     },
     public: {
       title: "Planogram",

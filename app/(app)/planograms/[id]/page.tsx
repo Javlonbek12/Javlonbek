@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { PlanogramErrorNote, SavedNote } from "@/components/planograms/error-note";
 import { PlanogramStatusBadge } from "@/components/planograms/status-badge";
+import { PlanogramPicture } from "@/components/planograms/planogram-picture";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -218,11 +219,8 @@ export default async function PlanogramPage({
         )}
       </div>
 
-      {/* The planogram picture; scrolls sideways on phones. */}
-      <div
-        className="overflow-x-auto rounded-lg border bg-white p-2"
-        dangerouslySetInnerHTML={{ __html: svg }}
-      />
+      {/* The planogram picture; scrolls sideways on phones or fits the screen. */}
+      <PlanogramPicture svg={svg} />
 
       <div className="grid gap-4 md:grid-cols-2">
         <Card className="gap-2">
