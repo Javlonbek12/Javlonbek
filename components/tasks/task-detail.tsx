@@ -14,7 +14,12 @@ import type { ReactNode } from "react";
 import {
   addCommentAction,
   addDependencyAction,
+  addCoAssigneeAction,
   addLinkAction,
+  decideCoAssigneeAction,
+  removeCoAssigneeAction,
+  setTaskLabelsAction,
+  withdrawCoAssigneeRequestAction,
   changeStatusAction,
   removeAttachmentAction,
   removeDependencyAction,
@@ -23,6 +28,7 @@ import {
 } from "@/app/(app)/tasks/actions";
 import { setTaskRiskAction } from "@/app/(app)/projects/actions";
 import { AssigneePicker } from "@/components/tasks/assignee-picker";
+import { CoAssigneePicker } from "@/components/tasks/co-assignee-picker";
 import { DetailTabs } from "@/components/tasks/detail-tabs";
 import { QuickCircle } from "@/components/tasks/quick-circle";
 import { StepsTab } from "@/components/tasks/steps-tab";
@@ -45,7 +51,7 @@ import type { Actor } from "@/modules/core/permissions";
 import { getSettings } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
 import { projectOfTask } from "@/modules/projects/service";
-import { canControl, isClosed } from "@/modules/tasks/access";
+import { canControl, isClosed, isDoer } from "@/modules/tasks/access";
 import { listAttachments, MAX_FILE_MB } from "@/modules/tasks/attachment-service";
 import { withParams } from "@/modules/tasks/back";
 import { listComments } from "@/modules/tasks/comment-service";
@@ -66,6 +72,14 @@ import {
   stepPeopleIds,
   stepProgress,
 } from "@/modules/tasks/step-rules";
+import { canLabelTask, knownLabels } from "@/modules/tasks/labels";
+import {
+  canDecideCoAssignee,
+  canJoin,
+  canManageCoAssignees,
+  coAssigneeHints,
+  getCoAssignees,
+} from "@/modules/tasks/co-assignees";
 import { canEditNote, getNote } from "@/modules/tasks/notes";
 import { listSteps } from "@/modules/tasks/steps";
 import { isOverdue } from "@/modules/tasks/today";
@@ -92,6 +106,10 @@ function historyText(action: string, details: unknown): string {
   if (action === "task.status_changed" && details && typeof details === "object") {
     const { from, to } = details as { from: string; to: string };
     return `${label}: ${t(`tasks.status.${from}` as TranslationKey)} → ${t(`tasks.status.${to}` as TranslationKey)}`;
+  }
+  if (action.startsWith("task.coassignee_") && details && typeof details === "object") {
+    const { name } = details as { name?: string };
+    return name ? `${label}: ${name}` : label;
   }
   if (action.startsWith("task.step_") && details && typeof details === "object") {
     const { title } = details as { title?: string };
@@ -219,6 +237,7 @@ export async function TaskDetail({
   const { task, buttons, route, cancelledBlockers, canEdit } = detail;
   const assigneeEditable =
     canEdit && !task.isPersonal && ["DRAFT", "PENDING_APPROVAL", "APPROVED"].includes(task.status);
+  const coManage = canManageCoAssignees(user, task);
 
   const [
     settings,
@@ -235,6 +254,10 @@ export async function TaskDetail({
     hints,
     steps,
     note,
+    allLabels,
+    co,
+    coPeople,
+    coHints,
   ] = await Promise.all([
     getSettings(user.id),
     getDependencies(user, task.id),
@@ -252,7 +275,12 @@ export async function TaskDetail({
       : Promise.resolve({} as Awaited<ReturnType<typeof routeHints>>),
     listSteps(task.id),
     getNote(task.id),
+    canLabelTask(user, task) ? knownLabels(user) : Promise.resolve([] as string[]),
+    task.isPersonal ? Promise.resolve(null) : getCoAssignees(task),
+    coManage ? listAssignableUsers() : Promise.resolve([]),
+    coManage ? coAssigneeHints(user.id) : Promise.resolve({} as Record<string, string>),
   ]);
+  const labelable = canLabelTask(user, task);
   const tz = settings.timezone;
   const today = todayInTimezone(tz);
   const overdue = isOverdue(task, today);
@@ -295,6 +323,78 @@ export async function TaskDetail({
     </form>
   );
 
+  const coEdit = co && (
+    <div className="flex flex-col gap-3">
+      {co.people.length > 0 && (
+        <ul className="flex flex-col gap-1">
+          {co.people.map((p) => (
+            <li key={p.id} className="flex items-center justify-between gap-2">
+              <span className="truncate">{p.name}</span>
+              {(coManage || (p.id === user.id && open)) && (
+                <form action={removeCoAssigneeAction}>
+                  {hidden("description")}
+                  <input type="hidden" name="userId" value={p.id} />
+                  <Button type="submit" size="sm" variant="ghost">
+                    {p.id === user.id
+                      ? t("tasks.coAssignees.leave")
+                      : t("tasks.coAssignees.remove")}
+                  </Button>
+                </form>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {co.requests.map((r) => (
+        <div key={r.id} className="flex flex-wrap items-center justify-between gap-2">
+          <span className="min-w-0">
+            {r.name}{" "}
+            <span className="text-muted-foreground text-xs">
+              — {t("tasks.coAssignees.waiting", { names: r.deciders.join(", ") })}
+            </span>
+          </span>
+          <span className="flex flex-wrap gap-1">
+            {open && canDecideCoAssignee(user, r) && (
+              <form action={decideCoAssigneeAction} className="flex gap-1">
+                <input type="hidden" name="requestId" value={r.id} />
+                <input type="hidden" name="back" value={back("description")} />
+                <Button type="submit" size="sm" name="decision" value="approve">
+                  {t("tasks.coAssignees.approve")}
+                </Button>
+                <Button type="submit" size="sm" variant="outline" name="decision" value="decline">
+                  {t("tasks.coAssignees.decline")}
+                </Button>
+              </form>
+            )}
+            {(r.requestedById === user.id || coManage) && (
+              <form action={withdrawCoAssigneeRequestAction}>
+                {hidden("description")}
+                <input type="hidden" name="requestId" value={r.id} />
+                <Button type="submit" size="sm" variant="ghost">
+                  {t("tasks.coAssignees.withdraw")}
+                </Button>
+              </form>
+            )}
+          </span>
+        </div>
+      ))}
+      {coManage && (
+        <form action={addCoAssigneeAction} className="flex flex-col gap-2">
+          {hidden("description")}
+          <CoAssigneePicker
+            people={coPeople
+              .filter((p) => canJoin(p.id, task) && !co.requests.some((r) => r.userId === p.id))
+              .map((p) => ({ id: p.id, label: displayName(p) }))}
+            hints={coHints}
+          />
+          <Button type="submit" size="sm" className="self-start">
+            {t("tasks.coAssignees.add")}
+          </Button>
+        </form>
+      )}
+    </div>
+  );
+
   const stepCount = stepProgress(steps);
   const tickSteps = canTickSteps(user, task);
   const stepsTab = (
@@ -306,10 +406,15 @@ export async function TaskDetail({
       today={today}
       plan={canPlanSteps(user, task)}
       tick={tickSteps}
-      mine={task.assigneeId === user.id}
+      mine={isDoer(user, task)}
       people={stepPeopleIds(task).map((id) => ({
         id,
-        name: displayName(id === task.assigneeId ? task.assignee : task.creator),
+        name:
+          id === task.assigneeId
+            ? displayName(task.assignee)
+            : id === task.creatorId
+              ? displayName(task.creator)
+              : (co?.people.find((p) => p.id === id)?.name ?? "?"),
       }))}
       finish={
         tickSteps && target
@@ -637,7 +742,7 @@ export async function TaskDetail({
             taskId={task.id}
             status={task.status}
             target={target}
-            accepts={target === "DONE" && !task.isPersonal && task.assigneeId !== user.id}
+            accepts={target === "DONE" && !task.isPersonal && !isDoer(user, task)}
             blocked={target === "DONE" && task.openBlockers > 0}
             back={withParams(base, {})}
             size="lg"
@@ -867,6 +972,31 @@ export async function TaskDetail({
             {displayName(task.assignee)}
           </Field>
         )}
+        {co && (co.people.length > 0 || co.requests.length > 0 || coManage) && (
+          <Field
+            label={t("tasks.coAssignees.title")}
+            edit={
+              coManage ||
+              co.people.some((p) => p.id === user.id) ||
+              co.requests.some((r) => r.requestedById === user.id || canDecideCoAssignee(user, r))
+                ? coEdit
+                : undefined
+            }
+          >
+            {co.people.length === 0 && co.requests.length === 0 ? (
+              <span className="text-muted-foreground">—</span>
+            ) : (
+              <span className="flex flex-col gap-0.5">
+                {co.people.length > 0 && <span>{co.people.map((p) => p.name).join(", ")}</span>}
+                {co.requests.map((r) => (
+                  <span key={r.id} className="text-muted-foreground text-xs">
+                    {r.name} — {t("tasks.coAssignees.waiting", { names: r.deciders.join(", ") })}
+                  </span>
+                ))}
+              </span>
+            )}
+          </Field>
+        )}
         <Field
           label={t("tasks.fields.dueDate")}
           edit={
@@ -924,15 +1054,49 @@ export async function TaskDetail({
         >
           <StatusBadge status={task.status} />
         </Field>
-        {task.labels.length > 0 && (
-          <Field label={t("tasks.panel.labels")}>
-            <span className="flex flex-wrap gap-1">
-              {task.labels.map((label) => (
-                <Badge key={label} variant="secondary">
-                  {label}
-                </Badge>
-              ))}
-            </span>
+        {(task.labels.length > 0 || labelable) && (
+          <Field
+            label={t("tasks.panel.labels")}
+            edit={
+              labelable ? (
+                <form action={setTaskLabelsAction} className="flex flex-col gap-2">
+                  {hidden("description")}
+                  <Input
+                    name="value"
+                    list={`labels-${task.id}`}
+                    defaultValue={task.labels.join(", ")}
+                    placeholder={t("tasks.labels.placeholder")}
+                    aria-label={t("tasks.panel.labels")}
+                    maxLength={400}
+                  />
+                  <datalist id={`labels-${task.id}`}>
+                    {allLabels
+                      .filter((l) => !task.labels.includes(l))
+                      .map((l) => (
+                        <option key={l} value={[...task.labels, l].join(", ")} />
+                      ))}
+                  </datalist>
+                  <span className="text-muted-foreground text-xs">{t("tasks.labels.hint")}</span>
+                  <Button type="submit" size="sm" className="self-start">
+                    {t("tasks.panel.save")}
+                  </Button>
+                </form>
+              ) : undefined
+            }
+          >
+            {task.labels.length > 0 ? (
+              <span className="flex flex-wrap gap-1">
+                {task.labels.map((label) => (
+                  <Link key={label} href={`/tasks?label=${encodeURIComponent(label)}`}>
+                    <Badge variant="secondary" className="hover:bg-secondary/70">
+                      {label}
+                    </Badge>
+                  </Link>
+                ))}
+              </span>
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
           </Field>
         )}
       </div>

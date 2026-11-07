@@ -26,6 +26,13 @@ import {
   type PanelField,
 } from "@/modules/tasks/quick-actions";
 import type { RepeatInput } from "@/modules/tasks/repeat";
+import { setTaskLabels } from "@/modules/tasks/labels";
+import {
+  addCoAssignee,
+  decideCoAssignee,
+  removeCoAssignee,
+  withdrawCoAssigneeRequest,
+} from "@/modules/tasks/co-assignees";
 import { MAX_NOTE_LENGTH, saveNote, type SaveNoteResult } from "@/modules/tasks/notes";
 import {
   addStep,
@@ -357,6 +364,68 @@ export async function quickCloseAction(formData: FormData) {
   }
   revalidatePath("/", "layout");
   redirect(target);
+}
+
+export async function setTaskLabelsAction(formData: FormData) {
+  const user = await actor();
+  const taskId = idSchema.parse(str(formData, "taskId"));
+  await onTaskPage(formData, taskId, () => setTaskLabels(user, taskId, str(formData, "value")));
+}
+
+// ---------- co-assignees ----------
+
+export async function addCoAssigneeAction(formData: FormData) {
+  const user = await actor();
+  const taskId = idSchema.parse(str(formData, "taskId"));
+  const userId = str(formData, "userId");
+  await onTaskPage(formData, taskId, async () => {
+    if (!idSchema.safeParse(userId).success) throw new TaskError("invalid");
+    await addCoAssignee(user, taskId, userId);
+  });
+}
+
+// Taking someone off, or leaving: one who left and no longer sees the task goes to the list.
+export async function removeCoAssigneeAction(formData: FormData) {
+  const user = await actor();
+  const taskId = idSchema.parse(str(formData, "taskId"));
+  const userId = idSchema.parse(str(formData, "userId"));
+  const back = safeBack(str(formData, "back"), `/tasks/${encodeURIComponent(taskId)}`);
+  let target = withParams(back, {});
+  try {
+    const { sees } = await removeCoAssignee(user, taskId, userId);
+    if (!sees)
+      target = /^\/tasks(\/decide)?(\?|$)/.test(back)
+        ? withParams(back, { task: null, tab: null })
+        : "/tasks";
+  } catch (error) {
+    if (!(error instanceof TaskError)) throw error;
+    target = withParams(back, { error: error.code });
+  }
+  revalidatePath("/", "layout");
+  redirect(target);
+}
+
+export async function withdrawCoAssigneeRequestAction(formData: FormData) {
+  const user = await actor();
+  const taskId = idSchema.parse(str(formData, "taskId"));
+  const requestId = idSchema.parse(str(formData, "requestId"));
+  await onTaskPage(formData, taskId, () => withdrawCoAssigneeRequest(user, requestId));
+}
+
+// From «Ждут решения» or the task card: back to where it was decided.
+export async function decideCoAssigneeAction(formData: FormData) {
+  const user = await actor();
+  const requestId = idSchema.parse(str(formData, "requestId"));
+  const back = safeBack(str(formData, "back"), "/tasks/decide");
+  let error: string | null = null;
+  try {
+    await decideCoAssignee(user, requestId, str(formData, "decision") === "approve");
+  } catch (e) {
+    if (!(e instanceof TaskError)) throw e;
+    error = e.code;
+  }
+  revalidatePath("/", "layout");
+  redirect(withParams(back, { error }));
 }
 
 // ---------- steps («Работа») ----------

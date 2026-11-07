@@ -126,6 +126,8 @@ export async function deleteUserCompletely(userId: string, ownerId: string) {
     db.contentComment.deleteMany({ where: { authorId: userId } }),
     db.contentPost.deleteMany({ where: { createdById: userId } }),
     db.project.updateMany({ where: { createdById: userId }, data: { createdById: ownerId } }),
+    // Others' tasks lose them as a co-assignee.
+    db.$executeRaw`UPDATE "Task" SET "coAssigneeIds" = array_remove("coAssigneeIds", ${userId}) WHERE ${userId} = ANY("coAssigneeIds")`,
     db.user.delete({ where: { id: userId } }),
   ]);
   for (const id of taskIds)

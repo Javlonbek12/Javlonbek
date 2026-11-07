@@ -10,7 +10,7 @@ import { displayName } from "@/modules/core/users/display-name";
 import { withAccess } from "@/modules/core/access/actor";
 import { getRoleConfig } from "@/modules/core/access/config";
 
-import { canViewTask } from "./access";
+import { canViewTask, isDoer } from "./access";
 import { TaskError } from "./errors";
 import { mentionedUserIds } from "./mentions";
 
@@ -32,7 +32,7 @@ export async function addComment(actor: Actor, taskId: string, body: string) {
     entityId: taskId,
   });
 
-  // Creator and assignee hear about it, and anyone @mentioned (routing v2), if they can see the
+  // Creator, assignee and co-assignees hear about it, and anyone @mentioned (routing v2), if they can see the
   // task and didn't write it.
   const author = await db.user.findUniqueOrThrow({ where: { id: actor.id } });
   const people = await db.user.findMany();
@@ -40,7 +40,7 @@ export async function addComment(actor: Actor, taskId: string, body: string) {
   const recipients = people.filter(
     (user) =>
       user.id !== actor.id &&
-      (mentioned.has(user.id) || user.id === task.creatorId || user.id === task.assigneeId),
+      (mentioned.has(user.id) || user.id === task.creatorId || isDoer(user, task)),
   );
   const config = recipients.length ? await getRoleConfig() : undefined;
   for (const user of recipients) {

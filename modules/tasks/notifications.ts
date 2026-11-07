@@ -13,6 +13,7 @@ type TaskForNotice = {
   approvedAt: Date | null;
   deciderIds?: string[];
   reviewerId?: string | null;
+  coAssigneeIds?: string[];
 };
 
 type Notice = {
@@ -53,7 +54,13 @@ export type TaskEvent =
   | { kind: "done" }
   | { kind: "rework"; reason: string | null }
   | { kind: "cancelled"; wasPending: boolean; reason: string | null }
-  | { kind: "reassigned"; previousAssigneeId: string; previousSaw: boolean };
+  | { kind: "reassigned"; previousAssigneeId: string; previousSaw: boolean }
+  // Co-assignees (modules/tasks/co-assignees.ts): added (straight away or on a decision), asked
+  // for (to whoever decides), the decision (to whoever asked), taken off.
+  | { kind: "coAdded"; userId: string }
+  | { kind: "coRequested"; deciderIds: string[]; name: string }
+  | { kind: "coDecided"; requesterId: string; name: string; approved: boolean }
+  | { kind: "coRemoved"; userId: string };
 
 // The assignee hears about a task only once they can see it.
 const assigneeSees = (task: TaskForNotice) =>
@@ -73,10 +80,15 @@ export function taskEventRecipients(task: TaskForNotice, event: TaskEvent, actor
     t("notifications.events.taskStatusTitle", { status: t(`tasks.status.${to}`) });
   const assigned = () => t("notifications.events.taskAssignedTitle");
   const deciders = task.deciderIds ?? [];
+  // Co-assignees hear what the assignee hears.
+  const coAssignees = task.coAssigneeIds ?? [];
+  const doers = (type: NotificationType, title: () => string) => {
+    for (const id of [task.assigneeId, ...coAssignees]) add(id, type, title);
+  };
 
   switch (event.kind) {
     case "started":
-      add(task.assigneeId, "task_assigned", assigned);
+      doers("task_assigned", assigned);
       if (event.teamNoticeId)
         notices.push({
           userId: event.teamNoticeId,
@@ -90,7 +102,7 @@ export function taskEventRecipients(task: TaskForNotice, event: TaskEvent, actor
         add(id, "task_pending_approval", () => t("notifications.events.taskPendingTitle"));
       break;
     case "approved":
-      add(task.assigneeId, "task_assigned", assigned);
+      doers("task_assigned", assigned);
       add(task.creatorId, "task_status", () => t("notifications.events.taskApprovedTitle"));
       break;
     case "rejected":
@@ -102,21 +114,28 @@ export function taskEventRecipients(task: TaskForNotice, event: TaskEvent, actor
       break;
     case "taken":
       add(task.creatorId, "task_status", () => t("notifications.events.taskTakenTitle"));
+      // The others doing it: one of them has started.
+      for (const id of [task.assigneeId, ...coAssignees])
+        add(id, "task_status", () => t("notifications.events.taskTakenTitle"));
       break;
     case "review":
       for (const id of event.reviewerIds)
         add(id, "task_status", () => t("notifications.events.taskReviewTitle"));
+      for (const id of [task.assigneeId, ...coAssignees])
+        add(id, "task_status", status("IN_REVIEW"));
       break;
     case "done":
-      add(task.assigneeId, "task_status", status("DONE"));
+      doers("task_status", status("DONE"));
       add(task.creatorId, "task_status", status("DONE"));
       break;
     case "rework":
-      add(task.assigneeId, "task_status", () => t("notifications.events.taskReworkTitle"));
+      doers("task_status", () => t("notifications.events.taskReworkTitle"));
       add(task.creatorId, "task_status", () => t("notifications.events.taskReworkTitle"));
       break;
     case "cancelled":
       if (assigneeSees(task)) add(task.assigneeId, "task_status", status("CANCELLED"));
+      if (task.approvedAt !== null)
+        for (const id of coAssignees) add(id, "task_status", status("CANCELLED"));
       add(task.creatorId, "task_status", status("CANCELLED"));
       if (event.wasPending) for (const id of deciders) add(id, "task_status", status("CANCELLED"));
       break;
@@ -129,6 +148,31 @@ export function taskEventRecipients(task: TaskForNotice, event: TaskEvent, actor
         add(event.previousAssigneeId, "task_status", () =>
           t("notifications.events.taskUnassignedTitle"),
         );
+      break;
+    case "coAdded":
+      // Before approval they can't see it yet: they hear when it starts.
+      if (task.approvedAt !== null)
+        add(event.userId, "task_assigned", () => t("notifications.events.coAddedTitle"));
+      break;
+    case "coRequested":
+      for (const id of event.deciderIds)
+        add(id, "task_pending_approval", () =>
+          t("notifications.events.coRequestedTitle", { name: event.name }),
+        );
+      break;
+    case "coDecided":
+      add(event.requesterId, "task_status", () =>
+        t(
+          event.approved
+            ? "notifications.events.coApprovedTitle"
+            : "notifications.events.coDeclinedTitle",
+          { name: event.name },
+        ),
+      );
+      break;
+    case "coRemoved":
+      if (task.approvedAt !== null)
+        add(event.userId, "task_status", () => t("notifications.events.taskUnassignedTitle"));
       break;
   }
 

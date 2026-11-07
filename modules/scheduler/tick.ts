@@ -43,13 +43,15 @@ export async function claim(userId: string, kind: string, key: string): Promise<
   }
 }
 
-// Tasks someone is responsible for reminding about (routing v2): what they do, and as the author
+// Tasks someone is responsible for reminding about (routing v2): what they do (as the assignee or a
+// co-assignee), and as the author
 // a team task nobody has started yet (or that waits), and as a decider one that waits for them.
 function remindersFor(userId: string, authorStatuses: Prisma.EnumTaskStatusFilter["in"]) {
   return {
     status: { notIn: CLOSED_STATUSES },
     OR: [
       { assigneeId: userId, OR: [{ isPersonal: true }, { approvedAt: { not: null } }] },
+      { isPersonal: false, coAssigneeIds: { has: userId }, approvedAt: { not: null } },
       { creatorId: userId, isPersonal: false, status: { in: authorStatuses } },
       { deciderIds: { has: userId }, status: "PENDING_APPROVAL" },
     ],

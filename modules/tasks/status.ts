@@ -1,7 +1,14 @@
 import type { TaskStatus } from "@/lib/generated/prisma/client";
 import type { Actor } from "@/modules/core/permissions";
 
-import { canAccept, canControl, canDecide, reviewerOf, type TaskAccessInfo } from "./access";
+import {
+  canAccept,
+  canControl,
+  canDecide,
+  isDoer,
+  reviewerOf,
+  type TaskAccessInfo,
+} from "./access";
 
 // Team workflow: DRAFT → PENDING_APPROVAL → APPROVED → IN_PROGRESS → IN_REVIEW → DONE, plus CANCELLED.
 // Personal workflow skips approval: DRAFT → IN_PROGRESS → DONE.
@@ -29,10 +36,10 @@ function personalTransitions(actor: Actor, task: TaskAccessInfo): TaskStatus[] {
 
 // Routing v2: "PENDING_APPROVAL" from a draft means "send": the route decides whether the task
 // starts right away (APPROVED) or waits (see changeStatus). Nobody approves or accepts a task they
-// do themselves; the owner's own task closes when handed in.
+// do themselves; the owner's own task closes when handed in. Co-assignees move it as the assignee.
 function teamTransitions(actor: Actor, task: TaskAccessInfo): TaskStatus[] {
   const creator = task.creatorId === actor.id;
-  const assignee = task.assigneeId === actor.id;
+  const assignee = isDoer(actor, task);
   const cancels = creator || canControl(actor, task);
   const result: TaskStatus[] = [];
 
@@ -69,7 +76,7 @@ function teamTransitions(actor: Actor, task: TaskAccessInfo): TaskStatus[] {
 export function needsReason(actor: Actor, task: TaskAccessInfo, to: TaskStatus): boolean {
   if (task.isPersonal) return false;
   if (task.status === "PENDING_APPROVAL" && to === "DRAFT") return task.creatorId !== actor.id;
-  if (task.status === "IN_REVIEW" && to === "IN_PROGRESS") return task.assigneeId !== actor.id;
+  if (task.status === "IN_REVIEW" && to === "IN_PROGRESS") return !isDoer(actor, task);
   return false;
 }
 

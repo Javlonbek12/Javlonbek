@@ -11,6 +11,7 @@ import {
   RotateCcw,
   Search,
   Star,
+  Tag,
   Trash2,
   User,
   Users,
@@ -28,6 +29,7 @@ import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getUserToday } from "@/modules/core/settings/service";
+import { isDoer } from "@/modules/tasks/access";
 import { parseTaskFilters, TASK_SORTS, type TaskFilters } from "@/modules/tasks/filters";
 import {
   countQuickFilters,
@@ -37,6 +39,7 @@ import {
   type TaskView,
 } from "@/modules/tasks/service";
 import { displayName } from "@/modules/core/users/display-name";
+import { knownLabels } from "@/modules/tasks/labels";
 import { bucketOf, BUCKETS } from "@/modules/tasks/sort";
 import { withParams } from "@/modules/tasks/back";
 import { quickTarget } from "@/modules/tasks/quick";
@@ -107,6 +110,7 @@ const DEFAULTS: Partial<TaskFilters> = {
   q: "",
   sort: "smart",
   person: "",
+  label: "",
 };
 
 function hrefWith(filters: TaskFilters, change: Partial<TaskFilters>) {
@@ -123,11 +127,12 @@ export default async function TaskListPage({ searchParams }: PageProps<"/tasks">
   const params = await searchParams;
   const filters = parseTaskFilters(params);
   const today = await getUserToday(user.id);
-  const [tasks, projects, counts, people] = await Promise.all([
+  const [tasks, projects, counts, people, labels] = await Promise.all([
     listTasks(user, filters, today),
     listProjects(user),
     countQuickFilters(user, filters, today),
     listTaskPeople(user),
+    knownLabels(user),
   ]);
   const activeChip = CHIPS.find((c) => c.due === filters.due && c.priority === filters.priority);
   const groups =
@@ -152,7 +157,7 @@ export default async function TaskListPage({ searchParams }: PageProps<"/tasks">
           taskId={task.id}
           status={task.status}
           target={target}
-          accepts={target === "DONE" && !task.isPersonal && task.assigneeId !== user.id}
+          accepts={target === "DONE" && !task.isPersonal && !isDoer(user, task)}
           blocked={target === "DONE" && task.openBlockers > 0}
           back={here}
         />
@@ -261,6 +266,21 @@ export default async function TaskListPage({ searchParams }: PageProps<"/tasks">
               </option>
             ))}
           </IconSelect>
+          {(labels.length > 0 || filters.label) && (
+            <IconSelect
+              icon={Tag}
+              name="label"
+              defaultValue={filters.label}
+              aria-label={t("tasks.filters.label")}
+            >
+              <option value="">{t("tasks.filters.labelAny")}</option>
+              {[...new Set([...labels, ...(filters.label ? [filters.label] : [])])].map((label) => (
+                <option key={label} value={label}>
+                  {label}
+                </option>
+              ))}
+            </IconSelect>
+          )}
           <IconSelect
             icon={ArrowUpDown}
             name="sort"

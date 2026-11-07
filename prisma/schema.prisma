@@ -58,30 +58,32 @@ model User {
   inviteUsed     Invite?        @relation("InviteUsedBy")
   activity       ActivityLog[]
 
-  tasksCreated       Task[]               @relation("TaskCreator")
-  tasksAssigned      Task[]               @relation("TaskAssignee")
-  taskDeleteRequests Task[]               @relation("TaskDeleteRequester")
-  taskSeries         TaskSeries[]         @relation("TaskSeriesCreator")
-  taskStepsOwned     TaskStep[]           @relation("TaskStepResponsible")
-  taskStepsDone      TaskStep[]           @relation("TaskStepDoneBy")
-  taskNotesEdited    TaskNote[]           @relation("TaskNoteEditor")
+  tasksCreated       Task[]                  @relation("TaskCreator")
+  tasksAssigned      Task[]                  @relation("TaskAssignee")
+  taskDeleteRequests Task[]                  @relation("TaskDeleteRequester")
+  taskSeries         TaskSeries[]            @relation("TaskSeriesCreator")
+  taskStepsOwned     TaskStep[]              @relation("TaskStepResponsible")
+  taskStepsDone      TaskStep[]              @relation("TaskStepDoneBy")
+  taskNotesEdited    TaskNote[]              @relation("TaskNoteEditor")
+  coAssigneeAsked    TaskCoAssigneeRequest[] @relation("CoAssigneeCandidate")
+  coAssigneeAsking   TaskCoAssigneeRequest[] @relation("CoAssigneeRequester")
   plansCreated       Plan[]
   comments           Comment[]
   attachments        TaskAttachment[]
   aiUsage            AiUsage[]
   botDrafts          BotDraft[]
   scheduledSends     ScheduledSend[]
-  meetingsCreated    Meeting[]            @relation("MeetingCreator")
+  meetingsCreated    Meeting[]               @relation("MeetingCreator")
   meetings           MeetingParticipant[]
   meetingNotes       MeetingNotes[]
-  projectsLed        Project[]            @relation("ProjectLead")
-  contentAuthored    ContentPost[]        @relation("ContentAuthor")
-  contentCreated     ContentPost[]        @relation("ContentCreator")
+  projectsLed        Project[]               @relation("ProjectLead")
+  contentAuthored    ContentPost[]           @relation("ContentAuthor")
+  contentCreated     ContentPost[]           @relation("ContentCreator")
   contentComments    ContentComment[]
-  projectsCreated    Project[]            @relation("ProjectCreator")
+  projectsCreated    Project[]               @relation("ProjectCreator")
   distShipments      DistShipment[]
   distOrders         DistOrder[]
-  distPurchases      DistPurchase[]       @relation("DistPurchaseCreatedBy")
+  distPurchases      DistPurchase[]          @relation("DistPurchaseCreatedBy")
   distFiles          DistCampaignFile[]
   distQuotes         DistPriceQuote[]
 }
@@ -213,8 +215,11 @@ model Task {
   needsApproval       Boolean      @default(false)
   // When the status last changed: waiting for a decision is counted from it.
   statusChangedAt     DateTime     @default(now())
-  // Labels such as «отложено» from a project plan.
+  // Labels such as «отложено» from a project plan, and the people's own.
   labels              String[]
+  // Co-assignees: they do what the assignee does (take it into work, tick steps, hand it in) but
+  // don't accept the result. Team tasks only; see modules/tasks/co-assignees.ts.
+  coAssigneeIds       String[]
   // Imported as already done (a project plan's history), accepted by nobody here.
   historical          Boolean      @default(false)
   // Project plan fields (see Project): phase, code from the plan ("T01"), who is responsible
@@ -233,20 +238,21 @@ model Task {
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
 
-  creator           User             @relation("TaskCreator", fields: [creatorId], references: [id])
-  deleteRequestedBy User?            @relation("TaskDeleteRequester", fields: [deleteRequestedById], references: [id], onDelete: SetNull)
-  assignee          User             @relation("TaskAssignee", fields: [assigneeId], references: [id])
-  plan              Plan?            @relation(fields: [planId], references: [id], onDelete: SetNull)
-  meeting           Meeting?         @relation(fields: [meetingId], references: [id], onDelete: SetNull)
-  series            TaskSeries?      @relation(fields: [seriesId], references: [id], onDelete: SetNull)
-  phase             ProjectPhase?    @relation(fields: [phaseId], references: [id], onDelete: SetNull)
+  creator            User                    @relation("TaskCreator", fields: [creatorId], references: [id])
+  deleteRequestedBy  User?                   @relation("TaskDeleteRequester", fields: [deleteRequestedById], references: [id], onDelete: SetNull)
+  assignee           User                    @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  plan               Plan?                   @relation(fields: [planId], references: [id], onDelete: SetNull)
+  meeting            Meeting?                @relation(fields: [meetingId], references: [id], onDelete: SetNull)
+  series             TaskSeries?             @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+  phase              ProjectPhase?           @relation(fields: [phaseId], references: [id], onDelete: SetNull)
   // "blockedBy": tasks that must be closed before this one can be DONE.
-  blockedBy         TaskDependency[] @relation("DependencyBlocked")
-  blocks            TaskDependency[] @relation("DependencyBlocker")
-  comments          Comment[]
-  attachments       TaskAttachment[]
-  steps             TaskStep[]
-  note              TaskNote?
+  blockedBy          TaskDependency[]        @relation("DependencyBlocked")
+  blocks             TaskDependency[]        @relation("DependencyBlocker")
+  comments           Comment[]
+  attachments        TaskAttachment[]
+  steps              TaskStep[]
+  note               TaskNote?
+  coAssigneeRequests TaskCoAssigneeRequest[]
 
   @@index([assigneeId, status])
   @@index([creatorId])
@@ -294,6 +300,23 @@ model TaskNote {
 
   task      Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
   updatedBy User? @relation("TaskNoteEditor", fields: [updatedById], references: [id], onDelete: SetNull)
+}
+
+// A request to add a co-assignee who isn't in the requester's team or below (routing v2): waits
+// for the person the route names (the candidate's manager, or a manager candidate themselves).
+model TaskCoAssigneeRequest {
+  id            String   @id @default(cuid())
+  taskId        String
+  userId        String
+  requestedById String
+  deciderIds    String[]
+  createdAt     DateTime @default(now())
+
+  task        Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user        User @relation("CoAssigneeCandidate", fields: [userId], references: [id], onDelete: Cascade)
+  requestedBy User @relation("CoAssigneeRequester", fields: [requestedById], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, userId])
 }
 
 // A deleted team task kept for a while (Настройки → дней хранения), so the owner can restore it:

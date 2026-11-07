@@ -52,4 +52,49 @@ describe("task notifications (routing v2)", () => {
     expect(ids(taskEventRecipients(task, { kind: "done" }, "author"))).toEqual(["worker"]);
     expect(taskEventRecipients({ ...task, isPersonal: true }, { kind: "done" }, "x")).toEqual([]);
   });
+
+  it("co-assignees hear what the assignee hears, and their own add, request and decision", () => {
+    const shared = { ...task, coAssigneeIds: ["helper"] };
+    expect(ids(taskEventRecipients(shared, { kind: "approved" }, "boss"))).toEqual([
+      "worker",
+      "helper",
+      "author",
+    ]);
+    // One of them started: the author and the others.
+    expect(ids(taskEventRecipients(shared, { kind: "taken" }, "helper"))).toEqual([
+      "author",
+      "worker",
+    ]);
+    expect(
+      ids(taskEventRecipients(shared, { kind: "coAdded", userId: "helper" }, "worker")),
+    ).toEqual(["helper"]);
+    // Before approval they can't see the task yet: they hear when it starts.
+    expect(
+      ids(
+        taskEventRecipients(
+          { ...shared, approvedAt: null },
+          { kind: "coAdded", userId: "helper" },
+          "author",
+        ),
+      ),
+    ).toEqual([]);
+    expect(
+      ids(
+        taskEventRecipients(
+          shared,
+          { kind: "coRequested", deciderIds: ["other"], name: "Тест" },
+          "worker",
+        ),
+      ),
+    ).toEqual(["other"]);
+    expect(
+      ids(
+        taskEventRecipients(
+          shared,
+          { kind: "coDecided", requesterId: "worker", name: "Тест", approved: false },
+          "other",
+        ),
+      ),
+    ).toEqual(["worker"]);
+  });
 });

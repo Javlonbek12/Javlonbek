@@ -80,6 +80,11 @@ export function TaskTableRow({
                 {task.steps.done}/{task.steps.total}
               </Badge>
             )}
+            {task.labels.slice(0, 3).map((label) => (
+              <Badge key={label} variant="secondary" className="font-normal">
+                {label}
+              </Badge>
+            ))}
             {task.openBlockers > 0 && (
               <Badge variant="outline" className="border-destructive text-destructive">
                 <Lock className="size-3" />
@@ -161,7 +166,15 @@ export function TaskTableRow({
             {initials(task.assignee)}
           </span>
           <span className="flex min-w-0 flex-col">
-            <span className="truncate text-sm font-medium">{displayName(task.assignee)}</span>
+            <span className="truncate text-sm font-medium">
+              {displayName(task.assignee)}
+              {task.coAssigneeIds.length > 0 && (
+                <span className="text-muted-foreground font-normal">
+                  {" "}
+                  +{task.coAssigneeIds.length}
+                </span>
+              )}
+            </span>
             <span className="text-muted-foreground text-[11px]">{t("tasks.look.assignee")}</span>
           </span>
         </span>

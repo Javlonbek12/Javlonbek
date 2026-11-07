@@ -5,7 +5,7 @@ import type { Prisma } from "@/lib/generated/prisma/client";
 import { TaskStatus } from "@/lib/generated/prisma/enums";
 import type { Actor } from "@/modules/core/permissions";
 
-import { CLOSED_STATUSES } from "./access";
+import { CLOSED_STATUSES, doerWhere } from "./access";
 
 export const SCOPES = ["mine", "created", "team"] as const;
 // "smart": overdue first, then today, then by importance and due date (see sort.ts).
@@ -27,6 +27,8 @@ export const taskFiltersSchema = z.object({
   sort: z.enum(TASK_SORTS).catch("smart"),
   // An employee (user id): their tasks as the assignee, instead of "whose".
   person: z.string().max(64).catch(""),
+  // A label: only tasks that have it.
+  label: z.string().trim().max(30).catch(""),
 });
 
 export type TaskFilters = z.infer<typeof taskFiltersSchema>;
@@ -42,11 +44,12 @@ export function parseTaskFilters(params: Record<string, string | string[] | unde
     q: first(params.q) ?? "",
     sort: first(params.sort),
     person: first(params.person) ?? "",
+    label: first(params.label) ?? "",
   });
 }
 
 export function scopeWhere(scope: Scope, actor: Actor): Prisma.TaskWhereInput {
-  if (scope === "mine") return { assigneeId: actor.id };
+  if (scope === "mine") return doerWhere(actor.id);
   if (scope === "created") return { creatorId: actor.id };
   return { isPersonal: false };
 }
@@ -63,13 +66,14 @@ export function filtersWhere(
 ): Prisma.TaskWhereInput {
   // A chosen employee replaces "whose": all their tasks the actor may see.
   const and: Prisma.TaskWhereInput[] = [
-    filters.person ? { assigneeId: filters.person } : scopeWhere(filters.scope, actor),
+    filters.person ? doerWhere(filters.person) : scopeWhere(filters.scope, actor),
   ];
 
   if (filters.status === "active") and.push({ status: { notIn: CLOSED_STATUSES } });
   else if (filters.status !== "all") and.push({ status: filters.status });
 
   if (filters.project) and.push({ project: filters.project });
+  if (filters.label) and.push({ labels: { has: filters.label } });
   if (filters.q) and.push({ title: { contains: filters.q, mode: "insensitive" } });
   if (!quick) return { AND: and };
 
