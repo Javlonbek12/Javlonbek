@@ -530,6 +530,12 @@ export const en: Dictionary = {
       noDescription: "No description.",
       reroute: "Changing the assignee works the route out again.",
     },
+    makeTeam: {
+      label: "Visibility",
+      personal: "Personal — only you see it",
+      action: "Make it a team task",
+      hint: "The task becomes a team task: the assignee and your manager will see it, and it goes along its route like a new task. It can't be made personal again.",
+    },
     time: {
       title: "Time",
       start: "Start",
@@ -831,6 +837,7 @@ export const en: Dictionary = {
         step_undone: "unticked a step",
         note_saved: "changed the notes",
         labels_changed: "changed the labels",
+        made_team: "made the task a team task",
         time_logged: "logged time",
         time_removed: "removed a time entry",
         coassignee_added: "added a co-assignee",
