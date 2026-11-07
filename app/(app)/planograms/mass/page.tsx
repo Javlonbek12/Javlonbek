@@ -44,6 +44,11 @@ export default async function MassPage({ searchParams }: PageProps<"/planograms/
         show={query.approved}
         text={t("planograms.library.mass.approved", { count: String(query.approved) })}
       />
+      {Number(query.left) > 0 && (
+        <p className="text-sm text-amber-700 dark:text-amber-300">
+          {t("planograms.library.mass.left", { count: String(query.left) })}
+        </p>
+      )}
 
       <Card className="gap-2">
         <CardTitle>{t("planograms.library.mass.replace")}</CardTitle>

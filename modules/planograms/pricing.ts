@@ -108,14 +108,36 @@ export async function previewPriceList(priceListId: string): Promise<PricePrevie
     .filter((p) => p.changes.length > 0);
 }
 
+// Planograms being prepared (drafts and versions waiting for approval) on a list older than this
+// one. When the list is applied they move to it: otherwise a version approved later would bring
+// the old prices back.
+export async function draftsOnOlderLists(priceListId: string) {
+  const list = await db.priceList.findUnique({ where: { id: priceListId } });
+  if (!list) throw new PlanogramError("notFound");
+  return db.planogram.findMany({
+    where: {
+      isTemplate: false,
+      status: { in: ["DRAFT", "PENDING_APPROVAL"] },
+      OR: [
+        { priceListId: null },
+        { priceList: { effectiveFrom: { lt: list.effectiveFrom } } },
+        { priceList: { effectiveFrom: list.effectiveFrom, createdAt: { lt: list.createdAt } } },
+      ],
+    },
+    select: { id: true, title: true, version: true, status: true },
+    orderBy: [{ title: "asc" }, { version: "asc" }],
+  });
+}
+
 // Every affected planogram gets a new version with the new prices; old versions keep theirs. The
 // version is approved only if it passes the same check as any approval: with critical violations
-// (a price tag that no longer fits, say) it stays a draft, and the one applying the list and the
-// planogram's author hear it.
+// it stays a draft, and the one applying the list and the planogram's author hear it. Drafts and
+// versions waiting for approval on older lists move to this one (their status stays).
 export async function applyPriceList(actor: Actor, priceListId: string) {
   if (!canApprovePlanograms(actor.role)) throw new PlanogramError("forbidden");
   const preview = await previewPriceList(priceListId);
   const list = await db.priceList.findUniqueOrThrow({ where: { id: priceListId } });
+  const waiting = await draftsOnOlderLists(priceListId);
   const created: string[] = [];
   const drafts: string[] = [];
   for (const item of preview) {
@@ -142,15 +164,19 @@ export async function applyPriceList(actor: Actor, priceListId: string) {
         }));
     }
   }
-  await db.priceList.update({ where: { id: priceListId }, data: { appliedAt: new Date() } });
+  const moved = waiting.map((p) => p.id);
+  await db.$transaction([
+    db.planogram.updateMany({ where: { id: { in: moved } }, data: { priceListId } }),
+    db.priceList.update({ where: { id: priceListId }, data: { appliedAt: new Date() } }),
+  ]);
   await logActivity({
     actorId: actor.id,
     action: "price_list.applied",
     entityType: "PriceList",
     entityId: priceListId,
-    details: { planograms: created.length, drafts: drafts.length },
+    details: { planograms: created.length, drafts: drafts.length, moved: moved.length },
   });
-  return { created, drafts };
+  return { created, drafts, moved };
 }
 
 export async function listPriceLists() {

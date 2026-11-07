@@ -13,7 +13,7 @@ import { formatPrice } from "@/modules/planograms/prices";
 import { PriceTable } from "@/components/planograms/price-table";
 import { canManagePlanograms } from "@/modules/planograms/access";
 import { priceTable } from "@/modules/planograms/price-table";
-import { previewPriceList } from "@/modules/planograms/pricing";
+import { draftsOnOlderLists, previewPriceList } from "@/modules/planograms/pricing";
 
 import { applyPriceListAction, savePricesAction } from "../../actions";
 
@@ -26,7 +26,12 @@ export default async function PriceListPage({
   const query = await searchParams;
   const list = await db.priceList.findUnique({ where: { id } });
   if (!list) notFound();
-  const [preview, table] = await Promise.all([previewPriceList(id), priceTable(id)]);
+  const [preview, table, waiting] = await Promise.all([
+    previewPriceList(id),
+    priceTable(id),
+    // Once the list is applied, a draft on an older list was put there on purpose.
+    list.appliedAt ? [] : draftsOnOlderLists(id),
+  ]);
   const editable = !list.appliedAt && canManagePlanograms(user.role);
   const skus = await db.sku.findMany({
     where: { id: { in: preview.flatMap((p) => p.changes.map((c) => c.skuId)) } },
@@ -53,6 +58,11 @@ export default async function PriceListPage({
       {typeof query.drafts === "string" && query.drafts !== "0" && (
         <p className="text-sm text-amber-700">
           {t("planograms.library.prices.drafts", { count: query.drafts })}
+        </p>
+      )}
+      {typeof query.moved === "string" && query.moved !== "0" && (
+        <p className="text-muted-foreground text-sm">
+          {t("planograms.library.prices.moved", { count: query.moved })}
         </p>
       )}
       {typeof query.unknown === "string" && (
@@ -97,7 +107,25 @@ export default async function PriceListPage({
           ))}
         </div>
       )}
-      {canApprovePlanograms(user.role) && preview.length > 0 && (
+      {waiting.length > 0 && (
+        <div className="flex flex-col gap-1 text-sm">
+          <p>{t("planograms.library.prices.waiting", { count: String(waiting.length) })}</p>
+          <ul className="flex flex-wrap gap-x-4 gap-y-1">
+            {waiting.map((p) => (
+              <li key={p.id}>
+                <Link className="underline" href={`/planograms/${p.id}`}>
+                  {p.title}
+                </Link>{" "}
+                <span className="text-muted-foreground">
+                  {t("planograms.version", { version: p.version })} ·{" "}
+                  {t(`planograms.status.${p.status}`)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {canApprovePlanograms(user.role) && (preview.length > 0 || waiting.length > 0) && (
         <form action={applyPriceListAction}>
           <input type="hidden" name="priceListId" value={list.id} />
           <Button type="submit">{t("planograms.library.prices.apply")}</Button>
