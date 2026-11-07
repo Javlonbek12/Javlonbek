@@ -25,6 +25,7 @@ import { setTaskRiskAction } from "@/app/(app)/projects/actions";
 import { AssigneePicker } from "@/components/tasks/assignee-picker";
 import { DetailTabs } from "@/components/tasks/detail-tabs";
 import { QuickCircle } from "@/components/tasks/quick-circle";
+import { StepsTab } from "@/components/tasks/steps-tab";
 import { PriorityBadge, StatusBadge } from "@/components/tasks/task-badges";
 import { TaskActions } from "@/components/tasks/task-actions";
 import { TaskDeleteControl } from "@/components/tasks/task-delete";
@@ -58,6 +59,13 @@ import {
   listProjects,
 } from "@/modules/tasks/service";
 import { getTaskSettings } from "@/modules/tasks/settings";
+import {
+  canPlanSteps,
+  canTickSteps,
+  stepPeopleIds,
+  stepProgress,
+} from "@/modules/tasks/step-rules";
+import { listSteps } from "@/modules/tasks/steps";
 import { isOverdue } from "@/modules/tasks/today";
 
 // The task card. One view for both places a task opens: its own page (links from notifications
@@ -82,6 +90,10 @@ function historyText(action: string, details: unknown): string {
   if (action === "task.status_changed" && details && typeof details === "object") {
     const { from, to } = details as { from: string; to: string };
     return `${label}: ${t(`tasks.status.${from}` as TranslationKey)} → ${t(`tasks.status.${to}` as TranslationKey)}`;
+  }
+  if (action.startsWith("task.step_") && details && typeof details === "object") {
+    const { title } = details as { title?: string };
+    return title ? `${label} «${title}»` : label;
   }
   if (action === "task.updated" && details && typeof details === "object") {
     const fields = Object.keys(details).map((f) => (FIELD_LABELS[f] ? t(FIELD_LABELS[f]) : f));
@@ -219,6 +231,7 @@ export async function TaskDetail({
     projects,
     people,
     hints,
+    steps,
   ] = await Promise.all([
     getSettings(user.id),
     getDependencies(user, task.id),
@@ -234,6 +247,7 @@ export async function TaskDetail({
     assigneeEditable
       ? routeHints(task.creatorId)
       : Promise.resolve({} as Awaited<ReturnType<typeof routeHints>>),
+    listSteps(task.id),
   ]);
   const tz = settings.timezone;
   const today = todayInTimezone(tz);
@@ -275,6 +289,35 @@ export async function TaskDetail({
         {t("tasks.panel.save")}
       </Button>
     </form>
+  );
+
+  const stepCount = stepProgress(steps);
+  const tickSteps = canTickSteps(user, task);
+  const stepsTab = (
+    <StepsTab
+      taskId={task.id}
+      status={task.status}
+      steps={steps}
+      back={back("work")}
+      today={today}
+      plan={canPlanSteps(user, task)}
+      tick={tickSteps}
+      mine={task.assigneeId === user.id}
+      people={stepPeopleIds(task).map((id) => ({
+        id,
+        name: displayName(id === task.assigneeId ? task.assignee : task.creator),
+      }))}
+      finish={
+        tickSteps && target
+          ? {
+              label:
+                target === "IN_REVIEW"
+                  ? t("tasks.panel.quick.IN_REVIEW")
+                  : t("tasks.panel.quick.DONE"),
+            }
+          : null
+      }
+    />
   );
 
   const descriptionTab = (
@@ -723,6 +766,12 @@ export async function TaskDetail({
         initial={tab ?? "description"}
         tabs={[
           { key: "description", label: t("tasks.panel.tabs.description"), content: descriptionTab },
+          {
+            key: "work",
+            label: t("tasks.panel.tabs.work"),
+            badge: stepCount.total ? `${stepCount.done}/${stepCount.total}` : undefined,
+            content: stepsTab,
+          },
           {
             key: "files",
             label: t("tasks.panel.tabs.files"),

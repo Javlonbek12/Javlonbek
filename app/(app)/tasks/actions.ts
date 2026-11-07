@@ -27,6 +27,14 @@ import {
 } from "@/modules/tasks/quick-actions";
 import type { RepeatInput } from "@/modules/tasks/repeat";
 import {
+  addStep,
+  moveStep,
+  removeStep,
+  tickStep,
+  updateStep,
+  type StepInput,
+} from "@/modules/tasks/steps";
+import {
   CREATE_MODES,
   changeStatus,
   createTask,
@@ -348,4 +356,49 @@ export async function quickCloseAction(formData: FormData) {
   }
   revalidatePath("/", "layout");
   redirect(target);
+}
+
+// ---------- steps («Работа») ----------
+
+function stepFromForm(formData: FormData): StepInput {
+  return {
+    title: str(formData, "title"),
+    responsibleId: str(formData, "responsibleId") || null,
+    dueDate: str(formData, "dueDate") || null,
+  };
+}
+
+export async function addStepAction(formData: FormData) {
+  const user = await actor();
+  const taskId = idSchema.parse(str(formData, "taskId"));
+  await onTaskPage(formData, taskId, () => addStep(user, taskId, stepFromForm(formData)));
+}
+
+export async function updateStepAction(formData: FormData) {
+  const user = await actor();
+  const taskId = idSchema.parse(str(formData, "taskId"));
+  const stepId = idSchema.parse(str(formData, "stepId"));
+  await onTaskPage(formData, taskId, () => updateStep(user, stepId, stepFromForm(formData)));
+}
+
+export async function removeStepAction(formData: FormData) {
+  const user = await actor();
+  const taskId = idSchema.parse(str(formData, "taskId"));
+  const stepId = idSchema.parse(str(formData, "stepId"));
+  await onTaskPage(formData, taskId, () => removeStep(user, stepId));
+}
+
+export async function moveStepAction(formData: FormData) {
+  const user = await actor();
+  const taskId = idSchema.parse(str(formData, "taskId"));
+  const stepId = idSchema.parse(str(formData, "stepId"));
+  const direction = str(formData, "direction") === "up" ? "up" : "down";
+  await onTaskPage(formData, taskId, () => moveStep(user, stepId, direction));
+}
+
+export async function tickStepAction(formData: FormData) {
+  const user = await actor();
+  const taskId = idSchema.parse(str(formData, "taskId"));
+  const stepId = idSchema.parse(str(formData, "stepId"));
+  await onTaskPage(formData, taskId, () => tickStep(user, stepId, str(formData, "done") === "1"));
 }
