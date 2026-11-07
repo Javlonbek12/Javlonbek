@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import { EQUIPMENT_FIXTURES } from "./fixtures";
-import { escapeXml, planogramSize, renderPlanogramSvg, slotX, type RenderInput } from "./render";
+import {
+  escapeXml,
+  planogramScene,
+  planogramSize,
+  renderPlanogramSvg,
+  slotX,
+  type RenderInput,
+} from "./render";
 
 const lego = EQUIPMENT_FIXTURES.find((e) => e.code === "LEGO_21")!.geometry;
 const displayL = EQUIPMENT_FIXTURES.find((e) => e.code === "DISPLAY_L")!.geometry;
@@ -41,12 +48,45 @@ describe("renderPlanogramSvg", () => {
       },
     });
     const { shelfH, tagH } = planogramSize({ geometry: displayL, cells: {} });
-    // One block two shelves high (104 is the pack height).
-    expect(svg).toContain(`height="${104 + tagH + shelfH}" rx="6" fill="#15803d"`);
+    // One block two shelves high, down to the lower shelf's board (104 is the pack height).
+    expect(svg).toContain(`height="${104 + tagH + 2 + shelfH}" rx="6" fill="#15803d"`);
     // The 10 slots under the block (5 on each shelf) are not drawn as empty ones.
     const dashed = svg.match(/stroke-dasharray="4 3"/g)!.length;
     const shelves = displayL.shelves.reduce((n, s) => n + s.slots, 0);
     expect(dashed).toBe(shelves - 10);
+  });
+
+  it("runs a shelftalker only beside a combo box, which reaches down to the lower talker", () => {
+    const geometry = {
+      header: null,
+      shelves: Array.from({ length: 4 }, () => ({ slots: 10, offset: 0, group: 0, talker: true })),
+    };
+    const talker = { name: "Шелфтокер", color: "#0f766e", image: null };
+    const input: RenderInput = {
+      geometry,
+      cells: {
+        "1:0": { kind: "POSM", name: "COMBO", color: "#b45309", image: null, span: 5, rows: 2 },
+      },
+      shelftalkers: { 0: talker, 1: talker, 2: talker, 3: talker },
+    };
+    const scene = planogramScene(input);
+    const talkers = scene.items.filter((i) => i.part === "talker" && i.type === "rect");
+    const widths = talkers.map((i) => (i.type === "rect" ? [i.shelf, i.x, i.w] : null));
+    const full =
+      slotX(geometry, geometry.shelves[0]!, 9) + 64 - slotX(geometry, geometry.shelves[0]!, 0);
+    const half =
+      slotX(geometry, geometry.shelves[0]!, 9) + 64 - slotX(geometry, geometry.shelves[0]!, 5);
+    expect(widths).toEqual([
+      [0, 16, full],
+      [1, slotX(geometry, geometry.shelves[1]!, 5), half],
+      [2, slotX(geometry, geometry.shelves[2]!, 5), half],
+      [3, 16, full],
+    ]);
+    // The box ends where the lower shelf's talker ends (both on the shelf edge).
+    const box = scene.items.find((i) => i.part === "posm")!;
+    const lower = talkers.find((i) => i.shelf === 2)!;
+    if (box.type !== "rect" || lower.type !== "rect") throw new Error("rects");
+    expect(box.y + box.h).toBe(lower.y + lower.h);
   });
 
   it("draws a header picture at its own proportions, within limits", () => {
