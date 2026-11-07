@@ -505,9 +505,12 @@ export function Planogram3D({ input }: { input: RenderInput }) {
         ).castShadow = false;
 
         // The tag holder: a white plastic strip on the board's edge, and a paper tag on it under
-        // every facing with a price.
+        // every facing with a price. On a shelf with a shelftalker the tags stand in the
+        // shelftalker instead, dark with a white price (as in the shop).
         const holderZ = boardDepth / 2 + 0.25;
         const holderY = boardY - HOLDER_H / 2 + 0.4;
+        const onTalker = Boolean(shelf.talker && input.shelftalkers?.[shelfIndex]);
+        const talkerY = holderY - HOLDER_H / 2 - TALKER_3D_H / 2;
         box(innerW - 0.4, HOLDER_H, 0.5, holderMaterial, left + innerW / 2, holderY, holderZ);
         const prices = Array.from({ length: shelf.slots }, (_, position) => {
           const cell = cells[slotKey(shelfIndex, position)];
@@ -522,9 +525,9 @@ export function Planogram3D({ input }: { input: RenderInput }) {
             ctx.font = "700 30px Onest, sans-serif";
             prices.forEach((text, i) => {
               if (!text) return;
-              ctx.fillStyle = "#ffffff";
+              ctx.fillStyle = onTalker ? "#0f172a" : "#ffffff";
               ctx.fillRect(i * px + 5, 1, px - 10, 46);
-              ctx.fillStyle = "#1a1d21";
+              ctx.fillStyle = onTalker ? "#ffffff" : "#1a1d21";
               ctx.fillText(text, i * px + px / 2, 25, px - 16);
             });
           });
@@ -537,7 +540,11 @@ export function Planogram3D({ input }: { input: RenderInput }) {
               transparent: false,
             }),
           );
-          tagPlane.position.set(shelfLeft + shelfW / 2, holderY, holderZ + 0.26);
+          tagPlane.position.set(
+            shelfLeft + shelfW / 2,
+            onTalker ? talkerY : holderY,
+            holderZ + (onTalker ? 0.29 : 0.26),
+          );
           tagPlane.receiveShadow = true;
           cabinet.add(tagPlane);
         }
@@ -562,11 +569,7 @@ export function Planogram3D({ input }: { input: RenderInput }) {
               new THREE.PlaneGeometry(runW, TALKER_3D_H),
               new THREE.MeshStandardMaterial({ map, roughness: 0.5 }),
             );
-            strip.position.set(
-              shelfLeft + run.from * SLOT + runW / 2,
-              holderY - HOLDER_H / 2 - TALKER_3D_H / 2,
-              holderZ + 0.27,
-            );
+            strip.position.set(shelfLeft + run.from * SLOT + runW / 2, talkerY, holderZ + 0.27);
             cabinet.add(strip);
           }
 

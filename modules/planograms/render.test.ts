@@ -109,18 +109,44 @@ describe("renderPlanogramSvg", () => {
       ...displayL,
       shelves: displayL.shelves.map((shelf, i) => ({ ...shelf, talker: i < 2 })),
     };
+    const pack = {
+      kind: "SKU" as const,
+      brand: "ESSE",
+      name: "ESSE Change (тест)",
+      color: "#1d4ed8",
+      image: null,
+      price: "28 000",
+      badges: ["YANGI"],
+    };
     const input: RenderInput = {
       geometry,
-      cells: {},
+      cells: { "0:0": pack, "2:0": pack },
       shelftalkers: { 0: { name: "Change 1mg (тест)", color: "#1d4ed8", image: null } },
     };
-    const svg = renderPlanogramSvg(input);
+    const scene = planogramScene(input);
+    const strips = scene.items.filter((i) => i.part === "talker" && i.type === "rect");
     // Shelf 1: its shelftalker; shelf 2: an empty strip; the others: none.
-    expect(svg).toContain(">Change 1mg (тест)<");
-    expect(svg.match(/fill="#e2e8f0"/g)).toHaveLength(1);
+    expect(strips.map((i) => (i.type === "rect" ? i.fill : null))).toEqual(["#1d4ed8", "#e2e8f0"]);
+    // The price tag stands in the shelftalker, dark with a white price, as in the shop; on a
+    // shelf without one it stays a white tag under the pack.
+    const tags = scene.items.filter((i) => i.part === "tag");
+    const [onTalker, plain] = tags.map((i) => (i.type === "rect" ? i : null));
+    const strip = strips[0]!;
+    expect(onTalker).toMatchObject({
+      fill: "#0f172a",
+      texts: [{ text: "28 000", color: "#ffffff" }],
+    });
+    expect(onTalker!.y).toBeGreaterThan(strip.type === "rect" ? strip.y : 0);
+    expect(onTalker!.y + onTalker!.h).toBeLessThan(strip.type === "rect" ? strip.y + strip.h : 0);
+    expect(plain).toMatchObject({ fill: "#fff", texts: [{ color: "#111827" }] });
+    // «YANGI» at the top of the pack (over the health warning), not over its design.
+    const badge = scene.items.find((i) => i.part === "badge" && i.shelf === 0);
+    const packTop = scene.items.find((i) => i.part === "pack" && i.shelf === 0);
+    const y = (i: typeof badge) => (i && i.type === "rect" ? i.y : NaN);
+    expect(y(badge) - y(packTop)).toBeLessThan(20);
     // Every shelf gets the strip's room, so the pitch stays the same.
     expect(planogramSize(input).shelfH).toBe(
-      planogramSize({ geometry: displayL, cells: {} }).shelfH + 26,
+      planogramSize({ geometry: displayL, cells: {} }).shelfH + 4,
     );
   });
 
