@@ -162,8 +162,8 @@ function repeatSummary(series: TaskSeries, today: string): string {
 
 function formatSize(bytes: number) {
   return bytes < 1024 * 1024
-    ? `${Math.ceil(bytes / 1024)} КБ`
-    : `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
+    ? t("common.kb", { n: Math.ceil(bytes / 1024) })
+    : t("common.mb", { n: (bytes / 1024 / 1024).toFixed(1) });
 }
 
 // One property of the task with «Изменить»: the form opens in place.

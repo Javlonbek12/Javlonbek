@@ -122,10 +122,6 @@ export async function linkBotChat(userId: string, chatId: bigint) {
   await db.user.update({ where: { id: userId }, data: { botChatId: chatId } });
 }
 
-export async function listUsers() {
-  return db.user.findMany({ orderBy: [{ createdAt: "asc" }] });
-}
-
 export async function changeRole(actor: Actor, targetUserId: string, newRole: Role) {
   const target = await db.user.findUnique({ where: { id: targetUserId } });
   if (!target || !canChangeRole(actor, target, newRole)) throw new ForbiddenError();

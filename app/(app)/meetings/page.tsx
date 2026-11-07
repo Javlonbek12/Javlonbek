@@ -74,8 +74,9 @@ export default async function MeetingsPage({ searchParams }: PageProps<"/meeting
               )}
             </span>
             <span className="text-muted-foreground text-xs">
-              {formatDateTime(m.startsAt, timezone)} · {m.durationMinutes} мин ·{" "}
-              {m.participants.length} уч.
+              {formatDateTime(m.startsAt, timezone)} ·{" "}
+              {t("meetings.duration", { n: m.durationMinutes })} ·{" "}
+              {t("meetings.participants", { n: m.participants.length })}
             </span>
           </Link>
         ))}

@@ -658,7 +658,7 @@ enum PosmType {
   BANNER
   // A sticker / wobbler taking one or more slots.
   STICKER
-  // A strip on a shelf's edge (under the price tags), the whole shelf wide.
+  // A strip on a shelf's edge; the price tags stand in it (not behind a POSM over several shelves).
   SHELFTALKER
 }
 

@@ -47,6 +47,8 @@ export const en: Dictionary = {
     copied: "Copied",
     you: "you",
     never: "never",
+    kb: "{n} KB",
+    mb: "{n} MB",
   },
   home: {
     title: "Assistant",
@@ -840,6 +842,7 @@ export const en: Dictionary = {
   plans: {
     title: "Plans",
     newPlan: "New plan",
+    titlePlaceholder: "E.g. ESSE new product launch",
     level: {
       YEAR: "Year",
       MONTH: "Month",
@@ -878,6 +881,8 @@ export const en: Dictionary = {
     person: "• {name}: done {done}, in progress {active}, overdue {overdue}",
   },
   meetings: {
+    duration: "{n} min",
+    participants: "{n} att.",
     title: "Meetings",
     newMeeting: "New meeting",
     upcoming: "Upcoming",
@@ -1150,7 +1155,7 @@ export const en: Dictionary = {
         addShelf: "Add shelf",
         talkers: "Shelftalkers on the shelves",
         talkersHint:
-          "Which shelves have a shelftalker on the edge (a strip under the price tags). In a planogram a shelftalker from POSM is chosen for these shelves. Can be changed even when the equipment has planograms.",
+          "Which shelves have a shelftalker on the edge (a strip on the shelf edge; the price tags stand in it). In a planogram a shelftalker from POSM is chosen for these shelves. Can be changed even when the equipment has planograms.",
         removeShelf: "Remove",
         save: "Save equipment",
         used: "used in planograms: {count}",
@@ -1935,7 +1940,7 @@ export const en: Dictionary = {
     welcomeBack: "Hello, {name}! The bot is connected — notifications will come here.",
     inviteRequired:
       "Sign-in is by invitation only. Ask your manager for an invite link and open it.",
-    help: "I'm the bot of the Assistant platform.\n\nJust write or say your tasks, for example:\n“Aziz to prepare the report by Friday, and me to call the distributor tomorrow” — I'll show a card to confirm.\n\nYou can ask: “what do I have today”, “move the report to Thursday”, “close the report task”.\n\n/today — tasks for today and overdue\n/week — for the next 7 days\n/overdue — overdue\n/pending — waiting for your approval or acceptance\n/notes — send meeting minutes (text or voice)\n/content — today's approved content plan posts (to forward to the bots)\n/start — connect the bot\n/help — this help",
+    help: "I'm the bot of the Assistant platform.\n\nJust write or say your tasks, for example:\n“Aziz to prepare the report by Friday, and me to call the distributor tomorrow” — I'll show a card to confirm. A task for yourself is a team task (your manager sees it); a personal one — if you write “personal”.\n\nYou can ask: “what do I have today”, “move the report to Thursday”, “close the report task”.\n\n/today — tasks for today and overdue\n/week — for the next 7 days\n/overdue — overdue\n/pending — waiting for your decision: approve, accept work, deletion requests\n/notes — send meeting minutes (text or voice)\n/content — today's approved content plan posts (to forward to the bots)\n/start — connect the bot\n/help — this help",
     openApp: "Open the app: {url}",
     tooManyRequests: "Too many messages. Wait a minute.",
     notLinked: "I don't know you yet. Open the invite link from your manager or press /start.",

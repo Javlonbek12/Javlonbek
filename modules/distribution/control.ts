@@ -177,12 +177,3 @@ export async function outletReview() {
     skipped,
   };
 }
-
-// Outlets of the equipment file that are not in the outlet base (with an ID).
-export async function outletsMissingFromBase(): Promise<number> {
-  const [row] = await db.$queryRaw<{ n: number }[]>`
-    SELECT COUNT(DISTINCT u."outletId")::int AS "n"
-    FROM "DistUnit" u LEFT JOIN "DistOutlet" o ON o."outletId" = u."outletId"
-    WHERE u."outletId" <> '' AND o."outletId" IS NULL`;
-  return row?.n ?? 0;
-}

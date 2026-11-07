@@ -7,7 +7,7 @@ export const shelfSchema = z.object({
   slots: z.number().int().min(1).max(40),
   offset: z.number().int().min(0).max(40).default(0),
   group: z.number().int().min(0).max(40).default(0),
-  // The shelf's edge holds a shelftalker strip (under the price tags).
+  // The shelf's edge holds a shelftalker strip (the price tags stand in it).
   talker: z.boolean().optional(),
 });
 
@@ -24,11 +24,6 @@ export function parseGeometry(value: unknown): Geometry {
 }
 
 export const slotKey = (shelf: number, position: number) => `${shelf}:${position}`;
-
-export function parseSlotKey(key: string): { shelf: number; position: number } {
-  const [shelf, position] = key.split(":").map(Number);
-  return { shelf, position };
-}
 
 // All slots in reading order: top shelf first, left to right.
 export function allSlots(geometry: Geometry): { shelf: number; position: number }[] {

@@ -158,11 +158,6 @@ export async function getPostFile(actor: Actor, fileId: string) {
   return { file, absolutePath };
 }
 
-// Deletes the post's folder (used when the post itself is deleted).
-export async function removePostFolder(postId: string) {
-  await rm(path.join(uploadRoot(), "content", postId), { recursive: true, force: true });
-}
-
 // "Same as Russian": copies the files of one language to the other (the same files on disk).
 export async function copyPostFiles(
   actor: Actor,

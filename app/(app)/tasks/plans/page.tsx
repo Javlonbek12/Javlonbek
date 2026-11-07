@@ -62,7 +62,7 @@ export default async function PlansPage({ searchParams }: PageProps<"/tasks/plan
           </div>
           <Label className="flex-col items-start">
             {t("plans.fields.title")}
-            <Input name="title" maxLength={200} placeholder="Например: Запуск новинки ESSE" />
+            <Input name="title" maxLength={200} placeholder={t("plans.titlePlaceholder")} />
           </Label>
           <Label className="flex-col items-start">
             {t("plans.fields.parent")}
