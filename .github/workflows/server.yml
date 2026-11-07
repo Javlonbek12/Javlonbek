@@ -15,6 +15,8 @@ name: Server
 #   project-import - load a project plan from the JSON in "data" (see modules/projects/import.ts)
 #   project-create - create a project from a template (JSON in "data", see scripts/project-create.ts)
 #   team-check / team-fix - show users, roles and places; apply fixes from the JSON in "data" (modules/team/admin.ts)
+#   usage   - who really works in the app and which modules are alive: counts per person and per module
+#     for the last 30 days (or {"days": 60} in "data"), bot/AI and notifications (modules/ops/usage.ts)
 #   data-key / data-load - load business data (Connect exports, planogram library) prepared outside
 #     the app. data-key prints the server's public key; the file is committed only encrypted
 #     (deploy/data/X.enc with AES-256, its key in X.enc.key encrypted with that public key), so only
@@ -45,6 +47,7 @@ on:
             project-create,
             team-check,
             team-fix,
+            usage,
             data-key,
             data-load,
           ]
@@ -54,7 +57,7 @@ on:
         type: string
         default: app
       data:
-        description: "For org-import / org-replace / project-import / team-fix: the data as JSON"
+        description: "For org-import / org-replace / project-import / team-fix / usage: the data as JSON"
         type: string
         default: ""
   workflow_run:
@@ -156,6 +159,8 @@ jobs:
               ssh vps 'cd ~/assistant && docker compose -f docker-compose.prod.yml run --rm -T app node --import tsx scripts/team.ts check' ;;
             team-fix)
               printf '%s' "$ORG_DATA" | ssh vps "cd ~/assistant && docker compose -f docker-compose.prod.yml run --rm -T app node --import tsx scripts/team.ts fix" ;;
+            usage)
+              printf '%s' "$ORG_DATA" | ssh vps "cd ~/assistant && docker compose -f docker-compose.prod.yml run --rm -T app node --import tsx scripts/usage.ts" ;;
             data-key)
               # The server's own key pair for data-load: the private key never leaves the server,
               # the public one is printed here to encrypt files with.
