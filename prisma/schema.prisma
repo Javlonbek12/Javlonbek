@@ -62,6 +62,8 @@ model User {
   tasksAssigned      Task[]               @relation("TaskAssignee")
   taskDeleteRequests Task[]               @relation("TaskDeleteRequester")
   taskSeries         TaskSeries[]         @relation("TaskSeriesCreator")
+  taskStepsOwned     TaskStep[]           @relation("TaskStepResponsible")
+  taskStepsDone      TaskStep[]           @relation("TaskStepDoneBy")
   plansCreated       Plan[]
   comments           Comment[]
   attachments        TaskAttachment[]
@@ -242,6 +244,7 @@ model Task {
   blocks            TaskDependency[] @relation("DependencyBlocker")
   comments          Comment[]
   attachments       TaskAttachment[]
+  steps             TaskStep[]
 
   @@index([assigneeId, status])
   @@index([creatorId])
@@ -249,6 +252,29 @@ model Task {
   @@index([project])
   @@index([deleteRequestedAt])
   @@index([seriesId])
+}
+
+// A step of the work on a task («Работа»): what to do, who does it and by when, done or not.
+// Steps go in `position` order; the first one not done is where the work stopped.
+model TaskStep {
+  id            String    @id @default(cuid())
+  taskId        String
+  position      Int
+  title         String
+  // Who does the step: the task's assignee or its author (null: whoever does the task).
+  responsibleId String?
+  dueDate       DateTime? @db.Date
+  doneAt        DateTime?
+  doneById      String?
+  createdById   String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  task        Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  responsible User? @relation("TaskStepResponsible", fields: [responsibleId], references: [id], onDelete: SetNull)
+  doneBy      User? @relation("TaskStepDoneBy", fields: [doneById], references: [id], onDelete: SetNull)
+
+  @@index([taskId, position])
 }
 
 // A deleted team task kept for a while (Настройки → дней хранения), so the owner can restore it:

@@ -31,6 +31,7 @@ import { classifyByDueDate } from "./today";
 import type { RepeatInput } from "./repeat";
 import { occurrencesBetween, copyDay } from "./repeat";
 import { copyMode, createDueCopies, ruleOf, setRepeat, startSeries } from "./repeat-service";
+import { copySteps, stepProgress } from "./step-rules";
 import { withAccess } from "@/modules/core/access/actor";
 import { notify } from "@/modules/core/notifications/service";
 import { t } from "@/lib/i18n";
@@ -420,18 +421,20 @@ const listInclude = {
   assignee: { select: { id: true, firstName: true, lastName: true } },
   creator: { select: { id: true, firstName: true, lastName: true } },
   blockedBy: { select: { blocker: { select: { status: true } } } },
+  steps: { select: { doneAt: true } },
 } satisfies Prisma.TaskInclude;
 
 type TaskWithPeople = Prisma.TaskGetPayload<{ include: typeof listInclude }>;
 
-// Plain object for the UI: dates as "YYYY-MM-DD", blocked flag precomputed.
+// Plain object for the UI: dates as "YYYY-MM-DD", blocked flag and step progress precomputed.
 export function toTaskView(task: TaskWithPeople) {
-  const { blockedBy, ...rest } = task;
+  const { blockedBy, steps, ...rest } = task;
   return {
     ...rest,
     startDate: task.startDate ? toDateString(task.startDate) : null,
     dueDate: task.dueDate ? toDateString(task.dueDate) : null,
     openBlockers: blockedBy.filter((d) => !CLOSED_STATUSES.includes(d.blocker.status)).length,
+    steps: stepProgress(steps),
   };
 }
 
@@ -761,6 +764,7 @@ export async function createRepeatCopies(now = new Date()) {
       copyMode(copy),
       { seriesId, extra: previousOpenId ? { labels: [PREVIOUS_OPEN_LABEL] } : undefined },
     );
+    await copySteps(copy.sourceId, task.id, copy.shiftDays);
     if (previousOpenId)
       await notify(creatorId, () => ({
         type: "task_status",

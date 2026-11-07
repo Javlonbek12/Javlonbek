@@ -4,7 +4,14 @@ import { useState, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
-export type DetailTab = { key: string; label: string; count?: number; content: ReactNode };
+export type DetailTab = {
+  key: string;
+  label: string;
+  count?: number;
+  // Shown like the count, as it is («2/5»).
+  badge?: string;
+  content: ReactNode;
+};
 
 // Tabs of the task card (Описание, Файлы, Комментарии, История). The content is drawn on the
 // server; this only switches what is shown, and remembers the tab in the address so that a form
@@ -56,6 +63,16 @@ export function DetailTabs({ tabs, initial }: { tabs: DetailTab[]; initial: stri
                 )}
               >
                 {tab.count}
+              </span>
+            )}
+            {tab.badge && (
+              <span
+                className={cn(
+                  "rounded-full px-1.5 text-xs tabular-nums",
+                  active === tab.key ? "bg-primary-foreground/20" : "bg-background",
+                )}
+              >
+                {tab.badge}
               </span>
             )}
           </button>

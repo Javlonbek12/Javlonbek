@@ -1,4 +1,4 @@
-import { AlertCircle, CalendarDays, Folder, Lock, Minus, Repeat } from "lucide-react";
+import { AlertCircle, CalendarDays, Folder, ListChecks, Lock, Minus, Repeat } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -65,6 +65,19 @@ export function TaskTableRow({
             {task.seriesId && (
               <Badge variant="outline" title={t("tasks.repeat.title")}>
                 <Repeat className="size-3" aria-label={t("tasks.repeat.title")} />
+              </Badge>
+            )}
+            {task.steps.total > 0 && (
+              <Badge
+                variant="outline"
+                className="tabular-nums"
+                title={t("tasks.steps.progressLabel", {
+                  done: task.steps.done,
+                  total: task.steps.total,
+                })}
+              >
+                <ListChecks className="size-3" aria-hidden />
+                {task.steps.done}/{task.steps.total}
               </Badge>
             )}
             {task.openBlockers > 0 && (

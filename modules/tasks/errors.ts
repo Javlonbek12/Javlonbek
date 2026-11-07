@@ -10,7 +10,8 @@ export type TaskErrorCode =
   | "repeatDate"
   | "reason"
   | "assigneeLocked"
-  | "cancelledDependency";
+  | "cancelledDependency"
+  | "tooManySteps";
 
 // A task action that can't be done; `code` maps to tasks.errors.* in the i18n dictionary.
 export class TaskError extends Error {
