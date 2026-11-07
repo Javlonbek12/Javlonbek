@@ -13,6 +13,7 @@ import {
   canViewTask,
   canControl,
   CLOSED_STATUSES,
+  doerWhere,
   isClosed,
   reviewerOf,
   oversight,
@@ -32,6 +33,7 @@ import type { RepeatInput } from "./repeat";
 import { occurrencesBetween, copyDay } from "./repeat";
 import { copyMode, createDueCopies, ruleOf, setRepeat, startSeries } from "./repeat-service";
 import { copySteps, stepProgress } from "./step-rules";
+import { dropCoAssigneeRequests, listCoAssigneeDecisions } from "./co-assignees";
 import { withAccess } from "@/modules/core/access/actor";
 import { notify } from "@/modules/core/notifications/service";
 import { t } from "@/lib/i18n";
@@ -119,7 +121,14 @@ export async function createTask(
     needsApproval?: boolean;
     extra?: Pick<
       Prisma.TaskUncheckedCreateInput,
-      "phaseId" | "code" | "responsible" | "isMilestone" | "atRisk" | "labels" | "historical"
+      | "phaseId"
+      | "code"
+      | "responsible"
+      | "isMilestone"
+      | "atRisk"
+      | "labels"
+      | "historical"
+      | "coAssigneeIds"
     >;
   } = {},
 ) {
@@ -225,7 +234,14 @@ export async function updateTask(
     assigneeId = assignee.id;
   }
 
-  const next = { ...taskData(data), assigneeId };
+  const next = {
+    ...taskData(data),
+    assigneeId,
+    // The new assignee is no co-assignee any more.
+    ...(assigneeId !== task.assigneeId && task.coAssigneeIds.includes(assigneeId)
+      ? { coAssigneeIds: task.coAssigneeIds.filter((id) => id !== assigneeId) }
+      : {}),
+  };
   if (repeat !== undefined) {
     if (repeat && !next.dueDate) throw new TaskError("repeatDate");
     await setRepeat(
@@ -267,6 +283,9 @@ export async function updateTask(
         : {}),
     },
   });
+  // A request to add the new assignee as a co-assignee has nothing left to decide.
+  if (changes.assigneeId)
+    await db.taskCoAssigneeRequest.deleteMany({ where: { taskId, userId: assigneeId } });
   await logActivity({
     actorId: actor.id,
     action: "task.updated",
@@ -375,6 +394,7 @@ export async function changeStatus(
   });
   if (reason && !task.isPersonal)
     await db.comment.create({ data: { taskId, authorId: actor.id, body: reason } });
+  if (isClosed(to) && !task.isPersonal) await dropCoAssigneeRequests(taskId);
 
   const event = statusEvent(task, updated, actor, route?.teamNoticeId ?? null, reason);
   if (event) await notifyTaskEvent(event.task, event.event, actor.id, await actorName(actor.id));
@@ -686,12 +706,13 @@ export async function listDecisions(actor: Actor) {
     approve: waiting.filter((task) => task.status === "PENDING_APPROVAL"),
     accept: waiting.filter((task) => task.status === "IN_REVIEW"),
     remove: removals.filter((task) => canControl(actor, task)).map(toTaskView),
+    coAssignees: await listCoAssigneeDecisions(actor),
   };
 }
 
 export async function countDecisions(actor: Actor) {
-  const { approve, accept, remove } = await listDecisions(actor);
-  return approve.length + accept.length + remove.length;
+  const { approve, accept, remove, coAssignees } = await listDecisions(actor);
+  return approve.length + accept.length + remove.length + coAssignees.length;
 }
 
 export async function getTodayOverview(actor: Actor, today: string) {
@@ -699,7 +720,8 @@ export async function getTodayOverview(actor: Actor, today: string) {
     where: {
       AND: [
         visibleTasksWhere(actor),
-        { assigneeId: actor.id, status: { notIn: CLOSED_STATUSES } },
+        doerWhere(actor.id),
+        { status: { notIn: CLOSED_STATUSES } },
         { dueDate: { lte: fromDateString(today) } },
       ],
     },
@@ -762,7 +784,16 @@ export async function createRepeatCopies(now = new Date()) {
         estimateHours: copy.estimateMinutes === null ? null : copy.estimateMinutes / 60,
       },
       copyMode(copy),
-      { seriesId, extra: previousOpenId ? { labels: [PREVIOUS_OPEN_LABEL] } : undefined },
+      {
+        seriesId,
+        extra: {
+          labels: [
+            ...copy.labels.filter((label) => label !== PREVIOUS_OPEN_LABEL),
+            ...(previousOpenId ? [PREVIOUS_OPEN_LABEL] : []),
+          ],
+          coAssigneeIds: copy.coAssigneeIds.filter((id) => id !== copy.assigneeId),
+        },
+      },
     );
     await copySteps(copy.sourceId, task.id, copy.shiftDays);
     if (previousOpenId)

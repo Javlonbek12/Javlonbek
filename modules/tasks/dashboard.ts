@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { addDays, fromDateString, startOfWeek, todayInTimezone } from "@/lib/dates";
 import type { Actor } from "@/modules/core/permissions";
 
-import { CLOSED_STATUSES } from "./access";
+import { CLOSED_STATUSES, doerWhere } from "./access";
 
 export const DASHBOARD_WEEKS = 10;
 
@@ -24,14 +24,12 @@ export async function getMyDashboard(actor: Actor, today: string, timeZone: stri
   const since = addDays(weekStart, -7 * (DASHBOARD_WEEKS - 1) - 1);
   const [open, done] = await Promise.all([
     db.task.findMany({
-      where: { assigneeId: actor.id, status: { notIn: [...CLOSED_STATUSES, "DRAFT"] } },
+      where: { AND: [doerWhere(actor.id), { status: { notIn: [...CLOSED_STATUSES, "DRAFT"] } }] },
       select: { status: true, dueDate: true },
     }),
     db.task.findMany({
       where: {
-        assigneeId: actor.id,
-        status: "DONE",
-        completedAt: { gte: fromDateString(since) },
+        AND: [doerWhere(actor.id), { status: "DONE", completedAt: { gte: fromDateString(since) } }],
       },
       select: { completedAt: true },
     }),

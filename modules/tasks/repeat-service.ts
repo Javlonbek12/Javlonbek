@@ -115,6 +115,8 @@ type CreateCopy = (
     priority: string;
     project: string | null;
     estimateMinutes: number | null;
+    labels: string[];
+    coAssigneeIds: string[];
     // The task copied, and how many days later the copy is due (to move the steps' dates).
     sourceId: string;
     shiftDays: number | null;
@@ -125,8 +127,8 @@ type CreateCopy = (
 ) => Promise<unknown>;
 
 // Makes the copies whose day has come (in the series creator's time zone). Each copy repeats the
-// latest task of the series: title, description, assignee, priority, project, estimate, and the
-// same distance between start and due dates, and its steps (not done). Comments, files and links
+// latest task of the series: title, description, assignee and co-assignees, priority, project,
+// estimate, labels, the same distance between start and due dates, and its steps (not done). Comments, files and links
 // stay with the original.
 export async function createDueCopies(now: Date, createCopy: CreateCopy) {
   const series = await db.taskSeries.findMany({ where: { nextDate: { not: null } } });
@@ -169,6 +171,8 @@ export async function createDueCopies(now: Date, createCopy: CreateCopy) {
             priority: latest.priority,
             project: latest.project,
             estimateMinutes: latest.estimateMinutes,
+            labels: latest.labels,
+            coAssigneeIds: latest.isPersonal ? [] : latest.coAssigneeIds,
             sourceId: latest.id,
             shiftDays: latest.dueDate ? daysBetween(toDateString(latest.dueDate), due) : null,
           },

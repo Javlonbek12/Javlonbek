@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import type { TaskStatus } from "@/lib/generated/prisma/enums";
 import type { Actor } from "@/modules/core/permissions";
 
-import { canControl, canViewTask, isClosed, type TaskAccessInfo } from "./access";
+import { canControl, canViewTask, isClosed, isDoer, type TaskAccessInfo } from "./access";
 
 // Rules of task steps (the «Работа» tab): who works with them and when, the progress, and copying
 // them into a repeat. The changes themselves are in steps.ts.
@@ -28,12 +28,12 @@ const WORK_STATUSES: Record<"team" | "personal", TaskStatus[]> = {
   personal: ["DRAFT", "IN_PROGRESS"],
 };
 
-// Who works with the steps: the author, the assignee and whoever controls the task (a personal
-// task: its author only).
+// Who works with the steps: the author, the assignee, co-assignees and whoever controls the task
+// (a personal task: its author only).
 function involved(actor: Actor, task: TaskAccessInfo) {
   if (!canViewTask(actor, task)) return false;
   if (task.isPersonal) return task.creatorId === actor.id;
-  return task.creatorId === actor.id || task.assigneeId === actor.id || canControl(actor, task);
+  return task.creatorId === actor.id || isDoer(actor, task) || canControl(actor, task);
 }
 
 // Adds, changes, moves and removes steps: while the task is open and not handed in.
@@ -50,8 +50,10 @@ export function canTickSteps(actor: Actor, task: TaskAccessInfo) {
 }
 
 // Who a step can be given to: the people of the task.
-export function stepPeopleIds(task: Pick<TaskAccessInfo, "creatorId" | "assigneeId">) {
-  return [...new Set([task.assigneeId, task.creatorId])];
+export function stepPeopleIds(
+  task: Pick<TaskAccessInfo, "creatorId" | "assigneeId" | "coAssigneeIds">,
+) {
+  return [...new Set([task.assigneeId, ...(task.coAssigneeIds ?? []), task.creatorId])];
 }
 
 // The steps of a task for a copy of it (a repeat): not done, due dates moved by `shiftDays`.

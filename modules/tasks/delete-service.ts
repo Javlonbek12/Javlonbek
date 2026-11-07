@@ -11,7 +11,7 @@ import { notify } from "@/modules/core/notifications/service";
 import type { Actor } from "@/modules/core/permissions";
 import { displayName } from "@/modules/core/users/display-name";
 
-import { canControl, canViewTask } from "./access";
+import { canControl, canViewTask, isDoer } from "./access";
 import { TaskError } from "./errors";
 import { getTaskSettings } from "./settings";
 
@@ -33,6 +33,7 @@ type TaskForDelete = Pick<
   | "deleteRequestedAt"
   | "deciderIds"
   | "reviewerId"
+  | "coAssigneeIds"
 >;
 
 export type DeleteMode = "direct" | "request" | "none";
@@ -45,7 +46,7 @@ export function hasProgress(
   counts: { comments: number; files: number; steps?: number; notes?: boolean },
 ) {
   return (
-    (task.assigneeId !== task.creatorId &&
+    ((task.assigneeId !== task.creatorId || (task.coAssigneeIds ?? []).length > 0) &&
       ["IN_PROGRESS", "IN_REVIEW", "DONE"].includes(task.status)) ||
     counts.comments > 0 ||
     counts.files > 0 ||
@@ -60,7 +61,7 @@ export function deleteMode(actor: Actor, task: TaskForDelete, progress: boolean)
   if (!canViewTask(actor, task)) return "none";
   if (canControl(actor, task)) return "direct";
   if (task.creatorId === actor.id && !progress) return "direct";
-  if (task.creatorId === actor.id || task.assigneeId === actor.id) return "request";
+  if (task.creatorId === actor.id || isDoer(actor, task)) return "request";
   return "none";
 }
 
@@ -239,6 +240,7 @@ export async function restoreTask(actor: Actor, id: string) {
     meetingId: await exists(task.meetingId, (x) => db.meeting.findUnique({ where: { id: x } })),
     phaseId: await exists(task.phaseId, (x) => db.projectPhase.findUnique({ where: { id: x } })),
     seriesId: await exists(task.seriesId, (x) => db.taskSeries.findUnique({ where: { id: x } })),
+    coAssigneeIds: (task.coAssigneeIds ?? []).filter((x) => userIds.has(x)),
     deleteRequestedById: null,
     deleteRequestedAt: null,
     deleteReason: null,
@@ -335,7 +337,7 @@ export async function requestTaskDeletion(actor: Actor, taskId: string, reason: 
   if (deleteMode(actor, task, progress) !== "request") throw new TaskError("forbidden");
   if (task.deleteRequestedAt) throw new TaskError("requested");
   const approvers = (await approverIdsFor(task)).filter(
-    (id) => id !== actor.id && id !== task.assigneeId,
+    (id) => id !== actor.id && !isDoer({ id }, task),
   );
   if (!approvers.length) throw new TaskError("noApprover");
   const text = reason.trim().slice(0, 500) || null;

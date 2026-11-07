@@ -1,12 +1,15 @@
 import { ArrowLeft, ClipboardCheck } from "lucide-react";
 import Link from "next/link";
 
+import { decideCoAssigneeAction } from "@/app/(app)/tasks/actions";
 import { QuickCircle } from "@/components/tasks/quick-circle";
 import { TaskPanel } from "@/components/tasks/task-panel";
 import { TaskTableRow } from "@/components/tasks/task-table-row";
+import { Button } from "@/components/ui/button";
 import { t, type TranslationKey } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getUserToday } from "@/modules/core/settings/service";
+import { isDoer } from "@/modules/tasks/access";
 import { withParams } from "@/modules/tasks/back";
 import { quickTarget } from "@/modules/tasks/quick";
 import { listDecisions, type TaskView } from "@/modules/tasks/service";
@@ -16,14 +19,16 @@ const GROUPS = ["approve", "accept", "remove"] as const;
 
 // «Ждут решения»: everything the route gave the user to decide, in one list — tasks to approve or
 // decline, work to accept or send back, requests to delete. A task opens in the panel next to the
-// list, with its main button («Утвердить», «Принять») at the bottom.
+// list, with its main button («Утвердить», «Принять») at the bottom. Requests to add a
+// co-assignee are decided right in the list.
 export default async function TaskDecisionsPage({ searchParams }: PageProps<"/tasks/decide">) {
   const user = await requireUser();
   const params = await searchParams;
   const [today, decisions] = await Promise.all([getUserToday(user.id), listDecisions(user)]);
   const openId = typeof params.task === "string" ? params.task : null;
   const here = openId ? withParams(BASE, { task: openId }) : BASE;
-  const total = GROUPS.reduce((sum, group) => sum + decisions[group].length, 0);
+  const total =
+    GROUPS.reduce((sum, group) => sum + decisions[group].length, 0) + decisions.coAssignees.length;
   const rowProps = (task: TaskView) => {
     const target = quickTarget(user, task);
     return {
@@ -34,7 +39,7 @@ export default async function TaskDecisionsPage({ searchParams }: PageProps<"/ta
           taskId={task.id}
           status={task.status}
           target={target}
-          accepts={target === "DONE" && !task.isPersonal && task.assigneeId !== user.id}
+          accepts={target === "DONE" && !task.isPersonal && !isDoer(user, task)}
           blocked={target === "DONE" && task.openBlockers > 0}
           back={here}
         />
@@ -81,6 +86,60 @@ export default async function TaskDecisionsPage({ searchParams }: PageProps<"/ta
             </ul>
           </section>
         ))}
+        {decisions.coAssignees.length > 0 && (
+          <section className="flex flex-col gap-2.5">
+            <h3 className="flex items-center gap-2 text-sm font-semibold">
+              <span className="size-2 rounded-full bg-amber-500" />
+              {t("tasks.decide.groups.coAssignees")}
+              <span className="text-muted-foreground font-normal">
+                · {decisions.coAssignees.length}
+              </span>
+            </h3>
+            <ul className="flex flex-col gap-2">
+              {decisions.coAssignees.map((request) => (
+                <li
+                  key={request.id}
+                  className="bg-card flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm"
+                >
+                  <span className="flex min-w-0 flex-col gap-0.5">
+                    <span className="font-medium">
+                      {t("tasks.decide.coRequest", {
+                        requester: request.requestedBy,
+                        name: request.name,
+                      })}
+                    </span>
+                    {request.task.visible ? (
+                      <Link
+                        href={withParams(BASE, { task: request.task.id })}
+                        className="text-muted-foreground truncate underline"
+                      >
+                        {request.task.title}
+                      </Link>
+                    ) : (
+                      <span className="text-muted-foreground truncate">{request.task.title}</span>
+                    )}
+                  </span>
+                  <form action={decideCoAssigneeAction} className="flex gap-2">
+                    <input type="hidden" name="requestId" value={request.id} />
+                    <input type="hidden" name="back" value={here} />
+                    <Button type="submit" size="sm" name="decision" value="approve">
+                      {t("tasks.coAssignees.approve")}
+                    </Button>
+                    <Button
+                      type="submit"
+                      size="sm"
+                      variant="outline"
+                      name="decision"
+                      value="decline"
+                    >
+                      {t("tasks.coAssignees.decline")}
+                    </Button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
       </div>
       {openId && (
         <TaskPanel user={user} taskId={openId} base={here} closeHref={BASE} params={params} />

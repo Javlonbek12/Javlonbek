@@ -4,7 +4,7 @@ import type { Task, TaskStatus } from "@/lib/generated/prisma/client";
 import { normalizeName } from "@/modules/bot/match";
 import type { Actor } from "@/modules/core/permissions";
 
-import { CLOSED_STATUSES, visibleTasksWhere } from "./access";
+import { CLOSED_STATUSES, doerWhere, visibleTasksWhere } from "./access";
 import { TaskError } from "./errors";
 import { changeStatus, updateTask, type TaskInput } from "./service";
 import { availableTransitions } from "./status";
@@ -96,7 +96,7 @@ export async function findTasksByQuery(actor: Actor, query: string, limit = 5) {
       AND: [
         visibleTasksWhere(actor),
         { status: { notIn: CLOSED_STATUSES } },
-        { OR: [{ assigneeId: actor.id }, { creatorId: actor.id }] },
+        { OR: [doerWhere(actor.id), { creatorId: actor.id }] },
       ],
     },
     select: { id: true, title: true, dueDate: true, status: true },

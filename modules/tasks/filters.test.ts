@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { doerWhere } from "./access";
 import { filtersWhere, parseTaskFilters, type TaskFilters } from "./filters";
 
 const actor = { id: "u1", role: "MEMBER" as const };
@@ -12,6 +13,7 @@ const base: TaskFilters = {
   q: "",
   sort: "smart",
   person: "",
+  label: "",
 };
 
 describe("parseTaskFilters", () => {
@@ -43,6 +45,7 @@ describe("parseTaskFilters", () => {
       project: "ESSE",
       q: "отчёт",
       sort: "priority",
+      label: "",
     });
   });
 });
@@ -51,7 +54,7 @@ describe("filtersWhere", () => {
   it("builds a database filter for 'my overdue tasks'", () => {
     expect(filtersWhere({ ...base, due: "overdue" }, actor, "2026-10-02")).toEqual({
       AND: [
-        { assigneeId: "u1" },
+        doerWhere("u1"),
         { status: { notIn: ["DONE", "CANCELLED"] } },
         {
           dueDate: { lt: new Date("2026-10-02T00:00:00Z") },
@@ -74,7 +77,17 @@ describe("filtersWhere", () => {
 describe("employee filter", () => {
   it("shows the chosen employee's tasks instead of “whose”", () => {
     expect(filtersWhere({ ...base, person: "u2" }, actor, "2026-10-19")).toEqual({
-      AND: [{ assigneeId: "u2" }, { status: { notIn: ["DONE", "CANCELLED"] } }],
+      AND: [doerWhere("u2"), { status: { notIn: ["DONE", "CANCELLED"] } }],
     });
+  });
+});
+
+describe("labels", () => {
+  it("filters by one label", () => {
+    expect(filtersWhere({ ...base, label: "выставка" }, actor, "2026-10-19").AND).toContainEqual({
+      labels: { has: "выставка" },
+    });
+    expect(parseTaskFilters({ label: "  выставка " }).label).toBe("выставка");
+    expect(parseTaskFilters({ label: "x".repeat(31) }).label).toBe("");
   });
 });
