@@ -45,8 +45,11 @@ const GAP = 4;
 const PAD = 16;
 const SHELF_GAP = 14;
 const HEADER_H = 56;
-// A shelftalker strip under the price tags.
-const TALKER_H = 26;
+// A shelftalker strip on the shelf's edge is a little taller than a price tag: the tags stand in
+// it, as in the shop.
+const TALKER_EXTRA = 4;
+// A price tag on a shelftalker: dark with a white price (the shop's tags).
+const TALKER_TAG = { fill: "#0f172a", color: "#ffffff" } as const;
 const VERTICAL_HEADER_W = 56;
 // Extra room between the sections of a module (a group of slots), with a line in it.
 const GROUP_GAP = 10;
@@ -100,9 +103,10 @@ function shelvesWidth(geometry: Geometry) {
 
 export function planogramSize(input: RenderInput) {
   const tagH = input.large ? 34 : 24;
-  // Shelves keep one pitch: with any shelftalker on the equipment, each gets room for one.
-  const talkerH = input.geometry.shelves.some((s) => s.talker) ? TALKER_H : 0;
-  const shelfH = PACK_H + tagH + talkerH + SHELF_GAP;
+  // Shelves keep one pitch: with any shelftalker on the equipment, each gets room for one. The
+  // price tags of a shelf with a shelftalker stand in it, so it takes the tags' row.
+  const talkerH = input.geometry.shelves.some((s) => s.talker) ? tagH + TALKER_EXTRA : 0;
+  const shelfH = PACK_H + Math.max(tagH, talkerH) + SHELF_GAP;
   const vertical = input.geometry.header === "vertical";
   const bandW = shelvesWidth(input.geometry);
   const aspect = input.header?.image ? input.header.aspect : null;
@@ -237,20 +241,25 @@ export function planogramScene(input: RenderInput) {
     }
   const overlay: SceneItem[] = [];
   const tall = tallPosmSlots(input.cells);
-  // Where a shelf's board is (its top): under the price tags, or under the shelftalker strip.
+  // Where a shelf's board is (its top): under the price tags, or under the shelftalker strip
+  // (with the tags in it).
   const boardTop = (shelfIndex: number) => {
     const shelf = input.geometry.shelves[shelfIndex];
-    const strip = PAD + headerH + shelfIndex * shelfH + PACK_H + tagH + 2;
-    return shelf?.talker ? strip + talkerH - 4 : strip;
+    const top = PAD + headerH + shelfIndex * shelfH;
+    return shelf?.talker ? top + PACK_H + talkerH : top + PACK_H + tagH + 2;
   };
 
   input.geometry.shelves.forEach((shelf, shelfIndex) => {
     const top = PAD + headerH + shelfIndex * shelfH;
     const left = slotX(input.geometry, shelf, 0);
     const shelfW = slotX(input.geometry, shelf, shelf.slots - 1) + SLOT_W - left;
-    // The shelftalker on the shelf's edge (stretched to its stretch of the shelf: it is printed
-    // for it), then the shelf board. Behind a combo box over several shelves it is shorter.
-    const strip = top + PACK_H + tagH + 2;
+    // The shelftalker on the shelf's edge right under the packs (stretched to its stretch of the
+    // shelf: it is printed for it), then the shelf board. Behind a combo box over several shelves
+    // it is shorter. The price tags are drawn on it, under their packs.
+    const strip = top + PACK_H + 2;
+    const stripH = talkerH - 2;
+    // The row under the packs: the tags, or the shelftalker with the tags in it.
+    const rowH = shelf.talker ? talkerH : tagH;
     if (shelf.talker) {
       const talker = input.shelftalkers?.[shelfIndex];
       const label = { part: "talker" as const, shelf: shelfIndex, name: talker?.name };
@@ -263,22 +272,9 @@ export function planogramScene(input: RenderInput) {
           x,
           y: strip,
           w,
-          h: talkerH - 4,
+          h: stripH,
           rx: 2,
           fill: talker?.color ?? "#e2e8f0",
-          texts:
-            talker && !talker.image
-              ? [
-                  {
-                    x: x + w / 2,
-                    y: strip + talkerH / 2 + 2,
-                    text: talker.name,
-                    size: 12,
-                    bold: true,
-                    color: "#fff",
-                  },
-                ]
-              : undefined,
         });
         if (talker?.image)
           items.push({
@@ -287,7 +283,7 @@ export function planogramScene(input: RenderInput) {
             x,
             y: strip,
             w,
-            h: talkerH - 4,
+            h: stripH,
             href: talker.image,
             fit: "none",
           });
@@ -298,7 +294,7 @@ export function planogramScene(input: RenderInput) {
       part: "shelf",
       shelf: shelfIndex,
       x: left - 2,
-      y: shelf.talker ? strip + talkerH - 4 : strip,
+      y: boardTop(shelfIndex),
       w: shelfW + 4,
       h: 4,
       fill: "#94a3b8",
@@ -317,7 +313,7 @@ export function planogramScene(input: RenderInput) {
           x1: line,
           y1: top,
           x2: line,
-          y2: top + PACK_H + tagH,
+          y2: top + PACK_H + (shelf.talker ? 0 : tagH),
           stroke: "#cbd5e1",
           width: 2,
         });
@@ -360,9 +356,11 @@ export function planogramScene(input: RenderInput) {
       if (cell.kind === "POSM") {
         const w = slotX(input.geometry, shelf, position + cell.span - 1) + SLOT_W - x - GAP;
         // Over several shelves it stands on the lowest one, down to its edge: level with that
-        // shelf's shelftalker.
+        // shelf's shelftalker. On one shelf it takes the tag's place too (a shelftalker runs
+        // under it).
         const rows = cell.rows ?? 1;
-        const h = rows > 1 ? boardTop(shelfIndex + rows - 1) - top : PACK_H + tagH;
+        const h =
+          rows > 1 ? boardTop(shelfIndex + rows - 1) - top : PACK_H + (shelf.talker ? 0 : tagH);
         const target = rows > 1 ? overlay : items;
         const label = { part: "posm" as const, ...at, name: cell.name };
         target.push({
@@ -417,6 +415,8 @@ export function planogramScene(input: RenderInput) {
         });
       } else {
         const short = cell.name.replace(cell.brand, "").replace("(тест)", "").trim();
+        // Under a «YANGI» badge the names go a little lower.
+        const down = cell.badges.some((b) => BADGE_ON_PACK.has(b)) ? 18 : 0;
         items.push({
           type: "rect",
           part: "pack",
@@ -430,15 +430,15 @@ export function planogramScene(input: RenderInput) {
           texts: [
             {
               x: x + SLOT_W / 2,
-              y: top + 18,
+              y: top + 18 + down,
               text: cell.brand.slice(0, 9),
               size: 11,
               bold: true,
               color: "#fff",
             },
-            ...wrap(short, 9, 4).map((line, i) => ({
+            ...wrap(short, 9, down ? 3 : 4).map((line, i) => ({
               x: x + SLOT_W / 2,
-              y: top + 40 + i * 13,
+              y: top + 40 + down + i * 13,
               text: line,
               size: 10,
               color: "#fff",
@@ -446,6 +446,7 @@ export function planogramScene(input: RenderInput) {
           ],
         });
       }
+      // «YANGI» at the top of the pack, over the health warning: the design below stays seen.
       for (const badge of cell.badges.filter((b) => BADGE_ON_PACK.has(b))) {
         items.push({
           type: "rect",
@@ -453,7 +454,7 @@ export function planogramScene(input: RenderInput) {
           ...at,
           name: badge,
           x: packX + 4,
-          y: top + PACK_H - 22,
+          y: top + 6,
           w: packW - 8,
           h: 16,
           rx: 8,
@@ -461,7 +462,7 @@ export function planogramScene(input: RenderInput) {
           texts: [
             {
               x: x + SLOT_W / 2,
-              y: top + PACK_H - 10,
+              y: top + 18,
               text: badge,
               size: 10,
               bold: true,
@@ -470,7 +471,9 @@ export function planogramScene(input: RenderInput) {
           ],
         });
       }
-      const tagY = top + PACK_H + 2;
+      // On a shelftalker the tag stands in the strip, dark with a white price.
+      const onTalker = Boolean(shelf.talker);
+      const tagY = onTalker ? strip + 3 : top + PACK_H + 2;
       const tagBadges = cell.badges.filter((b) => !BADGE_ON_PACK.has(b));
       const tagText = [cell.price, ...tagBadges].filter(Boolean).join(" ") || "—";
       // Long tags ("28 000 1mg") get a smaller font so they fit the pack width.
@@ -487,17 +490,17 @@ export function planogramScene(input: RenderInput) {
         y: tagY,
         w: packW,
         h: tagH - 4,
-        rx: 3,
-        fill: "#fff",
-        stroke: "#111827",
+        rx: onTalker ? 2 : 3,
+        fill: onTalker ? TALKER_TAG.fill : "#fff",
+        stroke: onTalker ? undefined : "#111827",
         texts: [
           {
             x: x + SLOT_W / 2,
-            y: tagY + tagH / 2 + fontSize / 3,
+            y: tagY + (tagH - 4) / 2 + fontSize / 3,
             text: tagText,
             size: fontSize,
             bold: true,
-            color: "#111827",
+            color: onTalker ? TALKER_TAG.color : "#111827",
           },
         ],
       });
@@ -510,7 +513,7 @@ export function planogramScene(input: RenderInput) {
           x: packX - 1,
           y: top - 1,
           w: packW + 2,
-          h: PACK_H + tagH,
+          h: PACK_H + rowH,
           rx: 5,
           fill: "none",
           stroke: HIGHLIGHT[mark],
@@ -533,7 +536,7 @@ export function planogramScene(input: RenderInput) {
           x: x - 1,
           y: top - 1,
           w: SLOT_W - GAP + 2,
-          h: PACK_H + tagH,
+          h: PACK_H + rowH,
           rx: 5,
           fill: "none",
           stroke: HIGHLIGHT[mark],

@@ -123,7 +123,7 @@ export function SlotView({
             .map((b) => (
               <span
                 key={b}
-                className="absolute inset-x-1 bottom-1 rounded-full bg-yellow-400 text-center text-[9px] font-bold text-gray-900"
+                className="absolute inset-x-1 top-1 rounded-full bg-yellow-400 text-center text-[9px] font-bold text-gray-900"
               >
                 {b}
               </span>

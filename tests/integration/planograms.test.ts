@@ -356,7 +356,10 @@ describe("library import and pictures", () => {
     await expect(saveLayout(owner, pog.id, {}, null, { 99: talker.id })).rejects.toMatchObject({
       code: "layout",
     });
-    expect(await planogramSvg((await loadPlanogram(pog.id))!)).toContain(">Шелфтокер (тест)<");
+    // Its strip in its colour (the price tags stand on it).
+    expect(await planogramSvg((await loadPlanogram(pog.id))!)).toMatch(
+      /<rect [^>]*height="26" rx="2" fill="#1d4ed8"\/>/,
+    );
     const copy = await copyPlanogram(owner, pog.id);
     expect((await loadPlanogram(copy.id))!.shelftalkers).toEqual({ 0: talker.id });
   });
