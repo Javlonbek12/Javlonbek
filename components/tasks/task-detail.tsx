@@ -18,6 +18,7 @@ import {
   addLinkAction,
   addTimeAction,
   decideCoAssigneeAction,
+  makeTeamTaskAction,
   removeCoAssigneeAction,
   removeTimeEntryAction,
   setTaskLabelsAction,
@@ -112,6 +113,10 @@ function historyText(action: string, details: unknown): string {
   if (action === "task.status_changed" && details && typeof details === "object") {
     const { from, to } = details as { from: string; to: string };
     return `${label}: ${t(`tasks.status.${from}` as TranslationKey)} → ${t(`tasks.status.${to}` as TranslationKey)}`;
+  }
+  if (action === "task.made_team" && details && typeof details === "object") {
+    const { assignee } = details as { assignee?: string };
+    return assignee ? `${label}: ${assignee}` : label;
   }
   if (action.startsWith("task.time_") && details && typeof details === "object") {
     const { minutes } = details as { minutes?: number };
@@ -250,6 +255,8 @@ export async function TaskDetail({
   const assigneeEditable =
     canEdit && !task.isPersonal && ["DRAFT", "PENDING_APPROVAL", "APPROVED"].includes(task.status);
   const coManage = canManageCoAssignees(user, task);
+  // A personal task its author may make a team task (BACKLOG item 15).
+  const convertible = task.isPersonal && task.creatorId === user.id && !isClosed(task.status);
 
   const [
     settings,
@@ -282,8 +289,8 @@ export async function TaskDetail({
     getDeleteMode(user, task.id),
     getTaskSettings(),
     canEdit ? listProjects(user) : Promise.resolve([]),
-    assigneeEditable ? listAssignableUsers() : Promise.resolve([]),
-    assigneeEditable
+    assigneeEditable || convertible ? listAssignableUsers() : Promise.resolve([]),
+    assigneeEditable || convertible
       ? routeHints(task.creatorId)
       : Promise.resolve({} as Awaited<ReturnType<typeof routeHints>>),
     listSteps(task.id),
@@ -965,6 +972,37 @@ export async function TaskDetail({
             t("tasks.fields.none")
           )}
         </Field>
+        {convertible && (
+          <Field
+            label={t("tasks.makeTeam.label")}
+            edit={
+              <form action={makeTeamTaskAction} className="flex flex-col gap-2">
+                {hidden("description")}
+                <AssigneePicker
+                  initial={user.id}
+                  hintInitial
+                  people={people.map((p) => ({ id: p.id, label: displayName(p) }))}
+                  hints={Object.fromEntries(
+                    Object.entries(hints).map(([id, hint]) => [id, hint.plain.text]),
+                  )}
+                />
+                <Label className="font-normal">
+                  <input type="checkbox" name="needsApproval" className="size-4" />
+                  {t("tasks.route.needsApproval")}
+                </Label>
+                <span className="text-muted-foreground text-xs">{t("tasks.makeTeam.hint")}</span>
+                <Button type="submit" size="sm" className="self-start">
+                  {t("tasks.makeTeam.action")}
+                </Button>
+              </form>
+            }
+          >
+            <span className="flex items-center gap-1.5">
+              <Lock className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
+              {t("tasks.makeTeam.personal")}
+            </span>
+          </Field>
+        )}
         {!task.isPersonal && (
           <Field
             label={t("tasks.fields.assignee")}

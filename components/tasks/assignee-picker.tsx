@@ -11,10 +11,13 @@ export function AssigneePicker({
   initial,
   people,
   hints,
+  hintInitial = false,
 }: {
   initial: string;
   people: { id: string; label: string }[];
   hints: Record<string, string>;
+  // Say what happens for the initial choice too (a new route, not a change of one).
+  hintInitial?: boolean;
 }) {
   const t = useT();
   const [value, setValue] = useState(initial);
@@ -34,7 +37,9 @@ export function AssigneePicker({
         ))}
       </NativeSelect>
       <span className="text-muted-foreground text-xs">
-        {value !== initial && hints[value] ? hints[value] : t("tasks.panel.reroute")}
+        {(value !== initial || hintInitial) && hints[value]
+          ? hints[value]
+          : t("tasks.panel.reroute")}
       </span>
     </div>
   );

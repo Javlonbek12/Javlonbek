@@ -48,6 +48,7 @@ import {
   CREATE_MODES,
   changeStatus,
   createTask,
+  makeTeamTask,
   updateTask,
   type CreateMode,
   type TaskInput,
@@ -372,6 +373,18 @@ export async function setTaskLabelsAction(formData: FormData) {
   const user = await actor();
   const taskId = idSchema.parse(str(formData, "taskId"));
   await onTaskPage(formData, taskId, () => setTaskLabels(user, taskId, str(formData, "value")));
+}
+
+// A personal task becomes a team task: the assignee chosen (oneself by default), the route decides.
+export async function makeTeamTaskAction(formData: FormData) {
+  const user = await actor();
+  const taskId = idSchema.parse(str(formData, "taskId"));
+  await onTaskPage(formData, taskId, () =>
+    makeTeamTask(user, taskId, {
+      assigneeId: str(formData, "value") || user.id,
+      needsApproval: formData.get("needsApproval") === "on",
+    }),
+  );
 }
 
 // ---------- co-assignees ----------

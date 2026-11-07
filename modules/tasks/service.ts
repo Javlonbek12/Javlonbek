@@ -311,6 +311,61 @@ export async function updateTask(
   return updated;
 }
 
+// A personal task becomes a team task (BACKLOG item 15): its author picks the assignee (themselves
+// by default) and the route v2 decides, as for a new task — it starts right away or waits for a
+// decision, and the same people hear about it. Work already going on one's own task goes on; given
+// to someone else, it waits for them to take it. A personal plan can't hold a team task: it leaves
+// the plan.
+export async function makeTeamTask(
+  actor: Actor,
+  taskId: string,
+  input: { assigneeId: string; needsApproval?: boolean },
+  now = new Date(),
+) {
+  const task = await db.task.findUnique({ where: { id: taskId } });
+  if (!task || !task.isPersonal || task.creatorId !== actor.id || isClosed(task.status))
+    throw new TaskError("forbidden");
+  const assignee = await db.user.findUnique({ where: { id: input.assigneeId } });
+  if (!assignee) throw new TaskError("invalid");
+  const needsApproval = input.needsApproval ?? false;
+  const route = await routeFor(actor.id, assignee.id, needsApproval);
+  const goesOn =
+    route.status === "APPROVED" && assignee.id === actor.id && task.status === "IN_PROGRESS";
+  const status: TaskStatus = goesOn ? "IN_PROGRESS" : route.status;
+  const plan = task.planId ? await db.plan.findUnique({ where: { id: task.planId } }) : null;
+  const updated = await db.task.update({
+    where: { id: taskId },
+    data: {
+      isPersonal: false,
+      assigneeId: assignee.id,
+      needsApproval,
+      status,
+      statusChangedAt: status === task.status ? task.statusChangedAt : now,
+      deciderIds: route.deciderIds,
+      reviewerId: route.reviewerId,
+      approvedAt: route.status === "APPROVED" ? now : null,
+      approvedById: null,
+      planId: plan?.isPersonal ? null : task.planId,
+    },
+  });
+  await logActivity({
+    actorId: actor.id,
+    action: "task.made_team",
+    entityType: "Task",
+    entityId: taskId,
+    details: { assignee: displayName(assignee), status },
+  });
+  await notifyTaskEvent(
+    updated,
+    route.status === "APPROVED"
+      ? { kind: "started", teamNoticeId: route.teamNoticeId }
+      : { kind: "pending" },
+    actor.id,
+    await actorName(actor.id),
+  );
+  return updated;
+}
+
 // The route of a team task from its author to an assignee, by today's reporting lines.
 async function routeFor(authorId: string, assigneeId: string, needsApproval: boolean) {
   const { people, settings } = await loadRouting();
