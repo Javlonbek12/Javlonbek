@@ -7,8 +7,9 @@ import type { TelegramButton } from "./keyboard";
 // A task waiting in the confirmation card.
 export type DraftTask = {
   title: string;
-  // null = the speaker themselves (a personal task).
+  // null = the speaker themselves: a team task on themselves, or a personal one if `personal`.
   assigneeId: string | null;
+  personal?: boolean;
   // The name as the user said it, when it is not resolved yet.
   saidName: string | null;
   unresolved: boolean;
@@ -38,7 +39,7 @@ export function renderCardText(
     const who = task.unresolved
       ? t("bot.card.unresolved", { name: task.saidName ?? "?" })
       : task.assigneeId === null
-        ? t("bot.card.me")
+        ? t(task.personal ? "bot.card.mePersonal" : "bot.card.me")
         : name(people.find((p) => p.id === task.assigneeId) ?? { firstName: "?", lastName: null });
     const details = [
       `👤 ${who}`,
@@ -95,7 +96,10 @@ export function assigneeButtons(
   const rows = offered.map((p) => [
     { text: `👤 ${name(p)}`, data: `d:${draftId}:av:${index}:${p.id}` },
   ]);
-  rows.push([{ text: t("bot.edit.me"), data: `d:${draftId}:av:${index}:me` }]);
+  rows.push([
+    { text: t("bot.edit.me"), data: `d:${draftId}:av:${index}:me` },
+    { text: t("bot.edit.mePersonal"), data: `d:${draftId}:av:${index}:mine` },
+  ]);
   if (!showAll && task.candidateIds.length > 0) {
     rows.push([{ text: t("bot.card.someoneElse"), data: `d:${draftId}:as:${index}` }]);
   }

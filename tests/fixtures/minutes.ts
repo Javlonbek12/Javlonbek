@@ -15,6 +15,7 @@ export const MINUTES: { text: string; model: ExtractedTask[]; expect: Expected[]
         dueDate: "2026-10-02",
         priority: null,
         project: "ESSE Change 1",
+        personal: false,
       },
       {
         title: "Заказать POSM",
@@ -22,6 +23,7 @@ export const MINUTES: { text: string; model: ExtractedTask[]; expect: Expected[]
         dueDate: "2026-10-10",
         priority: null,
         project: "ESSE Change 1",
+        personal: false,
       },
       {
         title: "Договориться с дистрибьютором",
@@ -29,6 +31,7 @@ export const MINUTES: { text: string; model: ExtractedTask[]; expect: Expected[]
         dueDate: null,
         priority: null,
         project: null,
+        personal: false,
       },
     ],
     expect: [
@@ -46,6 +49,7 @@ export const MINUTES: { text: string; model: ExtractedTask[]; expect: Expected[]
         dueDate: "2026-10-05",
         priority: null,
         project: null,
+        personal: false,
       },
       {
         title: "Hisobotni yuborish",
@@ -53,6 +57,7 @@ export const MINUTES: { text: string; model: ExtractedTask[]; expect: Expected[]
         dueDate: "2026-10-02",
         priority: null,
         project: null,
+        personal: false,
       },
     ],
     expect: [

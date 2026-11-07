@@ -150,7 +150,7 @@ async function cardReply(draftId: string, payload: DraftPayload, edit: boolean):
   const routes = draft
     ? await shortRouteHints(
         draft.userId,
-        payload.tasks.map((task) => task.assigneeId),
+        payload.tasks.map((task) => ({ assigneeId: task.assigneeId, personal: task.personal })),
       )
     : [];
   return {
@@ -254,9 +254,14 @@ async function handleDraftCallback(user: User, parts: string[], now?: Date): Pro
         edit: true,
       };
     case "av": {
-      if (arg === "me") task.assigneeId = null;
-      else if (people.some((p) => p.id === arg)) task.assigneeId = arg === user.id ? null : arg!;
-      else return cardReply(draftId, payload, true);
+      // «Я»: a team task on oneself; «Я (личная)»: a personal one.
+      if (arg === "me" || arg === "mine") {
+        task.assigneeId = null;
+        task.personal = arg === "mine";
+      } else if (people.some((p) => p.id === arg)) {
+        task.assigneeId = arg === user.id ? null : arg!;
+        task.personal = false;
+      } else return cardReply(draftId, payload, true);
       task.unresolved = false;
       task.candidateIds = [];
       await saveDraft(draftId, payload);
@@ -622,6 +627,7 @@ export async function handleText(
           dueDate: null,
           priority: null,
           project: null,
+          personal: false,
         },
       ],
       [],

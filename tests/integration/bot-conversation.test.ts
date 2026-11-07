@@ -65,7 +65,7 @@ describe("text → confirmation card (18 phrases: Russian, Uzbek, mixed)", () =>
 describe("confirmation card actions", () => {
   beforeEach(resetDb);
 
-  it("saves: own task as personal, others' tasks approved right away by the OWNER", async () => {
+  it("saves: own task as a team task on oneself, others' approved right away by the OWNER", async () => {
     const users = await createFixtureTeam();
     const phrase = PHRASES.find((p) => p.model.length === 3)!;
     const reply = await handleText(users.owner, CHAT, phrase.text, depsFor(phrase));
@@ -75,12 +75,32 @@ describe("confirmation card actions", () => {
     expect(saved.text).toContain("Сохранено задач: 3");
 
     const tasks = await db.task.findMany({ orderBy: { createdAt: "asc" } });
-    expect(tasks.map((t) => [t.isPersonal, t.status])).toEqual([
-      [true, "DRAFT"],
-      [false, "APPROVED"],
-      [false, "APPROVED"],
+    expect(tasks.map((t) => [t.isPersonal, t.status, t.assigneeId === users.owner.id])).toEqual([
+      [false, "APPROVED", true],
+      [false, "APPROVED", false],
+      [false, "APPROVED", false],
     ]);
     expect(await db.botDraft.count()).toBe(0);
+  });
+
+  it("a task asked for as personal stays personal; «Я (личная)» in the card makes one", async () => {
+    const users = await createFixtureTeam();
+    const phrase = PHRASES.find((p) => p.model.length === 3)!;
+    const personal = {
+      ...phrase,
+      model: phrase.model.map((task, i) => (i === 0 ? { ...task, personal: true } : task)),
+    };
+    const reply = await handleText(users.aziz, 9000002n, personal.text, depsFor(personal));
+    expect(reply.text).toContain("👤 я (личная)");
+    expect(reply.text).toContain("↪ личная");
+    // The second task (someone else's) the user takes on themselves as a personal one.
+    await handleCallback(users.aziz, `d:${reply.draftId}:av:1:mine`);
+    await handleCallback(users.aziz, `d:${reply.draftId}:save`);
+    const tasks = await db.task.findMany({ orderBy: { createdAt: "asc" } });
+    expect(tasks.slice(0, 2).map((t) => [t.isPersonal, t.assigneeId])).toEqual([
+      [true, users.aziz.id],
+      [true, users.aziz.id],
+    ]);
   });
 
   it("the card shows each task's route; a task for another team waits for its manager", async () => {

@@ -60,6 +60,7 @@ const task = (
   dueDate,
   priority: null,
   project: null,
+  personal: false,
   ...extra,
 });
 

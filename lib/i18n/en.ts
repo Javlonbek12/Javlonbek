@@ -915,7 +915,8 @@ export const en: Dictionary = {
       create: "Create the checked tasks",
       created: "Tasks created: {count}",
       include: "Create",
-      me: "Me (personal)",
+      me: "Me",
+      mine: "Me (personal)",
     },
     tasks: "Meeting tasks",
     errors: {
@@ -1944,7 +1945,8 @@ export const en: Dictionary = {
     aiFallback: "AI is unavailable now — saving the message as one task, you can correct it.",
     card: {
       title: "Tasks from the message:",
-      me: "me (personal)",
+      me: "me",
+      mePersonal: "me (personal)",
       noDue: "no due date",
       unresolved: "❓ “{name}” — who is this?",
       save: "✅ Save",
@@ -1977,7 +1979,8 @@ export const en: Dictionary = {
       monthEnd: "End of month",
       none: "No due date",
       typeDate: "✍️ Type a date",
-      me: "Me (personal task)",
+      me: "👤 Me",
+      mePersonal: "🔒 Me (personal)",
     },
     lists: {
       today: "📋 For today",
