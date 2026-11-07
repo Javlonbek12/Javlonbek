@@ -124,7 +124,8 @@ export async function workflowAction(formData: FormData) {
   const step = str(formData, "step");
   await run(`/planograms/${id}`, async () => {
     if (step === "submit") await submitForApproval(user, id);
-    else if (step === "approve") await approvePlanogram(user, id);
+    else if (step === "approve")
+      await approvePlanogram(user, id, { force: str(formData, "force") === "1" });
     else if (step === "draft") await returnToDraft(user, id);
     else if (step === "archive") await archivePlanogram(user, id);
     else if (step === "version") return `/planograms/${(await copyPlanogram(user, id)).id}/edit`;
@@ -266,8 +267,8 @@ export async function applyPriceListAction(formData: FormData) {
   const user = await actor();
   const id = idSchema.parse(str(formData, "priceListId"));
   await run(`/planograms/prices/${id}`, async () => {
-    const { created, drafts } = await applyPriceList(user, id);
-    return `/planograms/prices/${id}?created=${created.length}&drafts=${drafts.length}`;
+    const { created, drafts, moved } = await applyPriceList(user, id);
+    return `/planograms/prices/${id}?created=${created.length}&drafts=${drafts.length}&moved=${moved.length}`;
   });
 }
 
@@ -300,9 +301,12 @@ export async function massInsertAction(formData: FormData) {
 export async function approveAllPendingAction() {
   const user = await actor();
   await run("/planograms/mass", async () => {
+    // Oldest first: of two versions made from the same one, the first is approved and the second
+    // is then left out (it was not made from the version in force, see staleBase).
     const pending = await db.planogram.findMany({
       where: { status: "PENDING_APPROVAL", isTemplate: false },
       select: { id: true },
+      orderBy: { createdAt: "asc" },
     });
     let approved = 0;
     for (const p of pending) {
@@ -313,7 +317,7 @@ export async function approveAllPendingAction() {
         if (!(error instanceof PlanogramError)) throw error;
       }
     }
-    return `/planograms/mass?approved=${approved}`;
+    return `/planograms/mass?approved=${approved}&left=${pending.length - approved}`;
   });
 }
 

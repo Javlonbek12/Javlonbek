@@ -301,9 +301,59 @@ export async function submitForApproval(actor: Actor, id: string) {
   );
 }
 
-// Approval is blocked while critical rule violations remain. The previously approved
-// version of the same planogram is archived; the approved one gets a public link token.
-export async function approvePlanogram(actor: Actor, id: string, now = new Date()) {
+// A version in the works that was not made from the version in force: since it was copied,
+// another version was approved (a mass operation, a price list, a parallel draft), or it was
+// copied from an old one. Approving it replaces the version in force, so whatever came into that
+// one after the copy would be gone. Returns what would be lost (null when nothing): layout
+// changes of the version in force over this one's source, a header or shelftalkers changed there,
+// and its newer price list when this version is on another one.
+export async function staleBase(loaded: LoadedPlanogram) {
+  const r = loaded.record;
+  if (r.isTemplate || (r.status !== "DRAFT" && r.status !== "PENDING_APPROVAL")) return null;
+  if (!r.previousVersionId) return null;
+  const current = await db.planogram.findFirst({
+    where: { rootId: r.rootId ?? r.id, status: "APPROVED", id: { not: r.id } },
+    orderBy: { version: "desc" },
+    select: { id: true },
+  });
+  if (!current || current.id === r.previousVersionId) return null;
+  const [inForce, base] = await Promise.all([
+    loadPlanogram(current.id),
+    loadPlanogram(r.previousVersionId),
+  ]);
+  if (!inForce || !base) return null;
+  const none = new Map<string, number>();
+  const changes = diffLayouts(
+    { layout: base.layout, geometry: base.geometry, prices: none },
+    { layout: inForce.layout, geometry: inForce.geometry, prices: none },
+  );
+  const header = inForce.record.headerPosmId !== base.record.headerPosmId;
+  const shelftalkers = JSON.stringify(inForce.shelftalkers) !== JSON.stringify(base.shelftalkers);
+  const priceList =
+    inForce.record.priceListId !== base.record.priceListId &&
+    inForce.record.priceListId !== r.priceListId
+      ? (inForce.record.priceList?.name ?? "—")
+      : null;
+  if (changes.length === 0 && !header && !shelftalkers && !priceList) return null;
+  return {
+    current: { id: inForce.record.id, version: inForce.record.version },
+    base: { id: base.record.id, version: base.record.version },
+    changes,
+    header,
+    shelftalkers,
+    priceList,
+  };
+}
+
+// Approval is blocked while critical rule violations remain, and asks for `force` when the
+// version was not made from the one in force (see staleBase). The previously approved version of
+// the same planogram is archived; the approved one gets a public link token.
+export async function approvePlanogram(
+  actor: Actor,
+  id: string,
+  options: { force?: boolean; now?: Date } = {},
+) {
+  const now = options.now ?? new Date();
   requireApprover(actor);
   const loaded = await loadPlanogram(id);
   if (!loaded) throw new PlanogramError("notFound");
@@ -314,6 +364,7 @@ export async function approvePlanogram(actor: Actor, id: string, now = new Date(
     throw new PlanogramError("notDraft");
   if (loaded.record.isTemplate) throw new PlanogramError("invalid");
   if (hasCritical(await validateStored(loaded))) throw new PlanogramError("critical");
+  if (!options.force && (await staleBase(loaded))) throw new PlanogramError("stale");
   await db.$transaction([
     db.planogram.updateMany({
       where: { rootId: loaded.record.rootId, status: "APPROVED", id: { not: id } },
@@ -383,6 +434,13 @@ export async function copyPlanogram(
   const status = options.status ?? "DRAFT";
 
   return db.$transaction(async (tx) => {
+    // The next number in the chain: two versions made from the same one don't share a number.
+    const top = newVersion
+      ? await tx.planogram.aggregate({
+          where: { rootId: r.rootId ?? r.id },
+          _max: { version: true },
+        })
+      : null;
     const created = await tx.planogram.create({
       data: {
         title: options.title ?? r.title,
@@ -397,7 +455,7 @@ export async function copyPlanogram(
         priceListId: options.priceListId === undefined ? r.priceListId : options.priceListId,
         isTemplate: options.isTemplate ?? false,
         status,
-        version: newVersion ? r.version + 1 : 1,
+        version: newVersion ? Math.max(top?._max.version ?? 0, r.version) + 1 : 1,
         rootId: newVersion ? r.rootId : null,
         previousVersionId: newVersion ? r.id : null,
         createdById: actor.id,

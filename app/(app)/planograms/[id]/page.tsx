@@ -22,7 +22,12 @@ import { describeChange, describeViolation } from "@/modules/planograms/describe
 import { planogramSvg } from "@/modules/planograms/export";
 import { describeGeometry } from "@/modules/planograms/geometry";
 import { loadPlanogram } from "@/modules/planograms/repository";
-import { changesVsPrevious, validateStored, versionHistory } from "@/modules/planograms/service";
+import {
+  changesVsPrevious,
+  staleBase,
+  validateStored,
+  versionHistory,
+} from "@/modules/planograms/service";
 import { hasCritical } from "@/modules/planograms/validate";
 
 import {
@@ -46,7 +51,7 @@ export default async function PlanogramPage({
   const approve = canApprovePlanograms(user.role);
   const draft = r.status === "DRAFT" || r.status === "PENDING_APPROVAL";
 
-  const [svg, violations, changes, history, equipment, people, priceLists, names] =
+  const [svg, violations, changes, history, equipment, people, priceLists, names, stale] =
     await Promise.all([
       planogramSvg(loaded, { imageBase: "/api/planogram-images" }),
       validateStored(loaded),
@@ -59,8 +64,14 @@ export default async function PlanogramPage({
         db.sku.findMany({ select: { id: true, name: true } }),
         db.posm.findMany({ select: { id: true, name: true } }),
       ]).then(([a, b]) => new Map([...a, ...b].map((x) => [x.id, x.name]))),
+      staleBase(loaded),
     ]);
   const critical = hasCritical(violations);
+  // The approve button is there for an approver on a version sent to them or on their own draft.
+  const approvable =
+    approve &&
+    !r.isTemplate &&
+    (r.status === "PENDING_APPROVAL" || (r.status === "DRAFT" && r.createdById === user.id));
   const shareUrl = r.shareToken ? `${getEnv().APP_URL}/p/${r.shareToken}` : null;
   const step = (
     name: string,
@@ -110,10 +121,8 @@ export default async function PlanogramPage({
             </Button>
           )}
           {r.status === "DRAFT" && !r.isTemplate && step("submit", t("planograms.actions.submit"))}
-          {approve &&
-            (r.status === "PENDING_APPROVAL" ||
-              (r.status === "DRAFT" && r.createdById === user.id)) &&
-            !r.isTemplate &&
+          {approvable &&
+            !stale &&
             step("approve", t("planograms.actions.approve"), "default", critical)}
           {r.status === "PENDING_APPROVAL" &&
             step("draft", t("planograms.actions.returnToDraft"), "ghost")}
@@ -126,6 +135,67 @@ export default async function PlanogramPage({
       )}
       {critical && draft && (
         <p className="text-destructive text-sm">{t("planograms.validation.blocked")}</p>
+      )}
+
+      {stale && (
+        <Card className="gap-2 border-amber-500/60 bg-amber-500/5">
+          <CardTitle>{t("planograms.stale.title")}</CardTitle>
+          <p className="text-sm">
+            {t("planograms.stale.fromBase", {
+              base: String(stale.base.version),
+              current: String(stale.current.version),
+            })}
+          </p>
+          {(stale.changes.length > 0 || stale.header || stale.shelftalkers) && (
+            <div className="text-sm">
+              <p className="font-medium">
+                {t("planograms.stale.changes", {
+                  base: String(stale.base.version),
+                  current: String(stale.current.version),
+                })}
+              </p>
+              <ul className="list-disc pl-5">
+                {stale.changes.slice(0, 12).map((c, i) => (
+                  <li key={i}>{describeChange(c, names)}</li>
+                ))}
+                {stale.changes.length > 12 && (
+                  <li className="text-muted-foreground">
+                    {t("planograms.stale.more", { count: String(stale.changes.length - 12) })}
+                  </li>
+                )}
+                {stale.header && <li>{t("planograms.stale.header")}</li>}
+                {stale.shelftalkers && <li>{t("planograms.stale.shelftalkers")}</li>}
+              </ul>
+            </div>
+          )}
+          {stale.priceList && (
+            <p className="text-sm">
+              {t("planograms.stale.priceList", {
+                current: String(stale.current.version),
+                name: stale.priceList,
+              })}
+            </p>
+          )}
+          <p className="text-muted-foreground text-sm">
+            {t("planograms.stale.advice", { current: String(stale.current.version) })}{" "}
+            <Link className="underline" href={`/planograms/${stale.current.id}`}>
+              {t("planograms.stale.open", { current: String(stale.current.version) })}
+            </Link>
+          </p>
+          {approvable && manage && (
+            <form action={workflowAction} className="flex flex-wrap items-center gap-3">
+              <input type="hidden" name="planogramId" value={r.id} />
+              <input type="hidden" name="step" value="approve" />
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" name="force" value="1" required className="size-4" />
+                {t("planograms.stale.confirm", { current: String(stale.current.version) })}
+              </label>
+              <Button type="submit" size="sm" disabled={critical}>
+                {t("planograms.stale.approve")}
+              </Button>
+            </form>
+          )}
+        </Card>
       )}
 
       <div className="flex flex-wrap items-center gap-2 text-sm">

@@ -978,6 +978,22 @@ export const en: Dictionary = {
         "This browser can't show 3D. Open the page in an up-to-date Chrome or Safari or on a computer; hardware acceleration must be on in the browser settings.",
       hint: "Drag with the mouse or a finger to turn; the wheel or two fingers to zoom. Packs without a picture are shown as a coloured card with the name.",
     },
+    stale: {
+      title: "This version was not made from the one in force",
+      fromBase:
+        "It was made from version {base}, and version {current} is in force now. Approving this one replaces version {current}: whatever came into version {current} after version {base} will be gone.",
+      header: "Another header",
+      shelftalkers: "Other shelftalkers",
+      changes: "Version {current} compared with version {base}:",
+      more: "and {count} more",
+      priceList:
+        "Version {current} has another price list: “{name}”. Choose it in this version's fields if you need the same prices.",
+      advice:
+        "Check that these changes are here too, or make a new version from version {current} and redo the edits there.",
+      open: "Open version {current}",
+      confirm: "I understand: version {current} will be replaced by this one",
+      approve: "Approve anyway",
+    },
     history: "Version history",
     compare: {
       title: "Version comparison",
@@ -1117,6 +1133,9 @@ export const en: Dictionary = {
         applied: "Applied {date}",
         created: "New versions created: {count}",
         drafts: "Of them, {count} stayed drafts because of critical violations: open and fix them.",
+        moved: "Drafts and versions waiting for approval moved to this price list: {count}.",
+        waiting:
+          "Drafts and versions waiting for approval on old prices: {count}. Applying the list moves them to it; their status stays.",
         unknown: "Unknown codes (skipped): {codes}",
         rows: "prices: {count}",
       },
@@ -1136,6 +1155,7 @@ export const en: Dictionary = {
         approveAll: "Approve all pending",
         pending: "Pending approval: {count}",
         approved: "Approved: {count}",
+        left: "Not approved: {count} — critical violations or not made from the version in force. Open them one by one.",
       },
       open: "Open",
       noImage: "no picture",
@@ -1159,6 +1179,8 @@ export const en: Dictionary = {
       noChanges: "The prices didn't change, so there is nothing to save.",
       applied:
         "This price list has already been applied to planograms. Change prices in the «Current prices» table: a new price list is saved.",
+      stale:
+        "This version was not made from the one in force: approving it replaces the version in force. Read the warning on the card and confirm.",
     },
   },
   reports: {
