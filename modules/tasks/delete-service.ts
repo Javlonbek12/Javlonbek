@@ -14,6 +14,7 @@ import { displayName } from "@/modules/core/users/display-name";
 import { canControl, canViewTask, isDoer } from "./access";
 import { TaskError } from "./errors";
 import { getTaskSettings } from "./settings";
+import { stopTimersOnTask } from "./time-rules";
 
 // Deleting tasks (routing v2, «Удаление»). The author deletes their own task right away until
 // someone else has put work into it; after that, deletion goes up: the author or the assignee asks,
@@ -43,7 +44,7 @@ export type DeleteMode = "direct" | "request" | "none";
 // route on its own). The author's own work on their own task is no movement.
 export function hasProgress(
   task: TaskForDelete,
-  counts: { comments: number; files: number; steps?: number; notes?: boolean },
+  counts: { comments: number; files: number; steps?: number; notes?: boolean; time?: number },
 ) {
   return (
     ((task.assigneeId !== task.creatorId || (task.coAssigneeIds ?? []).length > 0) &&
@@ -51,6 +52,7 @@ export function hasProgress(
     counts.comments > 0 ||
     counts.files > 0 ||
     (counts.steps ?? 0) > 0 ||
+    (counts.time ?? 0) > 0 ||
     counts.notes === true ||
     (task.approvedById !== null && task.approvedById !== task.creatorId)
   );
@@ -70,15 +72,22 @@ async function load(taskId: string) {
   if (!task) throw new TaskError("forbidden");
   // Only what others did counts: the author's own comments and files are no reason to ask.
   const others = { not: task.creatorId };
-  const [comments, files, steps, note] = await Promise.all([
+  const [comments, files, steps, note, time] = await Promise.all([
     db.comment.count({ where: { taskId, authorId: others } }),
     db.taskAttachment.count({ where: { taskId, uploadedById: others } }),
     db.taskStep.count({ where: { taskId, doneAt: { not: null }, doneById: others } }),
     db.taskNote.findUnique({ where: { taskId }, select: { editedByOthersAt: true } }),
+    db.taskTimeEntry.count({ where: { taskId, userId: others } }),
   ]);
   return {
     task,
-    progress: hasProgress(task, { comments, files, steps, notes: !!note?.editedByOthersAt }),
+    progress: hasProgress(task, {
+      comments,
+      files,
+      steps,
+      notes: !!note?.editedByOthersAt,
+      time,
+    }),
   };
 }
 
@@ -108,15 +117,18 @@ async function removeForGood(actor: Actor, task: Task, reason: string | null) {
     await db.task.delete({ where: { id: task.id } });
     await rm(filesOf(task.id), { recursive: true, force: true });
   } else {
-    const [comments, attachments, blockers, blocks, steps, note] = await Promise.all([
+    // Timers running on it stop first: the bin keeps what was counted.
+    await stopTimersOnTask(task.id);
+    const [comments, attachments, blockers, blocks, steps, note, time] = await Promise.all([
       db.comment.findMany({ where: { taskId: task.id } }),
       db.taskAttachment.findMany({ where: { taskId: task.id } }),
       db.taskDependency.findMany({ where: { blockedId: task.id } }),
       db.taskDependency.findMany({ where: { blockerId: task.id } }),
       db.taskStep.findMany({ where: { taskId: task.id } }),
       db.taskNote.findUnique({ where: { taskId: task.id } }),
+      db.taskTimeEntry.findMany({ where: { taskId: task.id } }),
     ]);
-    const data = { task, comments, attachments, blockers, blocks, steps, note };
+    const data = { task, comments, attachments, blockers, blocks, steps, note, time };
     await db.$transaction([
       db.deletedTask.upsert({
         where: { id: task.id },
@@ -200,9 +212,10 @@ type Snapshot = {
   attachments: Record<string, unknown>[];
   blockers: { blockerId: string; blockedId: string; createdAt: string }[];
   blocks: { blockerId: string; blockedId: string; createdAt: string }[];
-  // Missing in tasks deleted before steps (notes) existed.
+  // Missing in tasks deleted before steps (notes, time) existed.
   steps?: Record<string, unknown>[];
   note?: Record<string, unknown> | null;
+  time?: Record<string, unknown>[];
 };
 
 const DATE_FIELDS = [
@@ -289,6 +302,11 @@ export async function restoreTask(actor: Actor, id: string) {
             } as Prisma.TaskNoteCreateManyInput,
           ]
         : [],
+    }),
+    db.taskTimeEntry.createMany({
+      data: (data.time ?? [])
+        .map((e) => revive(e, ["startedAt", "endedAt", "createdAt"]))
+        .filter((e) => userIds.has(e.userId as string)) as Prisma.TaskTimeEntryCreateManyInput[],
     }),
     db.taskDependency.createMany({
       data: [...data.blockers, ...data.blocks]
