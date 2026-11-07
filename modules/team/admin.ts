@@ -98,7 +98,8 @@ async function findPlace(name: string) {
 
 // Deletes the user and everything that is theirs: tasks they created or were given (with
 // comments and files), their comments and files elsewhere, plans, meetings, notes, content posts
-// they added. Projects they created stay and pass to the owner.
+// they added. Projects and the POSM distribution records they entered (purchases, orders,
+// shipments, campaign files, price quotes) stay and pass to the owner.
 export async function deleteUserCompletely(userId: string, ownerId: string) {
   if (userId === ownerId) throw new Error("The owner can't be deleted.");
   const root = path.resolve(getEnv().UPLOAD_DIR);
@@ -126,6 +127,17 @@ export async function deleteUserCompletely(userId: string, ownerId: string) {
     db.contentComment.deleteMany({ where: { authorId: userId } }),
     db.contentPost.deleteMany({ where: { createdById: userId } }),
     db.project.updateMany({ where: { createdById: userId }, data: { createdById: ownerId } }),
+    db.distPurchase.updateMany({ where: { createdById: userId }, data: { createdById: ownerId } }),
+    db.distOrder.updateMany({ where: { createdById: userId }, data: { createdById: ownerId } }),
+    db.distShipment.updateMany({ where: { createdById: userId }, data: { createdById: ownerId } }),
+    db.distCampaignFile.updateMany({
+      where: { createdById: userId },
+      data: { createdById: ownerId },
+    }),
+    db.distPriceQuote.updateMany({
+      where: { createdById: userId },
+      data: { createdById: ownerId },
+    }),
     // Others' tasks lose them as a co-assignee.
     db.$executeRaw`UPDATE "Task" SET "coAssigneeIds" = array_remove("coAssigneeIds", ${userId}) WHERE ${userId} = ANY("coAssigneeIds")`,
     db.user.delete({ where: { id: userId } }),

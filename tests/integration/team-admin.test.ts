@@ -101,6 +101,16 @@ describe("team places and fixes", () => {
       data: { title: "Тестовая чужая", creatorId: owner.id, assigneeId: keep.id },
     });
     await db.comment.create({ data: { taskId: other.id, authorId: gone.id, body: "Тест" } });
+    // A POSM purchase they entered stays, now the owner's.
+    const purchase = await db.distPurchase.create({
+      data: {
+        types: ["DISPLAY_L"],
+        quantity: 1,
+        date: new Date("2026-11-01"),
+        document: "Тест",
+        createdById: gone.id,
+      },
+    });
     await db.user.update({ where: { id: owner.id }, data: { managerId: gone.id } });
 
     const log = await teamFix({
@@ -113,6 +123,9 @@ describe("team places and fixes", () => {
     expect(await db.task.findUnique({ where: { id: given.id } })).toBeNull();
     expect(await db.task.findUnique({ where: { id: other.id } })).not.toBeNull();
     expect(await db.comment.count()).toBe(0);
+    expect(
+      (await db.distPurchase.findUniqueOrThrow({ where: { id: purchase.id } })).createdById,
+    ).toBe(owner.id);
     expect((await db.user.findUniqueOrThrow({ where: { id: owner.id } })).managerId).toBeNull();
     expect((await db.orgNode.findUniqueOrThrow({ where: { id: lead.id } })).parentId).toBe(
       director.id,

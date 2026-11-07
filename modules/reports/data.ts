@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { addDays, daysBetween, startOfWeek, todayInTimezone, toDateString } from "@/lib/dates";
+import { addDays, daysBetween, todayInTimezone, toDateString } from "@/lib/dates";
 import type { TaskPriority, TaskStatus } from "@/lib/generated/prisma/client";
 import { displayName } from "@/modules/core/users/display-name";
 
@@ -230,6 +230,3 @@ export async function buildReport(
     periodTasks: tasks.filter((t) => inPeriod(t.created, period) || inPeriod(t.completed, period)),
   };
 }
-
-// Is this the current week (for chart highlighting)?
-export const isCurrentWeek = (weekStart: string, today: string) => weekStart === startOfWeek(today);

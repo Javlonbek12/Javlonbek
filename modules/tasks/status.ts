@@ -20,7 +20,6 @@ export const TEAM_FLOW: TaskStatus[] = [
   "IN_REVIEW",
   "DONE",
 ];
-export const PERSONAL_FLOW: TaskStatus[] = ["DRAFT", "IN_PROGRESS", "DONE"];
 
 function personalTransitions(actor: Actor, task: TaskAccessInfo): TaskStatus[] {
   if (task.creatorId !== actor.id) return [];

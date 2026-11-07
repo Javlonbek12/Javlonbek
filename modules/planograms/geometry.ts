@@ -25,11 +25,6 @@ export function parseGeometry(value: unknown): Geometry {
 
 export const slotKey = (shelf: number, position: number) => `${shelf}:${position}`;
 
-export function parseSlotKey(key: string): { shelf: number; position: number } {
-  const [shelf, position] = key.split(":").map(Number);
-  return { shelf, position };
-}
-
 // All slots in reading order: top shelf first, left to right.
 export function allSlots(geometry: Geometry): { shelf: number; position: number }[] {
   return geometry.shelves.flatMap((s, shelf) =>
