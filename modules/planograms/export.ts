@@ -14,7 +14,8 @@ import { describeChange } from "./describe";
 import { diffLayouts, highlightCells, type LayoutChange } from "./diff";
 import { readImage } from "./library";
 import { formatPrice } from "./prices";
-import { renderPlanogramSvg, type RenderCell, type RenderInput } from "./render";
+import { addSceneToSlide, PictureFiles } from "./pptx-scene";
+import { planogramScene, renderPlanogramSvg, type RenderCell, type RenderInput } from "./render";
 import { loadPlanogram, type LoadedPlanogram } from "./repository";
 import { changesVsPrevious } from "./service";
 import { sideColorOf } from "./side-color";
@@ -177,33 +178,34 @@ async function changeLines(loaded: LoadedPlanogram, changes: LayoutChange[]) {
   return changes.map((c) => describeChange(c, names));
 }
 
-type ExportItem = { loaded: LoadedPlanogram; png: Buffer; changes: string[] };
+type ExportItem = { loaded: LoadedPlanogram; changes: string[] };
 
 async function prepare(ids: string[]): Promise<ExportItem[]> {
   const items: ExportItem[] = [];
   for (const id of ids) {
     const loaded = await loadPlanogram(id);
     if (!loaded) continue;
-    items.push({
-      loaded,
-      png: await planogramPng(loaded),
-      changes: await changeLines(loaded, await changesVsPrevious(loaded)),
-    });
+    items.push({ loaded, changes: await changeLines(loaded, await changesVsPrevious(loaded)) });
   }
   return items;
 }
 
-// PPTX: one slide per planogram (title, subtitle, picture) + a "what changed" slide when there are changes.
+// PPTX: one slide per planogram (title, subtitle, the planogram) + a "what changed" slide when
+// there are changes. The planogram is made of separate objects (packs, price tags, POSM, shelves),
+// not one picture, so it can be edited in PowerPoint.
 export async function exportPptx(ids: string[]): Promise<Buffer> {
   const pptx = new PptxGenJS();
   pptx.layout = "LAYOUT_WIDE"; // 13.33 × 7.5 in
+  const pictures = new PictureFiles();
+  try {
+    return await buildPptx(pptx, ids, pictures);
+  } finally {
+    await pictures.clear();
+  }
+}
+
+async function buildPptx(pptx: PptxGenJS, ids: string[], pictures: PictureFiles) {
   for (const item of await prepare(ids)) {
-    const meta = await sharp(item.png).metadata();
-    const ratio = (meta.width ?? 1) / (meta.height ?? 1);
-    const maxW = 12.3;
-    const maxH = 5.9;
-    const w = Math.min(maxW, maxH * ratio);
-    const h = w / ratio;
     const slide = pptx.addSlide();
     slide.addText(slideTitle(item.loaded), {
       x: 0.5,
@@ -213,6 +215,7 @@ export async function exportPptx(ids: string[]): Promise<Buffer> {
       fontSize: 28,
       bold: true,
       fontFace: "Arial",
+      objectName: t("planograms.export.parts.title"),
     });
     slide.addText(slideSubtitle(item.loaded), {
       x: 0.5,
@@ -222,14 +225,15 @@ export async function exportPptx(ids: string[]): Promise<Buffer> {
       fontSize: 14,
       color: "666666",
       fontFace: "Arial",
+      objectName: t("planograms.export.parts.subtitle"),
     });
-    slide.addImage({
-      data: `data:image/png;base64,${item.png.toString("base64")}`,
-      x: (13.33 - w) / 2,
-      y: 1.4,
-      w,
-      h,
-    });
+    await addSceneToSlide(
+      pptx,
+      slide,
+      planogramScene(await buildRenderInput(item.loaded)),
+      { x: 0.5, y: 1.4, w: 12.3, h: 5.9 },
+      pictures,
+    );
     if (item.changes.length > 0) {
       const changes = pptx.addSlide();
       changes.addText(`${slideTitle(item.loaded)} — ${t("planograms.export.changesTitle")}`, {
@@ -262,6 +266,7 @@ export async function exportPdf(ids: string[]): Promise<Buffer> {
   });
   const [W, H] = [842, 595];
   for (const item of await prepare(ids)) {
+    const png = await planogramPng(item.loaded);
     const page = pdf.addPage([W, H]);
     page.drawText(slideTitle(item.loaded), { x: 36, y: H - 50, size: 20, font: bold });
     page.drawText(slideSubtitle(item.loaded), {
@@ -271,7 +276,7 @@ export async function exportPdf(ids: string[]): Promise<Buffer> {
       font: regular,
       color: rgb(0.4, 0.4, 0.4),
     });
-    const image = await pdf.embedPng(item.png);
+    const image = await pdf.embedPng(png);
     const listW = item.changes.length > 0 ? 260 : 0;
     const scale = Math.min((W - 72 - listW) / image.width, (H - 110) / image.height);
     page.drawImage(image, {
