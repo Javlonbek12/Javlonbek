@@ -26,6 +26,7 @@ import {
   type PanelField,
 } from "@/modules/tasks/quick-actions";
 import type { RepeatInput } from "@/modules/tasks/repeat";
+import { MAX_NOTE_LENGTH, saveNote, type SaveNoteResult } from "@/modules/tasks/notes";
 import {
   addStep,
   moveStep,
@@ -401,4 +402,33 @@ export async function tickStepAction(formData: FormData) {
   const taskId = idSchema.parse(str(formData, "taskId"));
   const stepId = idSchema.parse(str(formData, "stepId"));
   await onTaskPage(formData, taskId, () => tickStep(user, stepId, str(formData, "done") === "1"));
+}
+
+// ---------- notes («Заметки») ----------
+
+// Autosave calls this every pause in typing: its own, larger limit.
+const allowNoteSave = createRateLimiter({ limit: 240, windowMs: 60_000 });
+
+export async function saveTaskNoteAction(
+  taskId: unknown,
+  text: unknown,
+  baseVersion: unknown,
+): Promise<SaveNoteResult | { ok: false; error: string }> {
+  const user = await requireUser();
+  if (!allowNoteSave(user.id)) return { ok: false, error: "tooMany" };
+  const id = idSchema.safeParse(taskId);
+  if (
+    !id.success ||
+    typeof text !== "string" ||
+    text.length > MAX_NOTE_LENGTH + 1000 ||
+    typeof baseVersion !== "number" ||
+    !Number.isInteger(baseVersion)
+  )
+    return { ok: false, error: "invalid" };
+  try {
+    return await saveNote(user, id.data, text, baseVersion);
+  } catch (error) {
+    if (error instanceof TaskError) return { ok: false, error: error.code };
+    throw error;
+  }
 }

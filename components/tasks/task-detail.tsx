@@ -26,6 +26,7 @@ import { AssigneePicker } from "@/components/tasks/assignee-picker";
 import { DetailTabs } from "@/components/tasks/detail-tabs";
 import { QuickCircle } from "@/components/tasks/quick-circle";
 import { StepsTab } from "@/components/tasks/steps-tab";
+import { TaskNotes } from "@/components/tasks/task-notes";
 import { PriorityBadge, StatusBadge } from "@/components/tasks/task-badges";
 import { TaskActions } from "@/components/tasks/task-actions";
 import { TaskDeleteControl } from "@/components/tasks/task-delete";
@@ -65,6 +66,7 @@ import {
   stepPeopleIds,
   stepProgress,
 } from "@/modules/tasks/step-rules";
+import { canEditNote, getNote } from "@/modules/tasks/notes";
 import { listSteps } from "@/modules/tasks/steps";
 import { isOverdue } from "@/modules/tasks/today";
 
@@ -232,6 +234,7 @@ export async function TaskDetail({
     people,
     hints,
     steps,
+    note,
   ] = await Promise.all([
     getSettings(user.id),
     getDependencies(user, task.id),
@@ -248,6 +251,7 @@ export async function TaskDetail({
       ? routeHints(task.creatorId)
       : Promise.resolve({} as Awaited<ReturnType<typeof routeHints>>),
     listSteps(task.id),
+    getNote(task.id),
   ]);
   const tz = settings.timezone;
   const today = todayInTimezone(tz);
@@ -771,6 +775,19 @@ export async function TaskDetail({
             label: t("tasks.panel.tabs.work"),
             badge: stepCount.total ? `${stepCount.done}/${stepCount.total}` : undefined,
             content: stepsTab,
+          },
+          {
+            key: "notes",
+            label: t("tasks.panel.tabs.notes"),
+            badge: note.text.trim() ? "•" : undefined,
+            content: (
+              <TaskNotes
+                key={`${task.id}-${note.version}`}
+                taskId={task.id}
+                initial={note}
+                canEdit={canEditNote(user, task)}
+              />
+            ),
           },
           {
             key: "files",
