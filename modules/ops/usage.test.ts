@@ -78,8 +78,18 @@ describe("usage report text", () => {
     expect(manager).toContain("(руководитель)");
     expect(manager).toMatch(/3 дн\. назад$/);
     const silent = lines.find((l) => l.includes("Тестовый сотрудник 2"))!;
-    expect(silent).toMatch(/не заходил\(а\)$/);
+    expect(silent).toMatch(/действий нет$/);
     expect(text).toContain("Итого: активны 2 из 3; без действий за период: Тестовый сотрудник 2");
+  });
+
+  it("does not count tasks given to a person as their action", () => {
+    const receiver = {
+      ...report.people[0]!,
+      name: "Тестовый получатель",
+      tasksAssigned: 7,
+    };
+    const only = formatUsage({ ...report, people: [receiver] });
+    expect(only).toContain("Итого: активны 0 из 1; без действий за период: Тестовый получатель");
   });
 
   it("marks alive and silent modules and sums up bot, AI and notifications", () => {

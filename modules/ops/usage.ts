@@ -77,7 +77,7 @@ export async function collectUsage(
     ai,
     lastActivity,
     lastTaskCreated,
-    lastTaskAssigned,
+    lastStepDone,
     lastComment,
     lastDraft,
     lastAi,
@@ -97,9 +97,11 @@ export async function collectUsage(
     db.taskStep.groupBy({ by: ["doneById"], where: { doneAt: since }, _count: { _all: true } }),
     db.botDraft.groupBy({ by: ["userId"], where: { createdAt: since }, _count: { _all: true } }),
     db.aiUsage.groupBy({ by: ["userId"], where: { createdAt: since }, _count: { _all: true } }),
+    // The person's own actions only: a task's updatedAt also moves when someone else changes it
+    // (a manager moving the due date of their task), which is no sign of their work.
     db.activityLog.groupBy({ by: ["actorId"], _max: { createdAt: true } }),
-    db.task.groupBy({ by: ["creatorId"], _max: { updatedAt: true } }),
-    db.task.groupBy({ by: ["assigneeId"], _max: { updatedAt: true } }),
+    db.task.groupBy({ by: ["creatorId"], _max: { createdAt: true } }),
+    db.taskStep.groupBy({ by: ["doneById"], _max: { doneAt: true } }),
     db.comment.groupBy({ by: ["authorId"], _max: { createdAt: true } }),
     db.botDraft.groupBy({ by: ["userId"], _max: { updatedAt: true } }),
     db.aiUsage.groupBy({ by: ["userId"], _max: { createdAt: true } }),
@@ -110,8 +112,8 @@ export async function collectUsage(
     if (id) lastBy.set(id, later(lastBy.get(id) ?? null, at));
   };
   for (const row of lastActivity) note(row.actorId, row._max.createdAt);
-  for (const row of lastTaskCreated) note(row.creatorId, row._max.updatedAt);
-  for (const row of lastTaskAssigned) note(row.assigneeId, row._max.updatedAt);
+  for (const row of lastTaskCreated) note(row.creatorId, row._max.createdAt);
+  for (const row of lastStepDone) note(row.doneById, row._max.doneAt);
   for (const row of lastComment) note(row.authorId, row._max.createdAt);
   for (const row of lastDraft) note(row.userId, row._max.updatedAt);
   for (const row of lastAi) note(row.userId, row._max.createdAt);
@@ -268,8 +270,13 @@ const ROLE_LABEL: Record<string, string> = {
 
 const dateOf = (d: Date) => d.toISOString().slice(0, 10);
 
+// What the person did themselves in the period. Tasks given to them are not their action.
+function ownActions(p: PersonUsage) {
+  return p.tasksCreated + p.tasksDone + p.comments + p.stepsDone + p.botDrafts + p.aiCalls;
+}
+
 function daysAgo(at: Date | null, now: Date): string {
-  if (!at) return "не заходил(а)";
+  if (!at) return "действий нет";
   const days = Math.floor((now.getTime() - at.getTime()) / 86_400_000);
   if (days <= 0) return "сегодня";
   if (days === 1) return "вчера";
@@ -289,12 +296,12 @@ export function formatUsage(report: UsageReport): string {
   );
   lines.push("");
 
-  lines.push("Люди (за период; «последнее действие» — за всё время):");
-  const people = [...report.people].sort((a, b) => {
-    const scoreA = a.tasksCreated + a.tasksAssigned + a.comments + a.stepsDone + a.botDrafts;
-    const scoreB = b.tasksCreated + b.tasksAssigned + b.comments + b.stepsDone + b.botDrafts;
-    return scoreB - scoreA || a.name.localeCompare(b.name, "ru");
-  });
+  lines.push(
+    "Люди (за период; «последнее действие» — за всё время; полученная задача — не действие):",
+  );
+  const people = [...report.people].sort(
+    (a, b) => ownActions(b) - ownActions(a) || a.name.localeCompare(b.name, "ru"),
+  );
   const nameWidth = Math.max(
     4,
     ...people.map((p) => `${p.name} (${ROLE_LABEL[p.role] ?? p.role})`.length),
@@ -308,9 +315,7 @@ export function formatUsage(report: UsageReport): string {
       `  ${pad(who, nameWidth)}  ${pad(p.tasksCreated, 8)}  ${pad(p.tasksAssigned, 7)}  ${pad(p.tasksDone, 6)}  ${pad(p.comments, 8)}  ${pad(p.stepsDone, 4)}  ${pad(p.botDrafts, 3)}  ${pad(p.aiCalls, 3)}  ${daysAgo(p.lastActiveAt, report.to)}`,
     );
   }
-  const active = people.filter(
-    (p) => p.tasksCreated + p.tasksAssigned + p.comments + p.stepsDone + p.botDrafts > 0,
-  );
+  const active = people.filter((p) => ownActions(p) > 0);
   const silent = people.filter((p) => !active.includes(p));
   lines.push(
     `  Итого: активны ${active.length} из ${people.length}` +

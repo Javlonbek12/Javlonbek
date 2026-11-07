@@ -77,8 +77,16 @@ describe("usage report", () => {
       stepsDone: 1,
     });
     expect(by["Тестовый молчун"]).toMatchObject({ tasksCreated: 0, tasksAssigned: 0 });
-    // The silent person's last action is the old task; nothing newer.
-    expect(by["Тестовый молчун"].lastActiveAt?.toISOString()).toBe(old.toISOString());
+    // Tasks given to the silent person and changed by others are not their actions.
+    expect(by["Тестовый молчун"].lastActiveAt).toBeNull();
+    // The member's last action is their own (the step, the hand-in), not the owner's later change.
+    const memberLast = by["Тестовый сотрудник"].lastActiveAt!;
+    await new Promise((r) => setTimeout(r, 20));
+    await db.task.update({ where: { id: task.id }, data: { priority: "HIGH" } });
+    expect(
+      (await collectUsage(new Date(), 30)).people.find((p) => p.name === "Тестовый сотрудник")
+        ?.lastActiveAt,
+    ).toEqual(memberLast);
     expect(by["Тестовый владелец"].lastActiveAt!.getTime()).toBeGreaterThan(now.getTime() - 60_000);
 
     const modules = Object.fromEntries(report.modules.map((m) => [m.label, m]));
