@@ -20,15 +20,22 @@ function AssigneeWithRoute({
   name,
   initial,
   people,
+  self,
 }: {
   name: string;
   initial: string;
   people: { id: string; name: string; route: string }[];
+  // The route of a team task on oneself.
+  self: string;
 }) {
   const t = useT();
   const [value, setValue] = useState(initial);
   const route =
-    value === "me" ? t("tasks.route.shortPersonal") : people.find((p) => p.id === value)?.route;
+    value === "mine"
+      ? t("tasks.route.shortPersonal")
+      : value === "me"
+        ? self
+        : people.find((p) => p.id === value)?.route;
   return (
     <div className="flex flex-col gap-1">
       <NativeSelect
@@ -38,6 +45,7 @@ function AssigneeWithRoute({
         aria-label={t("tasks.fields.assignee")}
       >
         <option value="me">{t("meetings.actions.me")}</option>
+        <option value="mine">{t("meetings.actions.mine")}</option>
         {people.map((p) => (
           <option key={p.id} value={p.id}>
             {p.name}
@@ -96,6 +104,7 @@ export function ActionItems({ meetingId, propose, create }: Props) {
                   name={`assignee_${i}`}
                   initial={task.assigneeId ?? "me"}
                   people={state.people}
+                  self={state.self ?? ""}
                 />
                 <Input
                   type="date"

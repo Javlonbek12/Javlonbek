@@ -141,15 +141,30 @@ describe("extractTasks", () => {
             dueDate: "в пятницу",
             priority: null,
             project: null,
+            personal: false,
           },
-          { title: "  ", assigneeName: null, dueDate: null, priority: null, project: null },
+          {
+            title: "  ",
+            assigneeName: null,
+            dueDate: null,
+            priority: null,
+            project: null,
+            personal: false,
+          },
         ],
       },
       inputTokens: 1,
       outputTokens: 1,
     });
     expect(await extractTasks(user.id, "x", ctx, call)).toEqual([
-      { title: "Отчёт", assigneeName: null, dueDate: null, priority: null, project: null },
+      {
+        title: "Отчёт",
+        assigneeName: null,
+        dueDate: null,
+        priority: null,
+        project: null,
+        personal: false,
+      },
     ]);
   });
 });

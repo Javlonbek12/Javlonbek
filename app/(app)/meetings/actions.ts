@@ -22,7 +22,6 @@ import {
 import { createProposedTasks } from "@/modules/tasks/batch";
 import { routeHints } from "@/modules/tasks/route-hints";
 import { db } from "@/lib/db";
-import { t } from "@/lib/i18n";
 
 const allowAction = createRateLimiter({ limit: 60, windowMs: 60_000 });
 
@@ -114,8 +113,10 @@ export type ProposalState = {
         project: string | null;
       }[]
     | null;
-  // Route hints (routing v2): what happens to a task for each person; "me" = personal.
+  // Route hints (routing v2): what happens to a task for each person; "me" = a team task on
+  // oneself (its route is `self`), "mine" = a personal one.
   people: { id: string; name: string; route: string }[];
+  self?: string;
 };
 
 export async function proposeActionItemsAction(
@@ -125,16 +126,16 @@ export async function proposeActionItemsAction(
   const user = await actor();
   const id = idSchema.parse(str(formData, "meetingId"));
   const hints = await routeHints(user.id);
-  const people = (await db.user.findMany({ orderBy: { firstName: "asc" } })).map((u) => ({
-    id: u.id,
-    name: displayName(u),
-    route: u.id === user.id ? t("tasks.route.shortPersonal") : (hints[u.id]?.plain.short ?? ""),
-  }));
+  const people = (await db.user.findMany({ orderBy: { firstName: "asc" } }))
+    .filter((u) => u.id !== user.id)
+    .map((u) => ({ id: u.id, name: displayName(u), route: hints[u.id]?.plain.short ?? "" }));
+  const self = hints[user.id]?.plain.short ?? "";
   try {
     const tasks = await proposeActionItems(user, id);
     return {
       error: null,
       people,
+      self,
       // Unresolved names are left without an assignee for the user to pick.
       tasks: tasks.map(({ title, assigneeId, dueDate, priority, project }) => ({
         title,
@@ -145,9 +146,10 @@ export async function proposeActionItemsAction(
       })),
     };
   } catch (error) {
-    if (error instanceof AiError) return { error: `ai.errors.${error.code}`, tasks: null, people };
+    if (error instanceof AiError)
+      return { error: `ai.errors.${error.code}`, tasks: null, people, self };
     if (error instanceof MeetingError)
-      return { error: `meetings.errors.${error.code}`, tasks: null, people };
+      return { error: `meetings.errors.${error.code}`, tasks: null, people, self };
     throw error;
   }
 }
@@ -177,7 +179,9 @@ export async function createActionItemsAction(formData: FormData) {
     if (!row.success) continue;
     tasks.push({
       title: row.data.title,
-      assigneeId: row.data.assignee === "me" || !row.data.assignee ? null : row.data.assignee,
+      // «Я» — a team task on oneself, «Я (личная)» — a personal one.
+      assigneeId: ["me", "mine", ""].includes(row.data.assignee) ? null : row.data.assignee,
+      personal: row.data.assignee === "mine",
       dueDate: row.data.dueDate || null,
       priority: row.data.priority,
       project: row.data.project,

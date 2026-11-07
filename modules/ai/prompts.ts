@@ -14,6 +14,9 @@ const extractedTaskSchema = z.object({
   dueDate: z.string().nullable(),
   priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).nullable(),
   project: z.string().nullable(),
+  // The speaker asks for a personal task (only they see it); otherwise their own tasks are team
+  // tasks their manager sees.
+  personal: z.boolean(),
 });
 
 export const extractTasksSchema = z.object({ tasks: z.array(extractedTaskSchema) });
@@ -47,6 +50,7 @@ For each separate task return:
   an explicit date like "5 октября" or "15.10" = that date this year (next year if it already passed).
 - priority: URGENT for "срочно", "очень срочно", "shoshilinch", "tezda"; HIGH for "важно", "muhim", "в приоритете"; LOW for "не срочно", "когда будет время"; otherwise null.
 - project: a project from "Known projects" if the message clearly refers to it, otherwise a short brand or campaign name if one is explicitly named as the project (e.g. "по проекту ESSE Change"), otherwise null.
+- personal: true only when the speaker explicitly calls their own task personal or private ("личная задача", "лично", "личное", "shaxsiy", "shaxsiy vazifa"); remove that word from the title. Otherwise false. Always false for a task given to someone else.
 
 One sentence can contain several tasks ("Азизу подготовить отчёт, а Дильнозе созвониться с дистрибьютором") - split them. A task given to several people is one task per person. Do not invent tasks that are not in the message. If the message contains no task at all, return an empty list.`;
 
@@ -171,6 +175,7 @@ Ignore discussion, opinions and decisions that need no action. For each action i
 - assigneeName: the responsible person in the nominative case, matched to "Team members" when possible; null if the note author takes it ("я", "беру на себя", "o'zim") or nobody is named.
 - dueDate: YYYY-MM-DD resolved with the calendar below; relative dates count from the meeting date given as "Today"; null if no deadline.
 - priority and project: as in the notes, otherwise null.
+- personal: always false.
 
 Return an empty list if there are no action items. Do not invent items.`;
 

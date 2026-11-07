@@ -53,12 +53,15 @@ export async function routeHints(
   return result;
 }
 
-// The short hint for each proposed task (null assignee: a personal task).
-export async function shortRouteHints(authorId: string, assigneeIds: (string | null)[]) {
+// The short hint for each proposed task (null assignee: the author; `personal`: a personal task).
+export async function shortRouteHints(
+  authorId: string,
+  tasks: { assigneeId: string | null; personal?: boolean }[],
+) {
   const hints = await routeHints(authorId);
-  return assigneeIds.map((id) =>
-    id === null || id === authorId
-      ? t("tasks.route.shortPersonal")
-      : (hints[id]?.plain.short ?? ""),
-  );
+  return tasks.map(({ assigneeId, personal }) => {
+    const self = assigneeId === null || assigneeId === authorId;
+    if (self && personal) return t("tasks.route.shortPersonal");
+    return hints[self ? authorId : assigneeId!]?.plain.short ?? "";
+  });
 }

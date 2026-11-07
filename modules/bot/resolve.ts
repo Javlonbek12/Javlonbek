@@ -20,6 +20,8 @@ export function resolveTasks(
   return extracted.map((task) => {
     const base = {
       title: task.title,
+      // Personal only for one's own task.
+      personal: task.personal === true,
       dueDate: task.dueDate,
       priority: task.priority,
       project: task.project,
