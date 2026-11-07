@@ -41,7 +41,8 @@ const configSchema = z.object({
 });
 export type RoleConfig = z.infer<typeof configSchema>;
 
-// Default: only the owner sees everything; others see their tasks and meetings.
+// Default: the owner sees everything; the others get the modules listed here (the owner changes
+// it in Settings → Roles and access).
 export const DEFAULT_ROLE_CONFIG: RoleConfig = {
   MANAGER: {
     modules: ["meetings", "planograms", "projects", "content", "connect", "distribution"],
