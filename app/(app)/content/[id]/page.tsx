@@ -370,8 +370,8 @@ export default async function ContentPostPage({
                                   {f.size > 0 &&
                                     ` · ${
                                       f.size < 1024 * 1024
-                                        ? `${Math.ceil(f.size / 1024)} КБ`
-                                        : `${(f.size / 1024 / 1024).toFixed(1)} МБ`
+                                        ? t("common.kb", { n: Math.ceil(f.size / 1024) })
+                                        : t("common.mb", { n: (f.size / 1024 / 1024).toFixed(1) })
                                     }`}
                                 </span>
                               </span>

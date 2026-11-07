@@ -67,7 +67,8 @@ export default async function MeetingPage({ params, searchParams }: PageProps<"/
           )}
         </div>
         <CardDescription>
-          {formatDateTime(meeting.startsAt, timezone)} · {meeting.durationMinutes} мин
+          {formatDateTime(meeting.startsAt, timezone)} ·{" "}
+          {t("meetings.duration", { n: meeting.durationMinutes })}
         </CardDescription>
         {meeting.link && (
           <Button asChild size="sm" className="self-start">

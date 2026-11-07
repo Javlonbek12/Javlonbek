@@ -47,6 +47,8 @@ export const en: Dictionary = {
     copied: "Copied",
     you: "you",
     never: "never",
+    kb: "{n} KB",
+    mb: "{n} MB",
   },
   home: {
     title: "Assistant",
@@ -840,6 +842,7 @@ export const en: Dictionary = {
   plans: {
     title: "Plans",
     newPlan: "New plan",
+    titlePlaceholder: "E.g. ESSE new product launch",
     level: {
       YEAR: "Year",
       MONTH: "Month",
@@ -878,6 +881,8 @@ export const en: Dictionary = {
     person: "• {name}: done {done}, in progress {active}, overdue {overdue}",
   },
   meetings: {
+    duration: "{n} min",
+    participants: "{n} att.",
     title: "Meetings",
     newMeeting: "New meeting",
     upcoming: "Upcoming",
@@ -1150,7 +1155,7 @@ export const en: Dictionary = {
         addShelf: "Add shelf",
         talkers: "Shelftalkers on the shelves",
         talkersHint:
-          "Which shelves have a shelftalker on the edge (a strip under the price tags). In a planogram a shelftalker from POSM is chosen for these shelves. Can be changed even when the equipment has planograms.",
+          "Which shelves have a shelftalker on the edge (a strip on the shelf edge; the price tags stand in it). In a planogram a shelftalker from POSM is chosen for these shelves. Can be changed even when the equipment has planograms.",
         removeShelf: "Remove",
         save: "Save equipment",
         used: "used in planograms: {count}",
