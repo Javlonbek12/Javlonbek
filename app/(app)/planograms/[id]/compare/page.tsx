@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { PlanogramPicture } from "@/components/planograms/planogram-picture";
 import { t } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { comparisonSvgs } from "@/modules/planograms/export";
@@ -37,20 +38,14 @@ export default async function ComparePage({
             {t("planograms.compare.before")} ·{" "}
             {t("planograms.version", { version: result.before.record.version })}
           </h3>
-          <div
-            className="overflow-x-auto rounded-lg border bg-white p-2"
-            dangerouslySetInnerHTML={{ __html: result.beforeSvg }}
-          />
+          <PlanogramPicture svg={result.beforeSvg} />
         </section>
         <section className="flex flex-col gap-1">
           <h3 className="font-medium">
             {t("planograms.compare.after")} ·{" "}
             {t("planograms.version", { version: result.after.record.version })}
           </h3>
-          <div
-            className="overflow-x-auto rounded-lg border bg-white p-2"
-            dangerouslySetInnerHTML={{ __html: result.afterSvg }}
-          />
+          <PlanogramPicture svg={result.afterSvg} />
         </section>
       </div>
       <ul className="flex flex-col gap-1 text-sm">

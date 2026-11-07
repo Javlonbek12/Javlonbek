@@ -4,6 +4,7 @@ export type TaskErrorCode =
   | "invalid"
   | "cycle"
   | "plan"
+  | "planChildren"
   | "fileTooLarge"
   | "requested"
   | "noApprover"

@@ -18,7 +18,7 @@ import {
 } from "@/modules/tasks/delete-service";
 import { TaskError } from "@/modules/tasks/errors";
 import { safeBack, withParams } from "@/modules/tasks/back";
-import { createPlan } from "@/modules/tasks/plan-service";
+import { createPlan, deletePlan, updatePlan } from "@/modules/tasks/plan-service";
 import {
   completeTask,
   PANEL_FIELDS,
@@ -262,6 +262,40 @@ export async function createPlanAction(formData: FormData) {
   }
   revalidatePath("/tasks/plans");
   redirect(planId ? `/tasks/plans/${planId}` : `/tasks/plans?error=${error}`);
+}
+
+export async function updatePlanAction(formData: FormData) {
+  const user = await actor();
+  const planId = idSchema.parse(str(formData, "planId"));
+  let error: string | null = null;
+  try {
+    await updatePlan(user, planId, {
+      title: str(formData, "title"),
+      level: str(formData, "level") as "YEAR" | "MONTH" | "WEEK",
+      date: str(formData, "date"),
+      parentId: str(formData, "parentId") || null,
+    });
+  } catch (e) {
+    if (!(e instanceof TaskError)) throw e;
+    error = e.code;
+  }
+  revalidatePath("/tasks/plans");
+  redirect(`/tasks/plans/${planId}?${error ? `error=${error}` : "saved=1"}`);
+}
+
+export async function deletePlanAction(formData: FormData) {
+  const user = await actor();
+  const planId = idSchema.parse(str(formData, "planId"));
+  let tasks: number | null = null;
+  let error: string | null = null;
+  try {
+    tasks = (await deletePlan(user, planId)).tasks;
+  } catch (e) {
+    if (!(e instanceof TaskError)) throw e;
+    error = e.code;
+  }
+  revalidatePath("/tasks/plans");
+  redirect(error ? `/tasks/plans/${planId}?error=${error}` : `/tasks/plans?deleted=${tasks ?? 0}`);
 }
 
 // Deletion: right away (own untouched task, or as the overseer), or as a request up the hierarchy.

@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 
 import { cn } from "@/lib/utils";
 import type { SlotContent } from "@/modules/planograms/layout";
+import { tagFontSize } from "@/modules/planograms/tag-size";
 
 export const SLOT_W = 52;
 export const PACK_H = 84;
@@ -129,7 +130,11 @@ export function SlotView({
               </span>
             ))}
         </div>
-        <div className="truncate rounded border border-gray-900 bg-white text-center text-[9px] leading-4 font-bold text-gray-900">
+        {/* Long tags shrink to fit, as on the picture. */}
+        <div
+          className="truncate rounded border border-gray-900 bg-white text-center leading-4 font-bold text-gray-900"
+          style={{ fontSize: tagFontSize(tag || "—", SLOT_W - 4, 9) }}
+        >
           {tag || "—"}
         </div>
       </div>
