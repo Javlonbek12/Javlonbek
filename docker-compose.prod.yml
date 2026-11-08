@@ -2,10 +2,18 @@
 # Settings come from .env next to this file (see docs/SETUP-SERVER.md).
 name: assistant
 
+# Each service keeps at most 3 × 10 MB of logs (Docker's default keeps them all, forever).
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 x-app: &app
   build: .
   image: assistant-app
   restart: unless-stopped
+  logging: *logging
   env_file: .env
   environment:
     NODE_ENV: production
@@ -21,6 +29,7 @@ services:
   postgres:
     image: postgres:16
     restart: unless-stopped
+    logging: *logging
     environment:
       POSTGRES_USER: assistant
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
@@ -84,6 +93,7 @@ services:
     image: fedirz/faster-whisper-server:latest-cpu
     profiles: ["whisper"]
     restart: unless-stopped
+    logging: *logging
     # --no-sync: start the server as installed in the image, without re-checking packages online.
     command:
       ["uv", "run", "--no-sync", "uvicorn", "--factory", "faster_whisper_server.main:create_app"]
@@ -100,6 +110,7 @@ services:
   caddy:
     image: caddy:2
     restart: unless-stopped
+    logging: *logging
     ports:
       - "80:80"
       - "443:443"
