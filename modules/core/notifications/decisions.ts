@@ -141,8 +141,11 @@ export async function settleDecided(userId: string, now = new Date()) {
 
 // The one-press answer the app offers in the list: «Утвердить» or «Принять» for a task the person
 // may decide now, «Добавить» / «Отказать» for a co-assignee request. Anything else opens.
+// `takeOn`: the assignee decides on a request themselves — «Принять задачу», as on the task card.
 export type InAppDecision =
-  { kind: "approve" | "accept"; taskId: string } | { kind: "coAssignee"; requestId: string };
+  | { kind: "approve"; taskId: string; takeOn: boolean }
+  | { kind: "accept"; taskId: string }
+  | { kind: "coAssignee"; requestId: string };
 
 export async function inAppDecisions(actor: Actor, pending: Map<string, PendingDecision>) {
   const result = new Map<string, InAppDecision>();
@@ -162,7 +165,7 @@ export async function inAppDecisions(actor: Actor, pending: Map<string, PendingD
     if (!task) continue;
     const allowed = availableTransitions(actor, task);
     if (task.status === "PENDING_APPROVAL" && allowed.includes("APPROVED"))
-      result.set(id, { kind: "approve", taskId: task.id });
+      result.set(id, { kind: "approve", taskId: task.id, takeOn: task.assigneeId === actor.id });
     else if (task.status === "IN_REVIEW" && allowed.includes("DONE"))
       result.set(id, { kind: "accept", taskId: task.id });
   }

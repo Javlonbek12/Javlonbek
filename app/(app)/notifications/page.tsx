@@ -62,7 +62,13 @@ function DecisionButtons({ id, decision }: { id: string; decision: InAppDecision
         <input type="hidden" name="taskId" value={decision.taskId} />
         <input type="hidden" name="to" value={decision.kind === "approve" ? "APPROVED" : "DONE"} />
         <Button type="submit" size="sm">
-          {t(decision.kind === "approve" ? "notifications.approve" : "notifications.accept")}
+          {t(
+            decision.kind === "accept"
+              ? "notifications.accept"
+              : decision.takeOn
+                ? "notifications.takeOn"
+                : "notifications.approve",
+          )}
         </Button>
       </form>
       <Button asChild size="sm" variant="outline">

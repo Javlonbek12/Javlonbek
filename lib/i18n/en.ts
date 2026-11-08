@@ -522,6 +522,7 @@ export const en: Dictionary = {
     summary: { title: "🌙 While the quiet hours lasted: {count}" },
     approve: "Approve",
     accept: "Accept",
+    takeOn: "Take on the task",
     giveBack: "Return",
     coAdd: "Add",
     coDecline: "Decline",
@@ -2368,7 +2369,6 @@ export const en: Dictionary = {
     inviteRequired:
       "Sign-in is by invitation only. Ask your manager for an invite link and open it.",
     help: "I'm the bot of the Assistant platform.\n\nJust write or say your tasks, for example:\n“Aziz to prepare the report by Friday, and me to call the distributor tomorrow” — I'll show a card to confirm. A task for yourself is a team task (your manager sees it); a personal one — if you write “personal”.\n\nYou can ask: “what do I have today”, “move the report to Thursday”, “close the report task”.\n\n/today — tasks for today and overdue\n/week — for the next 7 days\n/overdue — overdue\n/pending — waiting for your decision: approve, accept work, deletion requests\n/notes — send meeting minutes (text or voice)\n/content — today's approved content plan posts (to forward to the bots)\n/start — connect the bot\n/help — this help",
-    openApp: "Open the app: {url}",
     tooManyRequests: "Too many messages. Wait a minute.",
     notLinked: "I don't know you yet. Open the invite link from your manager or press /start.",
     recognized: "🎙 Recognized: “{text}”",
@@ -2429,6 +2429,9 @@ export const en: Dictionary = {
       empty: "empty 👌",
       more: "…and {count} more",
       open: "Open the app: {url}",
+      reschedule: "📅 Move the due date",
+      rescheduleWhich: "Which task to move? The numbers are as in the list.",
+      rescheduleWhen: "Move “{title}” to when? Any other date can be written: “move … to 15.10”.",
     },
     actions: {
       approve: "✅ Approve",
@@ -2484,6 +2487,10 @@ export const en: Dictionary = {
       coGone: "This request is already decided or withdrawn.",
     },
     openInApp: "Open in the app",
+    welcomeTry: "Try it now:",
+    menu: { today: "📋 Today", pending: "⏳ Waiting for decision", help: "❓ Help" },
+    unknown:
+      "I didn't get that. Write or say a task (“Aziz to prepare the report by Friday”) or choose:",
   },
   ai: {
     errors: {

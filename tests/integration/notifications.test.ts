@@ -231,7 +231,7 @@ describe("decisions in notifications", () => {
     const pending = await settleDecided(owner.id);
     expect(pending.get(asks!.id)).toEqual({ kind: "approve", taskId: task.id });
     expect(await inAppDecisions(owner, pending)).toEqual(
-      new Map([[asks!.id, { kind: "approve", taskId: task.id }]]),
+      new Map([[asks!.id, { kind: "approve", taskId: task.id, takeOn: false }]]),
     );
 
     // Approved elsewhere (the bot, the task page): nothing waits any more.

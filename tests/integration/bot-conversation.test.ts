@@ -8,8 +8,10 @@ import {
   handleText,
   handleVoice,
   showList,
+  unknownReply,
   type ConversationDeps,
 } from "@/modules/bot/conversation";
+import { commandsFor } from "@/modules/bot/commands";
 import { rememberReasonMessage } from "@/modules/bot/decisions";
 import type { DraftPayload } from "@/modules/bot/draft-card";
 import { MockStt } from "@/modules/stt";
@@ -253,14 +255,25 @@ describe("commands and natural requests", () => {
       { needsApproval: true },
     );
 
+    // Numbered, with bold headers; in «🔥 Просрочено» the lines carry no 🔥 of their own.
     const today = await showList(users.owner, "today", NOW);
-    expect(today.text).toContain("• Сегодняшняя");
-    expect(today.text).toContain("• Старая — 20 сент. 🔥");
-    expect((await showList(users.owner, "overdue", NOW)).text).toContain("Старая");
+    expect(today.text).toContain("<b>📋 На сегодня (1)</b>\n1. Сегодняшняя");
+    expect(today.text.endsWith("<b>🔥 Просрочено (1)</b>\n2. Старая — 20 сент.")).toBe(true);
+    expect(today).toMatchObject({ html: true, open: "/" });
+    // «✅ 1», «✅ 2» close a task in one tap; «📅 Перенести срок» asks which one.
+    expect(today.buttons!.map((row) => row.map((b) => b.text))).toEqual([
+      ["✅ 1", "✅ 2"],
+      ["📅 Перенести срок"],
+    ]);
+    expect((await showList(users.owner, "overdue", NOW)).text).toContain("1. Старая");
 
     const list = await showList(users.owner, "pending", NOW);
-    expect(list.text).toContain("На утверждение");
-    expect(list.buttons![0][0].data).toBe(`t:${pending.id}:A:l`);
+    expect(list.text).toContain("1. На утверждение");
+    // Two buttons per task, each with the task's number.
+    expect(list.buttons![0]).toEqual([
+      { text: "1 ✅ Утвердить", data: `t:${pending.id}:A:l` },
+      { text: "1 ↩️ Отклонить", data: `t:${pending.id}:D:l` },
+    ]);
 
     // Under a notice: the result in place of the notice.
     const approved = await handleCallback(users.owner, `t:${pending.id}:A`);
@@ -302,15 +315,15 @@ describe("commands and natural requests", () => {
       "create",
       { needsApproval: true },
     );
-    // In the list: the row turns into Да / Нет.
-    const ask = await handleCallback(users.owner, `t:${task.id}:C:l`);
-    expect(ask.text).toContain("Отменить задачу «Выставка»?");
-    expect(ask.buttons![0]!.map((b) => b.data)).toEqual([`tc:${task.id}:y:l`, `tc:${task.id}:n:l`]);
+    // /pending has no ✖️ any more: cancelling is on the site or under the notice.
+    const list = await showList(users.owner, "pending", NOW);
+    expect(list.buttons!.flat().some((b) => b.data.endsWith(":C:l"))).toBe(false);
     const statusOf = async () =>
       (await db.task.findUniqueOrThrow({ where: { id: task.id } })).status;
-    expect(await statusOf()).toBe("PENDING_APPROVAL");
-    const kept = await handleCallback(users.owner, `tc:${task.id}:n:l`);
-    expect(kept.buttons![0]![0]!.data).toBe(`t:${task.id}:A:l`);
+    const ask = await handleCallback(users.owner, `t:${task.id}:C`);
+    expect(ask.text).toContain("Отменить задачу «Выставка»?");
+    const kept = await handleCallback(users.owner, `tc:${task.id}:n`);
+    expect(kept.text).toContain("остаётся");
     expect(await statusOf()).toBe("PENDING_APPROVAL");
 
     // Under a notice: the question comes as a message of its own.
@@ -468,7 +481,7 @@ describe("commands and natural requests", () => {
     await changeStatus(users.dilnoza, task.id, "IN_PROGRESS");
     await requestTaskDeletion(users.aziz, task.id, "Дубль");
     const list = await showList(users.owner, "pending", NOW);
-    expect(list.text).toContain("• Лишняя · просят удалить");
+    expect(list.text).toContain("1. Лишняя · просят удалить");
     const row = list.buttons!.find((r) => r[0]!.data === `x:${task.id}:y:l`)!;
     expect(row[1]!.data).toBe(`x:${task.id}:n:l`);
     const kept = await handleCallback(users.owner, `x:${task.id}:n:l`);
@@ -601,5 +614,69 @@ describe("commands and natural requests", () => {
     const reply = await handleText(users.owner, CHAT, "закрой отчёт", depsFor(PHRASES[0], close));
     expect(reply.text).toBe("Какую задачу вы имеете в виду?");
     expect(reply.buttons).toHaveLength(2);
+  });
+});
+
+describe("lists you can act on, the summary's buttons, short answers", () => {
+  beforeEach(resetDb);
+
+  it("«✅ 1» closes a task and the list comes back with the result on top", async () => {
+    const users = await createFixtureTeam();
+    const task = await createTask(
+      users.owner,
+      taskInput({ title: "Отчёт", isPersonal: true, dueDate: TODAY }),
+    );
+    const reply = await handleCallback(users.owner, `k:${task.id}:today`, depsFor(PHRASES[0]));
+    expect(reply.edit).toBe(true);
+    expect(reply.text.split("\n\n")[0]).toContain("Отчёт");
+    expect(reply.text).toContain("На сегодня (0)");
+    expect((await db.task.findUniqueOrThrow({ where: { id: task.id } })).status).toBe("DONE");
+  });
+
+  it("«📅 Перенести срок»: which task, then when", async () => {
+    const users = await createFixtureTeam();
+    const task = await createTask(
+      users.owner,
+      taskInput({ title: "Отчёт", isPersonal: true, dueDate: TODAY }),
+    );
+    const deps = depsFor(PHRASES[0]);
+    const which = await handleCallback(users.owner, "rs:today", deps);
+    expect(which.buttons).toEqual([[{ text: "📅 1. Отчёт", data: `rd:${task.id}` }]]);
+    const when = await handleCallback(users.owner, `rd:${task.id}`, deps);
+    const tomorrow = when.buttons![0]![0]!;
+    expect(tomorrow.text).toContain("Завтра");
+    const moved = await handleCallback(users.owner, tomorrow.data, deps);
+    expect(moved.text).toContain("перенесён");
+  });
+
+  it("a button in the morning summary answers in a new message: the summary keeps the rest", async () => {
+    const users = await createFixtureTeam();
+    const pending = await createTask(
+      users.aziz,
+      taskInput({ title: "Ждёт", assigneeId: users.dilnoza.id }),
+      "create",
+      { needsApproval: true },
+    );
+    const reply = await handleCallback(users.owner, `t:${pending.id}:A:s`);
+    expect(reply.edit).toBeFalsy();
+    expect(reply.text).toContain("Утверждена: «Ждёт»");
+  });
+
+  it("anything unknown gets a short answer with the main lists; the menu follows the role", async () => {
+    expect(
+      unknownReply()
+        .buttons!.flat()
+        .map((b) => b.data),
+    ).toEqual(["l:today", "l:pending", "h"]);
+    const users = await createFixtureTeam();
+    expect((await handleCallback(users.owner, "l:pending")).text).toContain("Ждут вашего решения");
+    expect((await handleCallback(users.owner, "h")).text).toContain("/today");
+    const member = {
+      role: "MEMBER" as const,
+      access: { modules: ["meetings"], taskScope: "own" as const, teamIds: [] },
+    };
+    const names = commandsFor(member, "ru").map((c) => c.command);
+    expect(names).toContain("notes");
+    expect(names).not.toContain("content");
   });
 });
