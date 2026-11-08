@@ -29,6 +29,18 @@ describe("stats and profile", () => {
     expect(canSeeStats(colleague, employee)).toBe(false);
   });
 
+  it("stats: a manager sees the people whose tasks they see", () => {
+    const access = (taskScope: "all" | "team" | "own", teamIds: string[]) => ({
+      taskScope,
+      teamIds,
+      modules: [],
+    });
+    expect(canSeeStats({ ...boss, access: access("team", ["emp"]) }, employee)).toBe(true);
+    expect(canSeeStats({ ...otherBoss, access: access("team", ["x"]) }, employee)).toBe(false);
+    expect(canSeeStats({ ...otherBoss, access: access("all", []) }, employee)).toBe(true);
+    expect(canSeeStats({ ...boss, access: access("own", []) }, employee)).toBe(false);
+  });
+
   it("profile fields by role", () => {
     expect(editableProfileFields(owner, employee)).toContain("managerId");
     expect(editableProfileFields(boss, employee)).toEqual(["position", "responsibility"]);

@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { addDays, daysBetween, todayInTimezone, toDateString } from "@/lib/dates";
 import type { TaskStatus } from "@/lib/generated/prisma/enums";
+import { isLateWork } from "@/modules/tasks/today";
 
 // The employee's profile for the radar ("pentagon") chart: five scores from 0 to 100,
 // higher is better, over the last 90 days of team tasks, next to the team average.
@@ -102,7 +103,8 @@ export async function teamProfiles(timezone: string, now = new Date()) {
     facts.set(t.assigneeId, f);
     if (OPEN.includes(t.status)) {
       f.active += 1;
-      if (t.dueDate && toDateString(t.dueDate) < today) f.overdue += 1;
+      const due = t.dueDate ? toDateString(t.dueDate) : null;
+      if (isLateWork({ status: t.status, dueDate: due }, today)) f.overdue += 1;
     }
     if (t.status !== "DONE" || !t.completedAt || local(t.completedAt) <= from) continue;
     const done = local(t.completedAt);

@@ -1,55 +1,63 @@
+import { ArrowDown, ArrowUp, Plus } from "lucide-react";
 import Link from "next/link";
-
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { NativeSelect } from "@/components/ui/native-select";
-import { t } from "@/lib/i18n";
-import type { OrgTreeNode } from "@/modules/org/service";
 
 import {
   deleteOrgNodeAction,
+  freeOrgPlaceAction,
   invitePlaceAction,
+  moveOrgNodeAction,
   revokePlaceInviteAction,
   saveOrgNodeAction,
 } from "@/app/(app)/team/structure/actions";
 import { CopyButton } from "@/components/copy-button";
+import { ShareButton } from "@/components/team/share-button";
+import { Button } from "@/components/ui/button";
+import { ConfirmAction } from "@/components/ui/confirm-action";
+import { NativeSelect } from "@/components/ui/native-select";
+import { t } from "@/lib/i18n";
+import type { OrgTreeNode } from "@/modules/org/service";
+
+import { NodeFields } from "./node-fields";
 
 type Options = {
   people: { id: string; name: string }[];
   nodes: { id: string; name: string }[];
-  // Active invites to places, by node, with ready links.
+  // Active invites to places, by node, with ready links and the message to send.
   invites?: Map<
     string,
     {
       id: string;
       role: "MANAGER" | "MEMBER" | "OWNER" | "LAWYER";
       link: string;
-      botLink: string | null;
+      message: string;
     }
   >;
   inviteDays?: number;
+  // Opened from the chart: this place's form («изменить» or «+») is open.
+  editId?: string;
+  addId?: string;
 };
+
+// How a place is called in questions: the unit's name, or the person (or «Вакансия») and the job.
+export function nodeName(node: OrgTreeNode) {
+  if (node.kind === "UNIT") return node.name ?? "";
+  return `${node.user?.name ?? node.personName ?? t("team.org.vacancy")}, ${node.title ?? ""}`;
+}
 
 // For an empty place (someone outside the app or a vacancy): invite a person straight into it.
 function PlaceInvite({ node, options }: { node: OrgTreeNode; options: Options }) {
   const invite = options.invites?.get(node.id);
   if (invite) {
     return (
-      <div className="bg-muted/40 mt-1 flex max-w-xl flex-col gap-1 rounded-lg p-2 text-xs">
+      <div className="bg-muted/40 mt-1 flex max-w-xl flex-col gap-1.5 rounded-lg p-2 text-xs">
         <p className="font-medium">{t("team.org.invited", { role: t(`roles.${invite.role}`) })}</p>
-        <p className="break-all">
-          {t("team.org.inviteLink")}: {invite.link}
-        </p>
-        {invite.botLink && (
-          <p className="text-muted-foreground break-all">
-            {t("team.org.inviteBotLink")}: {invite.botLink}
-          </p>
-        )}
-        <div className="flex gap-2">
-          <CopyButton value={invite.link} />
+        <p className="text-muted-foreground break-all">{invite.link}</p>
+        <div className="flex flex-wrap gap-2">
+          <ShareButton text={invite.message} />
+          <CopyButton value={invite.link} label={t("team.copyLink")} />
           <form action={revokePlaceInviteAction}>
             <input type="hidden" name="inviteId" value={invite.id} />
+            <input type="hidden" name="nodeId" value={node.id} />
             <Button type="submit" size="sm" variant="ghost">
               {t("team.org.inviteRevoke")}
             </Button>
@@ -86,7 +94,7 @@ function PlaceInvite({ node, options }: { node: OrgTreeNode; options: Options })
   );
 }
 
-// One form for adding and editing: units have a name and a type, positions a job title and a person.
+// One form for adding and editing: «Человек / Отдел» decides which fields are shown.
 export function OrgNodeForm({
   node,
   parentId,
@@ -102,68 +110,23 @@ export function OrgNodeForm({
       className="bg-muted/40 mt-2 grid max-w-xl gap-2 rounded-lg p-3 text-sm sm:grid-cols-2"
     >
       {node && <input type="hidden" name="nodeId" value={node.id} />}
-      <Label className="flex-col items-start">
-        {t("team.org.kind")}
-        <NativeSelect name="kind" defaultValue={node?.kind ?? "POSITION"} className="w-full">
-          <option value="POSITION">{t("team.org.kinds.POSITION")}</option>
-          <option value="UNIT">{t("team.org.kinds.UNIT")}</option>
-        </NativeSelect>
-      </Label>
-      <Label className="flex-col items-start">
-        {t("team.org.parent")}
-        <NativeSelect
-          name="parentId"
-          defaultValue={node ? (node.parentId ?? "") : (parentId ?? "")}
-          className="w-full"
-        >
-          <option value="">{t("team.org.parentNone")}</option>
-          {options.nodes
-            .filter((n) => n.id !== node?.id)
-            .map((n) => (
-              <option key={n.id} value={n.id}>
-                {n.name}
-              </option>
-            ))}
-        </NativeSelect>
-      </Label>
-      <Label className="flex-col items-start">
-        {t("team.org.jobTitle")} / {t("team.org.unitType")}
-        <Input name="title" defaultValue={node?.title ?? ""} maxLength={120} />
-      </Label>
-      <Label className="flex-col items-start">
-        {t("team.org.name")}
-        <Input name="name" defaultValue={node?.name ?? ""} maxLength={120} />
-      </Label>
-      <Label className="flex-col items-start">
-        {t("team.org.personApp")}
-        <NativeSelect name="userId" defaultValue={node?.user?.id ?? ""} className="w-full">
-          <option value="">{t("team.org.personNone")}</option>
-          {options.people.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </NativeSelect>
-      </Label>
-      <Label className="flex-col items-start">
-        {t("team.org.personName")}
-        <Input name="personName" defaultValue={node?.personName ?? ""} maxLength={120} />
-      </Label>
-      <Label className="flex-col items-start">
-        {t("team.org.label")}
-        <Input name="label" defaultValue={node?.label ?? ""} maxLength={120} />
-      </Label>
-      <Label className="flex-col items-start">
-        {t("team.org.order")}
-        <Input
-          type="number"
-          name="sortOrder"
-          min={0}
-          max={999}
-          defaultValue={node?.sortOrder ?? 0}
-          className="w-24"
-        />
-      </Label>
+      <NodeFields
+        node={
+          node && {
+            id: node.id,
+            kind: node.kind,
+            name: node.name,
+            title: node.title,
+            label: node.label,
+            personName: node.personName,
+            userId: node.user?.id ?? null,
+            parentId: node.parentId,
+          }
+        }
+        parentId={parentId}
+        nodes={options.nodes}
+        people={options.people}
+      />
       <Button type="submit" size="sm" className="self-end justify-self-start">
         {node ? t("team.org.save") : t("team.org.add")}
       </Button>
@@ -213,17 +176,104 @@ function NodeBody({ node }: { node: OrgTreeNode }) {
   );
 }
 
+// The owner's tools for one place: up / down, change, delete (asks first, says where the people
+// under it go), add someone under it.
+function NodeTools({
+  node,
+  parent,
+  first,
+  last,
+  options,
+}: {
+  node: OrgTreeNode;
+  parent?: OrgTreeNode;
+  first: boolean;
+  last: boolean;
+  options: Options;
+}) {
+  const move = (direction: "left" | "right") => (
+    <form action={moveOrgNodeAction}>
+      <input type="hidden" name="nodeId" value={node.id} />
+      <input type="hidden" name="direction" value={direction} />
+      <Button
+        type="submit"
+        size="icon"
+        variant="ghost"
+        className="size-7"
+        disabled={direction === "left" ? first : last}
+        title={t(direction === "left" ? "team.org.moveUp" : "team.org.moveDown")}
+        aria-label={t(direction === "left" ? "team.org.moveUp" : "team.org.moveDown")}
+      >
+        {direction === "left" ? <ArrowUp /> : <ArrowDown />}
+      </Button>
+    </form>
+  );
+  const children = node.children.length;
+  const deleteHint =
+    node.children.length === 0
+      ? t("team.org.deleteHintEmpty")
+      : parent
+        ? t("team.org.deleteHintMove", { count: children, parent: nodeName(parent) })
+        : t("team.org.deleteHintTop", { count: children });
+  return (
+    <div className="mt-1 flex flex-col gap-1">
+      <div className="flex flex-wrap items-center gap-1">
+        {move("left")}
+        {move("right")}
+        <details className="text-sm" open={options.editId === node.id}>
+          <summary className="text-muted-foreground w-fit cursor-pointer px-1 text-xs hover:underline">
+            {t("team.org.edit")}
+          </summary>
+          <OrgNodeForm node={node} options={options} />
+        </details>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <details className="text-sm" open={options.addId === node.id}>
+          <summary className="text-primary flex w-fit cursor-pointer items-center gap-1 text-xs font-medium hover:underline">
+            <Plus className="size-3.5" aria-hidden />
+            {t("team.org.addChild")}
+          </summary>
+          <OrgNodeForm parentId={node.id} options={options} />
+        </details>
+        <ConfirmAction
+          label={t("team.org.delete")}
+          title={t("team.org.deleteTitle", { name: nodeName(node) })}
+          hint={deleteHint}
+          confirm={t("team.org.deleteConfirm")}
+          action={deleteOrgNodeAction}
+          hidden={{ nodeId: node.id, parentId: node.parentId ?? "" }}
+          floating
+        />
+        {node.user?.deactivated && (
+          <ConfirmAction
+            label={t("team.org.freePlace")}
+            title={t("team.org.freePlaceTitle")}
+            hint={t("team.org.freePlaceHint", { name: node.user.name })}
+            confirm={t("team.org.freePlaceConfirm")}
+            action={freeOrgPlaceAction}
+            hidden={{ nodeId: node.id }}
+            tone="default"
+            floating
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
 // The tree: a vertical line down the left of every group of children, a short tick to each child.
 export function OrgTree({
   nodes,
   editable,
   options,
   depth = 0,
+  parent,
 }: {
   nodes: OrgTreeNode[];
   editable: boolean;
   options: Options;
   depth?: number;
+  parent?: OrgTreeNode;
 }) {
   return (
     <ul
@@ -233,8 +283,8 @@ export function OrgTree({
           : "border-border ml-2 flex flex-col gap-3 border-l pl-6 sm:ml-4 sm:pl-8"
       }
     >
-      {nodes.map((node) => (
-        <li key={node.id} className="relative">
+      {nodes.map((node, i) => (
+        <li key={node.id} id={`node-${node.id}`} className="relative scroll-mt-24">
           {depth > 0 && (
             <span
               className="bg-border absolute top-3 -left-6 h-px w-4 sm:-left-8 sm:w-6"
@@ -246,23 +296,13 @@ export function OrgTree({
             <PlaceInvite node={node} options={options} />
           )}
           {editable && (
-            <details className="text-sm">
-              <summary className="text-muted-foreground w-fit cursor-pointer text-xs hover:underline">
-                {t("team.org.edit")}
-              </summary>
-              <OrgNodeForm node={node} options={options} />
-              <form action={deleteOrgNodeAction} className="mt-2 flex items-center gap-2">
-                <input type="hidden" name="nodeId" value={node.id} />
-                <Button type="submit" size="sm" variant="ghost" className="text-destructive">
-                  {t("team.org.delete")}
-                </Button>
-                <span className="text-muted-foreground text-xs">{t("team.org.deleteHint")}</span>
-              </form>
-              <p className="text-muted-foreground mt-3 text-xs font-medium">
-                {t("team.org.addChild")}
-              </p>
-              <OrgNodeForm parentId={node.id} options={options} />
-            </details>
+            <NodeTools
+              node={node}
+              parent={parent}
+              first={i === 0}
+              last={i === nodes.length - 1}
+              options={options}
+            />
           )}
           {node.children.length > 0 && (
             <div className="mt-3">
@@ -271,6 +311,7 @@ export function OrgTree({
                 editable={editable}
                 options={options}
                 depth={depth + 1}
+                parent={node}
               />
             </div>
           )}
