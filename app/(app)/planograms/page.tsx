@@ -106,7 +106,7 @@ export default async function PlanogramsPage({ searchParams }: PageProps<"/plano
             defaultValue={query}
             placeholder={t("planograms.list.search")}
             aria-label={t("planograms.list.search")}
-            className="h-8 min-w-0 flex-1 basis-40"
+            className="h-8 min-w-0 flex-1 basis-56"
           />
           {equipment.length > 1 && (
             <NativeSelect
