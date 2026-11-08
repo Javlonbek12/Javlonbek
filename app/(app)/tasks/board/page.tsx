@@ -1,8 +1,7 @@
 import { cookies } from "next/headers";
 
 import { KanbanBoard } from "@/components/tasks/kanban-board";
-import { ScopeSelect } from "@/components/tasks/scope-filter";
-import { Button } from "@/components/ui/button";
+import { ScopeSwitch } from "@/components/tasks/scope-filter";
 import { t } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getUserToday } from "@/modules/core/settings/service";
@@ -24,12 +23,16 @@ export default async function BoardPage({ searchParams }: PageProps<"/tasks/boar
 
   return (
     <div className="flex flex-col gap-3">
-      <form className="flex gap-2">
-        <ScopeSelect value={filters.scope} />
-        <Button type="submit" variant="secondary">
-          {t("tasks.filters.apply")}
-        </Button>
-      </form>
+      <ScopeSwitch
+        value={filters.scope}
+        userId={user.id}
+        hrefs={{
+          mine: "/tasks/board?scope=mine",
+          created: "/tasks/board?scope=created",
+          team: "/tasks/board?scope=team",
+        }}
+        className="self-start"
+      />
       <p className="text-muted-foreground text-xs">
         {t("tasks.kanban.shown", { days: BOARD_DONE_DAYS })}
       </p>

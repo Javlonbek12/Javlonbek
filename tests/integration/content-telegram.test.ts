@@ -2,7 +2,13 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { db } from "@/lib/db";
 import { withAccess } from "@/modules/core/access/actor";
-import { approvePost, ContentError, saveContent, savePlanItem } from "@/modules/content/service";
+import {
+  approvePost,
+  ContentError,
+  saveContent,
+  savePlanItem,
+  submitForReview,
+} from "@/modules/content/service";
 import { deliverToTelegram, handleSentButton, type Sender } from "@/modules/content/telegram";
 import { addPostFile } from "@/modules/content/files";
 import { createTestUser, resetDb } from "@/tests/helpers/db";
@@ -46,7 +52,9 @@ describe("content plan to Telegram", () => {
       await addPostFile(owner, post.id, "RU", new File(["%PDF-1.4"], "price.pdf"));
       await addPostFile(owner, post.id, "UZ", new File([PNG], "v-uz.png"));
     }
-    await approvePost(owner, post.id);
+    // Nobody approves their own post: the owner sends it, a manager approves it.
+    await submitForReview(owner, post.id);
+    await approvePost(await withAccess(await createTestUser("MANAGER")), post.id);
     return post;
   }
 

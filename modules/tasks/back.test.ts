@@ -6,7 +6,11 @@ describe("going back after a task action", () => {
   it("accepts only task-section paths", () => {
     expect(safeBack("/tasks?scope=team&task=t1", "/tasks/t1")).toBe("/tasks?scope=team&task=t1");
     expect(safeBack("/tasks/t1", "/x")).toBe("/tasks/t1");
+    // «Сегодня» with the task panel open.
+    expect(safeBack("/?task=t1&tab=work", "/x")).toBe("/?task=t1&tab=work");
     for (const bad of [
+      "/tasksx/../settings",
+      "/projects",
       "https://evil.example/tasks",
       "//evil.example/tasks",
       "/settings",

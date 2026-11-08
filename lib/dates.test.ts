@@ -4,8 +4,11 @@ import {
   addDays,
   addMonths,
   daysBetween,
+  formatDay,
+  formatDayLong,
   formatMonth,
   isDateString,
+  isOtherYear,
   isoWeekNumber,
   monthGrid,
   startOfWeek,
@@ -51,5 +54,15 @@ describe("dates", () => {
 
   it("formats a month in Russian", () => {
     expect(formatMonth("2026-10-01")).toBe("Октябрь 2026");
+  });
+
+  it("shows the year only for dates of another year", () => {
+    const year = new Date().getFullYear();
+    expect(formatDay(`${year}-11-06`)).toBe("6 нояб.");
+    expect(formatDay(`${year - 1}-11-06`)).toBe(`6 нояб. ${year - 1}`);
+    expect(formatDay(`${year + 1}-01-01`, "en")).toBe(`1 Jan ${year + 1}`);
+    expect(formatDayLong(`${year + 1}-01-01`)).toMatch(new RegExp(`, 1 января ${year + 1}$`));
+    expect(isOtherYear(2025, 2026)).toBe(true);
+    expect(isOtherYear("2026", 2026)).toBe(false);
   });
 });

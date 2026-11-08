@@ -1,10 +1,10 @@
-import { Check, Download, FileText, Star, Trash2 } from "lucide-react";
+import { Check, ChevronDown, Download, FileText, Star, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
-import { Section } from "@/components/connect/parts";
 import { CompositionPicker } from "@/components/distribution/composition-picker";
+import { OpenOnHash } from "@/components/distribution/open-on-hash";
 import { fmt, Matrix, N, pct } from "@/components/distribution/parts";
 import { rowsOf, SKETCH_COLORS, sketchKind } from "@/components/distribution/sketch";
 import { Button } from "@/components/ui/button";
@@ -36,16 +36,23 @@ import {
 } from "../../actions";
 
 const STEPS = [
-  ["concept", "concept"],
-  ["kv", "kv"],
-  ["composition", "composition"],
-  ["reserve", "reserve"],
-  ["list", "list"],
-  ["prices", "prices"],
-  ["ordered", "order"],
-  ["distribution", "distribution"],
-  ["replacement", "replacement"],
+  "concept",
+  "kv",
+  "composition",
+  "list",
+  "prices",
+  "order",
+  "distribution",
+  "replacement",
 ] as const;
+type StepKey = (typeof STEPS)[number];
+
+// Which step an action came back to (it reports in the link), so that step is open.
+const BACK_TO: Record<string, StepKey> = {
+  saved: "concept",
+  prices: "prices",
+  rows: "replacement",
+};
 
 const XLSX = ".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
@@ -80,6 +87,65 @@ export default async function DistributionCampaignPage({
   const files = (kind: string) => c.order.files.filter((f) => f.kind === kind);
   const q = (key: string) => (typeof query[key] === "string" ? String(query[key]) : null);
 
+  // The page opens on the step the work is at: the first one not done after the furthest done
+  // one (a concept never ticked doesn't pull an ordered campaign back to step 1). The other steps
+  // fold into one line with their result.
+  const done: Record<StepKey, boolean> = {
+    concept: c.steps.concept,
+    kv: c.steps.kv,
+    composition: c.steps.list,
+    list: c.steps.list,
+    prices: c.steps.prices,
+    order: c.steps.ordered,
+    distribution: c.steps.distribution,
+    replacement: c.steps.replacement,
+  };
+  const furthest = STEPS.findLastIndex((key) => done[key]);
+  const current = STEPS.find((key, i) => i > furthest && !done[key]) ?? STEPS[STEPS.length - 1]!;
+  const cameBack =
+    q("saved") === "list"
+      ? "list"
+      : (Object.entries(BACK_TO).find(([key]) => q(key) !== null)?.[1] ?? null);
+  const shippedTotal = c.items.reduce((s, i) => s + i.ordered, 0);
+  const summary: Record<StepKey, string> = {
+    concept: done.concept
+      ? t("dist.campaign.summary.conceptDone")
+      : t("dist.campaign.summary.conceptNot"),
+    kv: done.kv
+      ? t("dist.campaign.summary.kvFinal")
+      : t("dist.campaign.summary.files", { count: files("KEY_VISUAL").length }),
+    composition:
+      order.elements.length > 0
+        ? t("dist.campaign.summary.composition", { count: order.elements.length })
+        : t("dist.campaign.summary.compositionNone"),
+    list:
+      c.items.length > 0
+        ? t("dist.campaign.summary.list", { count: c.items.length, sum: fmt(c.total) })
+        : t("dist.campaign.summary.listNone"),
+    prices: t("dist.campaign.summary.prices", { done: c.priced, total: c.items.length }),
+    order: order.orderedOn
+      ? t("dist.campaign.summary.ordered", { date: day.format(order.orderedOn) })
+      : t("dist.campaign.summary.notOrdered"),
+    distribution: t("dist.campaign.summary.shipped", {
+      shipped: fmt(c.shipped),
+      total: fmt(c.toRegions || shippedTotal),
+    }),
+    replacement:
+      c.replacement.total.planned > 0
+        ? t("dist.campaign.summary.replaced", {
+            done: fmt(c.replacement.total.replaced),
+            total: fmt(c.replacement.total.planned),
+          })
+        : t("dist.campaign.summary.noOutlets"),
+  };
+  const step = (key: StepKey) => ({
+    n: STEPS.indexOf(key) + 1,
+    done: done[key],
+    current: key === current,
+    open: key === current || key === cameBack,
+    summary: summary[key],
+  });
+
   return (
     <div className="flex flex-col gap-5 [&>*]:min-w-0">
       <div className="flex flex-col gap-2">
@@ -94,675 +160,665 @@ export default async function DistributionCampaignPage({
           <p className="text-muted-foreground text-sm">{t("dist.campaign.closedHint")}</p>
         )}
         <Stepper c={c} />
-        <ol className="flex flex-wrap gap-1.5">
-          {STEPS.map(([key, anchor], i) => (
-            <li key={key}>
-              <a
-                href={`#${anchor}`}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs",
-                  c.steps[key === "reserve" ? "composition" : key]
-                    ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-                    : "text-muted-foreground hover:bg-accent/50",
-                )}
-              >
-                {c.steps[key === "reserve" ? "composition" : key] ? (
-                  <Check className="size-3.5" />
-                ) : (
-                  <span>{i + 1}.</span>
-                )}
-                {t(`dist.campaign.steps.${key}`)}
-              </a>
-            </li>
-          ))}
-        </ol>
+        <OpenOnHash />
       </div>
       {error && (
         <p className="text-destructive text-sm">{t(`dist.errors.${error}` as TranslationKey)}</p>
       )}
 
       {/* 1. Concept */}
-      <Anchor id="concept">
-        <Section title={t("dist.campaign.conceptTitle")} hint={t("dist.campaign.conceptHint")}>
-          {q("saved") === "concept" && <Saved />}
-          {manage ? (
-            <form action={updateConceptAction} className="flex flex-col gap-3">
-              <input type="hidden" name="id" value={order.id} />
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="flex flex-col gap-1 text-sm">
-                  {t("dist.orders.name")}
-                  <Input name="name" required maxLength={120} defaultValue={order.name} />
-                </label>
-                <label className="flex flex-col gap-1 text-sm">
-                  {t("dist.campaign.project")}
-                  <NativeSelect name="projectId" defaultValue={order.projectId ?? ""}>
-                    <option value="">—</option>
-                    {projects.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </NativeSelect>
-                </label>
-              </div>
+      <Step
+        id="concept"
+        {...step("concept")}
+        title={t("dist.campaign.conceptTitle")}
+        hint={t("dist.campaign.conceptHint")}
+      >
+        {q("saved") === "concept" && <Saved />}
+        {manage ? (
+          <form action={updateConceptAction} className="flex flex-col gap-3">
+            <input type="hidden" name="id" value={order.id} />
+            <div className="grid gap-3 sm:grid-cols-2">
               <label className="flex flex-col gap-1 text-sm">
-                {t("dist.campaign.description")}
-                <Textarea
-                  name="description"
-                  rows={3}
-                  maxLength={2000}
-                  defaultValue={order.description ?? ""}
-                />
+                {t("dist.orders.name")}
+                <Input name="name" required maxLength={120} defaultValue={order.name} />
               </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  name="approved"
-                  value="1"
-                  defaultChecked={order.conceptApprovedAt !== null}
-                  className="size-4"
-                />
-                {t("dist.campaign.conceptApproved")}
+              <label className="flex flex-col gap-1 text-sm">
+                {t("dist.campaign.project")}
+                <NativeSelect name="projectId" defaultValue={order.projectId ?? ""}>
+                  <option value="">—</option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </NativeSelect>
               </label>
-              <div>
-                <Button type="submit" variant="outline">
-                  {t("dist.posm.save")}
-                </Button>
-              </div>
-            </form>
-          ) : (
-            order.description && <p className="text-sm whitespace-pre-line">{order.description}</p>
-          )}
-          {order.project && (
-            <Link
-              href={`/projects/${order.project.id}`}
-              className="text-primary text-sm hover:underline"
-            >
-              {t("dist.campaign.openProject", { name: order.project.name })}
-            </Link>
-          )}
-          <Files
-            files={files("CONCEPT")}
-            kind="CONCEPT"
-            orderId={order.id}
-            manage={manage}
-            anchor="#concept"
-          />
-        </Section>
-      </Anchor>
+            </div>
+            <label className="flex flex-col gap-1 text-sm">
+              {t("dist.campaign.description")}
+              <Textarea
+                name="description"
+                rows={3}
+                maxLength={2000}
+                defaultValue={order.description ?? ""}
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                name="approved"
+                value="1"
+                defaultChecked={order.conceptApprovedAt !== null}
+                className="size-4"
+              />
+              {t("dist.campaign.conceptApproved")}
+            </label>
+            <div>
+              <Button type="submit" variant="outline">
+                {t("dist.posm.save")}
+              </Button>
+            </div>
+          </form>
+        ) : (
+          order.description && <p className="text-sm whitespace-pre-line">{order.description}</p>
+        )}
+        {order.project && (
+          <Link
+            href={`/projects/${order.project.id}`}
+            className="text-primary text-sm hover:underline"
+          >
+            {t("dist.campaign.openProject", { name: order.project.name })}
+          </Link>
+        )}
+        <Files
+          files={files("CONCEPT")}
+          kind="CONCEPT"
+          orderId={order.id}
+          manage={manage}
+          anchor="#concept"
+        />
+      </Step>
 
       {/* 2. Key visual */}
-      <Anchor id="kv">
-        <Section title={t("dist.campaign.kvTitle")} hint={t("dist.campaign.kvHint")}>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {files("KEY_VISUAL").map((f) => (
-              <div
-                key={f.id}
-                className={cn(
-                  "flex flex-col rounded-xl border",
-                  f.final && "border-emerald-400 ring-2 ring-emerald-400/40",
-                )}
-              >
-                {f.mime.startsWith("image/") ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={`/api/distribution/files/${f.id}`}
-                    alt={f.name}
-                    className="bg-muted aspect-[4/3] w-full rounded-t-xl object-contain"
-                  />
-                ) : (
-                  <div className="bg-muted text-muted-foreground flex aspect-[4/3] items-center justify-center rounded-t-xl">
-                    <FileText className="size-8" />
-                  </div>
-                )}
-                <div className="flex items-center justify-between gap-2 p-2 text-xs">
-                  <a
-                    href={`/api/distribution/files/${f.id}?download=1`}
-                    className="truncate hover:underline"
-                  >
-                    {f.name}
-                  </a>
-                  {manage && (
-                    <span className="flex shrink-0 gap-1">
-                      <form action={setKvFinalAction}>
-                        <input type="hidden" name="id" value={order.id} />
-                        <input type="hidden" name="fileId" value={f.id} />
-                        <input type="hidden" name="final" value={f.final ? "0" : "1"} />
-                        <Button
-                          type="submit"
-                          size="sm"
-                          variant={f.final ? "default" : "outline"}
-                          className="h-7 px-2 text-xs"
-                        >
-                          <Star className="size-3.5" />
-                          {f.final ? t("dist.campaign.final") : t("dist.campaign.makeFinal")}
-                        </Button>
-                      </form>
-                      <RemoveFile orderId={order.id} fileId={f.id} anchor="#kv" />
-                    </span>
-                  )}
-                  {!manage && f.final && (
-                    <span className="text-emerald-700 dark:text-emerald-400">
-                      {t("dist.campaign.final")}
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-          {manage && <Upload orderId={order.id} kind="KEY_VISUAL" accept="image/*,.pdf" />}
-        </Section>
-      </Anchor>
-
-      {/* 3–4. What to order and the reserve */}
-      <Anchor id="composition">
-        <Section
-          title={t("dist.campaign.compositionTitle")}
-          hint={t("dist.campaign.compositionHint")}
-        >
-          {locked && <p className="text-sm">{t("dist.campaign.lockedHint")}</p>}
-          <form action={saveCompositionAction} className="flex flex-col gap-4">
-            <input type="hidden" name="id" value={order.id} />
-            <fieldset disabled={!manage || locked} className="flex flex-col gap-4">
-              <CompositionPicker
-                disabled={!manage || locked}
-                elements={catalog.elements.map((element, i) => ({
-                  id: element.id,
-                  name: element.name,
-                  kind: sketchKind(element.name),
-                  color: SKETCH_COLORS[i % SKETCH_COLORS.length]!,
-                  sizes: Object.fromEntries(
-                    element.sizes.map((s) => [
-                      s.type,
-                      {
-                        heightMm: s.heightMm,
-                        widthMm: s.widthMm,
-                        perUnit: s.perUnit,
-                        price: s.price,
-                      },
-                    ]),
-                  ),
-                }))}
-                types={DIST_TYPES.map((type) => {
-                  const size = catalog.types.find((x) => x.type === type.code);
-                  return {
-                    code: type.code,
-                    label: type.label,
-                    heightMm: size?.heightMm ?? null,
-                    widthMm: size?.widthMm ?? null,
-                    depthMm: size?.depthMm ?? null,
-                    units: Math.round((units[type.code] ?? 0) * 10) / 10,
-                    rows: rowsOf(type.label),
-                  };
-                })}
-                initial={{
-                  selected: Object.fromEntries(order.elements.map((e) => [e.elementId, e.types])),
-                  perUnit: Object.fromEntries(
-                    order.elements.map((e) => [
-                      e.elementId,
-                      (e.perUnit ?? {}) as Record<string, number>,
-                    ]),
-                  ),
-                  reservePct: order.reservePct,
-                  reserveByType: (order.reserveByType ?? {}) as Record<string, number>,
-                  withStock: order.withStock,
-                }}
-              />
-              <p className="text-muted-foreground text-xs">{t("dist.campaign.perUnitHint")}</p>
-              {manage && !locked && (
-                <div className="flex flex-wrap gap-2">
-                  <Button type="submit" name="next" value="list">
-                    {t("dist.campaign.makeList")}
-                  </Button>
-                  <Button type="submit" variant="outline">
-                    {t("dist.campaign.saveComposition")}
-                  </Button>
-                  <Link
-                    href="/equipment/sizes"
-                    className="text-primary self-center px-2 text-sm hover:underline"
-                  >
-                    {t("dist.builder.catalog")}
-                  </Link>
+      <Step
+        id="kv"
+        {...step("kv")}
+        title={t("dist.campaign.kvTitle")}
+        hint={t("dist.campaign.kvHint")}
+      >
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {files("KEY_VISUAL").map((f) => (
+            <div
+              key={f.id}
+              className={cn(
+                "flex flex-col rounded-xl border",
+                f.final && "border-emerald-400 ring-2 ring-emerald-400/40",
+              )}
+            >
+              {f.mime.startsWith("image/") ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={`/api/distribution/files/${f.id}`}
+                  alt={f.name}
+                  className="bg-muted aspect-[4/3] w-full rounded-t-xl object-contain"
+                />
+              ) : (
+                <div className="bg-muted text-muted-foreground flex aspect-[4/3] items-center justify-center rounded-t-xl">
+                  <FileText className="size-8" />
                 </div>
               )}
-            </fieldset>
-          </form>
-          {!locked && c.preview.lines.length > 0 && (
-            <div className="flex flex-col gap-2 border-t pt-3">
-              <h3 className="text-sm font-semibold">{t("dist.campaign.preview")}</h3>
-              <Matrix
-                dense
-                text={[1, 2]}
-                head={[
-                  t("dist.builder.posm"),
-                  t("dist.builder.equipment"),
-                  t("dist.builder.printSize"),
-                  t("dist.builder.unitsCol"),
-                  t("dist.builder.perUnit"),
-                  t("dist.builder.quantity"),
-                  t("dist.builder.price"),
-                  t("dist.builder.sum"),
-                ]}
-                rows={c.preview.lines.map((l) => ({
-                  key: l.key,
-                  cells: [
-                    <span key="n" className="flex flex-col">
-                      {l.element}
-                      {l.gaps.length > 0 && (
-                        <span className="text-xs text-amber-700 dark:text-amber-400">
-                          {l.gaps.map((g) => t(`dist.builder.gap.${g}`)).join(", ")}
-                        </span>
-                      )}
-                    </span>,
-                    <span key="e" className="text-xs whitespace-normal">
-                      {l.types.map(typeLabel).join(", ")}
-                    </span>,
-                    mm(l.heightMm, l.widthMm) ?? "?",
-                    fmt(l.units),
-                    l.perUnit ?? "?",
-                    l.quantity === null ? "?" : <strong key="q">{fmt(l.quantity)}</strong>,
-                    l.price === null ? "?" : fmt(l.price),
-                    l.sum === null ? "—" : fmt(l.sum),
-                  ],
-                }))}
-              />
-            </div>
-          )}
-        </Section>
-      </Anchor>
-
-      {/* 5. The list */}
-      <Anchor id="list">
-        <Section title={t("dist.campaign.listTitle")} hint={t("dist.campaign.listHint")}>
-          {q("saved") === "list" && <Saved />}
-          {c.items.length === 0 ? (
-            <p className="text-muted-foreground text-sm">{t("dist.campaign.noList")}</p>
-          ) : (
-            <>
-              <Matrix
-                dense
-                text={[1, 3]}
-                head={[
-                  t("dist.builder.posm"),
-                  t("dist.builder.equipment"),
-                  t("dist.builder.printSize"),
-                  t("dist.builder.material"),
-                  t("dist.builder.unitsCol"),
-                  t("dist.builder.perUnit"),
-                  t("dist.builder.quantity"),
-                  t("dist.builder.price"),
-                  t("dist.builder.sum"),
-                ]}
-                rows={c.items.map((item) => ({
-                  key: item.id,
-                  cells: [
-                    <Link
-                      key="n"
-                      href={`/distribution/posm/${item.id}`}
-                      className="hover:underline"
-                    >
-                      {item.category}
-                    </Link>,
-                    <span key="e" className="text-xs whitespace-normal">
-                      {item.equipmentLabel}
-                    </span>,
-                    item.size ?? "—",
-                    <span key="m" className="text-muted-foreground text-xs whitespace-normal">
-                      {item.material ?? "—"}
-                    </span>,
-                    fmt(item.orderedFor),
-                    item.norm ?? "—",
-                    <strong key="q">{fmt(item.ordered)}</strong>,
-                    item.price === null ? "—" : fmt(item.price),
-                    item.price === null ? "—" : fmt(item.price * item.ordered),
-                  ],
-                }))}
-                foot={[
-                  t("dist.total"),
-                  "",
-                  "",
-                  "",
-                  "",
-                  "",
-                  fmt(c.items.reduce((s, i) => s + i.ordered, 0)),
-                  "",
-                  fmt(c.total),
-                ]}
-              />
-              <div>
-                <Button asChild variant="outline" size="sm">
-                  <a href={`/api/distribution/campaigns/${order.id}/xlsx`}>
-                    <Download />
-                    {t("dist.campaign.listExcel")}
-                  </a>
-                </Button>
-              </div>
-            </>
-          )}
-        </Section>
-      </Anchor>
-
-      {/* 6. The printer's prices */}
-      <Anchor id="prices">
-        <Section title={t("dist.campaign.pricesTitle")} hint={t("dist.campaign.pricesStepHint")}>
-          {q("prices") !== null && (
-            <p className="text-sm text-emerald-700 dark:text-emerald-400">
-              {t("dist.campaign.pricesSaved", { count: q("prices")! })}
-            </p>
-          )}
-          {c.items.length === 0 ? (
-            <p className="text-muted-foreground text-sm">{t("dist.campaign.noList")}</p>
-          ) : (
-            <form action={savePricesAction} className="flex flex-col gap-3">
-              <input type="hidden" name="id" value={order.id} />
-              <Matrix
-                dense
-                text={[1, 2]}
-                head={[
-                  t("dist.builder.posm"),
-                  t("dist.builder.equipment"),
-                  t("dist.builder.printSize"),
-                  t("dist.builder.quantity"),
-                  t("dist.builder.price"),
-                  t("dist.builder.sum"),
-                  t("dist.campaign.confirmed"),
-                ]}
-                rows={c.items.map((item) => ({
-                  key: item.id,
-                  cells: [
-                    <span key="n" className="flex flex-col">
-                      <Link href={`/distribution/posm/${item.id}`} className="hover:underline">
-                        {item.category}
-                      </Link>
-                      {item.supplier && (
-                        <span className="text-muted-foreground text-xs">
-                          {item.supplier}
-                          {item.quoteNo && ` · ${t("dist.campaign.quoteShort")} ${item.quoteNo}`}
-                        </span>
-                      )}
-                    </span>,
-                    <span key="e" className="text-xs whitespace-normal">
-                      {item.equipmentLabel}
-                    </span>,
-                    item.size ?? "—",
-                    <strong key="q">{fmt(item.ordered)}</strong>,
-                    manage ? (
-                      <span key="p">
-                        <input type="hidden" name="posmId" value={item.id} />
-                        <Input
-                          name={`price:${item.id}`}
-                          type="number"
-                          min={0}
-                          step="any"
-                          defaultValue={item.price ?? ""}
-                          className="ml-auto h-8 w-28"
-                          aria-label={t("dist.builder.price")}
-                        />
-                      </span>
-                    ) : item.price === null ? (
-                      "—"
-                    ) : (
-                      fmt(item.price)
-                    ),
-                    item.price === null ? "—" : fmt(item.price * item.ordered),
-                    item.priceConfirmedAt ? (
-                      <span key="c" className="text-xs text-emerald-700 dark:text-emerald-400">
-                        ✓ {day.format(item.priceConfirmedAt)}
-                      </span>
-                    ) : manage ? (
-                      <label key="c" className="flex items-center justify-end gap-1.5 text-xs">
-                        <input type="checkbox" name="confirm" value={item.id} className="size-4" />
-                        {t("dist.campaign.confirm")}
-                      </label>
-                    ) : (
-                      <span key="c" className="text-xs text-amber-700 dark:text-amber-400">
-                        {t("dist.campaign.notConfirmed")}
-                      </span>
-                    ),
-                  ],
-                }))}
-                foot={[
-                  t("dist.total"),
-                  "",
-                  "",
-                  fmt(c.items.reduce((s, i) => s + i.ordered, 0)),
-                  "",
-                  fmt(c.total),
-                  `${c.priced} / ${c.items.length}`,
-                ]}
-              />
-              {manage && (
-                <div className="flex flex-wrap items-end gap-3">
-                  <label className="flex flex-col gap-1 text-sm">
-                    {t("dist.campaign.supplier")}
-                    <Input name="supplier" maxLength={120} className="w-56" />
-                  </label>
-                  <label className="flex flex-col gap-1 text-sm">
-                    {t("dist.campaign.quoteNo")}
-                    <Input name="quoteNo" maxLength={60} className="w-36" />
-                  </label>
-                  <label className="flex flex-col gap-1 text-sm">
-                    {t("dist.campaign.quotedOn")}
-                    <Input type="date" name="quotedOn" required defaultValue={today} />
-                  </label>
-                  <Button type="submit">{t("dist.campaign.savePrices")}</Button>
-                </div>
-              )}
-              <p className="text-muted-foreground text-xs">{t("dist.campaign.pricesHint")}</p>
-            </form>
-          )}
-          <Files
-            files={files("QUOTE")}
-            kind="QUOTE"
-            orderId={order.id}
-            manage={manage}
-            anchor="#prices"
-            label={t("dist.campaign.quotes")}
-          />
-        </Section>
-      </Anchor>
-
-      {/* 7. EAS and the order */}
-      <Anchor id="order">
-        <Section title={t("dist.campaign.orderTitle")} hint={t("dist.campaign.orderHint")}>
-          <div>
-            <Button asChild>
-              <Link href={`/distribution/campaigns/${order.id}/eas`}>
-                <FileText />
-                {t("dist.eas.open")}
-              </Link>
-            </Button>
-          </div>
-          <p className="text-muted-foreground text-xs">{t("dist.campaign.easPending")}</p>
-          <Files
-            files={files("EAS")}
-            kind="EAS"
-            orderId={order.id}
-            manage={manage}
-            anchor="#order"
-            label={t("dist.campaign.easFiles")}
-          />
-          {order.orderedOn ? (
-            <div className="flex flex-wrap items-center gap-3 text-sm">
-              <span className="font-medium text-emerald-700 dark:text-emerald-400">
-                {t("dist.campaign.orderedOn", { date: day.format(order.orderedOn) })}
-              </span>
-              {manage && c.shipped === 0 && (
-                <form action={setOrderedAction}>
-                  <input type="hidden" name="id" value={order.id} />
-                  <input type="hidden" name="undo" value="1" />
-                  <Button type="submit" size="sm" variant="ghost">
-                    {t("dist.campaign.unorder")}
-                  </Button>
-                </form>
-              )}
-            </div>
-          ) : (
-            manage && (
-              <form action={setOrderedAction} className="flex flex-wrap items-end gap-3">
-                <input type="hidden" name="id" value={order.id} />
-                <label className="flex flex-col gap-1 text-sm">
-                  {t("dist.orders.date")}
-                  <Input type="date" name="orderedOn" required defaultValue={today} />
-                </label>
-                <Button type="submit" disabled={c.items.length === 0}>
-                  {t("dist.campaign.markOrdered")}
-                </Button>
-                {!c.steps.prices && c.items.length > 0 && (
-                  <span className="text-xs text-amber-700 dark:text-amber-400">
-                    {t("dist.campaign.pricesNotAll")}
+              <div className="flex items-center justify-between gap-2 p-2 text-xs">
+                <a
+                  href={`/api/distribution/files/${f.id}?download=1`}
+                  className="truncate hover:underline"
+                >
+                  {f.name}
+                </a>
+                {manage && (
+                  <span className="flex shrink-0 gap-1">
+                    <form action={setKvFinalAction}>
+                      <input type="hidden" name="id" value={order.id} />
+                      <input type="hidden" name="fileId" value={f.id} />
+                      <input type="hidden" name="final" value={f.final ? "0" : "1"} />
+                      <Button
+                        type="submit"
+                        size="sm"
+                        variant={f.final ? "default" : "outline"}
+                        className="h-7 px-2 text-xs"
+                      >
+                        <Star className="size-3.5" />
+                        {f.final ? t("dist.campaign.final") : t("dist.campaign.makeFinal")}
+                      </Button>
+                    </form>
+                    <RemoveFile orderId={order.id} fileId={f.id} anchor="#kv" />
                   </span>
                 )}
-              </form>
-            )
-          )}
-        </Section>
-      </Anchor>
+                {!manage && f.final && (
+                  <span className="text-emerald-700 dark:text-emerald-400">
+                    {t("dist.campaign.final")}
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+        {manage && <Upload orderId={order.id} kind="KEY_VISUAL" accept="image/*,.pdf" />}
+      </Step>
 
-      {/* 8. Distribution */}
-      <Anchor id="distribution">
-        <Section
-          title={t("dist.campaign.distributionTitle")}
-          hint={t("dist.campaign.distributionHint")}
-        >
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Stat
-              label={t("dist.campaign.ordered")}
-              value={fmt(c.items.reduce((s, i) => s + i.ordered, 0))}
+      {/* 3–4. What to order and the reserve */}
+      <Step
+        id="composition"
+        {...step("composition")}
+        title={t("dist.campaign.compositionTitle")}
+        hint={t("dist.campaign.compositionHint")}
+      >
+        {locked && <p className="text-sm">{t("dist.campaign.lockedHint")}</p>}
+        <form action={saveCompositionAction} className="flex flex-col gap-4">
+          <input type="hidden" name="id" value={order.id} />
+          <fieldset disabled={!manage || locked} className="flex flex-col gap-4">
+            <CompositionPicker
+              disabled={!manage || locked}
+              elements={catalog.elements.map((element, i) => ({
+                id: element.id,
+                name: element.name,
+                kind: sketchKind(element.name),
+                color: SKETCH_COLORS[i % SKETCH_COLORS.length]!,
+                sizes: Object.fromEntries(
+                  element.sizes.map((s) => [
+                    s.type,
+                    {
+                      heightMm: s.heightMm,
+                      widthMm: s.widthMm,
+                      perUnit: s.perUnit,
+                      price: s.price,
+                    },
+                  ]),
+                ),
+              }))}
+              types={DIST_TYPES.map((type) => {
+                const size = catalog.types.find((x) => x.type === type.code);
+                return {
+                  code: type.code,
+                  label: type.label,
+                  heightMm: size?.heightMm ?? null,
+                  widthMm: size?.widthMm ?? null,
+                  depthMm: size?.depthMm ?? null,
+                  units: Math.round((units[type.code] ?? 0) * 10) / 10,
+                  rows: rowsOf(type.label),
+                };
+              })}
+              initial={{
+                selected: Object.fromEntries(order.elements.map((e) => [e.elementId, e.types])),
+                perUnit: Object.fromEntries(
+                  order.elements.map((e) => [
+                    e.elementId,
+                    (e.perUnit ?? {}) as Record<string, number>,
+                  ]),
+                ),
+                reservePct: order.reservePct,
+                reserveByType: (order.reserveByType ?? {}) as Record<string, number>,
+                withStock: order.withStock,
+              }}
             />
-            <Stat label={t("dist.kpi.toRegions")} value={fmt(c.toRegions)} />
-            <Stat
-              label={t("dist.kpi.shipped")}
-              value={fmt(c.shipped)}
-              note={c.toRegions ? pct(c.shipped / c.toRegions) : undefined}
+            <p className="text-muted-foreground text-xs">{t("dist.campaign.perUnitHint")}</p>
+            {manage && !locked && (
+              <div className="flex flex-wrap gap-2">
+                <Button type="submit" name="next" value="list">
+                  {t("dist.campaign.makeList")}
+                </Button>
+                <Button type="submit" variant="outline">
+                  {t("dist.campaign.saveComposition")}
+                </Button>
+                <Link
+                  href="/equipment/sizes"
+                  className="text-primary self-center px-2 text-sm hover:underline"
+                >
+                  {t("dist.builder.catalog")}
+                </Link>
+              </div>
+            )}
+          </fieldset>
+        </form>
+        {!locked && c.preview.lines.length > 0 && (
+          <div className="flex flex-col gap-2 border-t pt-3">
+            <h3 className="text-sm font-semibold">{t("dist.campaign.preview")}</h3>
+            <Matrix
+              dense
+              text={[1, 2]}
+              head={[
+                t("dist.builder.posm"),
+                t("dist.builder.equipment"),
+                t("dist.builder.printSize"),
+                t("dist.builder.unitsCol"),
+                t("dist.builder.perUnit"),
+                t("dist.builder.quantity"),
+                t("dist.builder.price"),
+                t("dist.builder.sum"),
+              ]}
+              rows={c.preview.lines.map((l) => ({
+                key: l.key,
+                cells: [
+                  <span key="n" className="flex flex-col">
+                    {l.element}
+                    {l.gaps.length > 0 && (
+                      <span className="text-xs text-amber-700 dark:text-amber-400">
+                        {l.gaps.map((g) => t(`dist.builder.gap.${g}`)).join(", ")}
+                      </span>
+                    )}
+                  </span>,
+                  <span key="e" className="text-xs whitespace-normal">
+                    {l.types.map(typeLabel).join(", ")}
+                  </span>,
+                  mm(l.heightMm, l.widthMm) ?? "?",
+                  fmt(l.units),
+                  l.perUnit ?? "?",
+                  l.quantity === null ? "?" : <strong key="q">{fmt(l.quantity)}</strong>,
+                  l.price === null ? "?" : fmt(l.price),
+                  l.sum === null ? "—" : fmt(l.sum),
+                ],
+              }))}
             />
           </div>
-          {c.frozenAt && (
-            <p className="text-muted-foreground text-xs">
-              {t("dist.campaign.frozen", { date: day.format(c.frozenAt) })}
-            </p>
-          )}
-          <form action={openDistributionAction} className="flex flex-wrap gap-2">
+        )}
+      </Step>
+
+      {/* 5. The list */}
+      <Step
+        id="list"
+        {...step("list")}
+        title={t("dist.campaign.listTitle")}
+        hint={t("dist.campaign.listHint")}
+      >
+        {q("saved") === "list" && <Saved />}
+        {c.items.length === 0 ? (
+          <p className="text-muted-foreground text-sm">{t("dist.campaign.noList")}</p>
+        ) : (
+          <>
+            <Matrix
+              dense
+              text={[1, 3]}
+              head={[
+                t("dist.builder.posm"),
+                t("dist.builder.equipment"),
+                t("dist.builder.printSize"),
+                t("dist.builder.material"),
+                t("dist.builder.unitsCol"),
+                t("dist.builder.perUnit"),
+                t("dist.builder.quantity"),
+                t("dist.builder.price"),
+                t("dist.builder.sum"),
+              ]}
+              rows={c.items.map((item) => ({
+                key: item.id,
+                cells: [
+                  <Link key="n" href={`/distribution/posm/${item.id}`} className="hover:underline">
+                    {item.category}
+                  </Link>,
+                  <span key="e" className="text-xs whitespace-normal">
+                    {item.equipmentLabel}
+                  </span>,
+                  item.size ?? "—",
+                  <span key="m" className="text-muted-foreground text-xs whitespace-normal">
+                    {item.material ?? "—"}
+                  </span>,
+                  fmt(item.orderedFor),
+                  item.norm ?? "—",
+                  <strong key="q">{fmt(item.ordered)}</strong>,
+                  item.price === null ? "—" : fmt(item.price),
+                  item.price === null ? "—" : fmt(item.price * item.ordered),
+                ],
+              }))}
+              foot={[
+                t("dist.total"),
+                "",
+                "",
+                "",
+                "",
+                "",
+                fmt(c.items.reduce((s, i) => s + i.ordered, 0)),
+                "",
+                fmt(c.total),
+              ]}
+            />
+            <div>
+              <Button asChild variant="outline" size="sm">
+                <a href={`/api/distribution/campaigns/${order.id}/xlsx`}>
+                  <Download />
+                  {t("dist.campaign.listExcel")}
+                </a>
+              </Button>
+            </div>
+          </>
+        )}
+      </Step>
+
+      {/* 6. The printer's prices */}
+      <Step
+        id="prices"
+        {...step("prices")}
+        title={t("dist.campaign.pricesTitle")}
+        hint={t("dist.campaign.pricesStepHint")}
+      >
+        {q("prices") !== null && (
+          <p className="text-sm text-emerald-700 dark:text-emerald-400">
+            {t("dist.campaign.pricesSaved", { count: q("prices")! })}
+          </p>
+        )}
+        {c.items.length === 0 ? (
+          <p className="text-muted-foreground text-sm">{t("dist.campaign.noList")}</p>
+        ) : (
+          <form action={savePricesAction} className="flex flex-col gap-3">
             <input type="hidden" name="id" value={order.id} />
-            <Button type="submit" name="to" value="plan" disabled={c.items.length === 0}>
-              {t("dist.campaign.openPlan")}
-            </Button>
-            <Button
-              type="submit"
-              name="to"
-              value="stock"
-              variant="outline"
-              disabled={c.items.length === 0}
-            >
-              {t("dist.campaign.openStock")}
-            </Button>
+            <Matrix
+              dense
+              text={[1, 2]}
+              head={[
+                t("dist.builder.posm"),
+                t("dist.builder.equipment"),
+                t("dist.builder.printSize"),
+                t("dist.builder.quantity"),
+                t("dist.builder.price"),
+                t("dist.builder.sum"),
+                t("dist.campaign.confirmed"),
+              ]}
+              rows={c.items.map((item) => ({
+                key: item.id,
+                cells: [
+                  <span key="n" className="flex flex-col">
+                    <Link href={`/distribution/posm/${item.id}`} className="hover:underline">
+                      {item.category}
+                    </Link>
+                    {item.supplier && (
+                      <span className="text-muted-foreground text-xs">
+                        {item.supplier}
+                        {item.quoteNo && ` · ${t("dist.campaign.quoteShort")} ${item.quoteNo}`}
+                      </span>
+                    )}
+                  </span>,
+                  <span key="e" className="text-xs whitespace-normal">
+                    {item.equipmentLabel}
+                  </span>,
+                  item.size ?? "—",
+                  <strong key="q">{fmt(item.ordered)}</strong>,
+                  manage ? (
+                    <span key="p">
+                      <input type="hidden" name="posmId" value={item.id} />
+                      <Input
+                        name={`price:${item.id}`}
+                        type="number"
+                        min={0}
+                        step="any"
+                        defaultValue={item.price ?? ""}
+                        className="ml-auto h-8 w-28"
+                        aria-label={t("dist.builder.price")}
+                      />
+                    </span>
+                  ) : item.price === null ? (
+                    "—"
+                  ) : (
+                    fmt(item.price)
+                  ),
+                  item.price === null ? "—" : fmt(item.price * item.ordered),
+                  item.priceConfirmedAt ? (
+                    <span key="c" className="text-xs text-emerald-700 dark:text-emerald-400">
+                      ✓ {day.format(item.priceConfirmedAt)}
+                    </span>
+                  ) : manage ? (
+                    <label key="c" className="flex items-center justify-end gap-1.5 text-xs">
+                      <input type="checkbox" name="confirm" value={item.id} className="size-4" />
+                      {t("dist.campaign.confirm")}
+                    </label>
+                  ) : (
+                    <span key="c" className="text-xs text-amber-700 dark:text-amber-400">
+                      {t("dist.campaign.notConfirmed")}
+                    </span>
+                  ),
+                ],
+              }))}
+              foot={[
+                t("dist.total"),
+                "",
+                "",
+                fmt(c.items.reduce((s, i) => s + i.ordered, 0)),
+                "",
+                fmt(c.total),
+                `${c.priced} / ${c.items.length}`,
+              ]}
+            />
+            {manage && (
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="flex flex-col gap-1 text-sm">
+                  {t("dist.campaign.supplier")}
+                  <Input name="supplier" maxLength={120} className="w-56" />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  {t("dist.campaign.quoteNo")}
+                  <Input name="quoteNo" maxLength={60} className="w-36" />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  {t("dist.campaign.quotedOn")}
+                  <Input type="date" name="quotedOn" required defaultValue={today} />
+                </label>
+                <Button type="submit">{t("dist.campaign.savePrices")}</Button>
+              </div>
+            )}
+            <p className="text-muted-foreground text-xs">{t("dist.campaign.pricesHint")}</p>
           </form>
-        </Section>
-      </Anchor>
+        )}
+        <Files
+          files={files("QUOTE")}
+          kind="QUOTE"
+          orderId={order.id}
+          manage={manage}
+          anchor="#prices"
+          label={t("dist.campaign.quotes")}
+        />
+      </Step>
+
+      {/* 7. EAS and the order */}
+      <Step
+        id="order"
+        {...step("order")}
+        title={t("dist.campaign.orderTitle")}
+        hint={t("dist.campaign.orderHint")}
+      >
+        <div>
+          <Button asChild>
+            <Link href={`/distribution/campaigns/${order.id}/eas`}>
+              <FileText />
+              {t("dist.eas.open")}
+            </Link>
+          </Button>
+        </div>
+        <p className="text-muted-foreground text-xs">{t("dist.campaign.easPending")}</p>
+        <Files
+          files={files("EAS")}
+          kind="EAS"
+          orderId={order.id}
+          manage={manage}
+          anchor="#order"
+          label={t("dist.campaign.easFiles")}
+        />
+        {order.orderedOn ? (
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <span className="font-medium text-emerald-700 dark:text-emerald-400">
+              {t("dist.campaign.orderedOn", { date: day.format(order.orderedOn) })}
+            </span>
+            {manage && c.shipped === 0 && (
+              <form action={setOrderedAction}>
+                <input type="hidden" name="id" value={order.id} />
+                <input type="hidden" name="undo" value="1" />
+                <Button type="submit" size="sm" variant="ghost">
+                  {t("dist.campaign.unorder")}
+                </Button>
+              </form>
+            )}
+          </div>
+        ) : (
+          manage && (
+            <form action={setOrderedAction} className="flex flex-wrap items-end gap-3">
+              <input type="hidden" name="id" value={order.id} />
+              <label className="flex flex-col gap-1 text-sm">
+                {t("dist.orders.date")}
+                <Input type="date" name="orderedOn" required defaultValue={today} />
+              </label>
+              <Button type="submit" disabled={c.items.length === 0}>
+                {t("dist.campaign.markOrdered")}
+              </Button>
+              {!c.steps.prices && c.items.length > 0 && (
+                <span className="text-xs text-amber-700 dark:text-amber-400">
+                  {t("dist.campaign.pricesNotAll")}
+                </span>
+              )}
+            </form>
+          )
+        )}
+      </Step>
+
+      {/* 8. Distribution */}
+      <Step
+        id="distribution"
+        {...step("distribution")}
+        title={t("dist.campaign.distributionTitle")}
+        hint={t("dist.campaign.distributionHint")}
+      >
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Stat
+            label={t("dist.campaign.ordered")}
+            value={fmt(c.items.reduce((s, i) => s + i.ordered, 0))}
+          />
+          <Stat label={t("dist.kpi.toRegions")} value={fmt(c.toRegions)} />
+          <Stat
+            label={t("dist.kpi.shipped")}
+            value={fmt(c.shipped)}
+            note={c.toRegions ? pct(c.shipped / c.toRegions) : undefined}
+          />
+        </div>
+        {c.frozenAt && (
+          <p className="text-muted-foreground text-xs">
+            {t("dist.campaign.frozen", { date: day.format(c.frozenAt) })}
+          </p>
+        )}
+        <form action={openDistributionAction} className="flex flex-wrap gap-2">
+          <input type="hidden" name="id" value={order.id} />
+          <Button type="submit" name="to" value="plan" disabled={c.items.length === 0}>
+            {t("dist.campaign.openPlan")}
+          </Button>
+          <Button
+            type="submit"
+            name="to"
+            value="stock"
+            variant="outline"
+            disabled={c.items.length === 0}
+          >
+            {t("dist.campaign.openStock")}
+          </Button>
+        </form>
+      </Step>
 
       {/* 9. Replacement in the shops */}
-      <Anchor id="replacement">
-        <Section
-          title={t("dist.campaign.replacementTitle")}
-          hint={t("dist.campaign.replacementHint")}
-        >
-          {q("rows") !== null && (
-            <p className="text-sm text-emerald-700 dark:text-emerald-400">
-              {t("dist.campaign.replacementDone", {
-                rows: q("rows")!,
-                replaced: q("replaced") ?? "0",
-              })}
-              {Number(q("unknown")) > 0 &&
-                ` ${t("dist.campaign.replacementUnknown", { count: q("unknown")! })}`}
-            </p>
-          )}
-          {c.outlets.length === 0 ? (
-            <p className="text-muted-foreground text-sm">{t("dist.campaign.noOutlets")}</p>
-          ) : (
-            <>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <Stat label={t("dist.campaign.outlets")} value={fmt(c.replacement.total.planned)} />
-                <Stat
-                  label={t("dist.campaign.replaced")}
-                  value={fmt(c.replacement.total.replaced)}
-                  note={pct(c.replacement.total.replaced / c.replacement.total.planned)}
-                />
-                <Stat label={t("dist.campaign.notYet")} value={fmt(c.replacement.total.notYet)} />
-              </div>
+      <Step
+        id="replacement"
+        {...step("replacement")}
+        title={t("dist.campaign.replacementTitle")}
+        hint={t("dist.campaign.replacementHint")}
+      >
+        {q("rows") !== null && (
+          <p className="text-sm text-emerald-700 dark:text-emerald-400">
+            {t("dist.campaign.replacementDone", {
+              rows: q("rows")!,
+              replaced: q("replaced") ?? "0",
+            })}
+            {Number(q("unknown")) > 0 &&
+              ` ${t("dist.campaign.replacementUnknown", { count: q("unknown")! })}`}
+          </p>
+        )}
+        {c.outlets.length === 0 ? (
+          <p className="text-muted-foreground text-sm">{t("dist.campaign.noOutlets")}</p>
+        ) : (
+          <>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Stat label={t("dist.campaign.outlets")} value={fmt(c.replacement.total.planned)} />
+              <Stat
+                label={t("dist.campaign.replaced")}
+                value={fmt(c.replacement.total.replaced)}
+                note={pct(c.replacement.total.replaced / c.replacement.total.planned)}
+              />
+              <Stat label={t("dist.campaign.notYet")} value={fmt(c.replacement.total.notYet)} />
+            </div>
+            <Matrix
+              dense
+              head={[
+                t("dist.regions.region"),
+                t("dist.campaign.outlets"),
+                t("dist.campaign.replaced"),
+                t("dist.campaign.notYet"),
+                "%",
+              ]}
+              rows={c.replacement.regions.map((r) => ({
+                key: r.key,
+                cells: [
+                  r.key,
+                  fmt(r.planned),
+                  <N key="d" value={r.replaced} tone="good" />,
+                  <N key="n" value={r.notYet} tone="bad" />,
+                  pct(r.replaced / r.planned),
+                ],
+              }))}
+            />
+            <details>
+              <summary className="text-primary cursor-pointer text-sm">
+                {t("dist.campaign.byTsm")}
+              </summary>
               <Matrix
                 dense
                 head={[
-                  t("dist.regions.region"),
+                  t("dist.equipment.tsm"),
                   t("dist.campaign.outlets"),
                   t("dist.campaign.replaced"),
                   t("dist.campaign.notYet"),
                   "%",
                 ]}
-                rows={c.replacement.regions.map((r) => ({
-                  key: r.key,
-                  cells: [
-                    r.key,
-                    fmt(r.planned),
-                    <N key="d" value={r.replaced} tone="good" />,
-                    <N key="n" value={r.notYet} tone="bad" />,
-                    pct(r.replaced / r.planned),
-                  ],
-                }))}
+                rows={c.replacement.regions.flatMap((r) =>
+                  [...(c.replacement.tsms.get(r.key)?.values() ?? [])].map((row) => ({
+                    key: `${r.key}:${row.key}`,
+                    cells: [
+                      `${r.key} · ${row.key}`,
+                      fmt(row.planned),
+                      <N key="d" value={row.replaced} tone="good" />,
+                      <N key="n" value={row.notYet} tone="bad" />,
+                      pct(row.replaced / row.planned),
+                    ],
+                  })),
+                )}
               />
-              <details>
-                <summary className="text-primary cursor-pointer text-sm">
-                  {t("dist.campaign.byTsm")}
-                </summary>
-                <Matrix
-                  dense
-                  head={[
-                    t("dist.equipment.tsm"),
-                    t("dist.campaign.outlets"),
-                    t("dist.campaign.replaced"),
-                    t("dist.campaign.notYet"),
-                    "%",
-                  ]}
-                  rows={c.replacement.regions.flatMap((r) =>
-                    [...(c.replacement.tsms.get(r.key)?.values() ?? [])].map((row) => ({
-                      key: `${r.key}:${row.key}`,
-                      cells: [
-                        `${r.key} · ${row.key}`,
-                        fmt(row.planned),
-                        <N key="d" value={row.replaced} tone="good" />,
-                        <N key="n" value={row.notYet} tone="bad" />,
-                        pct(row.replaced / row.planned),
-                      ],
-                    })),
-                  )}
-                />
-              </details>
-            </>
+            </details>
+          </>
+        )}
+        <div className="flex flex-wrap items-end gap-3">
+          {c.outlets.length > 0 && (
+            <Button asChild variant="outline" size="sm">
+              <a href={`/api/distribution/campaigns/${order.id}/replacement`}>
+                <Download />
+                {t("dist.campaign.replacementTemplate")}
+              </a>
+            </Button>
           )}
-          <div className="flex flex-wrap items-end gap-3">
-            {c.outlets.length > 0 && (
-              <Button asChild variant="outline" size="sm">
-                <a href={`/api/distribution/campaigns/${order.id}/replacement`}>
-                  <Download />
-                  {t("dist.campaign.replacementTemplate")}
-                </a>
+          {!order.closed && c.outlets.length > 0 && (
+            <form action={importReplacementAction} className="flex flex-wrap items-end gap-3">
+              <input type="hidden" name="id" value={order.id} />
+              <label className="flex flex-col gap-1 text-sm">
+                {t("dist.campaign.replacementFile")}
+                <Input type="file" name="file" required accept={XLSX} />
+              </label>
+              <Button type="submit" variant="outline">
+                {t("dist.import.submit")}
               </Button>
-            )}
-            {!order.closed && c.outlets.length > 0 && (
-              <form action={importReplacementAction} className="flex flex-wrap items-end gap-3">
-                <input type="hidden" name="id" value={order.id} />
-                <label className="flex flex-col gap-1 text-sm">
-                  {t("dist.campaign.replacementFile")}
-                  <Input type="file" name="file" required accept={XLSX} />
-                </label>
-                <Button type="submit" variant="outline">
-                  {t("dist.import.submit")}
-                </Button>
-              </form>
-            )}
-          </div>
-          <p className="text-muted-foreground text-xs">{t("dist.campaign.replacementFormat")}</p>
-        </Section>
-      </Anchor>
+            </form>
+          )}
+        </div>
+        <p className="text-muted-foreground text-xs">{t("dist.campaign.replacementFormat")}</p>
+      </Step>
     </div>
   );
 }
@@ -826,11 +882,64 @@ function Stepper({ c }: { c: NonNullable<Awaited<ReturnType<typeof loadCampaign>
   );
 }
 
-function Anchor({ id, children }: { id: string; children: ReactNode }) {
+// One step of the campaign: folded into a line with its result, or open. The current step is
+// marked; a link to the step (#prices) opens it (OpenOnHash).
+function Step({
+  id,
+  n,
+  title,
+  hint,
+  summary,
+  done,
+  current,
+  open,
+  children,
+}: {
+  id: string;
+  n: number;
+  title: string;
+  hint?: string;
+  summary: string;
+  done: boolean;
+  current: boolean;
+  open: boolean;
+  children: ReactNode;
+}) {
   return (
-    <div id={id} className="scroll-mt-24">
-      {children}
-    </div>
+    <details
+      id={id}
+      open={open}
+      className={cn(
+        "group bg-card shadow-card min-w-0 scroll-mt-24 rounded-2xl border",
+        current && "border-primary/60",
+      )}
+    >
+      <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-2 gap-y-1 px-4 py-3 [&::-webkit-details-marker]:hidden">
+        <span
+          className={cn(
+            "flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+            current
+              ? "bg-primary text-primary-foreground"
+              : done
+                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                : "bg-muted text-muted-foreground",
+          )}
+        >
+          {done && !current ? <Check className="size-3.5" /> : n}
+        </span>
+        <span className="font-semibold">{title}</span>
+        <span className="text-muted-foreground min-w-0 text-sm">{summary}</span>
+        <span className="text-primary ml-auto flex items-center gap-1 text-sm">
+          <span className="group-open:hidden">{t("dist.campaign.summary.open")}</span>
+          <span className="hidden group-open:inline">{t("dist.campaign.summary.collapse")}</span>
+          <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
+        </span>
+      </summary>
+      <div className="flex min-w-0 flex-col gap-3 border-t px-4 pt-3 pb-4">
+        {hint && <p className="text-muted-foreground text-sm">{hint}</p>}
+        {children}
+      </div>
+    </details>
   );
 }
 

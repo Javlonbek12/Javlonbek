@@ -91,8 +91,12 @@ describe("distribution fixes", () => {
 
     // The page sends the whole plan; the server records only what is left, and only once.
     const line = [{ posmId: posi.item.id, quantity: share }];
-    expect(await shipWaybill(owner, "Tashkent", line, "2026-11-04", d)).toBe(1);
-    expect(await shipWaybill(owner, "Tashkent", line, "2026-11-04", d)).toBe(0);
+    const first = await shipWaybill(owner, "Tashkent", line, "2026-11-04", d);
+    expect(first.count).toBe(1);
+    expect(await shipWaybill(owner, "Tashkent", line, "2026-11-04", d)).toEqual({
+      count: 0,
+      waybill: null,
+    });
     const toRegion = await db.distShipment.findMany({
       where: { posmId: posi.item.id, destination: "Tashkent" },
     });

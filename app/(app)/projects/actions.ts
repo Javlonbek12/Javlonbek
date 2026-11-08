@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { safeBack, withParams } from "@/modules/tasks/back";
 import { requireUser } from "@/modules/core/auth/current-user";
 import {
+  assignPlanTasks,
   deletePhase,
   savePhase,
   savePlanSections,
@@ -36,10 +37,16 @@ export async function createProjectAction(form: FormData) {
   const actor = await requireUser();
   let target: string;
   try {
+    // «Кто делает»: role:<role name> = the person for that role of the template.
+    const roles: Record<string, string> = {};
+    for (const [key, value] of form.entries())
+      if (key.startsWith("role:") && typeof value === "string" && value)
+        roles[key.slice(5)] = value;
     const project = await createProject(actor, {
       ...fields(form),
       template: str(form, "template"),
       anchorDate: str(form, "anchorDate"),
+      roles,
     });
     target = `/projects/${project.id}`;
   } catch (error) {
@@ -104,7 +111,6 @@ async function planAction(
   try {
     const result = await action(projectId);
     if (typeof result === "number") target += `&shifted=${result}`;
-    if (tab === "plan") target += "&saved=1";
   } catch (error) {
     if (!(error instanceof ProjectError)) throw error;
     target += `&error=${error.code}`;
@@ -140,10 +146,20 @@ export async function saveProjectTaskAction(form: FormData) {
       phaseId: str(form, "phaseId"),
       code: str(form, "code"),
       responsible: str(form, "responsible"),
+      assigneeId: str(form, "assigneeId"),
       startDate: str(form, "startDate"),
       dueDate: str(form, "dueDate"),
       isMilestone: form.get("isMilestone") === "on",
     }),
+  );
+}
+
+// «Назначить выбранные…»: the ticked tasks of the plan go to one person.
+export async function assignPlanTasksAction(form: FormData) {
+  const actor = await requireUser();
+  const taskIds = form.getAll("taskIds").filter((v): v is string => typeof v === "string");
+  await planAction(form, "setup", (projectId) =>
+    assignPlanTasks(actor, projectId, taskIds, str(form, "assigneeId")).then(() => undefined),
   );
 }
 
@@ -154,10 +170,25 @@ export async function shiftProjectAction(form: FormData) {
   );
 }
 
-export async function savePlanSectionsAction(form: FormData) {
+// The launch plan saves itself while typing (no page reload): says whether it was saved.
+export async function savePlanDraftAction(
+  projectId: unknown,
+  sections: unknown,
+): Promise<{ ok: boolean }> {
   const actor = await requireUser();
-  const sections: Record<string, string> = {};
-  for (const [key, value] of form.entries())
-    if (key.startsWith("section.") && typeof value === "string") sections[key.slice(8)] = value;
-  await planAction(form, "plan", (projectId) => savePlanSections(actor, projectId, sections));
+  if (typeof projectId !== "string" || !sections || typeof sections !== "object")
+    return { ok: false };
+  const texts = Object.fromEntries(
+    Object.entries(sections).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string",
+    ),
+  );
+  try {
+    await savePlanSections(actor, projectId, texts);
+  } catch (error) {
+    if (error instanceof ProjectError) return { ok: false };
+    throw error;
+  }
+  revalidatePath(`/projects/${projectId}`);
+  return { ok: true };
 }

@@ -3,11 +3,12 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { createTask } from "@/modules/tasks/service";
 import { daysBetween, fromDateString, isDateString, toDateString } from "@/lib/dates";
-import type { Prisma } from "@/lib/generated/prisma/client";
+import type { Prisma, TaskStatus } from "@/lib/generated/prisma/client";
 import { logActivity } from "@/modules/core/activity/service";
 import type { Actor } from "@/modules/core/permissions";
 import { CLOSED_STATUSES } from "@/modules/tasks/access";
 
+import { notifyPlanTasks, planRoute, routeFields } from "./routing";
 import { canManageProject, ProjectError } from "./service";
 import { templateByKey } from "./templates";
 
@@ -80,6 +81,8 @@ const taskSchema = z
     phaseId: optionalText(64),
     code: optionalText(20),
     responsible: optionalText(120),
+    // Who does it; empty: a new task goes to the project lead, an existing one keeps its person.
+    assigneeId: optionalText(64),
     startDate: optionalDate,
     dueDate: optionalDate,
     isMilestone: z.boolean().default(false),
@@ -95,7 +98,7 @@ export async function saveProjectTask(
   const project = await managed(actor, projectId);
   const parsed = taskSchema.safeParse(input);
   if (!parsed.success) throw new ProjectError("invalid");
-  const { startDate, dueDate, phaseId, ...rest } = parsed.data;
+  const { startDate, dueDate, phaseId, assigneeId: chosen, ...rest } = parsed.data;
   if (phaseId && !(await db.projectPhase.findFirst({ where: { id: phaseId, projectId } })))
     throw new ProjectError("invalid");
   const data = {
@@ -117,6 +120,7 @@ export async function saveProjectTask(
       entityId: taskId,
       details: Object.fromEntries(Object.keys(data).map((k) => [k, true])),
     });
+    if (chosen) await assignPlanTasks(actor, projectId, [taskId], chosen);
     return taskId;
   }
   // A new task of the plan goes along the route like any task (routing v2): the project lead
@@ -125,7 +129,7 @@ export async function saveProjectTask(
   const lead = project.leadId
     ? await db.user.findFirst({ where: { id: project.leadId, deactivatedAt: null } })
     : null;
-  const assigneeId = lead?.id ?? actor.id;
+  const assigneeId = chosen ?? lead?.id ?? actor.id;
   const task = await createTask(
     actor,
     {
@@ -154,6 +158,65 @@ export async function saveProjectTask(
     },
   );
   return task.id;
+}
+
+// Tasks whose assignee can still change: before work starts (as in the task card).
+const REASSIGNABLE: TaskStatus[] = ["DRAFT", "PENDING_APPROVAL", "APPROVED"];
+
+// «Назначить выбранные…» in «Фазы и задачи»: the chosen tasks of the plan go to one person, each
+// along its route (routing v2) as if it were given to them in the card. Tasks already in work or
+// closed keep their assignee. The person hears it once for the whole batch, not once per task.
+// Returns how many tasks changed hands.
+export async function assignPlanTasks(
+  actor: Actor,
+  projectId: string,
+  taskIds: string[],
+  assigneeId: string,
+  now = new Date(),
+) {
+  const project = await managed(actor, projectId);
+  const assignee = await db.user.findFirst({ where: { id: assigneeId, deactivatedAt: null } });
+  if (!assignee || taskIds.length === 0 || taskIds.length > 200) throw new ProjectError("invalid");
+  const tasks = await db.task.findMany({
+    where: {
+      id: { in: taskIds },
+      project: project.name,
+      isPersonal: false,
+      status: { in: REASSIGNABLE },
+      NOT: { assigneeId },
+    },
+  });
+  // One route per author (tasks of a template share theirs); one notice per route.
+  const byCreator = new Map<string, typeof tasks>();
+  for (const task of tasks)
+    byCreator.set(task.creatorId, [...(byCreator.get(task.creatorId) ?? []), task]);
+  for (const [creatorId, own] of byCreator) {
+    const route = await planRoute(creatorId, assigneeId);
+    for (const task of own) {
+      const fields =
+        task.status === "DRAFT" ? { reviewerId: route.reviewerId } : routeFields(route, now);
+      await db.task.update({
+        where: { id: task.id },
+        data: {
+          assigneeId,
+          ...fields,
+          approvedById: null,
+          coAssigneeIds: task.coAssigneeIds.filter((id) => id !== assigneeId),
+        },
+      });
+      await db.taskCoAssigneeRequest.deleteMany({ where: { taskId: task.id, userId: assigneeId } });
+      await logActivity({
+        actorId: actor.id,
+        action: "task.updated",
+        entityType: "Task",
+        entityId: task.id,
+        details: { assigneeId: [task.assigneeId, assigneeId] },
+      });
+    }
+    const sent = own.filter((task) => task.status !== "DRAFT").length;
+    await notifyPlanTasks(route, actor.id, assigneeId, project.name, sent);
+  }
+  return tasks.length;
 }
 
 // Moves the anchor day (e.g. the start of sales): every open task and phase deadline moves with it.

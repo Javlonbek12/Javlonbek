@@ -66,9 +66,9 @@ describe("invites", () => {
     expect((await db.user.findUniqueOrThrow({ where: { id: result.user.id } })).managerId).toBe(
       manager.id,
     );
-    // Managers have no Team section by default: the link goes to their invitations.
+    // Managers have the Team section by default: the link goes to the team list.
     const notification = await db.notification.findFirstOrThrow({ where: { userId: manager.id } });
-    expect(notification.link).toBe("/settings/invites");
+    expect(notification.link).toBe("/team");
   });
 
   it("the inviter gets an 'invite accepted' notification", async () => {

@@ -74,18 +74,32 @@ export function isoWeekNumber(value: string): number {
   return Math.floor(daysBetween(yearStart, thursday) / 7) + 1;
 }
 
+// A date of another year carries the year («6 нояб. 2025»); this year's doesn't («6 нояб.»).
+// Russian's «г.» after the year is dropped: it only lengthens short dates.
+export const isOtherYear = (
+  year: number | string,
+  thisYear: number | string = new Date().getFullYear(),
+) => Number(year) !== Number(thisYear);
+export const yearOption = (otherYear: boolean) => (otherYear ? { year: "numeric" as const } : {});
+export const dropYearMark = (text: string) => text.replace(/(\d{4}) г\./, "$1");
+
 // In the current language (client components pass theirs).
 export function formatDay(value: string, locale?: Locale): string {
-  return dateFormat({ day: "numeric", month: "short", timeZone: "UTC" }, locale).format(
-    fromDateString(value),
+  const options = { day: "numeric", month: "short", timeZone: "UTC" } as const;
+  return dropYearMark(
+    dateFormat({ ...options, ...yearOption(isOtherYear(value.slice(0, 4))) }, locale).format(
+      fromDateString(value),
+    ),
   );
 }
 
 export function formatDayLong(value: string, locale?: Locale): string {
-  return dateFormat(
-    { weekday: "short", day: "numeric", month: "long", timeZone: "UTC" },
-    locale,
-  ).format(fromDateString(value));
+  const options = { weekday: "short", day: "numeric", month: "long", timeZone: "UTC" } as const;
+  return dropYearMark(
+    dateFormat({ ...options, ...yearOption(isOtherYear(value.slice(0, 4))) }, locale).format(
+      fromDateString(value),
+    ),
+  );
 }
 
 export function formatMonth(value: string, locale?: Locale): string {

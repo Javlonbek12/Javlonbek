@@ -64,35 +64,3 @@ export function Ring({
     </svg>
   );
 }
-
-// A small stat with a ring: "12/15 · Tasks done".
-export function StatRing({
-  value,
-  total,
-  color,
-  caption,
-}: {
-  value: number;
-  total: number;
-  color: string;
-  caption: string;
-}) {
-  return (
-    <div className="bg-card shadow-card border-border/80 flex flex-col items-center gap-2 rounded-2xl border p-3 text-center sm:flex-row sm:gap-3 sm:text-left">
-      <Ring
-        percent={total ? Math.round((value / total) * 100) : 0}
-        color={color}
-        size={48}
-        filled={false}
-        label=""
-      />
-      <div className="flex min-w-0 flex-col">
-        <span className="text-muted-foreground text-xs leading-tight sm:truncate">{caption}</span>
-        <span className="font-display text-xl font-semibold">
-          {value}
-          <span className="text-muted-foreground text-sm font-normal">/{total}</span>
-        </span>
-      </div>
-    </div>
-  );
-}

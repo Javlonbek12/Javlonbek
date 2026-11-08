@@ -10,7 +10,7 @@ export { matchUser };
 // { "unit": "Marketing Department", "children": [ { "person": "Jo Hogwon", "title": "Director", "children": [...] } ] }
 // A position with "person": null is a vacancy. People are linked to app users with the same name.
 
-type ImportNode = {
+export type ImportNode = {
   unit?: string;
   person?: string | null;
   title?: string;

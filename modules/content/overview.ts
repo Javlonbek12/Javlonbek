@@ -44,8 +44,12 @@ export function contentOverview(posts: AnalyticsPost[], months: string[]) {
   const live = posts.filter((p) => p.status !== "CANCELLED");
   const ready = live.filter((p) => READY.includes(p.status)).length;
   const topics = shares(live.map(topicOf));
-  const brands = shares(live.map((p) => p.brand ?? "GENERAL"));
+  // «Общее» (no particular brand) is most of the plan: shares are of posts with a brand, and the
+  // rest is counted on its own.
+  const branded = live.flatMap((p) => (p.brand && p.brand !== "GENERAL" ? [p.brand] : []));
+  const brands = shares(branded);
   return {
+    general: live.length - branded.length,
     total: live.length,
     ready,
     readyPercent: live.length ? Math.round((ready / live.length) * 100) : 0,
@@ -73,13 +77,14 @@ export function contentOverview(posts: AnalyticsPost[], months: string[]) {
         topics: shares(own.map(topicOf))
           .filter((s) => s.id !== NO_TOPIC)
           .slice(0, 3),
-        // Key messages: posts going to the most bots first (the widest reach), then by date.
+        // Key messages: the posts going to the most bots (the widest reach), shown by date.
         headlines: [...own]
           .sort(
             (a, b) =>
               b.channels.length - a.channels.length || a.publishDate.localeCompare(b.publishDate),
           )
           .slice(0, 4)
+          .sort((a, b) => a.publishDate.localeCompare(b.publishDate))
           .map((p) => ({ id: p.id, title: p.title, date: p.publishDate, channels: p.channels })),
       };
     }),

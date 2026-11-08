@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  formatDateTime,
   formatTimeOfDay,
   isValidTimezone,
   minutesOfDayInTimezone,
@@ -59,5 +60,17 @@ describe("zonedLocalToUtc / utcToZonedLocal", () => {
 
   it("rejects malformed input", () => {
     expect(zonedLocalToUtc("05.10.2026 10:00", "Asia/Tashkent")).toBeNull();
+  });
+});
+
+describe("formatDateTime", () => {
+  it("adds the year only for another year, in the timezone", () => {
+    const year = new Date().getFullYear();
+    expect(formatDateTime(new Date(`${year}-11-06T09:30:00Z`), "Asia/Tashkent")).toBe(
+      "6 нояб., 14:30",
+    );
+    expect(formatDateTime(new Date(`${year - 1}-11-06T09:30:00Z`), "Asia/Tashkent")).toBe(
+      `6 нояб. ${year - 1}, 14:30`,
+    );
   });
 });

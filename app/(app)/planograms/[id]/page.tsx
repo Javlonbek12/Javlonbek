@@ -1,7 +1,8 @@
-import { Box } from "lucide-react";
+import { Box, Printer, Send } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { CopyLinkButton } from "@/components/planograms/copy-link";
 import { PlanogramErrorNote, SavedNote } from "@/components/planograms/error-note";
 import { PlanogramStatusBadge } from "@/components/planograms/status-badge";
 import { PlanogramPicture } from "@/components/planograms/planogram-picture";
@@ -16,6 +17,7 @@ import { db } from "@/lib/db";
 import { formatDay, toDateString } from "@/lib/dates";
 import { getEnv } from "@/lib/env";
 import { t } from "@/lib/i18n";
+import { formatDateTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { displayName } from "@/modules/core/users/display-name";
@@ -23,10 +25,13 @@ import { canApprovePlanograms, canManagePlanograms } from "@/modules/planograms/
 import { describeChange, describeViolation } from "@/modules/planograms/describe";
 import { planogramSvg } from "@/modules/planograms/export";
 import { describeGeometry } from "@/modules/planograms/geometry";
+import { priceListDate } from "@/modules/planograms/price-status";
+import { listPriceLists } from "@/modules/planograms/pricing";
 import { loadPlanogram } from "@/modules/planograms/repository";
 import {
   changesVsPrevious,
   staleBase,
+  submissions,
   validateStored,
   versionHistory,
 } from "@/modules/planograms/service";
@@ -55,30 +60,55 @@ export default async function PlanogramPage({
   const canSend = user.role === "OWNER" || user.role === "MANAGER";
   const draft = r.status === "DRAFT" || r.status === "PENDING_APPROVAL";
 
-  const [svg, violations, changes, history, equipment, people, priceLists, names, stale] =
-    await Promise.all([
-      planogramSvg(loaded, { imageBase: "/api/planogram-images" }),
-      validateStored(loaded),
-      changesVsPrevious(loaded),
-      versionHistory(r.rootId ?? r.id),
-      db.equipment.findMany({ where: { id: { not: r.equipmentId } }, orderBy: { name: "asc" } }),
-      db.user.findMany({
-        where: { botChatId: { not: null }, deactivatedAt: null },
-        orderBy: { firstName: "asc" },
-      }),
-      db.priceList.findMany({ orderBy: [{ effectiveFrom: "desc" }] }),
-      Promise.all([
-        db.sku.findMany({ select: { id: true, name: true } }),
-        db.posm.findMany({ select: { id: true, name: true } }),
-      ]).then(([a, b]) => new Map([...a, ...b].map((x) => [x.id, x.name]))),
-      staleBase(loaded),
-    ]);
+  const [
+    svg,
+    violations,
+    changes,
+    history,
+    equipment,
+    people,
+    priceLists,
+    names,
+    stale,
+    sent,
+    projects,
+  ] = await Promise.all([
+    planogramSvg(loaded, { imageBase: "/api/planogram-images" }),
+    validateStored(loaded),
+    changesVsPrevious(loaded),
+    versionHistory(r.rootId ?? r.id),
+    db.equipment.findMany({ where: { id: { not: r.equipmentId } }, orderBy: { name: "asc" } }),
+    db.user.findMany({
+      where: { botChatId: { not: null }, deactivatedAt: null },
+      orderBy: { firstName: "asc" },
+    }),
+    listPriceLists(),
+    Promise.all([
+      db.sku.findMany({ select: { id: true, name: true } }),
+      db.posm.findMany({ select: { id: true, name: true } }),
+    ]).then(([a, b]) => new Map([...a, ...b].map((x) => [x.id, x.name]))),
+    staleBase(loaded),
+    r.status === "PENDING_APPROVAL"
+      ? submissions([r]).then((m) => m.get(r.id) ?? null)
+      : Promise.resolve(null),
+    db.planogram.findMany({
+      where: { project: { not: null }, isTemplate: false },
+      distinct: ["project"],
+      select: { project: true },
+      orderBy: { project: "asc" },
+    }),
+  ]);
   const critical = hasCritical(violations);
   // The approve button is there for an approver on a version sent to them or on their own draft.
   const approvable =
     approve &&
     !r.isTemplate &&
     (r.status === "PENDING_APPROVAL" || (r.status === "DRAFT" && r.createdById === user.id));
+  const pending = r.status === "PENDING_APPROVAL" && !r.isTemplate;
+  const own = r.createdById === user.id;
+  const priceList = priceLists.find((p) => p.id === r.priceListId) ?? null;
+  const warnings = violations.filter((v) => v.severity !== "CRITICAL").length;
+  const criticals = violations.length - warnings;
   const shareUrl = r.shareToken ? `${getEnv().APP_URL}/p/${r.shareToken}` : null;
   const step = (
     name: string,
@@ -135,12 +165,13 @@ export default async function PlanogramPage({
               <Link href={`/planograms/${r.id}/edit`}>{t("planograms.actions.edit")}</Link>
             </Button>
           )}
-          {r.status === "DRAFT" && !r.isTemplate && step("submit", t("planograms.actions.submit"))}
+          {r.status === "DRAFT" &&
+            !r.isTemplate &&
+            step("submit", t("planograms.actions.submit"), "outline", critical)}
           {approvable &&
+            !pending &&
             !stale &&
             step("approve", t("planograms.actions.approve"), "default", critical)}
-          {r.status === "PENDING_APPROVAL" &&
-            step("draft", t("planograms.actions.returnToDraft"), "ghost")}
           {!draft && step("version", t("planograms.actions.newVersion"))}
           {!r.isTemplate && step("template", t("planograms.actions.saveTemplate"), "ghost")}
           {approve && r.status !== "ARCHIVED" && (
@@ -159,8 +190,90 @@ export default async function PlanogramPage({
           )}
         </div>
       )}
-      {critical && draft && (
-        <p className="text-destructive text-sm">{t("planograms.validation.blocked")}</p>
+      {critical && r.status === "DRAFT" && !r.isTemplate && manage && (
+        <p className="text-destructive text-sm">
+          {approvable ? t("planograms.validation.blocked") : t("planograms.actions.submitBlocked")}
+        </p>
+      )}
+
+      {/* A version sent for approval: everything to decide on one screen, the picture below. */}
+      {pending && (
+        <Card className="gap-3 border-amber-500/60 bg-amber-500/5">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <CardTitle>{t("planograms.decision.title")}</CardTitle>
+            {sent && (
+              <span className="text-muted-foreground text-sm">
+                {t("planograms.decision.sent", {
+                  name: sent.name,
+                  date: formatDateTime(sent.at, getEnv().DEFAULT_TIMEZONE),
+                })}
+              </span>
+            )}
+          </div>
+          <ul className="flex flex-col gap-1 text-sm">
+            <li className={cn(criticals > 0 && "text-destructive font-medium")}>
+              {violations.length === 0
+                ? `✅ ${t("planograms.decision.rulesOk")}`
+                : [
+                    criticals > 0
+                      ? `⛔ ${t("planograms.decision.rulesCritical", { count: criticals })}`
+                      : "",
+                    warnings > 0
+                      ? `⚠️ ${t("planograms.decision.rulesWarnings", { count: warnings })}`
+                      : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+            </li>
+            <li>
+              {changes.length > 0
+                ? t("planograms.decision.changes", { count: changes.length })
+                : t("planograms.decision.changesNone")}
+              {r.previousVersionId && (
+                <>
+                  {" · "}
+                  <Link className="underline" href={`/planograms/${r.id}/compare`}>
+                    {t("planograms.decision.compare")}
+                  </Link>
+                </>
+              )}
+            </li>
+            <li>
+              {priceList
+                ? t("planograms.decision.prices", {
+                    name: priceList.name,
+                    status: t(`planograms.library.prices.status.${priceList.status}`).toLowerCase(),
+                  })
+                : t("planograms.decision.noPrices")}
+            </li>
+            <li>
+              <a className="text-muted-foreground underline" href="#checks">
+                {t("planograms.decision.details")}
+              </a>
+            </li>
+          </ul>
+          <div className="flex flex-wrap items-center gap-2">
+            {approve &&
+              !stale &&
+              step("approve", t("planograms.actions.approve"), "default", critical)}
+            {approve && !own && (
+              <ConfirmAction
+                label={t("planograms.actions.returnBack")}
+                title={t("planograms.actions.returnTitle")}
+                confirm={t("planograms.actions.returnBack")}
+                action={workflowAction}
+                hidden={{ planogramId: r.id, step: "draft" }}
+                tone="default"
+              >
+                <Label className="flex-col items-start">
+                  {t("planograms.actions.returnReason")}
+                  <Textarea name="reason" required maxLength={1000} rows={3} />
+                </Label>
+              </ConfirmAction>
+            )}
+            {own && manage && step("draft", t("planograms.actions.withdraw"), "ghost")}
+          </div>
+        </Card>
       )}
 
       {stale && (
@@ -225,7 +338,7 @@ export default async function PlanogramPage({
       )}
 
       <div className="flex flex-wrap items-center gap-2 text-sm">
-        <Button asChild size="sm">
+        <Button asChild size="sm" variant="outline">
           <Link href={`/planograms/${r.id}/3d`}>
             <Box />
             {t("planograms.view3d.open")}
@@ -247,7 +360,7 @@ export default async function PlanogramPage({
       {/* The planogram picture; scrolls sideways on phones or fits the screen. */}
       <PlanogramPicture svg={svg} />
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div id="checks" className="grid scroll-mt-24 gap-4 md:grid-cols-2">
         <Card className="gap-2">
           <CardTitle>{t("planograms.validation.title")}</CardTitle>
           {violations.length === 0 ? (
@@ -282,18 +395,28 @@ export default async function PlanogramPage({
       {shareUrl && (
         <Card className="gap-2">
           <CardTitle>{t("planograms.actions.share")}</CardTitle>
-          <p className="text-sm break-all">
+          <div className="flex flex-wrap gap-2">
+            <CopyLinkButton url={shareUrl} />
+            <Button asChild size="sm" variant="outline">
+              <a
+                href={`https://t.me/share/url?${new URLSearchParams({ url: shareUrl, text: r.title })}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <Send />
+                {t("planograms.actions.shareTelegram")}
+              </a>
+            </Button>
+            <Button asChild size="sm" variant="outline">
+              <a href={`${shareUrl}?print=1`} target="_blank" rel="noopener noreferrer">
+                <Printer />
+                {t("planograms.actions.print")}
+              </a>
+            </Button>
+          </div>
+          <p className="text-muted-foreground text-xs break-all">
             <a className="underline" href={shareUrl} target="_blank" rel="noopener noreferrer">
               {shareUrl}
-            </a>{" "}
-            ·{" "}
-            <a
-              className="underline"
-              href={`${shareUrl}?print=1`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {t("planograms.actions.print")}
             </a>
           </p>
           {canSend && r.status !== "APPROVED" && (
@@ -301,6 +424,7 @@ export default async function PlanogramPage({
           )}
           {canSend && people.length > 0 && (
             <form action={sendToTelegramAction} className="flex flex-col gap-2">
+              <p className="text-sm">{t("planograms.actions.sendPeople")}</p>
               <input type="hidden" name="planogramId" value={r.id} />
               <div className="flex flex-wrap gap-3">
                 {people.map((p) => (
@@ -353,7 +477,7 @@ export default async function PlanogramPage({
                 ))}
               </NativeSelect>
               <Button type="submit" size="sm" variant="outline">
-                {t("planograms.actions.adapt")}
+                {t("planograms.actions.adaptRun")}
               </Button>
             </form>
           </Card>
@@ -382,7 +506,17 @@ export default async function PlanogramPage({
             </Label>
             <Label className="flex-col items-start">
               {t("planograms.fields.project")}
-              <Input name="project" defaultValue={r.project ?? ""} />
+              <Input
+                name="project"
+                defaultValue={r.project ?? ""}
+                list="planogram-projects"
+                autoComplete="off"
+              />
+              <datalist id="planogram-projects">
+                {projects.map((p) => (
+                  <option key={p.project} value={p.project!} />
+                ))}
+              </datalist>
             </Label>
             <Label className="flex-col items-start">
               {t("planograms.fields.priceList")}
@@ -393,7 +527,8 @@ export default async function PlanogramPage({
               >
                 {priceLists.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name}
+                    {p.name} · {priceListDate(p.effectiveFrom)} ·{" "}
+                    {t(`planograms.library.prices.status.${p.status}`).toLowerCase()}
                   </option>
                 ))}
               </NativeSelect>

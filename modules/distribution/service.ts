@@ -166,7 +166,7 @@ export const ORDER_COOKIE = "dist-order";
 
 export async function listOrders() {
   const orders = await db.distOrder.findMany({
-    orderBy: [{ orderedOn: "desc" }, { createdAt: "desc" }],
+    orderBy: [{ orderedOn: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }],
     // The frozen split is big and only the order on screen needs it (loadDistribution).
     omit: { frozenBase: true },
     include: {
@@ -185,12 +185,23 @@ export async function listOrders() {
     const order = orderOf.get(s.posmId);
     if (order) byOrder.set(order, (byOrder.get(order) ?? 0) + (s._sum.quantity ?? 0));
   }
-  return orders.map((o) => ({ ...o, items: o._count.posm, shipped: byOrder.get(o.id) ?? 0 }));
+  return orders
+    .map((o) => ({ ...o, items: o._count.posm, shipped: byOrder.get(o.id) ?? 0 }))
+    .sort((a, b) => orderStage(a) - orderStage(b));
 }
+
+// Campaigns in the order people look for them: running (ordered, open) first, then the ones being
+// prepared, then closed ones; newest first within each (the query's order, kept by the stable sort).
+export type OrderStage = "running" | "draft" | "closed";
+export const orderStageOf = (o: { closed: boolean; orderedOn: Date | null }): OrderStage =>
+  o.closed ? "closed" : o.orderedOn ? "running" : "draft";
+const orderStage = (o: { closed: boolean; orderedOn: Date | null }) =>
+  ["running", "draft", "closed"].indexOf(orderStageOf(o));
 
 export type OrderRow = Awaited<ReturnType<typeof listOrders>>[number];
 
-// The order the pages show: the one picked (kept in a cookie), else the latest open one.
+// The order the pages show: the one picked (kept in a cookie), else the latest running one; a draft
+// only when no campaign was ordered.
 export async function currentOrder(orders?: OrderRow[]) {
   const list = orders ?? (await listOrders());
   // Outside a request (scripts, tests) there are no cookies.
@@ -200,7 +211,7 @@ export async function currentOrder(orders?: OrderRow[]) {
   } catch {
     picked = undefined;
   }
-  return list.find((o) => o.id === picked) ?? list.find((o) => !o.closed) ?? list[0] ?? null;
+  return list.find((o) => o.id === picked) ?? list[0] ?? null;
 }
 
 // The pick itself is a cookie, set by the page's action.
@@ -402,27 +413,34 @@ export async function loadDistribution(orderId?: string) {
 
 export type Distribution = Awaited<ReturnType<typeof loadDistribution>>;
 
-// When each file was last loaded, and what it held.
+// When each file was last loaded, by whom, and what it held.
 export async function dataSources() {
+  const select = {
+    createdAt: true,
+    actor: { select: { firstName: true, lastName: true } },
+  } as const;
   const [equipment, outlets, units, outletCount] = await Promise.all([
     db.activityLog.findFirst({
       where: { action: { in: ["distribution.equipment", "distribution.imported"] } },
       orderBy: { createdAt: "desc" },
-      select: { createdAt: true },
+      select,
     }),
     db.activityLog.findFirst({
       where: { action: "distribution.outlets" },
       orderBy: { createdAt: "desc" },
-      select: { createdAt: true },
+      select,
     }),
     db.distUnit.count(),
     db.distOutlet.count(),
   ]);
   return {
-    equipment: equipment ? { at: equipment.createdAt, units } : null,
-    outlets: outlets ? { at: outlets.createdAt, count: outletCount } : null,
+    equipment: equipment ? { at: equipment.createdAt, by: equipment.actor, units } : null,
+    outlets: outlets ? { at: outlets.createdAt, by: outlets.actor, count: outletCount } : null,
   };
 }
+
+// An equipment file older than this is flagged: the numbers may no longer be true.
+export const STALE_DAYS = 7;
 
 const MAX_FILE = 20 * 1024 * 1024;
 
@@ -537,6 +555,9 @@ async function saveEquipment(actor: Actor & Viewer, file: ParsedEquipment, confi
   );
   const units = file.units.reduce((s, u) => s + u.units, 0);
   const noId = new Set(file.units.filter((u) => !u.outletId).map((u) => u.outletKey)).size;
+  // The file's totals stay in the log, so the upload history can say what changed between files.
+  const byType: Record<string, number> = {};
+  for (const u of file.units) byType[u.type] = (byType[u.type] ?? 0) + u.units;
   await logActivity({
     actorId: actor.id,
     action: "distribution.equipment",
@@ -547,6 +568,10 @@ async function saveEquipment(actor: Actor & Viewer, file: ParsedEquipment, confi
       stock: file.stock.length,
       skipped: file.skipped.length,
       noId,
+      units: Math.round(units),
+      stockUnits: Math.round(file.stock.reduce((s, c) => s + c.count, 0)),
+      outlets: new Set(file.units.map((u) => u.outletKey)).size,
+      byType: Object.fromEntries(Object.entries(byType).map(([k, v]) => [k, Math.round(v)])),
       ...(confirmed ? { confirmedMinus: true } : {}),
     },
   });
@@ -853,24 +878,29 @@ export async function addShipment(
   return created;
 }
 
-// A whole waybill at once: every item of a destination with what is left to send. The quantities
-// are capped to that remainder inside one transaction, with the items locked, so a second click
-// (or someone else shipping meanwhile) can't record the same POSM twice.
+// A waybill at once: the items of a destination with the quantities on it (the remainder, or less
+// for a partial shipment). The quantities are capped to that remainder inside one transaction,
+// with the items locked, so a second click (or someone else shipping meanwhile) can't record the
+// same POSM twice. The lines get the next waybill number (null when nothing was recorded).
 export async function shipWaybill(
   actor: Actor & Viewer,
   destination: string,
   lines: { posmId: string; quantity: number }[],
   shippedOn: string,
   plan: { plans: ItemPlan[]; destinations: string[] },
-) {
+): Promise<{ count: number; waybill: number | null }> {
   if (!canSeeDistribution(actor)) throw new DistributionError("forbidden");
   if (!isDateString(shippedOn) || !plan.destinations.includes(destination))
     throw new DistributionError("invalid");
   const wanted = lines.filter((l) => Number.isInteger(l.quantity) && l.quantity > 0);
   const ids = [...new Set(wanted.map((l) => l.posmId))];
-  if (ids.length === 0) return 0;
-  const created = await db.$transaction(async (tx) => {
+  if (ids.length === 0) return { count: 0, waybill: null };
+  const { out: created, waybill } = await db.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT "id" FROM "DistPosm" WHERE "id" = ANY(${ids}) FOR UPDATE`;
+    // Numbers count up across all campaigns; the lock keeps two waybills from taking the same.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${WAYBILL_LOCK})`;
+    const last = await tx.distShipment.aggregate({ _max: { waybill: true } });
+    const waybill = (last._max.waybill ?? 0) + 1;
     const items = await tx.distPosm.findMany({
       where: { id: { in: ids } },
       include: { order: { select: { closed: true } } },
@@ -892,13 +922,14 @@ export async function shipWaybill(
           destination,
           quantity,
           shippedOn: fromDateString(shippedOn),
+          waybill,
           createdById: actor.id,
         },
       });
       shipments.push({ posmId: line.posmId, destination, quantity });
       out.push({ id: row.id, quantity });
     }
-    return out;
+    return { out, waybill: out.length > 0 ? waybill : null };
   });
   for (const row of created)
     await logActivity({
@@ -906,9 +937,60 @@ export async function shipWaybill(
       action: "distribution.shipped",
       entityType: "DistShipment",
       entityId: row.id,
-      details: { destination, quantity: row.quantity },
+      details: { destination, quantity: row.quantity, waybill },
     });
-  return created.length;
+  return { count: created.length, waybill };
+}
+
+// The waybills recorded for a destination in a campaign, newest first.
+export async function waybillsTo(destination: string, orderId: string) {
+  const rows = await db.distShipment.groupBy({
+    by: ["waybill", "shippedOn"],
+    where: { destination, waybill: { not: null }, posm: { orderId } },
+    _sum: { quantity: true },
+    _count: true,
+    orderBy: { waybill: "desc" },
+  });
+  return rows.map((r) => ({
+    number: r.waybill!,
+    shippedOn: r.shippedOn,
+    lines: r._count,
+    pieces: r._sum.quantity ?? 0,
+  }));
+}
+
+// Any number shared by every waybill transaction (pg_advisory_xact_lock).
+const WAYBILL_LOCK = 730_401;
+
+// A recorded waybill as a document: its lines, date, who recorded it and the campaign.
+export async function loadWaybill(waybill: number) {
+  const lines = await db.distShipment.findMany({
+    where: { waybill },
+    orderBy: { createdAt: "asc" },
+    include: {
+      posm: {
+        select: { name: true, category: true, position: true, order: { select: { name: true } } },
+      },
+      createdBy: { select: { firstName: true, lastName: true } },
+    },
+  });
+  const first = lines[0];
+  if (!first) return null;
+  return {
+    number: waybill,
+    destination: first.destination,
+    shippedOn: first.shippedOn,
+    campaign: first.posm.order.name,
+    createdBy: first.createdBy,
+    lines: lines
+      .sort((a, b) => a.posm.position - b.posm.position)
+      .map((l) => ({
+        id: l.id,
+        name: l.posm.name,
+        category: l.posm.category,
+        quantity: l.quantity,
+      })),
+  };
 }
 
 // Removing a wrong record: its author, or the owner/managers.

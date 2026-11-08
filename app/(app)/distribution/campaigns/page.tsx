@@ -9,6 +9,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { db } from "@/lib/db";
 import { dateFormat, t, type TranslationKey } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getUserToday } from "@/modules/core/settings/service";
 import { canManageDistribution, currentOrder, listOrders } from "@/modules/distribution/service";
@@ -55,6 +56,37 @@ export default async function DistributionCampaignsPage({
             ? t("dist.orders.posmDeleted")
             : null;
   const open = orders.filter((o) => !o.closed);
+  const status = (o: (typeof orders)[number]) =>
+    o.closed
+      ? t("dist.orders.closed")
+      : o.orderedOn
+        ? t("dist.orders.orderedState")
+        : t("dist.orders.preparing");
+  // Close / reopen and delete; in the table the confirmation floats above it (not cut off).
+  const actions = (o: (typeof orders)[number], floating = false) =>
+    manage && (
+      <span className="flex flex-wrap items-center gap-2">
+        <form action={setOrderClosedAction}>
+          <input type="hidden" name="orderId" value={o.id} />
+          <input type="hidden" name="closed" value={o.closed ? "0" : "1"} />
+          <Button type="submit" size="sm" variant="ghost">
+            {o.closed ? t("dist.orders.reopen") : t("dist.orders.close")}
+          </Button>
+        </form>
+        {o.shipped === 0 && (
+          <ConfirmAction
+            label={t("dist.orders.delete")}
+            title={t("dist.orders.deleteTitle", { name: o.name })}
+            hint={t("dist.orders.deleteHint")}
+            confirm={t("dist.orders.deleteConfirm")}
+            action={deleteOrderAction}
+            hidden={{ orderId: o.id }}
+            align="right"
+            floating={floating}
+          />
+        )}
+      </span>
+    );
 
   return (
     <div className="flex flex-col gap-5 [&>*]:min-w-0">
@@ -67,67 +99,71 @@ export default async function DistributionCampaignsPage({
         {orders.length === 0 ? (
           <p className="text-muted-foreground text-sm">{t("dist.orders.empty")}</p>
         ) : (
-          <Matrix
-            text={[1, 4, 5]}
-            head={[
-              t("dist.orders.name"),
-              t("dist.orders.date"),
-              t("dist.orders.items"),
-              t("dist.orders.shipped"),
-              t("dist.orders.status"),
-              "",
-            ]}
-            rows={orders.map((o) => ({
-              key: o.id,
-              muted: o.closed,
-              cells: [
-                <Link
-                  key="n"
-                  href={`/distribution/campaigns/${o.id}`}
-                  className="flex flex-col hover:underline"
+          <>
+            {/* Phone: one card per campaign. */}
+            <ul className="flex flex-col gap-2 md:hidden">
+              {orders.map((o) => (
+                <li
+                  key={o.id}
+                  className={cn(
+                    "flex flex-col gap-1.5 rounded-xl border p-3",
+                    o.closed && "opacity-70",
+                  )}
                 >
-                  <span className={o.id === current?.id ? "font-semibold" : "font-medium"}>
+                  <Link
+                    href={`/distribution/campaigns/${o.id}`}
+                    className="font-medium break-words hover:underline"
+                  >
                     {o.name}
+                  </Link>
+                  <span className="text-muted-foreground text-xs">
+                    {status(o)}
+                    {o.orderedOn && ` · ${day.format(o.orderedOn)}`} · {t("dist.orders.items")}:{" "}
+                    {fmt(o.items)} · {t("dist.orders.shipped")}: {fmt(o.shipped)}
                   </span>
-                  {(o.description || o.note) && (
-                    <span className="text-muted-foreground line-clamp-1 text-xs">
-                      {o.description || o.note}
-                    </span>
-                  )}
-                </Link>,
-                o.orderedOn ? day.format(o.orderedOn) : "—",
-                fmt(o.items),
-                fmt(o.shipped),
-                o.closed
-                  ? t("dist.orders.closed")
-                  : o.orderedOn
-                    ? t("dist.orders.orderedState")
-                    : t("dist.orders.preparing"),
-                <span key="a" className="flex flex-wrap items-center gap-2">
-                  {manage && (
-                    <form action={setOrderClosedAction}>
-                      <input type="hidden" name="orderId" value={o.id} />
-                      <input type="hidden" name="closed" value={o.closed ? "0" : "1"} />
-                      <Button type="submit" size="sm" variant="ghost">
-                        {o.closed ? t("dist.orders.reopen") : t("dist.orders.close")}
-                      </Button>
-                    </form>
-                  )}
-                  {manage && o.shipped === 0 && (
-                    <ConfirmAction
-                      label={t("dist.orders.delete")}
-                      title={t("dist.orders.deleteTitle", { name: o.name })}
-                      hint={t("dist.orders.deleteHint")}
-                      confirm={t("dist.orders.deleteConfirm")}
-                      action={deleteOrderAction}
-                      hidden={{ orderId: o.id }}
-                      align="right"
-                    />
-                  )}
-                </span>,
-              ],
-            }))}
-          />
+                  {actions(o)}
+                </li>
+              ))}
+            </ul>
+            <div className="hidden md:block">
+              <Matrix
+                text={[1, 4, 5]}
+                head={[
+                  t("dist.orders.name"),
+                  t("dist.orders.date"),
+                  t("dist.orders.items"),
+                  t("dist.orders.shipped"),
+                  t("dist.orders.status"),
+                  "",
+                ]}
+                rows={orders.map((o) => ({
+                  key: o.id,
+                  muted: o.closed,
+                  cells: [
+                    <Link
+                      key="n"
+                      href={`/distribution/campaigns/${o.id}`}
+                      className="flex flex-col hover:underline"
+                    >
+                      <span className={o.id === current?.id ? "font-semibold" : "font-medium"}>
+                        {o.name}
+                      </span>
+                      {(o.description || o.note) && (
+                        <span className="text-muted-foreground line-clamp-1 text-xs">
+                          {o.description || o.note}
+                        </span>
+                      )}
+                    </Link>,
+                    o.orderedOn ? day.format(o.orderedOn) : "—",
+                    fmt(o.items),
+                    fmt(o.shipped),
+                    status(o),
+                    <span key="a">{actions(o, true)}</span>,
+                  ],
+                }))}
+              />
+            </div>
+          </>
         )}
       </Section>
 

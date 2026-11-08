@@ -1,10 +1,17 @@
-import { addDays, fromDateString } from "@/lib/dates";
+import { addDays, fromDateString, toDateString } from "@/lib/dates";
 import { db } from "@/lib/db";
-import type { Prisma } from "@/lib/generated/prisma/client";
+import type { Prisma, TaskStatus } from "@/lib/generated/prisma/client";
 import type { Actor } from "@/modules/core/permissions";
-import { displayName } from "@/modules/core/users/display-name";
-import { CLOSED_STATUSES, doerWhere, oversight, visibleTasksWhere } from "@/modules/tasks/access";
+import {
+  CLOSED_STATUSES,
+  doerWhere,
+  oversight,
+  reviewerOf,
+  visibleTasksWhere,
+} from "@/modules/tasks/access";
+import { distinctNames } from "@/modules/tasks/names";
 import { toTaskView, type TaskView } from "@/modules/tasks/service";
+import { countTaskStates } from "@/modules/tasks/today";
 
 // What «Сегодня» shows: the person's day (overdue, due today, in progress), the next two days,
 // and for whoever oversees a team — how the team is doing today.
@@ -78,40 +85,49 @@ export async function getMyDay(actor: Actor, today: string) {
   return planDay(tasks.map(toTaskView), today);
 }
 
+// A person's row in «Моя команда»: what is due today, overdue, handed in to the viewer and not
+// started yet — counted by the shared words (modules/tasks/today.ts), so a person with work due
+// today never reads as «0 · 0».
 export type TeamRow = {
   id: string;
   name: string;
   open: number;
-  inProgress: number;
+  dueToday: number;
   overdue: number;
-  inReview: number;
+  // Handed in and waiting for the viewer to accept («Сдано вам»).
+  handedIn: number;
+  notStarted: number;
 };
 
 const TEAM_SHOWN = 8;
 
 export function summarizeTeam(
   people: { id: string; name: string }[],
-  tasks: { assigneeId: string; status: string; dueDate: Date | null }[],
+  tasks: { assigneeId: string; status: TaskStatus; dueDate: string | null; toMe: boolean }[],
   today: string,
 ) {
   const rows: TeamRow[] = people.map((person) => {
     const own = tasks.filter((task) => task.assigneeId === person.id);
+    const counts = countTaskStates(own, today);
     return {
       ...person,
       open: own.length,
-      inProgress: own.filter((task) => task.status === "IN_PROGRESS").length,
-      overdue: own.filter(
-        (task) =>
-          task.status !== "IN_REVIEW" &&
-          task.dueDate !== null &&
-          task.dueDate.toISOString().slice(0, 10) < today,
-      ).length,
-      inReview: own.filter((task) => task.status === "IN_REVIEW").length,
+      dueToday: counts.dueToday,
+      overdue: counts.late,
+      handedIn: own.filter((task) => task.status === "IN_REVIEW" && task.toMe).length,
+      notStarted: counts.notStarted,
     };
   });
+  // Who may not make it today comes first: overdue, then due today, then the busiest.
   const busy = rows
     .filter((row) => row.open > 0)
-    .sort((a, b) => b.overdue - a.overdue || b.open - a.open || a.name.localeCompare(b.name));
+    .sort(
+      (a, b) =>
+        b.overdue - a.overdue ||
+        b.dueToday - a.dueToday ||
+        b.open - a.open ||
+        a.name.localeCompare(b.name),
+    );
   return {
     rows: busy.slice(0, TEAM_SHOWN),
     more: Math.max(0, busy.length - TEAM_SHOWN),
@@ -121,7 +137,7 @@ export function summarizeTeam(
 }
 
 // The team the actor oversees (the owner: everyone; a manager: their people per the role
-// settings); null for those who oversee nobody.
+// settings); null for those who oversee nobody. Two people with one name get their position.
 export async function getTeamToday(actor: Actor, today: string) {
   const scope = oversight(actor);
   if (scope === "none") return null;
@@ -130,7 +146,7 @@ export async function getTeamToday(actor: Actor, today: string) {
       deactivatedAt: null,
       ...(scope === "all" ? { NOT: { id: actor.id } } : { id: { in: scope, not: actor.id } }),
     },
-    select: { id: true, firstName: true, lastName: true },
+    select: { id: true, firstName: true, lastName: true, position: true },
   });
   if (people.length === 0) return null;
   const tasks = await db.task.findMany({
@@ -140,11 +156,23 @@ export async function getTeamToday(actor: Actor, today: string) {
       assigneeId: { in: people.map((p) => p.id) },
       status: { notIn: CLOSED_STATUSES },
     },
-    select: { assigneeId: true, status: true, dueDate: true },
+    select: {
+      assigneeId: true,
+      creatorId: true,
+      reviewerId: true,
+      status: true,
+      dueDate: true,
+    },
   });
+  const names = distinctNames(people);
   return summarizeTeam(
-    people.map((p) => ({ id: p.id, name: displayName(p) })),
-    tasks,
+    people.map((p) => ({ id: p.id, name: names.get(p.id)! })),
+    tasks.map((task) => ({
+      assigneeId: task.assigneeId,
+      status: task.status,
+      dueDate: task.dueDate ? toDateString(task.dueDate) : null,
+      toMe: reviewerOf(task) === actor.id,
+    })),
     today,
   );
 }

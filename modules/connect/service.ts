@@ -62,6 +62,62 @@ export async function connectFacets() {
   };
 }
 
+// How fresh the data is: the latest day any record is about («Данные по 7 нояб.»), not when it
+// was uploaded.
+export async function connectDataDate(): Promise<string | null> {
+  const { _max } = await db.connectRecord.aggregate({ _max: { day: true } });
+  return _max.day;
+}
+
+// Which bot name (as the exports write people) belongs to which person in the app, set by the
+// owner or a manager: an employee then sees only their own list.
+const PEOPLE_KEY = "connect.people";
+
+export async function connectPeopleLinks(): Promise<Record<string, string>> {
+  const row = await db.systemState.findUnique({ where: { key: PEOPLE_KEY } });
+  if (!row) return {};
+  try {
+    const value: unknown = JSON.parse(row.value);
+    return value && typeof value === "object" ? (value as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
+// The people a bot name can be linked to: everyone active.
+export async function connectAppUsers() {
+  return db.user.findMany({
+    where: { deactivatedAt: null },
+    select: { id: true, firstName: true, lastName: true },
+    orderBy: { firstName: "asc" },
+  });
+}
+
+// Links a bot name to a person in the app (or unlinks it with `userId` null).
+export async function linkConnectPerson(actor: Actor, name: string, userId: string | null) {
+  if (!canLeadConnect(actor)) throw new ConnectError("forbidden");
+  const person = name.trim().slice(0, 200);
+  if (!person) throw new ConnectError("empty");
+  if (userId && !(await db.user.findFirst({ where: { id: userId, deactivatedAt: null } })))
+    throw new ConnectError("unknown");
+  const links = await connectPeopleLinks();
+  if (userId) links[person] = userId;
+  else delete links[person];
+  const value = JSON.stringify(links);
+  await db.systemState.upsert({
+    where: { key: PEOPLE_KEY },
+    create: { key: PEOPLE_KEY, value },
+    update: { value },
+  });
+  await logActivity({
+    actorId: actor.id,
+    action: "connect.person_linked",
+    entityType: "SystemState",
+    entityId: PEOPLE_KEY,
+    details: { name: person, userId },
+  });
+}
+
 export async function lastImports(take = 8) {
   return db.connectImport.findMany({ orderBy: { createdAt: "desc" }, take });
 }
@@ -76,10 +132,24 @@ export type ImportResult = {
     // Rows kept as they were: the file is older than what was loaded (`newer` = up to when).
     kept: number;
     newer: string | null;
+    // The days the file covers and its rows from test stores (left out of every number).
+    from: string | null;
+    to: string | null;
+    test: number;
   }[];
 };
 
 const MAX_FILE = 20 * 1024 * 1024;
+
+// What an upload says about a sheet: «файл за 1 авг. – 7 нояб., 5 строк тестовых точек не учтено».
+function coverage(rows: ParsedRow[]) {
+  const days = rows.map((r) => r.record.day).sort();
+  return {
+    from: days[0] ?? null,
+    to: days.at(-1) ?? null,
+    test: rows.filter((r) => isTestStore(r.record.storeName, r.record.storeCode)).length,
+  };
+}
 
 // Uploads exports: rows with an ID already in the base are updated, new ones are added.
 export async function importConnectFiles(
@@ -110,7 +180,7 @@ export async function importConnectFiles(
     const sheets = [];
     for (const sheet of file.sheets) {
       const counts = await saveRows(sheet.kind, sheet.rows, log.id);
-      sheets.push({ kind: sheet.kind, ...counts, skipped: sheet.skipped });
+      sheets.push({ kind: sheet.kind, ...counts, skipped: sheet.skipped, ...coverage(sheet.rows) });
     }
     await db.connectImport.update({
       where: { id: log.id },

@@ -28,6 +28,7 @@ export function decisionLines(decisions: Decisions) {
       status: t(`tasks.status.${task.status}`),
     })),
     ...decisions.remove.map((task) => ({ title: task.title, status: t("digest.removeRequest") })),
+    ...decisions.dueChange.map((task) => ({ title: task.title, status: t("digest.dueChange") })),
     ...decisions.coAssignees.map((r) => ({
       title: r.task.title,
       status: t("digest.coRequest", { name: r.name }),

@@ -1,8 +1,8 @@
 import { t } from "@/lib/i18n";
 import { withLocale } from "@/lib/i18n/server";
 import { connectPptx } from "@/modules/connect/pptx";
-import { buildConnectReport, parseConnectQuery } from "@/modules/connect/report";
-import { canLeadConnect, canSeeConnect } from "@/modules/connect/service";
+import { buildConnectReport, parseConnectQuery, scopeConnectQuery } from "@/modules/connect/report";
+import { canLeadConnect, canSeeConnect, connectPeopleLinks } from "@/modules/connect/service";
 import { connectXlsx } from "@/modules/connect/xlsx";
 import { getUserFromRequest } from "@/modules/core/auth/request-user";
 import { getUserToday } from "@/modules/core/settings/service";
@@ -22,10 +22,15 @@ export async function GET(request: Request, { params }: RouteContext<"/api/conne
     const { format } = await params;
     if (format !== "xlsx" && format !== "pptx")
       return Response.json({ error: "format" }, { status: 400 });
-    const query = parseConnectQuery(
-      Object.fromEntries(new URL(request.url).searchParams),
-      canLeadConnect(user),
+    const canLead = canLeadConnect(user);
+    // An employee downloads only their own list (see scopeConnectQuery).
+    const { query, own } = scopeConnectQuery(
+      parseConnectQuery(Object.fromEntries(new URL(request.url).searchParams), canLead),
+      canLead,
+      await connectPeopleLinks(),
+      user.id,
     );
+    if (own && !query.person) return Response.json({ error: "empty" }, { status: 404 });
     const report = await buildConnectReport(query, await getUserToday(user.id));
     if (report.empty || (query.view === "executor" && !report.query.person))
       return Response.json({ error: "empty" }, { status: 404 });

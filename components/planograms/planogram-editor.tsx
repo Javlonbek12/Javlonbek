@@ -73,8 +73,17 @@ type Props = {
     shelftalkers: string,
   ) => Promise<SaveResult>;
   // «Предложить раскладку ИИ»: only where the AI key is set.
-  suggest?: (planogramId: string, layout: string, request: string) => Promise<SuggestResult>;
+  suggest?: (
+    planogramId: string,
+    layout: string,
+    request: string,
+    mode: AiMode,
+  ) => Promise<SuggestResult>;
 };
+
+// What the AI may change: only the places nobody decided, or every pack (POSM always stays).
+type AiMode = "free" | "all";
+const AI_MAX = 1000;
 
 const BADGES = ["YANGI", "1mg", "2mg"];
 
@@ -149,6 +158,7 @@ function Cell({
       }}
       {...drag.attributes}
       {...drag.listeners}
+      data-slot-key={id}
       onClick={onClick}
       className={cn("cursor-pointer rounded-md p-0.5", drop.isOver && "bg-blue-100")}
       style={
@@ -220,14 +230,15 @@ export function PlanogramEditor(props: Props) {
   const [blocked, setBlocked] = useState<{ text: string; cells: string[] } | null>(null);
   const [pending, startTransition] = useTransition();
   // The AI panel: open or not, the request, and what came back (said under the request).
-  const [ai, setAi] = useState<{ open: boolean; request: string; lines: string[]; error: boolean }>(
-    {
-      open: false,
-      request: "",
-      lines: [],
-      error: false,
-    },
-  );
+  const [ai, setAi] = useState<{
+    open: boolean;
+    request: string;
+    mode: AiMode;
+    lines: string[];
+    error: boolean;
+  }>({ open: false, request: "", mode: "free", lines: [], error: false });
+  // The places the AI changed, with what it put there: outlined while they still hold it.
+  const [aiMarks, setAiMarks] = useState<Record<string, string>>({});
   const [thinking, startThinking] = useTransition();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
@@ -427,8 +438,9 @@ export function PlanogramEditor(props: Props) {
     const suggest = props.suggest;
     const request = ai.request.trim();
     if (!suggest || !request) return;
+    const before = layout;
     startThinking(async () => {
-      const result = await suggest(props.planogramId, JSON.stringify(layout), request);
+      const result = await suggest(props.planogramId, JSON.stringify(before), request, ai.mode);
       if (!result.ok) {
         setAi((a) => ({ ...a, lines: [t(result.error as never)], error: true }));
         return;
@@ -436,6 +448,21 @@ export function PlanogramEditor(props: Props) {
       // One step in the history: undo takes the whole suggestion back.
       apply(result.layout);
       setSelection([]);
+      // What the AI changed (outlined on the shelves) and the places it left undecided.
+      const text = (c: Layout[string] | undefined) => JSON.stringify(c ?? null);
+      const marks: Record<string, string> = {};
+      for (const key of new Set([...Object.keys(before), ...Object.keys(result.layout)]))
+        if (text(before[key]) !== text(result.layout[key])) marks[key] = text(result.layout[key]);
+      setAiMarks(marks);
+      const after = coveredSlots(result.layout);
+      const unfilled = geometry.shelves
+        .map((shelf, index) => ({
+          shelf: index + 1,
+          count: Array.from({ length: shelf.slots }, (_, p) => slotKey(index, p)).filter(
+            (key) => !result.layout[key] && !after.has(key),
+          ).length,
+        }))
+        .filter((x) => x.count > 0);
       setAi((a) => ({
         ...a,
         error: false,
@@ -447,16 +474,35 @@ export function PlanogramEditor(props: Props) {
           result.overflow.length > 0
             ? t("planograms.editor.ai.overflow", { names: result.overflow.join(", ") })
             : "",
-          t("planograms.editor.ai.done"),
+          unfilled.length > 0
+            ? t("planograms.editor.ai.unfilled", {
+                count: unfilled.reduce((n, x) => n + x.count, 0),
+                shelves: unfilled
+                  .map((x) => `${t("planograms.editor.shelf", { n: x.shelf })}: ${x.count}`)
+                  .join(", "),
+              })
+            : "",
+          t("planograms.editor.ai.done", { count: Object.keys(marks).length }),
         ].filter(Boolean),
       }));
     });
   };
+  const aiMarked = (key: string) =>
+    key in aiMarks && aiMarks[key] === JSON.stringify(layout[key] ?? null);
+  // A violation pressed: its cells are selected (to fix them at once) and shown.
+  const showCells = (cells: string[]) => {
+    if (cells.length === 0) return;
+    setBrush(null);
+    setSelection(cells);
+    document
+      .querySelector(`[data-slot-key="${cells[0]}"]`)
+      ?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+  };
 
   return (
     <DndContext id={dndId} sensors={sensors} onDragEnd={onDragEnd}>
-      <div className="flex flex-col gap-3 lg:flex-row">
-        <aside className="flex w-full shrink-0 flex-col gap-2 lg:w-60">
+      <div className="flex flex-col gap-3 lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] xl:grid-cols-[15rem_minmax(0,1fr)_18rem]">
+        <aside className="flex w-full min-w-0 flex-col gap-2 lg:row-span-2 xl:row-span-1">
           <h3 className="text-sm font-medium">{t("planograms.editor.palette")}</h3>
           <Input
             value={query}
@@ -562,10 +608,41 @@ export function PlanogramEditor(props: Props) {
                   <X className="size-4" />
                 </button>
               </div>
+              <fieldset className="flex flex-col gap-1">
+                <legend className="sr-only">{t("planograms.editor.ai.mode")}</legend>
+                {(["free", "all"] as const).map((mode) => (
+                  <label key={mode} className="flex items-start gap-2">
+                    <input
+                      type="radio"
+                      name={`${dndId}-ai-mode`}
+                      value={mode}
+                      checked={ai.mode === mode}
+                      onChange={() => setAi((a) => ({ ...a, mode }))}
+                      className="mt-0.5 size-4"
+                    />
+                    <span>
+                      <span className="font-medium">
+                        {t(
+                          mode === "free"
+                            ? "planograms.editor.ai.modeFree"
+                            : "planograms.editor.ai.modeAll",
+                        )}
+                      </span>{" "}
+                      <span className="text-muted-foreground text-xs">
+                        {t(
+                          mode === "free"
+                            ? "planograms.editor.ai.modeFreeHint"
+                            : "planograms.editor.ai.modeAllHint",
+                        )}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </fieldset>
               <Textarea
                 id={`${dndId}-ai`}
                 value={ai.request}
-                maxLength={1000}
+                maxLength={AI_MAX}
                 rows={3}
                 onChange={(e) => setAi((a) => ({ ...a, request: e.target.value }))}
                 onKeyDown={(e) => {
@@ -573,7 +650,12 @@ export function PlanogramEditor(props: Props) {
                 }}
                 placeholder={t("planograms.editor.ai.placeholder")}
               />
-              <p className="text-muted-foreground text-xs">{t("planograms.editor.ai.hint")}</p>
+              <p className="text-muted-foreground flex flex-wrap justify-between gap-2 text-xs">
+                <span>{t("planograms.editor.ai.hint")}</span>
+                <span className="tabular-nums">
+                  {ai.request.length} / {AI_MAX}
+                </span>
+              </p>
               <div className="flex flex-wrap items-center gap-2">
                 <Button
                   type="button"
@@ -801,6 +883,7 @@ export function PlanogramEditor(props: Props) {
                               }
                               selected={selection.includes(key)}
                               violation={badCells.has(key)}
+                              marked={aiMarked(key)}
                               height={
                                 content?.kind === "POSM" && content.rows > 1
                                   ? posmHeight(shelfIndex, content.rows)
@@ -851,41 +934,56 @@ export function PlanogramEditor(props: Props) {
               </div>
             ))}
           </div>
-
-          <div className="grid gap-3 md:grid-cols-2">
-            <section className="rounded-lg border p-3">
-              <h3 className="mb-2 text-sm font-medium">{t("planograms.validation.title")}</h3>
-              {violations.length === 0 ? (
-                <p className="text-sm">{t("planograms.validation.ok")}</p>
-              ) : (
-                <ul className="flex flex-col gap-1 text-sm">
-                  {violations.map((v, i) => (
-                    <li
-                      key={i}
-                      className={cn(
-                        v.severity === "CRITICAL" ? "text-destructive" : "text-amber-700",
-                      )}
-                    >
-                      {v.severity === "CRITICAL" ? "⛔" : "⚠️"} {describeViolation(v)}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-            <section className="rounded-lg border p-3">
-              <h3 className="mb-2 text-sm font-medium">{t("planograms.changes.title")}</h3>
-              {changes.length === 0 ? (
-                <p className="text-muted-foreground text-sm">{t("planograms.changes.none")}</p>
-              ) : (
-                <ul className="flex flex-col gap-1 text-sm">
-                  {changes.map((line, i) => (
-                    <li key={i}>{line}</li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          </div>
         </div>
+        {/* The rule check beside the shelves on a wide screen, staying in view while scrolling. */}
+        <aside className="flex w-full min-w-0 flex-col gap-3 lg:col-start-2 xl:sticky xl:top-4 xl:col-start-3 xl:max-h-[calc(100vh-2rem)] xl:self-start xl:overflow-y-auto">
+          <section className="rounded-lg border p-3">
+            <h3 className="mb-2 text-sm font-medium">{t("planograms.validation.title")}</h3>
+            {violations.length === 0 ? (
+              <p className="text-sm">{t("planograms.validation.ok")}</p>
+            ) : (
+              <ul className="flex flex-col gap-1 text-sm">
+                {violations.map((v, i) => (
+                  <li
+                    key={i}
+                    className={cn(
+                      v.severity === "CRITICAL"
+                        ? "text-destructive"
+                        : "text-amber-700 dark:text-amber-300",
+                    )}
+                  >
+                    {v.cells.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => showCells(v.cells)}
+                        title={t("planograms.editor.showCells")}
+                        className="text-left underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                      >
+                        {v.severity === "CRITICAL" ? "⛔" : "⚠️"} {describeViolation(v)}
+                      </button>
+                    ) : (
+                      <>
+                        {v.severity === "CRITICAL" ? "⛔" : "⚠️"} {describeViolation(v)}
+                      </>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+          <section className="rounded-lg border p-3">
+            <h3 className="mb-2 text-sm font-medium">{t("planograms.changes.title")}</h3>
+            {changes.length === 0 ? (
+              <p className="text-muted-foreground text-sm">{t("planograms.changes.none")}</p>
+            ) : (
+              <ul className="flex flex-col gap-1 text-sm">
+                {changes.map((line, i) => (
+                  <li key={i}>{line}</li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </aside>
       </div>
     </DndContext>
   );

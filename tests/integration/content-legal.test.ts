@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/lib/db";
 import { withAccess } from "@/modules/core/access/actor";
 import { saveRoleConfig } from "@/modules/core/access/config";
+import { loadExecution, planExecution } from "@/modules/content/execution";
 import { addPostFile, removePostFile } from "@/modules/content/files";
 import {
   approvePost,
@@ -68,14 +69,50 @@ describe("content: lawyer, withdrawing, moving", () => {
     ).toBe(1);
   });
 
+  it("plan execution counts the reviewer's and the lawyer's returns apart", async () => {
+    const { owner, author, lawyer, post } = await setup();
+    await submitForReview(author, post.id);
+    await returnWithFeedback(owner, post.id, "Тестовое замечание проверяющего");
+    await submitForReview(author, post.id);
+    await approvePost(owner, post.id);
+    await returnWithFeedback(lawyer, post.id, "Тестовое замечание юриста");
+    const [row] = await loadExecution(owner, "2026-10-01", "2026-10-31", "Asia/Tashkent");
+    expect(row).toMatchObject({
+      id: post.id,
+      status: "CHANGES",
+      returns: { review: 1, legal: 1 },
+      authorId: author.id,
+    });
+    // The day passed and it wasn't sent.
+    expect(planExecution([row!], "2026-10-31")).toMatchObject({ due: 1, notSent: 1 });
+  });
+
   it("without a lawyer the planner's approval is final", async () => {
     const owner = await withAccess(await createTestUser("OWNER"));
+    const member = await withAccess(await createTestUser("MEMBER"));
     const post = await savePlanItem(owner, null, {
       title: "Тестовый пост",
       channels: ["PARTNER"],
       publishDate: "2026-10-10",
+      authorId: member.id,
     });
-    await saveContent(owner, post.id, { textRu: "Тест" });
+    await submitForReview(member, post.id, { textRu: "Тест" });
+    await approvePost(owner, post.id);
+    expect(await status(post.id)).toBe("APPROVED");
+  });
+
+  it("the lawyer doesn't check their own post: it skips the lawyer step", async () => {
+    const owner = await withAccess(await createTestUser("OWNER"));
+    const lawyer = await withAccess(await createTestUser("LAWYER"));
+    const post = await savePlanItem(owner, null, {
+      title: "Тестовый пост юриста",
+      channels: ["PARTNER"],
+      publishDate: "2026-10-10",
+      authorId: lawyer.id,
+    });
+    await submitForReview(lawyer, post.id, { textRu: "Тест" });
+    await expect(approvePost(lawyer, post.id)).rejects.toMatchObject({ code: "ownPost" });
+    // The only lawyer wrote it: the owner's approval is final.
     await approvePost(owner, post.id);
     expect(await status(post.id)).toBe("APPROVED");
   });

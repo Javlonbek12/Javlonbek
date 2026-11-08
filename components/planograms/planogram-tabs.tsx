@@ -1,19 +1,20 @@
 "use client";
 
-import Link from "next/link";
+import { Boxes, Copy, LayoutList, Layers, Package, Sticker, Tag } from "lucide-react";
 import { usePathname } from "next/navigation";
 
+import { TradeTabs } from "@/components/equipment/trade-tabs";
 import { useT } from "@/components/locale-provider";
-import { cn } from "@/lib/utils";
 
+// «Оборудование» lives in its own section (shared with POSM distribution): the tab says so.
 const TABS = [
-  { href: "/planograms", key: "planograms.tabs.list" },
-  { href: "/planograms/templates", key: "planograms.tabs.templates" },
-  { href: "/equipment/models", key: "planograms.tabs.equipment" },
-  { href: "/planograms/skus", key: "planograms.tabs.skus" },
-  { href: "/planograms/posm", key: "planograms.tabs.posm" },
-  { href: "/planograms/prices", key: "planograms.tabs.prices" },
-  { href: "/planograms/mass", key: "planograms.tabs.mass" },
+  { href: "/planograms", key: "planograms.tabs.list", icon: LayoutList },
+  { href: "/planograms/templates", key: "planograms.tabs.templates", icon: Copy },
+  { href: "/equipment/models", key: "planograms.tabs.equipment", icon: Boxes, away: true },
+  { href: "/planograms/skus", key: "planograms.tabs.skus", icon: Package },
+  { href: "/planograms/posm", key: "planograms.tabs.posm", icon: Sticker },
+  { href: "/planograms/prices", key: "planograms.tabs.prices", icon: Tag },
+  { href: "/planograms/mass", key: "planograms.tabs.mass", icon: Layers },
 ] as const;
 
 export function PlanogramTabs() {
@@ -22,25 +23,15 @@ export function PlanogramTabs() {
   const library = TABS.slice(1).some((tab) => pathname.startsWith(tab.href));
   const active = (href: string) => (href === "/planograms" ? !library : pathname.startsWith(href));
   return (
-    <nav className="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
-      <ul className="flex gap-1 border-b">
-        {TABS.map((tab) => (
-          <li key={tab.href}>
-            <Link
-              href={tab.href}
-              aria-current={active(tab.href) ? "page" : undefined}
-              className={cn(
-                "-mb-px block border-b-2 px-3 py-2 text-sm whitespace-nowrap",
-                active(tab.href)
-                  ? "border-primary font-medium"
-                  : "text-muted-foreground border-transparent",
-              )}
-            >
-              {t(tab.key)}
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </nav>
+    <TradeTabs
+      label={t("planograms.title")}
+      tabs={TABS.map((tab) => ({
+        href: tab.href,
+        label: t(tab.key),
+        icon: tab.icon,
+        active: active(tab.href),
+        away: "away" in tab ? t("planograms.tabs.equipmentHint") : undefined,
+      }))}
+    />
   );
 }

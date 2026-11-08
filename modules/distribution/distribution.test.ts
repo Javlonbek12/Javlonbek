@@ -35,7 +35,15 @@ import {
   parsePosmList,
 } from "./parse";
 import { controlRows, controlTone, controlTotal, hasMinus } from "./control";
-import { canonicalRegion, NO_TSM, parseDestination, tagPrice, typeFromPivotHeader } from "./types";
+import {
+  canonicalRegion,
+  destinationLabel,
+  NO_TSM,
+  parseDestination,
+  regionLabel,
+  tagPrice,
+  typeFromPivotHeader,
+} from "./types";
 
 const counts: Count[] = [
   { kind: "INSTALLED", region: "Tashkent", tsm: "", type: "POSI_L", count: 10 },
@@ -242,6 +250,22 @@ describe("the distribution model", () => {
     expect(out.findIndex((f) => f.tone === "info")).toBeGreaterThan(
       out.findIndex((f) => f.tone === "warn"),
     );
+
+    // Without price tags in the campaign: one quiet line instead of a red line per price.
+    const noTags = [items[0]!];
+    const quiet = findings({
+      items: noTags,
+      regions,
+      tsms,
+      counts,
+      includeStock: true,
+      plans: noTags.map((i) => planItem(i, regions, tsms, facts)),
+      controls: noTags.map((i) => controlItem(i, total)),
+      tags: priceTagNeed(noTags, total, facts),
+      facts,
+    }).map((f) => f.key);
+    expect(quiet).not.toContain("tagShort");
+    expect(quiet).toContain("tagNone");
   });
 });
 
@@ -475,5 +499,14 @@ describe("a share typed in percent", () => {
     expect(typedShare("9,1", "9.1", String(1 / 11))).toBe(1 / 11);
     expect(typedShare("12", "9.1", String(1 / 11))).toBe(0.12);
     expect(typedShare("", "0", "")).toBe(0);
+  });
+});
+
+describe("region names on screen", () => {
+  it("are Russian in Russian, the stored name otherwise", () => {
+    expect(regionLabel("Tashkent", "ru")).toBe("Ташкент");
+    expect(regionLabel("Tashkent", "en")).toBe("Tashkent");
+    expect(regionLabel("Test Town", "ru")).toBe("Test Town");
+    expect(destinationLabel("Jizzax · TSM_TEST_1", "ru")).toBe("Джизак · TSM_TEST_1");
   });
 });

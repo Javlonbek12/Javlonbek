@@ -1,31 +1,36 @@
-import { Download, Send } from "lucide-react";
+import { Ban, Download, Send } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { BotChip, ContentStatusBadge } from "@/components/content/bot-chip";
+import { BotChip, ContentStatusBadge, LateBadge } from "@/components/content/bot-chip";
 import { PlanForm } from "@/components/content/plan-form";
 import { BRAND_COLOR, sectionMeta } from "@/components/content/analytics-charts";
 import { FileUpload } from "@/components/content/file-upload";
+import { MaterialsForm } from "@/components/content/materials-form";
 import { PostPreview } from "@/components/content/post-preview";
 import { DeleteButton } from "@/components/content/views";
 import { CopyButton } from "@/components/copy-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
+import { ConfirmAction } from "@/components/ui/confirm-action";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDayLong, toDateString } from "@/lib/dates";
+import type { ContentStatus } from "@/lib/generated/prisma/enums";
 import { t, type TranslationKey } from "@/lib/i18n";
 import { formatDateTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { requireUser } from "@/modules/core/auth/current-user";
-import { getSettings } from "@/modules/core/settings/service";
+import { getSettings, getUserToday } from "@/modules/core/settings/service";
 import { displayName, personName } from "@/modules/core/users/display-name";
 import { MAX_FILE_MB, MAX_FILES_PER_LANG } from "@/modules/content/files";
 import {
   changeSendsBackToReview,
   getPost,
-  hasLawyer,
+  isLatePost,
+  isOwnPost,
   listContentAuthors,
+  nextChecks,
 } from "@/modules/content/service";
 import { listSections } from "@/modules/content/sections";
 import { BRANDS } from "@/modules/content/tagging";
@@ -49,6 +54,8 @@ import {
   updatePlanItemAction,
 } from "../actions";
 
+const IN_PROGRESS: ContentStatus[] = ["PLANNED", "DRAFT", "CHANGES", "REVIEW", "LEGAL_REVIEW"];
+
 export default async function ContentPostPage({
   params,
   searchParams,
@@ -66,9 +73,17 @@ export default async function ContentPostPage({
   const language = lang === "uz" ? "uz" : "ru";
   const filesOf = (l: "RU" | "UZ") => post.files.filter((f) => f.lang === l);
   const shown = filesOf(language === "uz" ? "UZ" : "RU");
-  const lawyerStep = rights.review || rights.planner ? await hasLawyer() : false;
   const date = toDateString(post.publishDate);
+  const late = isLatePost(post, await getUserToday(user.id));
+  // «Что дальше» for the author of a post still in progress: who checks it, then the lawyer.
+  const next =
+    isOwnPost(user, post) && IN_PROGRESS.includes(post.status) ? await nextChecks(post) : null;
+  const lawyerStep = rights.review ? (await nextChecks(post)).lawyerNext : false;
+  // The latest remark of the reviewer, shown under the title while the post waits for changes.
+  const remark =
+    post.status === "CHANGES" ? post.comments.filter((c) => c.isFeedback).at(-1) : undefined;
   const hidden = <input type="hidden" name="postId" value={post.id} />;
+  const back = `/content?month=${date.slice(0, 7)}`;
   // Said before saving: a change of text or files of an approved post sends it back to review.
   const recheck = changeSendsBackToReview(post.status) && (
     <p className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
@@ -79,20 +94,45 @@ export default async function ContentPostPage({
   return (
     <div className="flex flex-col gap-4 [&>*]:min-w-0">
       <div className="flex flex-col gap-2">
-        <Link
-          href={`/content?month=${date.slice(0, 7)}`}
-          className="text-muted-foreground text-sm hover:underline"
-        >
+        <Link href={back} className="text-muted-foreground text-sm hover:underline">
           ← {t("content.title")}
         </Link>
-        <div className="flex items-start justify-between gap-2">
-          <h1 className="text-[22px] font-medium md:text-2xl">{post.title}</h1>
-          {rights.remove && (
-            <DeleteButton postId={post.id} back={`/content?month=${date.slice(0, 7)}`} />
-          )}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <h1 className="min-w-0 text-[22px] font-medium break-words md:text-2xl">{post.title}</h1>
+          {/* Both rare and final actions together, each behind a confirmation. */}
+          <div className="flex shrink-0 flex-wrap gap-1 sm:justify-end">
+            {rights.editPlan && (
+              <ConfirmAction
+                label={t("content.actions.cancel")}
+                icon={<Ban className="size-4" />}
+                title={t("content.cancelConfirm.title")}
+                hint={t("content.cancelConfirm.hint")}
+                confirm={t("content.cancelConfirm.yes")}
+                action={cancelContentAction}
+                hidden={{ postId: post.id }}
+                align="right"
+              />
+            )}
+            {rights.remove && <DeleteButton postId={post.id} back={back} />}
+          </div>
         </div>
+        {remark && (
+          <div className="flex flex-col gap-1.5 rounded-xl border border-orange-500/40 bg-orange-500/10 p-3 text-sm">
+            <span className="text-xs font-medium text-orange-800">
+              {t("content.remark.title", { name: displayName(remark.author) })} ·{" "}
+              {formatDateTime(remark.createdAt, timezone)}
+            </span>
+            <p className="whitespace-pre-wrap">{remark.body}</p>
+            {rights.editContent && (
+              <a href="#materials" className="text-primary w-fit text-sm font-medium underline">
+                {t("content.remark.fix")}
+              </a>
+            )}
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-1.5">
           <ContentStatusBadge status={post.status} />
+          {late && <LateBadge />}
           <span className="text-muted-foreground text-sm">
             {formatDayLong(date)}
             {post.publishTime && `, ${post.publishTime}`}
@@ -242,7 +282,28 @@ export default async function ContentPostPage({
         </Card>
 
         <div className="flex flex-col gap-4 [&>*]:min-w-0">
-          {rights.withdraw && (
+          {next && (
+            <Card className="gap-2">
+              <CardTitle>{t("content.next.title")}</CardTitle>
+              <p className="text-sm">
+                {t(
+                  post.status === "LEGAL_REVIEW"
+                    ? "content.next.legal"
+                    : post.status === "REVIEW"
+                      ? "content.next.review"
+                      : "content.next.afterSubmit",
+                  { names: next.names.join(", ") || "—" },
+                )}
+                {next.lawyerNext && ` ${t("content.next.thenLawyer")}`}
+              </p>
+              {rights.waitsForOthers && (
+                <CardDescription>{t("content.next.notYours")}</CardDescription>
+              )}
+            </Card>
+          )}
+
+          {/* A reviewer returns the post with a remark instead of taking it back. */}
+          {rights.withdraw && !rights.review && !rights.legal && (
             <Card className="gap-2">
               <CardDescription>{t("content.actions.withdrawHint")}</CardDescription>
               <form action={withdrawContentAction}>
@@ -254,9 +315,7 @@ export default async function ContentPostPage({
             </Card>
           )}
 
-          {(rights.review ||
-            rights.legal ||
-            (rights.planner && ["DRAFT", "CHANGES"].includes(post.status))) && (
+          {(rights.review || rights.legal) && (
             <Card
               className={cn("gap-3", rights.legal ? "border-violet-500/40" : "border-amber-500/40")}
             >
@@ -352,7 +411,7 @@ export default async function ContentPostPage({
           )}
 
           {rights.editContent && (
-            <Card className="gap-3">
+            <Card id="materials" className="scroll-mt-20 gap-3">
               <CardTitle>{t("content.materials")}</CardTitle>
               {recheck}
               <div id="files" className="flex scroll-mt-20 flex-col gap-3 text-sm">
@@ -456,41 +515,15 @@ export default async function ContentPostPage({
                   );
                 })}
               </div>
-              <form
-                action={saveContentAction}
-                className="flex flex-col gap-3 border-t pt-3 text-sm"
-              >
-                {hidden}
-                <label className="flex flex-col gap-1">
-                  {t("content.fields.textRu")}
-                  <Textarea
-                    name="textRu"
-                    rows={6}
-                    maxLength={4096}
-                    defaultValue={post.textRu ?? ""}
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  {t("content.fields.textUz")}
-                  <Textarea
-                    name="textUz"
-                    rows={6}
-                    maxLength={4096}
-                    defaultValue={post.textUz ?? ""}
-                  />
-                </label>
-                <div>
-                  <Button type="submit" variant="outline">
-                    {t("content.actions.upload")}
-                  </Button>
-                </div>
-              </form>
-              {rights.submit && (
-                <form action={submitContentAction} className="border-t pt-3">
-                  {hidden}
-                  <Button type="submit">{t("content.actions.submit")}</Button>
-                </form>
-              )}
+              <MaterialsForm
+                postId={post.id}
+                textRu={post.textRu}
+                textUz={post.textUz}
+                files={{ RU: filesOf("RU").length, UZ: filesOf("UZ").length }}
+                save={saveContentAction}
+                submit={submitContentAction}
+                canSubmit={rights.submit}
+              />
             </Card>
           )}
 
@@ -505,7 +538,7 @@ export default async function ContentPostPage({
                   key={c.id}
                   className={cn(
                     "rounded-xl px-3 py-2 text-sm",
-                    c.isFeedback ? "bg-destructive/8 border-destructive/30 border" : "bg-muted/60",
+                    c.isFeedback ? "border border-orange-500/30 bg-orange-500/8" : "bg-muted/60",
                   )}
                 >
                   <span className="text-muted-foreground text-xs">
@@ -554,12 +587,6 @@ export default async function ContentPostPage({
               submit={t("content.actions.save")}
               showAuthor={rights.planner}
             />
-            <form action={cancelContentAction} className="border-t pt-3">
-              {hidden}
-              <Button type="submit" variant="ghost" className="text-destructive">
-                {t("content.actions.cancel")}
-              </Button>
-            </form>
           </div>
         </details>
       )}

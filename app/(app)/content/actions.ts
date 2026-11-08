@@ -63,15 +63,23 @@ const planState = (code: string, form: FormData): PlanFormState => {
   const fields = planFields(form);
   return {
     error: code,
-    values: { ...fields, brief: fields.brief, publishTime: fields.publishTime || null },
+    values: {
+      ...fields,
+      brief: fields.brief,
+      publishTime: fields.publishTime || null,
+      textRu: str(form, "textRu") || null,
+    },
   };
 };
 
+// A new post; the Russian text typed in the same form is saved with it.
 export async function createPlanItemAction(_: PlanFormState, form: FormData) {
   const actor = await requireUser();
   let id: string;
   try {
     id = (await savePlanItem(actor, null, planFields(form))).id;
+    const textRu = str(form, "textRu").trim();
+    if (textRu) await saveContent(actor, id, { textRu });
   } catch (error) {
     if (!(error instanceof ContentError)) throw error;
     return planState(error.code, form);
@@ -150,10 +158,14 @@ export async function movePostAction(id: string, date: string): Promise<{ ok: bo
   return { ok: true };
 }
 
+// From the materials form: the texts typed there are saved first, then the post is sent.
 export async function submitContentAction(form: FormData) {
   const actor = await requireUser();
   const id = str(form, "postId");
-  await run(`/content/${id}`, () => submitForReview(actor, id));
+  const texts = form.has("textRu")
+    ? { textRu: str(form, "textRu"), textUz: str(form, "textUz") }
+    : undefined;
+  await run(`/content/${id}`, () => submitForReview(actor, id, texts));
 }
 
 export async function approveContentAction(form: FormData) {

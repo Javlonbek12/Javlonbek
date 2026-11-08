@@ -85,7 +85,8 @@ const nodeSchema = z
     userId: text(64),
     personName: text(120),
     parentId: text(64),
-    sortOrder: z.coerce.number().int().min(0).max(999).default(0),
+    // Left out: a new place goes last among its siblings, an edited one stays where it is.
+    sortOrder: z.coerce.number().int().min(0).max(999).optional(),
   })
   .refine((v) => (v.kind === "UNIT" ? Boolean(v.name) : Boolean(v.title)));
 
@@ -126,6 +127,13 @@ export async function saveOrgNode(actor: Actor, id: string | null, input: OrgNod
     const user = await db.user.findUnique({ where: { id: data.userId } });
     if (!user || (user.deactivatedAt && taken?.id !== id)) throw new OrgError("notFound");
   }
+  if (!id && data.sortOrder === undefined) {
+    const last = await db.orgNode.aggregate({
+      where: { parentId: data.parentId },
+      _max: { sortOrder: true },
+    });
+    data.sortOrder = (last._max.sortOrder ?? -1) + 1;
+  }
   const saved = id
     ? await db.orgNode.update({ where: { id }, data })
     : await db.orgNode.create({ data });
@@ -154,6 +162,46 @@ export async function deleteOrgNode(actor: Actor, id: string) {
     action: "org.deleted",
     entityType: "OrgNode",
     entityId: id,
+  });
+}
+
+// «Левее» / «правее» on the chart (up / down in the list): the node swaps places with its
+// neighbour; the siblings are numbered again, so equal numbers from before don't get in the way.
+export async function moveOrgNode(actor: Actor, id: string, direction: "left" | "right") {
+  if (!canEditOrg(actor)) throw new OrgError("forbidden");
+  const node = await db.orgNode.findUnique({ where: { id } });
+  if (!node) throw new OrgError("notFound");
+  const siblings = await db.orgNode.findMany({
+    where: { parentId: node.parentId },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    select: { id: true },
+  });
+  const ids = siblings.map((s) => s.id);
+  const from = ids.indexOf(id);
+  const to = direction === "left" ? from - 1 : from + 1;
+  if (to < 0 || to >= ids.length) return;
+  [ids[from], ids[to]] = [ids[to]!, ids[from]!];
+  await db.$transaction(
+    ids.map((nodeId, index) =>
+      db.orgNode.update({ where: { id: nodeId }, data: { sortOrder: index } }),
+    ),
+  );
+}
+
+// «Освободить место»: a deactivated person leaves their place, which becomes a vacancy (their
+// card keeps the job title it had).
+export async function freeOrgPlace(actor: Actor, id: string) {
+  if (!canEditOrg(actor)) throw new OrgError("forbidden");
+  const node = await db.orgNode.findUnique({ where: { id }, include: { user: true } });
+  if (!node?.user?.deactivatedAt) throw new OrgError("notFound");
+  await db.orgNode.update({ where: { id }, data: { userId: null, personName: null } });
+  await syncPeople();
+  await logActivity({
+    actorId: actor.id,
+    action: "org.place_freed",
+    entityType: "OrgNode",
+    entityId: id,
+    details: { name: displayName(node.user) },
   });
 }
 
@@ -222,12 +270,26 @@ export async function syncPeople() {
   }
 }
 
+type OrgRow = Awaited<ReturnType<typeof db.orgNode.findMany>>[number];
+
 // Where the person sits: the units above their position, nearest last ("Marketing Department › Marketing Team").
 export async function orgPathOf(userId: string): Promise<string[] | null> {
   const rows = await db.orgNode.findMany();
-  const byId = new Map(rows.map((r) => [r.id, r]));
   const own = rows.find((r) => r.userId === userId);
-  if (!own) return null;
+  return own ? pathOf(own, new Map(rows.map((r) => [r.id, r]))) : null;
+}
+
+// Each placed person's team, for the team list: the nearest unit or team caption on their path
+// (their own caption first, so a lead stands with the team they lead); "" — placed under no unit.
+export async function teamsOfPeople(): Promise<Map<string, string>> {
+  const rows = await db.orgNode.findMany();
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const teams = new Map<string, string>();
+  for (const row of rows) if (row.userId) teams.set(row.userId, pathOf(row, byId).at(-1) ?? "");
+  return teams;
+}
+
+function pathOf(own: OrgRow, byId: Map<string, OrgRow>): string[] {
   const path: string[] = [];
   if (own.label) path.unshift(own.label);
   const seen = new Set<string>();

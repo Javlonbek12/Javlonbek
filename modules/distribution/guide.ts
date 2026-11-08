@@ -19,7 +19,7 @@ const ru: GuidePart[] = [
         text: [
           "«Оборудование» → «Загрузки» → «Файл оборудования». Нужен файл «Daily BW-POG management» (.xlsx).",
           "Это единственный источник количества и региона. Из листа «BW management» берётся каждая единица оборудования: регион, ID точки (Smartup ID), название, ИНН, тип. Display MOD считается как слоты / 18 — везде в этих единицах, как в самом файле.",
-          "Строка без Smartup ID, но с ИНН или названием, учитывается («Без ID»); без ID, ИНН и названия — пропускается с причиной («Оборудование → Новые точки»).",
+          "Строка без Smartup ID, но с ИНН или названием, учитывается («Без ID»); без ID, ИНН и названия — пропускается с причиной («Оборудование → Проверка точек»).",
           "Из блока «Current stock» на листе «Warehouse» берётся оборудование на складах. Лист демонтажа не читается.",
           "Сразу после загрузки — контрольная таблица «закуплено / установлено / склад / неучтённое». Если где-то минус, файл не сохраняется, пока вы не подтвердите.",
           "Новый файл заменяет прежнее оборудование; кампании, отгрузки и журнал закупок не меняются.",
@@ -53,7 +53,7 @@ const ru: GuidePart[] = [
     id: "campaign",
     title: "Кампания по шагам",
     intro:
-      "Вкладка «Кампании» → «Новая кампания»: название (например, «Pine Purple 4 SKU») и описание. Дальше всё на странице кампании. Шаги вверху загораются зелёным сами, когда выполнены.",
+      "Вкладка «Кампании» → «Новая кампания»: название (например, «Pine Purple 4 SKU») и описание. Дальше всё на странице кампании. Шаги вверху загораются зелёным сами, когда выполнены. Страница открывается на текущем шаге; остальные свёрнуты в строку с итогом («заказано 20 окт.», «подтверждено 8 из 10») — «Открыть» разворачивает шаг.",
     steps: [
       {
         title: "1. Концепт",
@@ -118,11 +118,11 @@ const ru: GuidePart[] = [
         title: "8. Распределение по регионам и TSM",
         href: "/distribution/plan",
         text: [
-          "«Открыть распределение» на странице кампании, или вкладка «Распределение» (кампания выбирается вверху страницы).",
+          "«Открыть распределение» на странице кампании, или вкладка «Распределение». Кампания выбирается вверху вкладок «Распределение», «Отгрузки» и «Анализ»; по умолчанию открыта идущая (заказанная и не закрытая) кампания, черновик — только если заказанных нет.",
           "Доля региона = его оборудование нужных типов; округление вниз, остаток — на центральном складе.",
           "«Разбивка по TSM»: доля региона делится между его TSM по их оборудованию (оборудование без TSM в базе — строка «TSM не назначен»); доля складского оборудования и остаток от округления — на складе региона.",
-          "У каждого региона и каждого TSM своя накладная: печать и «Записать отгрузку по накладной» одной кнопкой.",
-          "«Склад и отгрузки»: сколько доступно, сколько отгружено, сколько ещё отправить и куда уже уехало; отдельные отгрузки записываются там же.",
+          "«Отгрузки»: «Кому что отправить» — каждый регион и TSM с планом, отгруженным, остатком и статусом (не начато, частично, готово, сверх плана), фильтры «Осталось отправить» и «Сверх плана», кнопка «Накладная». Ниже — отдельная отгрузка строкой, склад и журнал, сгруппированный по накладным.",
+          "Накладная: количество в строке можно уменьшить (частичная отгрузка); «Записать отгрузку» даёт накладной номер и открывает её как документ — номер, дата, кампания, строки, места для подписей «Отпустил» и «Получил». Печатается на листе A4 альбомной ориентации без меню.",
           "Excel со всей разбивкой — кнопка «Excel» на вкладке «Анализ».",
         ],
       },
@@ -154,9 +154,10 @@ const ru: GuidePart[] = [
         text: [
           "«Карта»: Узбекистан по регионам — сколько установлено, на складах и в скольких точках; нажмите на регион, чтобы открыть его.",
           "Страница региона: оборудование по типам с моделями, по TSM, склад.",
-          "«Типы оборудования»: каждый тип — модель в масштабе, размеры, слоты, сколько установлено и где больше всего, и его модель в «Планограммах» (связь меняется в «Планограммы → Оборудование»).",
-          "«Контроль»: по каждому типу Закуплено = Установлено + На складе + Неучтённое. Неучтённое — разница, не вводится: небольшой плюс — норма, большой плюс (больше 5% закупки) — что-то не внесли на склад, минус — ошибка в файле (дубли или неубранный демонтаж). Ниже — журнал закупок: вносится вручную (тип или группа типов, количество, дата, документ) или загрузкой шаблона запуска POSM («Данные» → лист «Parameters»); исправление — строкой с минусом. Группа (например, Display L = DG L + Metawerk L) проверяется целиком.",
-          "«Новые точки»: точки с ID, которых нет в базе (с датой появления в файле), точки без ID, пропущенные строки с причиной и точки, у которых регион в базе другой.",
+          "«Типы оборудования»: каждый тип — модель в масштабе, размеры, слоты, сколько установлено и где больше всего, и его модель в «Планограммах» (связь меняется в «Оборудование → Справочник → Модели»; без модели — кнопка «Связать с моделью»). Типы без оборудования свёрнуты в «Ещё типов без оборудования».",
+          "«Контроль»: по каждому типу Закуплено = Установлено + На складе + Неучтённое. Неучтённое — разница, не вводится: небольшой плюс — норма, большой плюс (больше 5% закупки) — что-то не внесли на склад, минус — ошибка в файле (дубли или неубранный демонтаж). Ниже — журнал закупок: вносится вручную (тип или группа типов, количество, дата, документ) или загрузкой шаблона запуска POSM («Распределение POSM → Шаблон запуска», лист «Parameters»); исправление — строкой с минусом. Группа (например, Display L = DG L + Metawerk L) проверяется целиком.",
+          "«Проверка точек» (число на вкладке — сколько всего): точки с ID, которых нет в базе (с датой появления в файле), точки без ID, пропущенные строки с причиной и точки, у которых регион в базе другой. «Excel для базы точек» — все четыре списка файлом для того, кто ведёт базу. Если что-то есть, на «Карте» сверху плашка «Требует внимания».",
+          "На «Карте», в регионе, в «Контроле» и в «Проверке точек» вверху строка «Данные: файл оборудования от … (загрузил …) · база точек от …»; если файлу больше 7 дней — она жёлтая.",
           "«Таблицы»: оборудование по регионам, база для распределения, регионы по TSM, связь с планограммами; переключатель «Учитывать оборудование на складах».",
         ],
       },
@@ -194,7 +195,7 @@ const en: GuidePart[] = [
         text: [
           "“Equipment” → “Uploads” → “Equipment file”. The “Daily BW-POG management” file (.xlsx).",
           "It is the only source of quantities and regions. Every unit comes from the “BW management” sheet: region, outlet ID (Smartup ID), name, TIN, type. Display MOD counts as its slots / 18 — in these units everywhere, as in the file itself.",
-          "A row without a Smartup ID but with a TIN or a name is counted (“Without an ID”); one with neither an ID, a TIN nor a name is skipped with its reason (“Equipment → New outlets”).",
+          "A row without a Smartup ID but with a TIN or a name is counted (“Without an ID”); one with neither an ID, a TIN nor a name is skipped with its reason (“Equipment → Outlet check”).",
           "Warehouse equipment comes from the “Current stock” block of the “Warehouse” sheet. The dismantling sheet is not read.",
           "Right after the upload you see the “bought / installed / in stock / unaccounted” table. With a minus anywhere the file is not saved until you confirm.",
           "A new file replaces the equipment; campaigns, shipments and the purchase journal don't change.",
@@ -228,7 +229,7 @@ const en: GuidePart[] = [
     id: "campaign",
     title: "A campaign step by step",
     intro:
-      "“Campaigns” tab → “New campaign”: a name (e.g. “Pine Purple 4 SKU”) and a description. The rest is on the campaign page. The steps on top turn green by themselves when done.",
+      "“Campaigns” tab → “New campaign”: a name (e.g. “Pine Purple 4 SKU”) and a description. The rest is on the campaign page. The steps on top turn green by themselves when done. The page opens on the current step; the others are folded into a line with their result (“ordered 20 Oct”, “8 of 10 confirmed”) — “Open” unfolds a step.",
     steps: [
       {
         title: "1. Concept",
@@ -293,11 +294,11 @@ const en: GuidePart[] = [
         title: "8. Split by region and TSM",
         href: "/distribution/plan",
         text: [
-          "“Open the distribution” on the campaign page, or the “Distribution” tab (the campaign is picked at the top).",
+          "“Open the distribution” on the campaign page, or the “Distribution” tab. The campaign is picked at the top of the “Distribution”, “Shipments” and “Analysis” tabs; the running (ordered, not closed) campaign opens by default, a draft only when none was ordered.",
           "A region's share = its equipment of the matching types; rounded down, the rest at the central warehouse.",
           "“Breakdown by TSM”: a region's share is split between its TSMs by their equipment (equipment without a TSM in the base is the «TSM не назначен» row); the warehouse equipment's share and the rounding rest stay at the region's warehouse.",
-          "Every region and TSM has a waybill: print it and “Record the shipment” in one go.",
-          "“Stock and shipments”: available, shipped, still to send and where it went; single shipments are recorded there.",
+          "“Shipments”: “Who gets what” — every region and TSM with the plan, what was shipped, what is left and a status (not started, partly, done, over the plan), the “Still to send” and “Over the plan” filters and a “Waybill” button. Below: a single shipment line, the warehouse and the log grouped by waybill.",
+          "A waybill: a line's quantity can be lowered (a partial shipment); “Record the shipment” gives it a number and opens it as a document — number, date, campaign, lines and places to sign “Issued by” and “Received by”. It prints on a landscape A4 sheet without the menus.",
           "Excel with the whole split — the “Excel” button on the “Analysis” tab.",
         ],
       },
@@ -329,9 +330,10 @@ const en: GuidePart[] = [
         text: [
           "“Map”: Uzbekistan by region — installed, in warehouses and in how many outlets; click a region to open it.",
           "A region's page: equipment by type with the models, by TSM, the warehouse.",
-          "“Equipment types”: every type — a to-scale model, dimensions, slots, how many are installed and where most are, and its model in “Planograms” (the link is set in “Planograms → Equipment”).",
-          "“Control”: per type, Bought = Installed + In stock + Unaccounted. Unaccounted is the difference, never entered: a small plus is normal, a large plus (over 5% of the purchase) means something was not entered in the warehouse, a minus is an error in the file (duplicates or dismantling not removed). Below is the purchase journal: entered by hand (a type or a group of types, quantity, date, document) or by uploading a POSM launch template (“Data” → the “Parameters” sheet); a correction is a line with a minus. A group (e.g. Display L = DG L + Metawerk L) is checked as a whole.",
-          "“New outlets”: outlets with an ID the base lacks (with the date they appeared in the file), outlets without an ID, skipped rows with the reason, and outlets with another region in the base.",
+          "“Equipment types”: every type — a to-scale model, dimensions, slots, how many are installed and where most are, and its model in “Planograms” (the link is set in “Equipment → Reference → Models”; without one — the “Link a model” button). Types without equipment are folded into “More types without equipment”.",
+          "“Control”: per type, Bought = Installed + In stock + Unaccounted. Unaccounted is the difference, never entered: a small plus is normal, a large plus (over 5% of the purchase) means something was not entered in the warehouse, a minus is an error in the file (duplicates or dismantling not removed). Below is the purchase journal: entered by hand (a type or a group of types, quantity, date, document) or by uploading a POSM launch template (“POSM distribution → Launch template”, the “Parameters” sheet); a correction is a line with a minus. A group (e.g. Display L = DG L + Metawerk L) is checked as a whole.",
+          "“Outlet check” (the number on the tab is the total): outlets with an ID the base lacks (with the date they appeared in the file), outlets without an ID, skipped rows with the reason, and outlets with another region in the base. “Excel for the outlet base” — all four lists as a file for whoever keeps the base. When anything is there, the “Map” shows a “Needs attention” bar on top.",
+          "The “Map”, a region, the “Control” and the “Outlet check” start with “Data: equipment file of … (uploaded by …) · outlet base of …”; when the file is over 7 days old the line is amber.",
           "“Tables”: equipment by region, the base for the split, regions by TSM, the link to planograms; the “Count equipment in warehouses” switch.",
         ],
       },

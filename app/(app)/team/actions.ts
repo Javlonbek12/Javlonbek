@@ -28,8 +28,10 @@ const str = (formData: FormData, key: string) => {
 };
 const idSchema = z.string().min(1).max(64);
 
+// Back to the card, on the tab the form was on, with what happened.
 async function onCard(
   employeeId: string,
+  tab: "profile" | "notes" | "manage",
   run: () => Promise<unknown>,
   success: string | ((result: unknown) => string),
 ) {
@@ -42,7 +44,7 @@ async function onCard(
     query = `error=${error.code}`;
   }
   revalidatePath("/team", "layout");
-  redirect(`/team/${encodeURIComponent(employeeId)}?${query}`);
+  redirect(`/team/${encodeURIComponent(employeeId)}?${query}&tab=${tab}`);
 }
 
 export async function updateProfileAction(formData: FormData) {
@@ -50,6 +52,7 @@ export async function updateProfileAction(formData: FormData) {
   const employeeId = idSchema.parse(str(formData, "employeeId"));
   await onCard(
     employeeId,
+    "profile",
     () =>
       updateProfile(user, employeeId, {
         position: str(formData, "position"),
@@ -68,6 +71,7 @@ export async function addNoteAction(formData: FormData) {
   const employeeId = idSchema.parse(str(formData, "employeeId"));
   await onCard(
     employeeId,
+    "notes",
     () => addEmployeeNote(user, employeeId, str(formData, "kind"), str(formData, "text")),
     "note=1",
   );
@@ -79,6 +83,7 @@ export async function deactivateUserAction(formData: FormData) {
   const employeeId = idSchema.parse(str(formData, "employeeId"));
   await onCard(
     employeeId,
+    "manage",
     () => deactivateUser(user, employeeId, { handOverTo: str(formData, "handOverTo") || null }),
     (result) => {
       const { moved, notMoved } = result as DeactivateResult;
@@ -94,7 +99,7 @@ export async function deactivateUserAction(formData: FormData) {
 export async function reactivateUserAction(formData: FormData) {
   const user = await actor();
   const employeeId = idSchema.parse(str(formData, "employeeId"));
-  await onCard(employeeId, () => reactivateUser(user, employeeId), "reactivated=1");
+  await onCard(employeeId, "manage", () => reactivateUser(user, employeeId), "reactivated=1");
 }
 
 export async function deleteNoteAction(formData: FormData) {
@@ -102,6 +107,7 @@ export async function deleteNoteAction(formData: FormData) {
   const employeeId = idSchema.parse(str(formData, "employeeId"));
   await onCard(
     employeeId,
+    "notes",
     () => deleteEmployeeNote(user, idSchema.parse(str(formData, "noteId"))),
     "note=1",
   );

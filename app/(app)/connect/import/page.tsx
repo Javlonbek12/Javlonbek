@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { ConnectUploadForm } from "@/components/connect/upload-form";
+import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import type { ConnectKind } from "@/lib/generated/prisma/enums";
@@ -10,6 +11,8 @@ import { dateFormat, t } from "@/lib/i18n";
 import { canLeadConnect, connectFacets, lastImports } from "@/modules/connect/service";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getSettings } from "@/modules/core/settings/service";
+import { formatRange } from "@/modules/reports/format";
+import { todayInTimezone } from "@/lib/dates";
 
 import { clearConnectAction, importConnectFileAction } from "../actions";
 
@@ -30,6 +33,7 @@ export default async function ConnectImportPage({ searchParams }: PageProps<"/co
   ]);
   // Times in the viewer's time zone, not the server's.
   const when = dateFormat({ dateStyle: "medium", timeStyle: "short", timeZone: timezone });
+  const today = todayInTimezone(timezone);
   // The bot's own times are Tashkent time (UTC+5, no summer time).
   const stamp = (value: string) => when.format(new Date(`${value}:00+05:00`));
   const kindName = (kind: string) =>
@@ -64,11 +68,26 @@ export default async function ConnectImportPage({ searchParams }: PageProps<"/co
                 skipped = "0",
                 kept = "0",
                 newer = "",
+                from = "",
+                to = "",
+                test = "0",
               ] = line.split("|");
               return (
                 <li key={line}>
                   {t("connect.import.result", { file, kind: kindName(kind), created, updated })}
                   {skipped !== "0" && `; ${t("connect.import.skipped", { count: skipped })}`}
+                  {(from || test !== "0") && (
+                    <span className="text-muted-foreground block text-xs">
+                      {[
+                        from &&
+                          to &&
+                          t("connect.import.range", { range: formatRange(from, to, today) }),
+                        test !== "0" && t("connect.import.testRows", { count: test }),
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                  )}
                   {newer && (
                     <span className="mt-0.5 block font-medium text-amber-700 dark:text-amber-300">
                       {t("connect.import.older", { date: stamp(newer), count: kept })}
@@ -78,6 +97,9 @@ export default async function ConnectImportPage({ searchParams }: PageProps<"/co
               );
             })}
           </ul>
+          <Button asChild size="sm" className="mt-3">
+            <Link href="/connect">{t("connect.import.open")}</Link>
+          </Button>
         </div>
       )}
       {params.cleared && (

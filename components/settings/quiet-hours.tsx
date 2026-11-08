@@ -28,7 +28,7 @@ export function QuietHours({ from, to }: { from: string; to: string }) {
           ref={fromRef}
           type="time"
           name="quietFrom"
-          className="w-28"
+          className="w-32"
           defaultValue={from}
           onInput={check}
         />
@@ -39,7 +39,7 @@ export function QuietHours({ from, to }: { from: string; to: string }) {
           ref={toRef}
           type="time"
           name="quietTo"
-          className="w-28"
+          className="w-32"
           defaultValue={to}
           onInput={check}
         />

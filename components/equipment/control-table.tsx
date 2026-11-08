@@ -30,37 +30,68 @@ function Unaccounted({ row }: { row: Pick<ControlRow, "unaccounted" | "tone"> })
   );
 }
 
-// Per type: bought = installed + in stock + unaccounted; the last column coloured.
+// Per type: bought = installed + in stock + unaccounted; the last column coloured. On a phone each
+// type is a card with the unaccounted number first, as that is what the table is for.
 export function ControlTable({ rows }: { rows: ControlRow[] }) {
   const total = controlTotal(rows);
   return (
     <div className="flex flex-col gap-2">
-      <Matrix
-        head={[
-          t("equip.control.type"),
-          t("equip.control.purchased"),
-          t("equip.control.installed"),
-          t("equip.control.stock"),
-          t("equip.control.unaccounted"),
-        ]}
-        rows={rows.map((r) => ({
-          key: r.types.join("+"),
-          cells: [
-            typesLabel(r.types),
-            r.purchased === null ? "—" : fmt(r.purchased),
-            fmt(r.installed),
-            fmt(r.stock),
-            <Unaccounted key="u" row={r} />,
-          ],
-        }))}
-        foot={[
-          t("dist.total"),
-          total.purchased === null ? "—" : fmt(total.purchased),
-          fmt(total.installed),
-          fmt(total.stock),
-          total.unaccounted === null ? "—" : signed(total.unaccounted),
-        ]}
-      />
+      <ul className="flex flex-col gap-2 md:hidden">
+        {rows.map((r) => (
+          <li key={r.types.join("+")} className="flex flex-col gap-1 rounded-xl border p-3">
+            <div className="flex items-start justify-between gap-2">
+              <span className="min-w-0 font-medium break-words">{typesLabel(r.types)}</span>
+              <span className="flex shrink-0 flex-col items-end gap-0.5 text-right">
+                <span className="text-muted-foreground text-[11px]">
+                  {t("equip.control.unaccounted")}
+                </span>
+                <Unaccounted row={r} />
+              </span>
+            </div>
+            <span className="text-muted-foreground text-xs tabular-nums">
+              {t("equip.control.card", {
+                purchased: r.purchased === null ? "—" : fmt(r.purchased),
+                installed: fmt(r.installed),
+                stock: fmt(r.stock),
+              })}
+            </span>
+          </li>
+        ))}
+        <li className="flex items-center justify-between gap-2 px-3 text-sm font-semibold">
+          <span>{t("dist.total")}</span>
+          <span className="tabular-nums">
+            {total.unaccounted === null ? "—" : signed(total.unaccounted)}
+          </span>
+        </li>
+      </ul>
+      <div className="hidden md:block">
+        <Matrix
+          head={[
+            t("equip.control.type"),
+            t("equip.control.purchased"),
+            t("equip.control.installed"),
+            t("equip.control.stock"),
+            t("equip.control.unaccounted"),
+          ]}
+          rows={rows.map((r) => ({
+            key: r.types.join("+"),
+            cells: [
+              typesLabel(r.types),
+              r.purchased === null ? "—" : fmt(r.purchased),
+              fmt(r.installed),
+              fmt(r.stock),
+              <Unaccounted key="u" row={r} />,
+            ],
+          }))}
+          foot={[
+            t("dist.total"),
+            total.purchased === null ? "—" : fmt(total.purchased),
+            fmt(total.installed),
+            fmt(total.stock),
+            total.unaccounted === null ? "—" : signed(total.unaccounted),
+          ]}
+        />
+      </div>
       <ul className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-xs">
         {(["ok", "warn", "bad"] as const).map((tone) => (
           <li key={tone} className="flex items-center gap-1.5">

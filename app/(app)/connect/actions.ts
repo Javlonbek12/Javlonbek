@@ -3,14 +3,19 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { clearConnectData, ConnectError, importConnectFiles } from "@/modules/connect/service";
+import {
+  clearConnectData,
+  ConnectError,
+  importConnectFiles,
+  linkConnectPerson,
+} from "@/modules/connect/service";
 import { requireUser } from "@/modules/core/auth/current-user";
 
 export type ConnectUploadResult = { lines: string[]; error: string | null };
 
 // Uploads one export (the page sends the chosen files one by one, so several big files never
 // hit the request size limit together). Returns the result lines for the upload page:
-// file|kind|created|updated|skipped|kept|newer.
+// file|kind|created|updated|skipped|kept|newer|from|to|test.
 export async function importConnectFileAction(form: FormData): Promise<ConnectUploadResult> {
   const actor = await requireUser();
   const files = form.getAll("files").filter((f): f is File => f instanceof File && f.size > 0);
@@ -26,7 +31,18 @@ export async function importConnectFileAction(form: FormData): Promise<ConnectUp
       error: null,
       lines: results.flatMap((r) =>
         r.sheets.map((s) =>
-          [r.name, s.kind, s.created, s.updated, s.skipped, s.kept, s.newer ?? ""].join("|"),
+          [
+            r.name,
+            s.kind,
+            s.created,
+            s.updated,
+            s.skipped,
+            s.kept,
+            s.newer ?? "",
+            s.from ?? "",
+            s.to ?? "",
+            s.test,
+          ].join("|"),
         ),
       ),
     };
@@ -34,6 +50,25 @@ export async function importConnectFileAction(form: FormData): Promise<ConnectUp
     if (!(error instanceof ConnectError)) throw error;
     return { error: error.code, lines: [] };
   }
+}
+
+// Links a name from the bot to a person in the app (owner and managers); back to the same view.
+export async function linkConnectPersonAction(form: FormData) {
+  const actor = await requireUser();
+  const back = String(form.get("back") ?? "");
+  let target = back.startsWith("/connect") ? back : "/connect?view=executor";
+  try {
+    await linkConnectPerson(
+      actor,
+      String(form.get("name") ?? ""),
+      String(form.get("userId") ?? "") || null,
+    );
+  } catch (error) {
+    if (!(error instanceof ConnectError)) throw error;
+    target = `${target}${target.includes("?") ? "&" : "?"}error=${error.code}`;
+  }
+  revalidatePath("/connect", "layout");
+  redirect(target);
 }
 
 export async function clearConnectAction() {

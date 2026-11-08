@@ -1,36 +1,36 @@
 import {
-  AlertTriangle,
+  AlertCircle,
   BarChart3,
   CalendarCheck2,
   CalendarDays,
   ChevronRight,
   ClipboardCheck,
-  Clock3,
   FolderKanban,
   ListTodo,
   Play,
   Plus,
   Square,
-  Target,
   Users,
 } from "lucide-react";
 import Link from "next/link";
 
-import { SectionTitle, StatCard } from "@/components/dashboard/cards";
+import { SectionTitle } from "@/components/dashboard/cards";
 import { TimerCard } from "@/components/dashboard/timer-card";
 import { WeekBars } from "@/components/dashboard/week-bars";
-import { MeetingChip } from "@/components/meetings/meeting-chip";
+import { MeetingLine } from "@/components/meetings/meeting-line";
 import { HealthBadge } from "@/components/projects/health-badge";
-import { projectColor } from "@/components/projects/portfolio";
+import { projectColor } from "@/components/projects/project-rows";
 import { ProgressBar } from "@/components/projects/progress-bar";
 import { QuickCircle } from "@/components/tasks/quick-circle";
+import { TaskPanel } from "@/components/tasks/task-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription } from "@/components/ui/card";
+import { InfoHint } from "@/components/ui/info-hint";
 import { addDays, daysBetween, formatDay, formatDayLong } from "@/lib/dates";
 import { getEnv } from "@/lib/env";
 import { t } from "@/lib/i18n";
-import { zonedLocalToUtc } from "@/lib/time";
+import { utcToZonedLocal, zonedLocalToUtc } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { canUseModule } from "@/modules/core/access/actor";
 import { DENIED_PARAM } from "@/modules/core/access/guard";
@@ -38,9 +38,11 @@ import { requireUser } from "@/modules/core/auth/current-user";
 import { MODULES } from "@/modules/core/registry";
 import { getSettings, getUserToday } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
-import { getMyDay, getTeamToday, type DayTask } from "@/modules/home/today";
-import { listMeetingsBetween } from "@/modules/meetings/service";
+import { listOtherApprovals, type OtherApproval } from "@/modules/home/approvals";
+import { getMyDay, getTeamToday, type DayTask, type TeamRow } from "@/modules/home/today";
+import { listMeetingsBetween, type MeetingRow } from "@/modules/meetings/service";
 import { canOpenProjects, listProjectCards } from "@/modules/projects/service";
+import { withParams } from "@/modules/tasks/back";
 import { getMyDashboard } from "@/modules/tasks/dashboard";
 import { quickTarget } from "@/modules/tasks/quick";
 import { getRunningTimer } from "@/modules/tasks/time";
@@ -51,6 +53,9 @@ import { startTimerAction, stopTimerAction } from "./tasks/actions";
 
 const DECISIONS_SHOWN = 5;
 const PROJECTS_SHOWN = 4;
+
+// A task opens in the same panel as in the task list (?task=…), not on a page of its own.
+const panelHref = (taskId: string) => withParams("/", { task: taskId });
 
 // One row of «Мой день»: close/hand in, title, when it is due, and the timer.
 function DayRow({
@@ -72,6 +77,7 @@ function DayRow({
         : task.dueDate
           ? t("home.dashboard.due", { date: formatDay(task.dueDate) })
           : t("home.today.inProgress");
+  const important = task.priority === "HIGH" || task.priority === "URGENT";
   return (
     <li
       className={cn(
@@ -87,8 +93,17 @@ function DayRow({
         blocked={task.openBlockers > 0}
         back="/"
       />
-      <Link href={`/tasks/${task.id}`} className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="truncate text-sm font-semibold hover:underline">{task.title}</span>
+      <Link href={panelHref(task.id)} scroll={false} className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className="flex min-w-0 items-center gap-1.5">
+          {/* Importance is an icon, not red: red means overdue. */}
+          {important && (
+            <AlertCircle
+              className="size-4 shrink-0 text-orange-500"
+              aria-label={t(`tasks.priority.${task.priority}`)}
+            />
+          )}
+          <span className="truncate text-sm font-semibold hover:underline">{task.title}</span>
+        </span>
         <span className="flex flex-wrap items-center gap-1.5 text-xs">
           <span
             className={cn(
@@ -111,7 +126,7 @@ function DayRow({
           className={cn(
             "flex size-9 items-center justify-center rounded-full border",
             timerRunning
-              ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
+              ? "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
               : "text-muted-foreground hover:bg-accent hover:text-foreground",
           )}
         >
@@ -133,7 +148,7 @@ function DecisionRow({
   task,
   detail,
 }: {
-  kind: "approve" | "accept" | "remove" | "coAssignee";
+  kind: "approve" | "accept" | "remove" | "dueChange" | "coAssignee";
   task: { id: string; title: string };
   detail: string;
 }) {
@@ -141,6 +156,7 @@ function DecisionRow({
     approve: t("home.today.approveTask"),
     accept: t("home.today.acceptWork"),
     remove: t("home.today.removeRequest"),
+    dueChange: t("tasks.dueChange.request"),
     coAssignee: detail,
   }[kind];
   const quick = kind === "approve" ? "APPROVED" : kind === "accept" ? "DONE" : null;
@@ -175,11 +191,46 @@ function DecisionRow({
   );
 }
 
+// A planogram or a post waiting for the viewer: decided on its own page, by its section's rules.
+function OtherDecisionRow({ item }: { item: OtherApproval }) {
+  const label =
+    item.kind === "planogram"
+      ? t("home.today.approvePlanogram")
+      : item.legal
+        ? t("home.today.legalPost")
+        : t("home.today.reviewPost");
+  return (
+    <li className="flex items-center gap-3 rounded-xl border p-3">
+      {item.image && (
+        // The planogram's own picture (its PNG export), small.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={item.image}
+          alt=""
+          loading="lazy"
+          className="bg-muted size-12 shrink-0 rounded-lg border object-contain"
+        />
+      )}
+      <Link href={item.href} className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="text-muted-foreground text-xs">
+          {label}
+          {item.from && ` · ${t("home.today.from", { name: item.from })}`}
+        </span>
+        <span className="truncate text-sm font-semibold hover:underline">{item.title}</span>
+      </Link>
+      <Button asChild size="sm" variant="outline" className="shrink-0">
+        <Link href={item.href}>{t("home.today.open")}</Link>
+      </Button>
+    </li>
+  );
+}
+
 function SimpleRow({ task, note }: { task: TaskView; note: string }) {
   return (
     <li>
       <Link
-        href={`/tasks/${task.id}`}
+        href={panelHref(task.id)}
+        scroll={false}
         className="hover:bg-accent flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-sm"
       >
         <span className="truncate">{task.title}</span>
@@ -189,25 +240,146 @@ function SimpleRow({ task, note }: { task: TaskView; note: string }) {
   );
 }
 
+// «Встречи · сегодня и завтра»: each with its status and buttons. On a phone it stands right
+// under «Мой день», on a computer at the top of the right column (the page draws it in both
+// places and shows one).
+function MeetingsBlock({
+  meetings,
+  timezone,
+  today,
+  now,
+  className,
+}: {
+  meetings: MeetingRow[];
+  timezone: string;
+  today: string;
+  now: Date;
+  className?: string;
+}) {
+  if (meetings.length === 0) return null;
+  const days = [today, addDays(today, 1)]
+    .map((day) => ({
+      day,
+      list: meetings.filter((m) => utcToZonedLocal(m.startsAt, timezone).startsWith(day)),
+    }))
+    .filter((group) => group.list.length > 0);
+  return (
+    <section className={cn("flex-col gap-2.5", className)}>
+      <SectionTitle
+        icon={CalendarCheck2}
+        color="var(--series-7)"
+        title={t("home.today.meetings")}
+        count={meetings.length}
+      />
+      {days.map((group) => (
+        <div key={group.day} className="flex flex-col gap-1.5">
+          <span className="text-muted-foreground text-xs font-medium">
+            {group.day === today ? t("meetings.day.today") : t("meetings.day.tomorrow")}
+          </span>
+          <ul className="flex flex-col gap-2">
+            {group.list.map((m) => (
+              <MeetingLine key={m.id} meeting={m} timezone={timezone} now={now} />
+            ))}
+          </ul>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+// A number of «Моя команда»: a link to those tasks; a zero is a quiet dash.
+function TeamCell({ value, href, danger }: { value: number; href: string; danger?: boolean }) {
+  if (value === 0)
+    return (
+      <td className="text-muted-foreground px-1 py-2 text-center" aria-label="0">
+        —
+      </td>
+    );
+  return (
+    <td className="px-1 py-2 text-center">
+      <Link
+        href={href}
+        className={cn(
+          "inline-block min-w-7 rounded-md px-1.5 py-0.5 font-semibold hover:underline",
+          danger ? "text-destructive bg-destructive/10" : "hover:bg-accent",
+        )}
+      >
+        {value}
+      </Link>
+    </td>
+  );
+}
+
+function TeamTable({ rows }: { rows: TeamRow[] }) {
+  const tasks = (row: TeamRow, more: Record<string, string>) =>
+    `/tasks?${new URLSearchParams({ scope: "team", person: row.id, ...more })}`;
+  const columns = [
+    ["teamToday", "teamTodayShort"],
+    ["teamLate", "teamLateShort"],
+    ["teamHandedIn", "teamHandedInShort"],
+    ["teamWaiting", "teamWaitingShort"],
+  ] as const;
+  return (
+    <table className="w-full table-fixed text-sm tabular-nums">
+      <thead>
+        <tr className="text-muted-foreground text-[11px] leading-tight">
+          <th className="w-[38%] px-1 pb-1 text-left font-medium" />
+          {columns.map(([full, short]) => (
+            <th
+              key={full}
+              className="px-1 pb-1 text-center font-medium"
+              title={t(`home.today.${full}`)}
+            >
+              {/* Full words only while the card spans the page (tablet); in the side column and
+                  on a phone they don't fit, the full name is in the tooltip. */}
+              <span className="sm:hidden lg:inline">{t(`home.today.${short}`)}</span>
+              <span className="hidden sm:inline lg:hidden">{t(`home.today.${full}`)}</span>
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={row.id} className="border-t">
+            <td className="truncate px-1 py-2">
+              <Link href={tasks(row, {})} className="font-medium hover:underline">
+                {row.name}
+              </Link>
+            </td>
+            <TeamCell value={row.dueToday} href={tasks(row, { due: "today" })} />
+            <TeamCell value={row.overdue} href={tasks(row, { due: "overdue" })} danger />
+            <TeamCell value={row.handedIn} href="/tasks/decide" />
+            <TeamCell value={row.notStarted} href={tasks(row, { status: "APPROVED" })} />
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 // «Сегодня»: what to do right now, in this order — the running timer, decisions waiting for me,
-// my day, today's meetings, the next days; then my team (for whoever oversees one), the week in
-// numbers and projects.
+// my day, meetings today and tomorrow, the next days; then my team (for whoever oversees one), the
+// week in numbers and projects.
 export default async function TodayPage({ searchParams }: PageProps<"/">) {
   const user = await requireUser();
-  const denied = (await searchParams)[DENIED_PARAM];
+  const params = await searchParams;
+  const denied = params[DENIED_PARAM];
   const deniedModule = MODULES.find((m) => m.id === denied);
+  const openId = typeof params.task === "string" ? params.task : null;
   const showMeetings = canUseModule(user, "meetings");
   const today = await getUserToday(user.id);
   const { timezone } = await getSettings(user.id);
   const showProjects = await canOpenProjects(user);
-  const [myDay, decisions, meetings, stats, team, timer, projects] = await Promise.all([
+  const now = new Date();
+  const [myDay, decisions, others, meetings, stats, team, timer, projects] = await Promise.all([
     getMyDay(user, today),
     listDecisions(user),
+    listOtherApprovals(user),
     showMeetings
       ? listMeetingsBetween(
           user,
           zonedLocalToUtc(`${today}T00:00`, timezone)!,
-          zonedLocalToUtc(`${addDays(today, 1)}T00:00`, timezone)!,
+          zonedLocalToUtc(`${addDays(today, 2)}T00:00`, timezone)!,
           true,
         )
       : Promise.resolve([]),
@@ -231,6 +403,12 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
       task,
       detail: t("home.today.from", { name: displayName(task.assignee) }),
     })),
+    ...decisions.dueChange.map((task) => ({
+      key: `s${task.id}`,
+      kind: "dueChange" as const,
+      task,
+      detail: t("home.today.from", { name: displayName(task.assignee) }),
+    })),
     ...decisions.remove.map((task) => ({
       key: `d${task.id}`,
       kind: "remove" as const,
@@ -246,11 +424,11 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
         detail: t("home.today.coAssignee", { name: request.name }),
       })),
   ];
+  const totalDecisions = decisionRows.length + others.length;
+  const shownOthers = others.slice(0, Math.max(0, DECISIONS_SHOWN - decisionRows.length));
 
-  const thisWeek = stats.doneThisWeek;
-  const before = stats.doneSameDaysLastWeek;
-  const trend = before ? Math.round(((thisWeek - before) / before) * 100) : thisWeek ? 100 : 0;
   const weeks = stats.weeks.slice(-5);
+  const meetingsProps = { meetings, timezone, today, now };
 
   return (
     <div className="flex flex-col gap-5 md:gap-6 [&>*]:min-w-0">
@@ -283,17 +461,20 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
 
       <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr] [&>*]:min-w-0">
         <div className="flex flex-col gap-5 [&>*]:min-w-0">
-          {decisionRows.length > 0 && (
+          {totalDecisions > 0 && (
             <section className="flex flex-col gap-2.5">
               <SectionTitle
                 icon={ClipboardCheck}
                 color="var(--series-1)"
                 title={t("home.today.decisions")}
-                count={decisionRows.length}
+                count={totalDecisions}
               />
               <ul className="flex flex-col gap-2">
                 {decisionRows.slice(0, DECISIONS_SHOWN).map((row) => (
                   <DecisionRow key={row.key} kind={row.kind} task={row.task} detail={row.detail} />
+                ))}
+                {shownOthers.map((item) => (
+                  <OtherDecisionRow key={`${item.kind}${item.id}`} item={item} />
                 ))}
               </ul>
               {decisionRows.length > DECISIONS_SHOWN && (
@@ -349,19 +530,7 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
             )}
           </section>
 
-          {meetings.length > 0 && (
-            <section className="flex flex-col gap-2.5">
-              <SectionTitle
-                icon={CalendarCheck2}
-                color="var(--series-7)"
-                title={t("home.dashboard.meetingsToday")}
-                count={meetings.length}
-              />
-              {meetings.map((m) => (
-                <MeetingChip key={m.id} meeting={m} timezone={timezone} />
-              ))}
-            </section>
-          )}
+          <MeetingsBlock {...meetingsProps} className="flex lg:hidden" />
 
           {myDay.upcoming.length > 0 && (
             <Card className="gap-2">
@@ -389,6 +558,8 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
         </div>
 
         <div className="flex flex-col gap-5 [&>*]:min-w-0">
+          <MeetingsBlock {...meetingsProps} className="hidden lg:flex" />
+
           {team && (
             <Card className="gap-3">
               <SectionTitle
@@ -396,45 +567,19 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
                 color="var(--series-4)"
                 title={t("home.today.team")}
                 right={
-                  <Link
-                    href="/tasks?scope=team"
-                    className="text-muted-foreground hover:text-foreground"
-                    aria-label={t("home.today.teamAll")}
-                  >
-                    <ChevronRight className="size-5" />
-                  </Link>
+                  <span className="flex items-center gap-1">
+                    <InfoHint>{t("home.today.teamHint")}</InfoHint>
+                    <Link
+                      href="/tasks?scope=team"
+                      className="text-muted-foreground hover:text-foreground"
+                      aria-label={t("home.today.teamAll")}
+                    >
+                      <ChevronRight className="size-5" />
+                    </Link>
+                  </span>
                 }
               />
-              <CardDescription className="-mt-1 text-xs">
-                {t("home.today.teamHint")}
-              </CardDescription>
-              {team.rows.length > 0 && (
-                <ul className="flex flex-col">
-                  {team.rows.map((row) => (
-                    <li key={row.id} className="border-b last:border-b-0">
-                      <Link
-                        href={`/tasks?scope=team&person=${encodeURIComponent(row.id)}`}
-                        className="hover:bg-accent flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 rounded-lg px-1.5 py-2 text-sm"
-                      >
-                        <span className="min-w-0 truncate font-medium">{row.name}</span>
-                        <span className="text-muted-foreground flex gap-3 text-xs tabular-nums">
-                          <span>
-                            {row.inProgress} {t("home.today.teamInProgress")}
-                          </span>
-                          <span className={cn(row.overdue > 0 && "text-destructive font-medium")}>
-                            {row.overdue} {t("home.today.teamOverdue")}
-                          </span>
-                          {row.inReview > 0 && (
-                            <span>
-                              {row.inReview} {t("home.today.teamInReview")}
-                            </span>
-                          )}
-                        </span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              {team.rows.length > 0 && <TeamTable rows={team.rows} />}
               {(team.more > 0 || team.idle > 0) && (
                 <p className="text-muted-foreground text-xs">
                   {[
@@ -448,50 +593,32 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
             </Card>
           )}
 
-          <section className="flex flex-col gap-2.5">
+          {/* The week in one line: no rings, no «+100%» against an empty week. */}
+          <Card className="gap-2">
             <SectionTitle
               icon={BarChart3}
               color="var(--series-3)"
               title={t("home.today.numbers")}
             />
-            <div className="grid grid-cols-3 gap-2 sm:gap-3 lg:grid-cols-1">
-              <StatCard
-                tone="green"
-                icon={Target}
-                label={t("home.dashboard.doneWeek")}
-                value={stats.doneThisWeek}
-                total={stats.weekPlan}
-                note={
-                  trend > 0
-                    ? `↗ ${t("home.dashboard.trendUp", { n: trend })}`
-                    : trend < 0
-                      ? `↘ ${t("home.dashboard.trendDown", { n: -trend })}`
-                      : t("home.dashboard.trendSame")
-                }
-                noteTone={trend > 0 ? "up" : trend < 0 ? "down" : undefined}
-              />
-              <StatCard
-                tone="blue"
-                icon={Clock3}
-                label={t("home.dashboard.inProgress")}
-                value={stats.inProgress}
-                total={stats.open}
-                note={t("home.dashboard.inProgressNote")}
-              />
-              <StatCard
-                tone="red"
-                icon={AlertTriangle}
-                label={t("home.dashboard.overdue")}
-                value={stats.overdue}
-                total={stats.open}
-                note={
-                  stats.overdue ? t("home.dashboard.overdueNote") : t("home.dashboard.overdueNone")
-                }
-                noteTone={stats.overdue ? "down" : "up"}
-              />
-            </div>
-            <details className="bg-card rounded-2xl border px-4 py-3">
-              <summary className="cursor-pointer text-sm font-medium">
+            <p className="flex flex-wrap gap-x-3 gap-y-1 text-sm">
+              <Link href="/tasks?due=week" className="font-medium hover:underline">
+                {t("home.today.weekDone", { done: stats.doneThisWeek, plan: stats.weekPlan })}
+              </Link>
+              <Link href="/tasks?status=IN_PROGRESS" className="hover:underline">
+                {t("home.today.weekInWork", { count: stats.inProgress })}
+              </Link>
+              <Link
+                href="/tasks?due=overdue"
+                className={cn("hover:underline", stats.overdue > 0 && "text-destructive")}
+              >
+                {t("home.today.weekLate", { count: stats.overdue })}
+              </Link>
+            </p>
+            <p className="text-muted-foreground text-xs">
+              {t("home.today.weekBefore", { count: stats.doneSameDaysLastWeek })}
+            </p>
+            <details>
+              <summary className="text-primary cursor-pointer text-sm font-medium">
                 {t("home.today.chart")}
               </summary>
               <div className="mt-3 flex flex-col gap-2">
@@ -501,7 +628,7 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
                 <WeekBars weeks={weeks} />
               </div>
             </details>
-          </section>
+          </Card>
 
           {projects.length > 0 && (
             <Card className="gap-3">
@@ -560,6 +687,16 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
             </a>
           )}
         </p>
+      )}
+
+      {openId && (
+        <TaskPanel
+          user={user}
+          taskId={openId}
+          base={panelHref(openId)}
+          closeHref="/"
+          params={params}
+        />
       )}
     </div>
   );

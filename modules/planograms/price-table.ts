@@ -1,7 +1,8 @@
 import ExcelJS from "exceljs";
 
 import { db } from "@/lib/db";
-import { toDateString } from "@/lib/dates";
+import { toDateString, todayInTimezone } from "@/lib/dates";
+import { getEnv } from "@/lib/env";
 import type { PriceLabelStyle } from "@/lib/generated/prisma/enums";
 import { t } from "@/lib/i18n";
 import { logActivity } from "@/modules/core/activity/service";
@@ -9,11 +10,17 @@ import type { Actor } from "@/modules/core/permissions";
 
 import { canManagePlanograms } from "./access";
 import { PlanogramError } from "./errors";
+import { priceListStatus } from "./price-status";
 import { createPriceList } from "./pricing";
+import { currentPriceList } from "./service";
 
-// Prices of every SKU in one table (Planograms → Price lists): the latest list as it is, or one
-// chosen list next to the list before it. The same table is downloaded as an Excel template,
-// filled in and uploaded back, or edited on the page.
+// Prices of every SKU in one table (Planograms → Price lists): the prices in force today (with the
+// next price where a later list changes it), or one chosen list next to the list before it. The
+// same table is downloaded as an Excel template, filled in and uploaded back, or edited on the page.
+
+// A later list's price for a SKU: from its date, or once it is applied (`waiting`: its date has
+// come, but planograms still carry the prices in force).
+export type FuturePrice = { from: string; price: number; waiting: boolean };
 
 export type PriceTableRow = {
   skuId: string;
@@ -25,6 +32,8 @@ export type PriceTableRow = {
   price: number | null;
   // The price in the list before this one (to show what changed).
   previous: number | null;
+  // Only in the table of prices in force: the next price a later list sets.
+  future: FuturePrice | null;
 };
 
 const ORDER = [{ effectiveFrom: "desc" as const }, { createdAt: "desc" as const }];
@@ -44,12 +53,50 @@ async function listBefore(list: { id: string; effectiveFrom: Date; createdAt: Da
   });
 }
 
-// Every SKU in use with its price in the given list (the latest one by default).
+// The prices in force today (the list new planograms get) and, by SKU, the first later price
+// that differs from it. A list dated ahead must never pass for the current price.
+export async function currentPrices(today = todayInTimezone(getEnv().DEFAULT_TIMEZONE)) {
+  const inForce = await currentPriceList(today);
+  const [list, later] = await Promise.all([
+    inForce
+      ? db.priceList.findUnique({ where: { id: inForce.id }, include: { prices: true } })
+      : null,
+    db.priceList.findMany({
+      where: inForce
+        ? {
+            OR: [
+              { effectiveFrom: { gt: inForce.effectiveFrom } },
+              { effectiveFrom: inForce.effectiveFrom, createdAt: { gt: inForce.createdAt } },
+            ],
+          }
+        : {},
+      orderBy: [{ effectiveFrom: "asc" }, { createdAt: "asc" }],
+      include: { prices: true },
+    }),
+  ]);
+  const prices = new Map(list?.prices.map((p) => [p.skuId, p.price]) ?? []);
+  const future = new Map<string, FuturePrice>();
+  for (const next of later) {
+    const status = priceListStatus(next, inForce, today);
+    for (const { skuId, price } of next.prices)
+      if (!future.has(skuId) && price !== prices.get(skuId))
+        future.set(skuId, {
+          from: toDateString(next.effectiveFrom),
+          price,
+          waiting: status === "waiting",
+        });
+  }
+  return { list, prices, future };
+}
+
+// Every SKU in use with its price: in the given list, or (by default) in force today.
 export async function priceTable(listId?: string) {
-  const list = listId
+  const chosen = listId
     ? await db.priceList.findUnique({ where: { id: listId }, include: { prices: true } })
-    : await db.priceList.findFirst({ orderBy: ORDER, include: { prices: true } });
-  if (listId && !list) throw new PlanogramError("notFound");
+    : null;
+  if (listId && !chosen) throw new PlanogramError("notFound");
+  const inForce = listId ? null : await currentPrices();
+  const list = chosen ?? inForce?.list ?? null;
   const previous = list ? await listBefore(list) : null;
   const skus = await db.sku.findMany({
     where: { archived: false },
@@ -66,11 +113,12 @@ export async function priceTable(listId?: string) {
     priceStyle: sku.priceStyle,
     price: prices.get(sku.id) ?? null,
     previous: before.get(sku.id) ?? null,
+    future: inForce?.future.get(sku.id) ?? null,
   }));
   return { list, previous, rows };
 }
 
-// The Excel template: every SKU with its latest price. The columns are the ones the upload reads
+// The Excel template: every SKU with its price in force. The columns are the ones the upload reads
 // (код, цена); brand, name and format are there to find the line.
 export async function priceTemplateXlsx(): Promise<Buffer> {
   const { list, rows } = await priceTable();
@@ -124,8 +172,8 @@ function changed(rows: PriceTableRow[], edits: PriceEdits) {
   return result;
 }
 
-// New prices from the page become a new price list, like an upload: the latest list plus the
-// changes (an emptied field keeps the old price there).
+// New prices from the page become a new price list, like an upload: the list in force on its date
+// plus the changes (an emptied field keeps the old price there).
 export async function savePricesAsNewList(
   actor: Actor,
   input: { name: string; effectiveFrom: string },

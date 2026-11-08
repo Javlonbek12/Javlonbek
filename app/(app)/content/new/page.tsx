@@ -33,6 +33,8 @@ export default async function NewContentPage({ searchParams }: PageProps<"/conte
           users={users.map((u) => ({ id: u.id, name: displayName(u) }))}
           submit={t("content.actions.create")}
           showAuthor={planner}
+          cancelHref={`/content?month=${(typeof date === "string" && isDateString(date) ? date : today).slice(0, 7)}`}
+          withText
         />
       </Card>
     </div>

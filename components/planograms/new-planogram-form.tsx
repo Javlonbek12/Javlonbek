@@ -18,11 +18,14 @@ export function NewPlanogramForm({
   equipment,
   templates,
   priceLists,
+  projects,
   values,
 }: {
   equipment: Option[];
   templates: (Option & { equipmentId: string })[];
   priceLists: Option[];
+  // Projects planograms already have: offered as you type, so a typo makes no new «project».
+  projects: string[];
   values: Record<string, string>;
 }) {
   const t = useT();
@@ -72,7 +75,14 @@ export function NewPlanogramForm({
               maxLength={100}
               placeholder="ESSE Change 1"
               defaultValue={values.project}
+              list="planogram-projects"
+              autoComplete="off"
             />
+            <datalist id="planogram-projects">
+              {projects.map((p) => (
+                <option key={p} value={p} />
+              ))}
+            </datalist>
           </Label>
           <Label className="flex-col items-start">
             {t("planograms.fields.priceList")}

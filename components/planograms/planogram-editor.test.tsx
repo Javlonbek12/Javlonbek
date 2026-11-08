@@ -61,13 +61,36 @@ describe("«Предложить раскладку ИИ» in the editor", () =>
       fireEvent.click(screen.getByRole("button", { name: "Предложить" }));
     });
 
-    expect(suggest).toHaveBeenCalledWith("pog-1", "{}", "А слева");
+    expect(suggest).toHaveBeenCalledWith("pog-1", "{}", "А слева", "free");
     expect(screen.getByText("Пачка А слева.")).toBeTruthy();
+    // How many places changed (they are outlined on the shelves).
+    expect(screen.getByText(/Изменено мест: 3/)).toBeTruthy();
     expect(screen.getByText(/Нет в каталоге, пропущено: X-1/)).toBeTruthy();
     expect(screen.getByText("Есть несохранённые изменения")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Отменить" }));
     expect(screen.queryByText("Есть несохранённые изменения")).toBeNull();
+  });
+
+  it("rearranges everything when asked, and names the places left unfilled", async () => {
+    const suggest = vi.fn(async () => ({
+      ok: true as const,
+      layout: { "0:0": { kind: "SKU" as const, skuId: "s2", badges: [] } },
+      note: "",
+      unknown: [],
+      overflow: [],
+    }));
+    render(<PlanogramEditor {...props} suggest={suggest} />);
+    fireEvent.click(screen.getByRole("button", { name: /Предложить раскладку ИИ/ }));
+    fireEvent.click(screen.getByLabelText(/Переложить всё/));
+    fireEvent.change(screen.getByLabelText("Опишите, как разложить товар"), {
+      target: { value: "Б слева" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Предложить" }));
+    });
+    expect(suggest).toHaveBeenCalledWith("pog-1", "{}", "Б слева", "all");
+    expect(screen.getByText(/Не заполнено мест: 2 \(Полка 1: 2\)/)).toBeTruthy();
   });
 
   it("says what went wrong", async () => {

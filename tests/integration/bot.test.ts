@@ -11,7 +11,7 @@ describe("bot /start", () => {
 
   it("registers the first user as OWNER and links the chat", async () => {
     const reply = await handleStart(testProfile(7000001n, "Тестовый владелец"), 7000001n, "");
-    expect(reply).toContain("Владелец");
+    expect(reply.text).toContain("Владелец");
     const user = await db.user.findUniqueOrThrow({ where: { telegramId: 7000001n } });
     expect(user).toMatchObject({ role: "OWNER", botChatId: 7000001n });
   });
@@ -19,7 +19,7 @@ describe("bot /start", () => {
   it("asks for an invite when an unknown person writes", async () => {
     await createTestUser("OWNER");
     const reply = await handleStart(testProfile(7000002n), 7000002n, "");
-    expect(reply).toContain("только по приглашению");
+    expect(reply.text).toContain("только по приглашению");
     expect(await db.user.count()).toBe(1);
   });
 
@@ -31,7 +31,7 @@ describe("bot /start", () => {
       7000002n,
       invite.code,
     );
-    expect(reply).toContain("Сотрудник");
+    expect(reply.text).toContain("Сотрудник");
     const user = await db.user.findUniqueOrThrow({ where: { telegramId: 7000002n } });
     expect(user).toMatchObject({ role: "MEMBER", botChatId: 7000002n });
   });
@@ -40,7 +40,10 @@ describe("bot /start", () => {
     await createTestUser("OWNER");
     const member = await createTestUser("MEMBER", { botChatId: null });
     const reply = await handleStart(testProfile(member.telegramId), member.telegramId, "");
-    expect(reply).toContain("Бот подключён");
+    expect(reply.text).toContain("Бот подключён");
+    // The greeting offers the main lists to try right away.
+    expect(reply.buttons?.flat().map((b) => b.data)).toEqual(["l:today", "l:pending"]);
+    expect(reply.userId).toBe(member.id);
     expect((await db.user.findUniqueOrThrow({ where: { id: member.id } })).botChatId).toBe(
       member.telegramId,
     );

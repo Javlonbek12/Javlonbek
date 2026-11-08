@@ -171,7 +171,7 @@ describe("minutes via the bot (/notes)", () => {
     );
 
     const card = await handleText(users.owner, users.owner.telegramId, MINUTES[0].text, deps);
-    expect(card.text).toContain("Минутки встречи «Планёрка» сохранены");
+    expect(card.text).toContain("Итоги встречи «Планёрка» сохранены");
     const draft = await db.botDraft.findFirstOrThrow();
     expect((draft.payload as unknown as DraftPayload).meetingId).toBe(meeting.id);
 

@@ -8,9 +8,7 @@ import { canControl, canViewTask, isClosed, isDoer, type TaskAccessInfo } from "
 // Time spent on a task (BACKLOG item 24, step 5): the rules and stopping timers. Starting, adding
 // and the summary are in time.ts.
 
-// A timer left running is counted for 12 hours at most: a forgotten one doesn't add days.
-export const MAX_TIMER_MINUTES = 12 * 60;
-// Time added by hand: at most a day at once.
+// Time added by hand (and a timer's time corrected): at most a day at once.
 export const MAX_MANUAL_MINUTES = 24 * 60;
 
 // Tracked by whoever works on the task: its author, the assignee, co-assignees and whoever
@@ -21,32 +19,36 @@ export function canTrackTime(actor: Actor, task: TaskAccessInfo) {
   return task.creatorId === actor.id || isDoer(actor, task) || canControl(actor, task);
 }
 
-// The minutes a timer counts from its start to `now` (whole minutes, capped).
+// The minutes a timer counts from its start to `now` (whole minutes). Not capped: a forgotten
+// timer is caught by «Забыли остановить?» (time-format.ts), and the person says how long they
+// really worked — the app never writes a made-up number by itself.
 export function timerMinutes(startedAt: Date, now: Date) {
-  return Math.min(
-    MAX_TIMER_MINUTES,
-    Math.max(0, Math.round((now.getTime() - startedAt.getTime()) / 60_000)),
-  );
+  return Math.max(0, Math.round((now.getTime() - startedAt.getTime()) / 60_000));
 }
 
 // Stops a running timer: under a minute it leaves nothing; otherwise one line in the history.
-export async function finishTimer(entry: TaskTimeEntry, now: Date) {
-  const minutes = timerMinutes(entry.startedAt, now);
+// `worked`: the minutes the person says they really worked («Исправить время»), at most what the
+// timer counted; 0 leaves nothing.
+export async function finishTimer(entry: TaskTimeEntry, now: Date, worked?: number) {
+  const counted = timerMinutes(entry.startedAt, now);
+  const minutes = worked === undefined ? counted : Math.min(counted, worked);
   if (minutes < 1) {
     await db.taskTimeEntry.delete({ where: { id: entry.id } });
     return 0;
   }
-  const capped = new Date(entry.startedAt.getTime() + MAX_TIMER_MINUTES * 60_000);
   await db.taskTimeEntry.update({
     where: { id: entry.id },
-    data: { endedAt: now < capped ? now : capped, minutes },
+    data: {
+      endedAt: worked === undefined ? now : new Date(entry.startedAt.getTime() + minutes * 60_000),
+      minutes,
+    },
   });
   await logActivity({
     actorId: entry.userId,
     action: "task.time_logged",
     entityType: "Task",
     entityId: entry.taskId,
-    details: { minutes },
+    details: worked === undefined ? { minutes } : { minutes, corrected: true },
   });
   return minutes;
 }

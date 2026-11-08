@@ -12,6 +12,7 @@ import type { TaskFormState } from "@/app/(app)/tasks/actions";
 import { addDays } from "@/lib/dates";
 import { type TranslationKey } from "@/lib/i18n";
 import { useT } from "@/components/locale-provider";
+import type { ProjectOption } from "@/modules/tasks/form-options";
 import type { RouteHint } from "@/modules/tasks/route-hints";
 
 type Option = { id: string; label: string; isPersonal?: boolean };
@@ -31,7 +32,11 @@ export type TaskFormProps = {
   today: string;
   users: Option[];
   plans: Option[];
-  projects: string[];
+  projects: ProjectOption[];
+  // «Требует утверждения» means something only for someone with a manager above (not the owner).
+  canAskApproval?: boolean;
+  // A task for a meeting («+ Добавить задачу» on the meeting page).
+  meeting?: { id: string; title: string };
 };
 
 // «Пятница»: the next Friday after today (a week on, if today is Friday).
@@ -146,6 +151,8 @@ export function TaskForm({
   users,
   plans,
   projects,
+  canAskApproval = true,
+  meeting,
 }: TaskFormProps) {
   const t = useT();
   const [state, formAction, pending] = useActionState(action, { error: null, values: initial });
@@ -154,6 +161,12 @@ export function TaskForm({
   const [assigneeId, setAssigneeId] = useState(values.assigneeId ?? "");
   const [needsApproval, setNeedsApproval] = useState(values.needsApproval === "on");
   const [dueDate, setDueDate] = useState(values.dueDate ?? "");
+  const [project, setProject] = useState(values.project ?? "");
+  const phases = projects.find((p) => p.name === project)?.phases ?? [];
+  // The rarely needed fields wait under «Ещё» — open when one of them is already filled in.
+  const moreFilled = ["startDate", "estimateHours", "project", "planId", "repeat", "labels"].some(
+    (key) => values[key],
+  );
   // On the edit form the route is shown once the assignee changes (as in the task panel).
   const changed = isNew || assigneeId !== initial.assigneeId;
   const route = changed ? routes?.[assigneeId]?.[needsApproval ? "flagged" : "plain"] : undefined;
@@ -171,14 +184,18 @@ export function TaskForm({
           {t(`tasks.errors.${state.error}` as TranslationKey, { mb: 20 })}
         </p>
       )}
+      {meeting && (
+        <>
+          <input type="hidden" name="meetingId" value={meeting.id} />
+          <p className="bg-secondary rounded-md p-3 text-sm">
+            {t("tasks.form.forMeeting", { title: meeting.title })}
+          </p>
+        </>
+      )}
       <Card className="gap-3">
         <Label className="flex-col items-start">
           {t("tasks.fields.title")}
           <Input name="title" required maxLength={200} defaultValue={values.title} />
-        </Label>
-        <Label className="flex-col items-start">
-          {t("tasks.fields.description")}
-          <Textarea name="description" maxLength={5000} defaultValue={values.description} />
         </Label>
         {isNew && (
           <Label>
@@ -233,7 +250,7 @@ export function TaskForm({
                 <span className="text-muted-foreground text-xs">{t("tasks.panel.reroute")}</span>
               )
             )}
-            {isNew && (
+            {isNew && canAskApproval && (
               <>
                 <Label className="font-normal">
                   <input
@@ -279,61 +296,117 @@ export function TaskForm({
             <span className="text-muted-foreground text-xs">{t("tasks.form.noDueHint")}</span>
           )}
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Label className="flex-col items-start">
-            {t("tasks.fields.startDate")}
-            <Input type="date" name="startDate" defaultValue={values.startDate} />
-          </Label>
-          <Label className="flex-col items-start">
-            {t("tasks.fields.priority")}
-            <NativeSelect
-              name="priority"
-              defaultValue={values.priority || "MEDIUM"}
-              className="w-full"
-            >
-              {PRIORITIES.map((p) => (
-                <option key={p} value={p}>
-                  {t(`tasks.priority.${p}`)}
-                </option>
-              ))}
-            </NativeSelect>
-          </Label>
-          <Label className="flex-col items-start">
-            {t("tasks.fields.estimate")}
-            <Input
-              type="number"
-              name="estimateHours"
-              min={0}
-              step={0.5}
-              inputMode="decimal"
-              defaultValue={values.estimateHours}
-            />
-          </Label>
-        </div>
         <Label className="flex-col items-start">
-          {t("tasks.fields.project")}
-          <Input name="project" list="projects" maxLength={60} defaultValue={values.project} />
-          <datalist id="projects">
-            {projects.map((p) => (
-              <option key={p} value={p} />
-            ))}
-          </datalist>
-        </Label>
-        <Label className="flex-col items-start">
-          {t("tasks.fields.plan")}
-          <NativeSelect name="planId" defaultValue={values.planId} className="w-full">
-            <option value="">{t("tasks.fields.noPlan")}</option>
-            {plans
-              .filter((plan) => plan.isPersonal === isPersonal)
-              .map((plan) => (
-                <option key={plan.id} value={plan.id}>
-                  {plan.label}
-                </option>
-              ))}
-          </NativeSelect>
+          {t("tasks.fields.description")}
+          <Textarea name="description" maxLength={5000} defaultValue={values.description} />
         </Label>
       </Card>
-      <RepeatFields values={values} />
+      <details open={moreFilled || undefined} className="group flex flex-col gap-4">
+        <summary className="text-primary cursor-pointer list-none text-sm font-medium [&::-webkit-details-marker]:hidden">
+          <span className="group-open:hidden">{t("tasks.form.more")}</span>
+          <span className="hidden group-open:inline">{t("tasks.form.less")}</span>
+        </summary>
+        <div className="mt-3 flex flex-col gap-4">
+          <Card className="gap-3">
+            <div className="grid grid-cols-2 gap-3">
+              <Label className="flex-col items-start">
+                {t("tasks.fields.startDate")}
+                <Input type="date" name="startDate" defaultValue={values.startDate} />
+              </Label>
+              <Label className="flex-col items-start">
+                {t("tasks.fields.priority")}
+                <NativeSelect
+                  name="priority"
+                  defaultValue={values.priority || "MEDIUM"}
+                  className="w-full"
+                >
+                  {PRIORITIES.map((p) => (
+                    <option key={p} value={p}>
+                      {t(`tasks.priority.${p}`)}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Label>
+              <Label className="flex-col items-start">
+                {t("tasks.fields.estimate")}
+                <Input
+                  type="number"
+                  name="estimateHours"
+                  min={0}
+                  step={0.5}
+                  inputMode="decimal"
+                  defaultValue={values.estimateHours}
+                />
+              </Label>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Label className="flex-col items-start">
+                {t("tasks.fields.project")}
+                <NativeSelect
+                  name="project"
+                  value={project}
+                  onChange={(e) => setProject(e.target.value)}
+                  className="w-full"
+                >
+                  <option value="">{t("tasks.form.noProject")}</option>
+                  {projects.map((p) => (
+                    <option key={p.name} value={p.name}>
+                      {p.name}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Label>
+              {phases.length > 0 && (
+                <Label className="flex-col items-start">
+                  {t("tasks.form.phase")}
+                  <NativeSelect
+                    // A new list of phases for another project starts from «без фазы».
+                    key={project}
+                    name="phaseId"
+                    defaultValue={values.phaseId}
+                    className="w-full"
+                  >
+                    <option value="">{t("tasks.form.noPhase")}</option>
+                    {phases.map((phase) => (
+                      <option key={phase.id} value={phase.id}>
+                        {phase.title}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </Label>
+              )}
+            </div>
+            {isNew && (
+              <Label className="flex-col items-start">
+                {t("tasks.panel.labels")}
+                <Input
+                  name="labels"
+                  defaultValue={values.labels}
+                  placeholder={t("tasks.labels.placeholder")}
+                  maxLength={400}
+                />
+                <span className="text-muted-foreground text-xs font-normal">
+                  {t("tasks.labels.hint")}
+                </span>
+              </Label>
+            )}
+            <Label className="flex-col items-start">
+              {t("tasks.fields.plan")}
+              <NativeSelect name="planId" defaultValue={values.planId} className="w-full">
+                <option value="">{t("tasks.fields.noPlan")}</option>
+                {plans
+                  .filter((plan) => plan.isPersonal === isPersonal)
+                  .map((plan) => (
+                    <option key={plan.id} value={plan.id}>
+                      {plan.label}
+                    </option>
+                  ))}
+              </NativeSelect>
+            </Label>
+          </Card>
+          <RepeatFields values={values} />
+        </div>
+      </details>
 
       <div className="flex flex-wrap gap-2">
         {!isNew ? (

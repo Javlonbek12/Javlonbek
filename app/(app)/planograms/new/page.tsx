@@ -3,11 +3,13 @@ import { notFound } from "next/navigation";
 import { NewPlanogramForm } from "@/components/planograms/new-planogram-form";
 import { PlanogramErrorNote } from "@/components/planograms/error-note";
 import { db } from "@/lib/db";
-import { formatDay, toDateString } from "@/lib/dates";
+import { t } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getUserToday } from "@/modules/core/settings/service";
 import { canManagePlanograms } from "@/modules/planograms/access";
 import { describeGeometry, parseGeometry } from "@/modules/planograms/geometry";
+import { priceListDate } from "@/modules/planograms/price-status";
+import { listPriceLists } from "@/modules/planograms/pricing";
 import { currentPriceList } from "@/modules/planograms/service";
 
 const FIELDS = [
@@ -26,15 +28,20 @@ export default async function NewPlanogramPage({ searchParams }: PageProps<"/pla
   const user = await requireUser();
   if (!canManagePlanograms(user.role)) notFound();
   const query = await searchParams;
-  const [equipment, templates, priceLists, current] = await Promise.all([
+  const [equipment, templates, priceLists, current, projects] = await Promise.all([
     db.equipment.findMany({ orderBy: { name: "asc" } }),
     db.planogram.findMany({
       where: { isTemplate: true },
       select: { id: true, title: true, equipmentId: true },
       orderBy: { title: "asc" },
     }),
-    db.priceList.findMany({ orderBy: [{ effectiveFrom: "desc" }, { createdAt: "desc" }] }),
+    getUserToday(user.id).then((today) => listPriceLists(today)),
     getUserToday(user.id).then((today) => currentPriceList(today)),
+    db.planogram.findMany({
+      where: { project: { not: null }, isTemplate: false },
+      distinct: ["project"],
+      select: { project: true },
+    }),
   ]);
   // Back from an error: what was typed; otherwise the prices in force today.
   const values: Record<string, string> = Object.fromEntries(
@@ -57,8 +64,9 @@ export default async function NewPlanogramPage({ searchParams }: PageProps<"/pla
         }))}
         priceLists={priceLists.map((p) => ({
           id: p.id,
-          label: `${p.name} · ${formatDay(toDateString(p.effectiveFrom))}`,
+          label: `${p.name} · ${priceListDate(p.effectiveFrom)} · ${t(`planograms.library.prices.status.${p.status}`).toLowerCase()}`,
         }))}
+        projects={projects.map((p) => p.project!).sort()}
         values={values}
       />
     </div>

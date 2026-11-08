@@ -51,6 +51,7 @@ export default async function EditTaskPage({ params }: PageProps<"/tasks/[id]/ed
           dueDate: task.dueDate ?? "",
           priority: task.priority,
           project: task.project ?? "",
+          phaseId: task.phaseId ?? "",
           planId: task.planId ?? "",
           estimateHours: task.estimateMinutes === null ? "" : String(task.estimateMinutes / 60),
           repeat: series?.frequency ?? "",

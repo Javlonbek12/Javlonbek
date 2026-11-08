@@ -67,8 +67,9 @@ describe("content tagging by keywords", () => {
 
 describe("content analytics", () => {
   it("builds the period: months and weeks", () => {
+    // The past ends today: the rest of the month is not a result yet.
     const p = analyticsPeriod("2026-10-09", 3);
-    expect([p.from, p.to]).toEqual(["2026-08-01", "2026-10-31"]);
+    expect([p.from, p.to]).toEqual(["2026-08-01", "2026-10-09"]);
     expect(p.months).toEqual(["2026-08-01", "2026-09-01", "2026-10-01"]);
     expect(p.weeks[0]).toBe("2026-07-27");
   });
@@ -90,6 +91,20 @@ describe("content analytics", () => {
     const midway = storylines(posts, weeks, topics, "2026-10-07");
     expect(midway.find((l) => l.topic === "PRICES")!.silentWeeks).toBe(0);
     expect(midway.find((l) => l.topic === "PROMO")!.silentWeeks).toBe(2);
+    // The last post of the period and the next one planned after today.
+    const ahead = storylines(posts, weeks, topics, "2026-10-07", [
+      { topic: "PROMO", publishDate: "2026-11-20" },
+      { topic: "PROMO", publishDate: "2026-11-05" },
+      { topic: "PRICES", publishDate: "2026-10-01" },
+    ]);
+    expect(ahead.find((l) => l.topic === "PROMO")).toMatchObject({
+      last: null,
+      next: "2026-11-05",
+    });
+    expect(ahead.find((l) => l.topic === "PRICES")).toMatchObject({
+      last: "2026-10-06",
+      next: null,
+    });
 
     expect(topicShares(posts, topics).slice(0, 2)).toEqual([
       { topic: "PRICES", count: 2, percent: 67 },

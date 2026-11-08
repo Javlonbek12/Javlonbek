@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { canEditMeeting, canViewMeeting } from "./access";
-import { MAX_OCCURRENCES, weeklyOccurrences } from "./recurrence";
+import { MAX_OCCURRENCES, repeatOccurrences } from "./recurrence";
 
-describe("weeklyOccurrences", () => {
+describe("repeatOccurrences", () => {
   it("repeats every 7 days at the same local time until the end date", () => {
-    expect(weeklyOccurrences("2026-10-05T10:00", "2026-10-26")).toEqual([
+    expect(repeatOccurrences("2026-10-05T10:00", "2026-10-26")).toEqual([
       "2026-10-05T10:00",
       "2026-10-12T10:00",
       "2026-10-19T10:00",
@@ -14,11 +14,25 @@ describe("weeklyOccurrences", () => {
   });
 
   it("a one-off meeting has one occurrence", () => {
-    expect(weeklyOccurrences("2026-10-05T10:00", null)).toEqual(["2026-10-05T10:00"]);
+    expect(repeatOccurrences("2026-10-05T10:00", null)).toEqual(["2026-10-05T10:00"]);
+  });
+
+  it("repeats every two weeks or every month on the same day (the last day if shorter)", () => {
+    expect(repeatOccurrences("2026-10-05T10:00", "2026-11-02", "twoWeeks")).toEqual([
+      "2026-10-05T10:00",
+      "2026-10-19T10:00",
+      "2026-11-02T10:00",
+    ]);
+    expect(repeatOccurrences("2027-01-31T09:30", "2027-04-30", "month")).toEqual([
+      "2027-01-31T09:30",
+      "2027-02-28T09:30",
+      "2027-03-31T09:30",
+      "2027-04-30T09:30",
+    ]);
   });
 
   it("is capped at one year", () => {
-    expect(weeklyOccurrences("2026-01-05T10:00", "2030-01-01")).toHaveLength(MAX_OCCURRENCES);
+    expect(repeatOccurrences("2026-01-05T10:00", "2030-01-01")).toHaveLength(MAX_OCCURRENCES);
   });
 });
 

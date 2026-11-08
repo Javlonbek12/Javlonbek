@@ -8,7 +8,8 @@ import { formatDay } from "@/lib/dates";
 import { t } from "@/lib/i18n";
 
 import type { Report } from "./data";
-import { changeNote as delta, formatReportDate, highlights } from "./summary";
+import type { ReportPart } from "./extras";
+import { changeNote as delta, formatDays, formatReportDate, highlights } from "./summary";
 
 // A4 management report: headline numbers, a weekly chart, people, projects and risks.
 // Colors are the validated light-mode chart palette (dataviz skill): series blue #2a78d6 /
@@ -276,7 +277,8 @@ function chart(w: Writer, report: Report) {
   w.y = bottom - 18;
 }
 
-export async function reportPdf(report: Report): Promise<Buffer> {
+// `extras`: the content plan and Connect parts of «Главное» (see extras.ts).
+export async function reportPdf(report: Report, extras: ReportPart[] = []): Promise<Buffer> {
   const pdf = await PDFDocument.create();
   pdf.registerFontkit(fontkit);
   const regular = await pdf.embedFont(await readFile(fontPath("DejaVuSans.ttf")), { subset: true });
@@ -309,6 +311,10 @@ export async function reportPdf(report: Report): Promise<Buffer> {
 
   w.heading(t("reports.summary"));
   for (const line of highlights(report)) w.paragraph(line, 10, true);
+  for (const part of extras) {
+    w.heading(part.title);
+    for (const line of part.lines) w.paragraph(line, 10, true);
+  }
 
   const { kpis: k, previousKpis: p, now } = report;
   w.y -= 6;
@@ -326,12 +332,12 @@ export async function reportPdf(report: Report): Promise<Buffer> {
     {
       label: t("reports.kpi.onTime"),
       value: k.onTimePercent === null ? "—" : `${k.onTimePercent}%`,
-      note: delta(k.onTimePercent, p.onTimePercent, true),
+      note: delta(k.onTimePercent, p.onTimePercent, "points"),
     },
     {
       label: t("reports.kpi.averageDays"),
-      value: k.averageDays === null ? "—" : t("reports.kpi.days", { value: k.averageDays }),
-      note: delta(k.averageDays, p.averageDays),
+      value: k.averageDays === null ? "—" : formatDays(k.averageDays),
+      note: delta(k.averageDays, p.averageDays, "days"),
     },
   ]);
   w.y -= 12;

@@ -37,7 +37,8 @@ const STATUS_STYLE: Record<ContentStatus, string> = {
   DRAFT: "bg-blue-500/12 text-blue-700",
   REVIEW: "bg-amber-500/15 text-amber-700",
   LEGAL_REVIEW: "bg-violet-500/15 text-violet-700",
-  CHANGES: "bg-destructive/12 text-destructive",
+  // Not red: red is kept for late posts and errors.
+  CHANGES: "bg-orange-500/15 text-orange-700",
   APPROVED: "bg-emerald-500/15 text-emerald-700",
   SENT: "bg-emerald-600 text-white",
   CANCELLED: "bg-muted text-muted-foreground line-through",
@@ -52,6 +53,24 @@ export function ContentStatusBadge({ status }: { status: ContentStatus }) {
       )}
     >
       {t(`content.status.${status}`)}
+    </span>
+  );
+}
+
+// The publication day has passed and the post wasn't sent: the only red mark in the plan.
+export function LateBadge({ compact }: { compact?: boolean }) {
+  return compact ? (
+    <span
+      className="bg-destructive flex size-3.5 shrink-0 items-center justify-center rounded-full text-[9px] leading-none font-bold text-white"
+      title={t("content.late.badge")}
+      aria-label={t("content.late.badge")}
+    >
+      !
+    </span>
+  ) : (
+    <span className="bg-destructive/12 text-destructive inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap">
+      <span aria-hidden>!</span>
+      {t("content.late.badge")}
     </span>
   );
 }

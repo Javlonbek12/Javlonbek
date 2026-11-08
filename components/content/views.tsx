@@ -7,24 +7,55 @@ import { cn } from "@/lib/utils";
 import { deleteContentAction } from "@/app/(app)/content/actions";
 import { Button } from "@/components/ui/button";
 import { displayName } from "@/modules/core/users/display-name";
-import type { listPostsBetween } from "@/modules/content/service";
+import { isLatePost, type listPostsBetween } from "@/modules/content/service";
 
-import { BOT_COLOR, BotChip, ContentStatusBadge } from "./bot-chip";
+import { BOT_COLOR, BotChip, ContentStatusBadge, LateBadge } from "./bot-chip";
 import { DraggablePost, DropDay } from "./drag";
 import { TelegramBubble, TelegramChat } from "./post-preview";
 
 export type Post = Awaited<ReturnType<typeof listPostsBetween>>[number];
 
-const STATUS_EDGE: Record<Post["status"], string> = {
+// The status of a post as the colour of its left edge, the same in every view.
+export const STATUS_EDGE: Record<Post["status"], string> = {
   PLANNED: "border-l-muted-foreground/30",
   DRAFT: "border-l-blue-500",
   REVIEW: "border-l-amber-500",
   LEGAL_REVIEW: "border-l-violet-500",
-  CHANGES: "border-l-destructive",
+  CHANGES: "border-l-orange-500",
   APPROVED: "border-l-emerald-500",
   SENT: "border-l-emerald-700",
   CANCELLED: "border-l-muted",
 };
+const STATUS_DOT: Record<Post["status"], string> = {
+  PLANNED: "bg-muted-foreground/30",
+  DRAFT: "bg-blue-500",
+  REVIEW: "bg-amber-500",
+  LEGAL_REVIEW: "bg-violet-500",
+  CHANGES: "bg-orange-500",
+  APPROVED: "bg-emerald-500",
+  SENT: "bg-emerald-700",
+  CANCELLED: "bg-muted",
+};
+
+// What the edge colours mean, and the red «!» of a late post.
+export function StatusLegend() {
+  return (
+    <ul className="text-muted-foreground flex flex-wrap gap-x-3 gap-y-1 text-xs">
+      {(Object.keys(STATUS_DOT) as Post["status"][])
+        .filter((s) => s !== "CANCELLED")
+        .map((s) => (
+          <li key={s} className="flex items-center gap-1.5">
+            <span className={cn("h-3 w-1 rounded-full", STATUS_DOT[s])} />
+            {t(`content.status.${s}`)}
+          </li>
+        ))}
+      <li className="flex items-center gap-1.5">
+        <LateBadge compact />
+        {t("content.late.badge")}
+      </li>
+    </ul>
+  );
+}
 
 // The thumbnail: the first photo (Russian first).
 const imageOf = (post: Post) => {
@@ -46,7 +77,7 @@ export function groupByDay(posts: Post[]) {
 }
 
 // A post as a small card: bots, time, topic and the visual's thumbnail (week view).
-function WeekCard({ post }: { post: Post }) {
+function WeekCard({ post, today }: { post: Post; today: string }) {
   const image = imageOf(post);
   return (
     <Link
@@ -73,6 +104,7 @@ function WeekCard({ post }: { post: Post }) {
           {post.publishTime && (
             <span className="text-muted-foreground ml-auto">{post.publishTime}</span>
           )}
+          {isLatePost(post, today) && <LateBadge compact />}
         </span>
         <span className="line-clamp-2 font-medium">{post.title}</span>
       </span>
@@ -172,7 +204,7 @@ export function WeekView({
                       date={d}
                       enabled={movable.has(post.id)}
                     >
-                      <WeekCard post={post} />
+                      <WeekCard post={post} today={today} />
                     </DraggablePost>
                   ))}
                 </DropDay>
@@ -227,6 +259,7 @@ export function DayList({
                   </span>
                   <span className="flex flex-wrap items-center gap-1.5">
                     <ContentStatusBadge status={post.status} />
+                    {isLatePost(post, today) && <LateBadge />}
                     {post.channels.map((c) => (
                       <BotChip key={c} channel={c} sent={post.sentChannels.includes(c)} />
                     ))}
@@ -318,7 +351,10 @@ export function ListView({
                         .join(" · ") || "—"}
                     </td>
                     <td className="px-3 py-2.5">
-                      <ContentStatusBadge status={post.status} />
+                      <span className="flex flex-wrap gap-1">
+                        <ContentStatusBadge status={post.status} />
+                        {isLatePost(post, today) && <LateBadge />}
+                      </span>
                     </td>
                     <td className="px-2 py-2.5">
                       {deletable.has(post.id) && (

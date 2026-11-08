@@ -1,5 +1,6 @@
 import { addDays, daysBetween, startOfWeek } from "@/lib/dates";
 import type { TaskStatus } from "@/lib/generated/prisma/enums";
+import { isLateWork } from "@/modules/tasks/today";
 
 // What the statistics need from a task (dates as "YYYY-MM-DD" in the viewer's timezone).
 export type StatTask = {
@@ -17,10 +18,13 @@ export function countActive(tasks: StatTask[]) {
   return tasks.filter((t) => !CLOSED.includes(t.status)).length;
 }
 
+// The same «просрочено» as in Tasks: work handed in waits for acceptance, it isn't late.
 export function countOverdue(tasks: StatTask[], today: string) {
-  return tasks.filter((t) => !CLOSED.includes(t.status) && t.dueDate !== null && t.dueDate < today)
-    .length;
+  return tasks.filter((t) => isLateWork(t, today)).length;
 }
+
+// Below this many tasks a percentage misleads («0%» from one late task): «1 из 2» is shown instead.
+export const PERCENT_FROM_TASKS = 5;
 
 // Share of tasks done by their due date, among tasks completed in the last `days` days that had a due date.
 export function onTimeRate(tasks: StatTask[], today: string, days: number) {

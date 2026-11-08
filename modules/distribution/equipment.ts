@@ -105,3 +105,52 @@ export async function regionEquipment(region: string) {
     stock: Object.fromEntries(stock.map((s) => [s.type, s.count])) as TypeCounts,
   };
 }
+
+type UploadTotals = {
+  rows?: number;
+  units?: number;
+  outlets?: number;
+  byType?: Record<string, number>;
+};
+
+// The last equipment files loaded: who, when, how many rows, and what changed against the file
+// before (units, outlets, the types that moved most). Files loaded before their totals were kept
+// show what is known.
+export async function uploadHistory(limit = 10) {
+  const logs = await db.activityLog.findMany({
+    where: { action: { in: ["distribution.equipment", "distribution.imported"] } },
+    orderBy: { createdAt: "desc" },
+    take: limit + 1,
+    include: { actor: { select: { firstName: true, lastName: true } } },
+  });
+  const totals = (i: number) => (logs[i]?.details ?? {}) as UploadTotals;
+  return logs.slice(0, limit).map((log, i) => {
+    const now = totals(i);
+    const before = i + 1 < logs.length ? totals(i + 1) : null;
+    const delta = (key: "rows" | "units" | "outlets") =>
+      now[key] !== undefined && before?.[key] !== undefined ? now[key]! - before[key]! : null;
+    const types =
+      now.byType && before?.byType
+        ? [...new Set([...Object.keys(now.byType), ...Object.keys(before.byType)])]
+            .map((type) => ({
+              type,
+              change: (now.byType![type] ?? 0) - (before.byType![type] ?? 0),
+            }))
+            .filter((x) => x.change !== 0)
+            .sort((a, b) => Math.abs(b.change) - Math.abs(a.change))
+            .slice(0, 5)
+        : [];
+    return {
+      id: log.id,
+      at: log.createdAt,
+      by: log.actor,
+      rows: now.rows ?? null,
+      units: now.units ?? null,
+      outlets: now.outlets ?? null,
+      rowsDelta: delta("rows"),
+      unitsDelta: delta("units"),
+      outletsDelta: delta("outlets"),
+      types,
+    };
+  });
+}

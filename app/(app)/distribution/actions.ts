@@ -275,20 +275,26 @@ export async function updatePosmAction(form: FormData) {
 
 export async function addShipmentAction(form: FormData) {
   const user = await requireUser();
-  await run("/distribution/stock", async () => {
+  const input = {
+    posmId: str(form, "posmId"),
+    destination: str(form, "destination"),
+    quantity: int(form, "quantity"),
+    shippedOn: str(form, "shippedOn"),
+    note: str(form, "note"),
+    overPlan: form.get("overPlan") === "on",
+  };
+  // On an error the form comes back filled in as it was sent.
+  const typed = new URLSearchParams({
+    posmId: input.posmId,
+    destination: input.destination,
+    quantity: str(form, "quantity"),
+    shippedOn: input.shippedOn,
+    note: input.note,
+    ...(input.overPlan ? { overPlan: "1" } : {}),
+  });
+  await run(`/distribution/stock?${typed}#add`, async () => {
     const d = await loadDistribution();
-    await addShipment(
-      user,
-      {
-        posmId: str(form, "posmId"),
-        destination: str(form, "destination"),
-        quantity: int(form, "quantity"),
-        shippedOn: str(form, "shippedOn"),
-        note: str(form, "note"),
-        overPlan: form.get("overPlan") === "on",
-      },
-      d,
-    );
+    await addShipment(user, input, d);
     return "/distribution/stock?added=1";
   });
 }
@@ -302,14 +308,15 @@ export async function shipWaybillAction(form: FormData) {
     const d = await loadDistribution(str(form, "orderId") || undefined);
     const ids = form.getAll("posmId").map(String);
     const quantities = form.getAll("quantity").map((q) => Number(q));
-    const count = await shipWaybill(
+    const { count, waybill } = await shipWaybill(
       user,
       destination,
       ids.map((posmId, i) => ({ posmId, quantity: quantities[i] ?? 0 })),
       str(form, "shippedOn"),
       d,
     );
-    return `${back}?done=${count}`;
+    // The recorded waybill opens as the document to print.
+    return waybill === null ? `${back}?done=0` : `${back}?n=${waybill}&done=${count}`;
   });
 }
 

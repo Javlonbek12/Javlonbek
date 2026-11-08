@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { clockText, durationText } from "./time-format";
+import { clockText, durationText, isForgottenTimer } from "./time-format";
 
 describe("time texts", () => {
   it("says hours and minutes, leaving out a zero part", () => {
@@ -14,5 +14,21 @@ describe("time texts", () => {
     expect(clockText(0)).toBe("0:00:00");
     expect(clockText((3600 + 12 * 60 + 34) * 1000 + 900)).toBe("1:12:34");
     expect(clockText(-5)).toBe("0:00:00");
+  });
+
+  it("calls a timer forgotten after 10 hours or once the day has changed where the person is", () => {
+    const tz = "Asia/Tashkent"; // UTC+5
+    // Started 09:00 local, now 18:59 local: an ordinary long day.
+    expect(isForgottenTimer("2026-11-08T04:00:00Z", new Date("2026-11-08T13:59:00Z"), tz)).toBe(
+      false,
+    );
+    // Ten hours and a minute.
+    expect(isForgottenTimer("2026-11-08T04:00:00Z", new Date("2026-11-08T14:01:00Z"), tz)).toBe(
+      true,
+    );
+    // Started 23:30 local, now 00:10 local the next day: the day changed.
+    expect(isForgottenTimer("2026-11-08T18:30:00Z", new Date("2026-11-08T19:10:00Z"), tz)).toBe(
+      true,
+    );
   });
 });

@@ -2,11 +2,13 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 
-import { useT } from "@/components/locale-provider";
+import { useLocale, useT } from "@/components/locale-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { fromDateString } from "@/lib/dates";
 import { cn } from "@/lib/utils";
-import type { PriceTableRow } from "@/modules/planograms/price-table";
+import { priceListDate } from "@/modules/planograms/price-status";
+import type { FuturePrice, PriceTableRow } from "@/modules/planograms/price-table";
 
 const group = (value: number) => String(value).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 
@@ -29,6 +31,7 @@ export function PriceTable({
   submit?: string;
 }) {
   const t = useT();
+  const locale = useLocale();
   const [query, setQuery] = useState("");
   const [values, setValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(rows.map((r) => [r.skuId, r.price === null ? "" : String(r.price)])),
@@ -48,6 +51,15 @@ export function PriceTable({
       )
     : rows;
   const showBefore = rows.some((r) => r.previous !== null);
+  const showFuture = rows.some((r) => r.future !== null);
+  // A later list's price beside the one in force: «с 1 янв. 2027: 99 000».
+  const futureText = (future: FuturePrice) =>
+    future.waiting
+      ? t("planograms.library.prices.futureWaiting", { price: group(future.price) })
+      : t("planograms.library.prices.futureFrom", {
+          date: priceListDate(fromDateString(future.from), locale),
+          price: group(future.price),
+        });
 
   const table = (
     <div className="overflow-x-auto rounded-xl border">
@@ -68,6 +80,9 @@ export function PriceTable({
             <th className="px-3 py-2 text-right font-medium">
               {t("planograms.library.prices.price")}
             </th>
+            {showFuture && (
+              <th className="px-3 py-2 font-medium">{t("planograms.library.prices.next")}</th>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -118,6 +133,11 @@ export function PriceTable({
                     </span>
                   )}
                 </td>
+                {showFuture && (
+                  <td className="text-muted-foreground px-3 py-1.5 text-xs whitespace-nowrap">
+                    {row.future ? futureText(row.future) : ""}
+                  </td>
+                )}
               </tr>
             );
           })}

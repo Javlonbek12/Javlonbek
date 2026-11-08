@@ -33,6 +33,8 @@ export type ModuleEntry = {
   // The role-settings section(s) that switch it (default: its own id); with several, any of
   // them shows it.
   access?: string | string[];
+  // Where all its pages live, when the link opens one of them (default: href).
+  base?: string;
 };
 
 const ALL_ROLES: Role[] = ["OWNER", "MANAGER", "MEMBER", "LAWYER"];
@@ -92,6 +94,7 @@ export const MODULES: ModuleEntry[] = [
     icon: Truck,
     roles: ALL_ROLES,
     group: "trade",
+    base: "/distribution",
   },
   // Content plan for the company's bots.
   {
@@ -157,8 +160,43 @@ export const MODULES: ModuleEntry[] = [
   },
 ];
 
-// The phone's bottom bar: the first four of these the person has; everything else is in «Ещё».
+// The phone's bottom bar by default: the first four of these the person has; everything else is
+// in «Ещё». Each person can choose their own four (User.phoneBar).
 export const PHONE_BAR = ["home", "tasks", "meetings", "planograms", "team"];
+export const PHONE_BAR_SIZE = 4;
+// On phones these sit in the header (the bell and the gear): «Ещё» and the bar leave them out.
+export const IN_PHONE_HEADER = ["notifications", "settings"];
+
+// The person's bottom bar: their own choice (in menu order) of the sections they have, else the
+// default.
+export function phoneBarItems(items: ModuleEntry[], chosen: string[] = []): ModuleEntry[] {
+  const own = items.filter((item) => chosen.includes(item.id));
+  if (own.length) return own.slice(0, PHONE_BAR_SIZE);
+  return PHONE_BAR.map((id) => items.find((item) => item.id === id))
+    .filter((item): item is ModuleEntry => Boolean(item))
+    .slice(0, PHONE_BAR_SIZE);
+}
+
+// A choice to store: known sections that may sit in the bar, each once, at most four.
+export function cleanPhoneBar(ids: string[]): string[] {
+  const allowed = MODULES.filter((m) => !IN_PHONE_HEADER.includes(m.id)).map((m) => m.id);
+  return [...new Set(ids)].filter((id) => allowed.includes(id)).slice(0, PHONE_BAR_SIZE);
+}
+
+const under = (pathname: string, path: string) =>
+  path === "/" ? pathname === "/" : pathname === path || pathname.startsWith(`${path}/`);
+
+// The section a page belongs to: the most specific one whose pages it is under
+// (/team/structure → «Оргструктура», not «Команда»).
+export function moduleForPath(
+  pathname: string,
+  modules: ModuleEntry[] = MODULES,
+): ModuleEntry | undefined {
+  const path = (module: ModuleEntry) => module.base ?? module.href;
+  return modules
+    .filter((module) => under(pathname, path(module)))
+    .sort((a, b) => path(b).length - path(a).length)[0];
+}
 
 // Sections the owner can switch on/off per role (Settings → Roles); the rest are always shown.
 const SWITCHABLE = new Set([

@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { fromDateString, isDateString } from "@/lib/dates";
 import { logActivity } from "@/modules/core/activity/service";
 import type { Actor } from "@/modules/core/permissions";
+import { getSettings } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
 
 import type { TaskAccessInfo } from "./access";
@@ -54,28 +55,58 @@ export async function startTimer(
 }
 
 // The person's running timer (one at most), with its task: for the task rows («⏱ идёт»), the
-// morning digest and anything that shows «the timer is on».
+// morning digest and anything that shows «the timer is on». `timezone`: the person's, for
+// «started on an earlier day» (isForgottenTimer).
 export async function getRunningTimer(userId: string) {
   const entry = await db.taskTimeEntry.findFirst({
     where: { userId, endedAt: null },
     include: { task: { select: { id: true, title: true } } },
     orderBy: { startedAt: "desc" },
   });
-  return entry
-    ? { taskId: entry.task.id, title: entry.task.title, startedAt: entry.startedAt }
-    : null;
+  if (!entry) return null;
+  const { timezone } = await getSettings(userId);
+  return { taskId: entry.task.id, title: entry.task.title, startedAt: entry.startedAt, timezone };
 }
 
 export type RunningTimer = NonNullable<Awaited<ReturnType<typeof getRunningTimer>>>;
 
 // Stops the actor's timer on the task; the minutes it counted (0: it ran under a minute or
-// wasn't running).
-export async function stopTimer(actor: Actor, taskId: string, now = new Date()) {
+// wasn't running). `worked`: «Исправить время» — the minutes really worked instead.
+export async function stopTimer(actor: Actor, taskId: string, now = new Date(), worked?: number) {
+  if (worked !== undefined && (!Number.isInteger(worked) || worked < 0))
+    throw new TaskError("timeInvalid");
   const running = await db.taskTimeEntry.findFirst({
     where: { userId: actor.id, taskId, endedAt: null },
   });
   if (!running) return 0;
-  return finishTimer(running, now);
+  return finishTimer(running, now, worked);
+}
+
+// «Исправить» on one's own finished entry (a timer stopped late, say by handing the task in):
+// the minutes really worked, while the task is open.
+export async function correctTimeEntry(actor: Actor, entryId: string, minutes: number) {
+  const entry = await db.taskTimeEntry.findUnique({ where: { id: entryId } });
+  if (!entry || entry.userId !== actor.id || !entry.endedAt) throw new TaskError("forbidden");
+  await loadTask(actor, entry.taskId);
+  if (!Number.isInteger(minutes) || minutes < 1 || minutes > MAX_MANUAL_MINUTES)
+    throw new TaskError("timeInvalid");
+  if (minutes === entry.minutes) return;
+  await db.taskTimeEntry.update({
+    where: { id: entryId },
+    data: {
+      minutes,
+      endedAt: entry.manual
+        ? entry.endedAt
+        : new Date(entry.startedAt.getTime() + minutes * 60_000),
+    },
+  });
+  await logActivity({
+    actorId: actor.id,
+    action: "task.time_corrected",
+    entityType: "Task",
+    entityId: entry.taskId,
+    details: { minutes, before: entry.minutes },
+  });
 }
 
 // Time added by hand (a timer forgotten): minutes on a day, not in the future.

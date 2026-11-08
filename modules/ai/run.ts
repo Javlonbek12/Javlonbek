@@ -21,23 +21,39 @@ export class AiError extends Error {
 export type ModelCall = (request: {
   model: string;
   system: string;
+  // A large block that is the same on every call (e.g. the user guide): sent after `system`
+  // and cached, so repeated calls read it from the prompt cache.
+  context?: string;
   prompt: string;
   schema: z.ZodType;
 }) => Promise<{ output: unknown; inputTokens: number; outputTokens: number }>;
 
+export function systemBlocks(system: string, context?: string) {
+  if (!context) return system;
+  return [
+    { type: "text" as const, text: system },
+    { type: "text" as const, text: context, cache_control: { type: "ephemeral" as const } },
+  ];
+}
+
 // The real call: JSON output constrained by the zod schema (structured outputs).
-const callClaude: ModelCall = async ({ model, system, prompt, schema }) => {
+const callClaude: ModelCall = async ({ model, system, context, prompt, schema }) => {
   const response = await getAnthropicClient().messages.parse({
     model,
     max_tokens: 4096,
-    system,
+    system: systemBlocks(system, context),
     messages: [{ role: "user", content: prompt }],
     output_config: { format: zodOutputFormat(schema) },
   });
+  const usage = response.usage;
   return {
     output: response.stop_reason === "refusal" ? null : response.parsed_output,
-    inputTokens: response.usage.input_tokens,
-    outputTokens: response.usage.output_tokens,
+    // All prompt tokens, cached or not, so the monthly summary shows the real context size.
+    inputTokens:
+      usage.input_tokens +
+      (usage.cache_creation_input_tokens ?? 0) +
+      (usage.cache_read_input_tokens ?? 0),
+    outputTokens: usage.output_tokens,
   };
 };
 
@@ -51,6 +67,8 @@ type RunOptions<T extends z.ZodType> = {
   // Prompt function name for the usage log.
   fn: string;
   system: string;
+  // See ModelCall: a stable, cached block after the system prompt.
+  context?: string;
   prompt: string;
   schema: T;
   today: string;
@@ -62,7 +80,7 @@ type RunOptions<T extends z.ZodType> = {
 export async function runStructured<T extends z.ZodType>(
   options: RunOptions<T>,
 ): Promise<z.infer<T>> {
-  const { userId, fn, system, prompt, schema, today } = options;
+  const { userId, fn, system, context, prompt, schema, today } = options;
   const call = options.call ?? (isAiConfigured() ? callClaude : null);
   if (!call) throw new AiError("not_configured");
 
@@ -74,7 +92,7 @@ export async function runStructured<T extends z.ZodType>(
   for (let attempt = 1; attempt <= 2; attempt++) {
     let result: Awaited<ReturnType<ModelCall>>;
     try {
-      result = await call({ model: CLAUDE_MODEL, system, prompt, schema });
+      result = await call({ model: CLAUDE_MODEL, system, context, prompt, schema });
     } catch (error) {
       if (error instanceof Anthropic.APIError || error instanceof Error) {
         console.error(`AI call ${fn} failed`, error.message);

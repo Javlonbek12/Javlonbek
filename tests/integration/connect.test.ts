@@ -3,11 +3,14 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { db } from "@/lib/db";
 import { connectPptx } from "@/modules/connect/pptx";
-import { buildConnectReport, parseConnectQuery } from "@/modules/connect/report";
+import { buildConnectReport, parseConnectQuery, scopeConnectQuery } from "@/modules/connect/report";
 import {
   clearConnectData,
   ConnectError,
+  connectDataDate,
+  connectPeopleLinks,
   importConnectFiles,
+  linkConnectPerson,
   loadDataset,
 } from "@/modules/connect/service";
 import { connectXlsx } from "@/modules/connect/xlsx";
@@ -132,16 +135,22 @@ describe("Connect analytics: upload and downloads", () => {
       { name: "oos.xlsx", buffer: oos },
       { name: "ism.xlsx", buffer: payments },
     ]);
-    const sheet = { updated: 0, skipped: 0, kept: 0, newer: null };
+    const sheet = { updated: 0, skipped: 0, kept: 0, newer: null, test: 0 };
+    const oct5 = { from: "2026-10-05", to: "2026-10-05" };
+    // The result says which days the file covers and how many test-store rows were left out.
     expect(result).toEqual([
-      { name: "oos.xlsx", sheets: [{ ...sheet, kind: "OOS", created: 3 }] },
-      { name: "ism.xlsx", sheets: [{ ...sheet, kind: "PAYMENT", created: 1 }] },
+      { name: "oos.xlsx", sheets: [{ ...sheet, ...oct5, kind: "OOS", created: 3, test: 1 }] },
+      {
+        name: "ism.xlsx",
+        sheets: [{ ...sheet, kind: "PAYMENT", created: 1, from: "2026-10-01", to: "2026-10-01" }],
+      },
     ]);
+    expect(await connectDataDate()).toBe("2026-10-05");
 
     // Uploading a newer export updates the row with the same ID.
     const newer = await workbook(OOS_HEADERS, [oosRow(2, "Тестовый магазин 2", 102, 3)]);
     expect(await importConnectFiles(owner, [{ name: "oos2.xlsx", buffer: newer }])).toEqual([
-      { name: "oos2.xlsx", sheets: [{ ...sheet, kind: "OOS", created: 0, updated: 1 }] },
+      { name: "oos2.xlsx", sheets: [{ ...sheet, ...oct5, kind: "OOS", created: 0, updated: 1 }] },
     ]);
     expect(await db.connectRecord.count()).toBe(4);
 
@@ -154,7 +163,17 @@ describe("Connect analytics: upload and downloads", () => {
     expect(await importConnectFiles(owner, [{ name: "old.xlsx", buffer: older }])).toEqual([
       {
         name: "old.xlsx",
-        sheets: [{ ...sheet, kind: "OOS", created: 1, kept: 1, newer: "2026-10-05T10:00" }],
+        sheets: [
+          {
+            ...sheet,
+            kind: "OOS",
+            created: 1,
+            kept: 1,
+            newer: "2026-10-05T10:00",
+            from: "2026-10-01",
+            to: "2026-10-01",
+          },
+        ],
       },
     ]);
     expect(
@@ -190,8 +209,43 @@ describe("Connect analytics: upload and downloads", () => {
     );
     expect(mine.executor?.gapsWithoutOrder.map((g) => g.id)).toEqual(["1", "2"]);
     expect(mine.executor?.paymentIssues.map((p) => p.stage)).toEqual(["waitingBdm"]);
+    // Without a person: everyone's open items.
+    const everyone = await buildConnectReport(
+      parseConnectQuery({ view: "executor" }, true),
+      "2026-10-21",
+    );
+    expect(everyone.executors?.map((e) => [e.person, e.openCount])).toEqual([[PERSON, 3]]);
+    // October against September: no data before, so no comparison.
+    const october = await buildConnectReport(
+      parseConnectQuery({ from: "2026-10", to: "2026-10" }, true),
+      "2026-10-21",
+    );
+    expect(october.previous).toBeNull();
 
     expect(await clearConnectData(owner)).toBe(4);
+  });
+
+  it("an employee sees only their own list once names are linked to people", async () => {
+    const owner = await withAccess(await createTestUser("OWNER"));
+    const member = await withAccess(await createTestUser("MEMBER"));
+    const query = parseConnectQuery({ view: "executor", person: "Другой (тест)" }, false);
+    // No links yet: works as before.
+    expect(scopeConnectQuery(query, false, await connectPeopleLinks(), member.id).own).toBeNull();
+    await expect(linkConnectPerson(member, PERSON, member.id)).rejects.toBeInstanceOf(ConnectError);
+    await linkConnectPerson(owner, PERSON, member.id);
+    expect(await connectPeopleLinks()).toEqual({ [PERSON]: member.id });
+    const scoped = scopeConnectQuery(query, false, await connectPeopleLinks(), member.id);
+    expect(scoped).toMatchObject({ own: [PERSON], query: { view: "executor", person: PERSON } });
+    // Somebody not linked sees nothing of others.
+    const other = await createTestUser("MEMBER");
+    expect(scopeConnectQuery(query, false, await connectPeopleLinks(), other.id)).toMatchObject({
+      own: [],
+      query: { person: null },
+    });
+    // The owner and managers are not limited.
+    expect(scopeConnectQuery(query, true, await connectPeopleLinks(), owner.id).own).toBeNull();
+    await linkConnectPerson(owner, PERSON, null);
+    expect(await connectPeopleLinks()).toEqual({});
   });
 
   it("only the owner and managers upload; unknown files are refused", async () => {

@@ -7,24 +7,36 @@ import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { db } from "@/lib/db";
+import { fromDateString } from "@/lib/dates";
+import type { PriceLabelStyle } from "@/lib/generated/prisma/enums";
 import { t } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { canManagePlanograms } from "@/modules/planograms/access";
+import { priceListDate } from "@/modules/planograms/price-status";
+import { currentPrices } from "@/modules/planograms/price-table";
 import { formatPrice } from "@/modules/planograms/prices";
+import { skuLabel } from "@/modules/planograms/shelf-list";
 
 export default async function SkusPage({ searchParams }: PageProps<"/planograms/skus">) {
   const user = await requireUser();
   const query = await searchParams;
   const manage = canManagePlanograms(user.role);
-  // Each price list holds all prices, so the latest one is the current price.
-  const [skus, latest] = await Promise.all([
+  // The price in force today, and a later list's price beside it (never in its place).
+  const [skus, { prices, future }] = await Promise.all([
     db.sku.findMany({ orderBy: [{ archived: "asc" }, { brand: "asc" }, { name: "asc" }] }),
-    db.priceList.findFirst({
-      orderBy: [{ effectiveFrom: "desc" }, { createdAt: "desc" }],
-      include: { prices: true },
-    }),
+    currentPrices(),
   ]);
-  const prices = new Map(latest?.prices.map((p) => [p.skuId, p.price]) ?? []);
+  const next = (skuId: string, style: PriceLabelStyle) => {
+    const f = future.get(skuId);
+    if (!f) return null;
+    const price = formatPrice(f.price, style);
+    return f.waiting
+      ? t("planograms.library.prices.futureWaiting", { price })
+      : t("planograms.library.prices.futureFrom", {
+          date: priceListDate(fromDateString(f.from)),
+          price,
+        });
+  };
 
   return (
     <div className="flex flex-col gap-3">
@@ -73,9 +85,7 @@ export default async function SkusPage({ searchParams }: PageProps<"/planograms/
             >
               <Thumb kind="sku" id={s.id} imagePath={s.imagePath} color={s.color} />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">
-                  {s.brand} {s.name}
-                </p>
+                <p className="truncate text-sm font-medium">{skuLabel(s)}</p>
                 <p className="text-muted-foreground text-xs">
                   {s.code}
                   {s.format && ` · ${s.format}`}
@@ -90,8 +100,13 @@ export default async function SkusPage({ searchParams }: PageProps<"/planograms/
                   <Badge variant="outline">{t("planograms.library.skus.archived")}</Badge>
                 )}
               </div>
-              <span className="w-16 shrink-0 text-right text-sm tabular-nums">
+              <span className="flex w-24 shrink-0 flex-col items-end text-sm tabular-nums">
                 {prices.has(s.id) ? formatPrice(prices.get(s.id)!, s.priceStyle) : "—"}
+                {next(s.id, s.priceStyle) && (
+                  <span className="text-muted-foreground text-right text-[11px] leading-tight">
+                    {next(s.id, s.priceStyle)}
+                  </span>
+                )}
               </span>
             </Link>
           </li>

@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { toDateString } from "@/lib/dates";
 import { withAccess } from "@/modules/core/access/actor";
 import {
+  assignPlanTasks,
   deletePhase,
   savePhase,
   savePlanSections,
@@ -11,7 +12,7 @@ import {
   shiftProject,
 } from "@/modules/projects/plan";
 import { createProject, ProjectError } from "@/modules/projects/service";
-import { TEMPLATES, templateByKey } from "@/modules/projects/templates";
+import { TEMPLATES, taskRole, templateByKey, templateRoles } from "@/modules/projects/templates";
 import { createTestUser, resetDb } from "@/tests/helpers/db";
 
 const day = (d: Date | null) => (d ? toDateString(d) : null);
@@ -64,6 +65,74 @@ describe("project templates and plan editing", () => {
     // A blank project has nothing.
     const blank = await createProject(owner, { name: "Тестовый пустой", template: "blank" });
     expect(await db.projectPhase.count({ where: { projectId: blank.id } })).toBe(0);
+  });
+
+  it("«Кто делает»: a template role's tasks go to the person picked for it, one notice each", async () => {
+    const owner = await withAccess(await createTestUser("OWNER"));
+    const lead = await createTestUser("MANAGER");
+    const marketer = await createTestUser("MEMBER");
+    await db.user.update({ where: { id: marketer.id }, data: { managerId: lead.id } });
+    const launch = templateByKey("launch")!;
+    expect(templateRoles(launch)).toContain("Маркетинг");
+    await createProject(owner, {
+      name: "Тестовый запуск",
+      template: "launch",
+      anchorDate: "2026-12-07",
+      leadId: lead.id,
+      roles: { Маркетинг: marketer.id },
+    });
+    const tasks = await db.task.findMany({ where: { project: "Тестовый запуск" } });
+    const marketing = launch.phases
+      .flatMap((p) => p.tasks)
+      .filter((task) => taskRole(task) === "Маркетинг")
+      .map((task) => task.code);
+    expect(marketing.length).toBeGreaterThan(1);
+    for (const task of tasks)
+      expect(task.assigneeId).toBe(marketing.includes(task.code!) ? marketer.id : lead.id);
+    // One notice per person for the whole plan, not one per task.
+    expect(await db.notification.count({ where: { userId: marketer.id } })).toBe(1);
+    expect(await db.notification.count({ where: { userId: lead.id } })).toBe(1);
+    // A deactivated person can't be picked.
+    await db.user.update({ where: { id: marketer.id }, data: { deactivatedAt: new Date() } });
+    await expect(
+      createProject(owner, {
+        name: "Тестовый запуск 2",
+        template: "launch",
+        anchorDate: "2026-12-07",
+        roles: { Маркетинг: marketer.id },
+      }),
+    ).rejects.toBeInstanceOf(ProjectError);
+  });
+
+  it("«Назначить выбранные»: tasks not started go to the person; work going on stays", async () => {
+    const owner = await withAccess(await createTestUser("OWNER"));
+    const lead = await withAccess(await createTestUser("MANAGER"));
+    const worker = await createTestUser("MEMBER");
+    const member = await withAccess(await createTestUser("MEMBER"));
+    await createProject(owner, {
+      name: "Тестовый запуск",
+      template: "launch",
+      anchorDate: "2026-12-07",
+      leadId: lead.id,
+    });
+    const project = await db.project.findFirstOrThrow();
+    const [a, b, c] = await db.task.findMany({ orderBy: { code: "asc" }, take: 3 });
+    await db.task.update({ where: { id: c!.id }, data: { status: "IN_PROGRESS" } });
+    const before = await db.notification.count({ where: { userId: worker.id } });
+    expect(await assignPlanTasks(lead, project.id, [a!.id, b!.id, c!.id], worker.id)).toBe(2);
+    const after = await db.task.findMany({ where: { id: { in: [a!.id, b!.id, c!.id] } } });
+    expect(after.find((x) => x.id === a!.id)!.assigneeId).toBe(worker.id);
+    expect(after.find((x) => x.id === b!.id)!.assigneeId).toBe(worker.id);
+    expect(after.find((x) => x.id === c!.id)!.assigneeId).toBe(lead.id);
+    expect(await db.notification.count({ where: { userId: worker.id } })).toBe(before + 1);
+    await expect(assignPlanTasks(member, project.id, [a!.id], member.id)).rejects.toBeInstanceOf(
+      ProjectError,
+    );
+    // The same from the task's own form in the plan.
+    await saveProjectTask(lead, project.id, c!.id, { title: c!.title, assigneeId: worker.id });
+    expect((await db.task.findUniqueOrThrow({ where: { id: c!.id } })).assigneeId).toBe(lead.id);
+    await saveProjectTask(lead, project.id, a!.id, { title: a!.title, assigneeId: lead.id });
+    expect((await db.task.findUniqueOrThrow({ where: { id: a!.id } })).assigneeId).toBe(lead.id);
   });
 
   it("moves open tasks and phase deadlines with the anchor day; closed tasks stay", async () => {

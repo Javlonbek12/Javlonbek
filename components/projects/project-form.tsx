@@ -20,6 +20,7 @@ export function ProjectForm({
   projectId,
   submit,
   templates,
+  roles = {},
 }: {
   action: (form: FormData) => Promise<void>;
   values?: Values;
@@ -29,6 +30,8 @@ export function ProjectForm({
   submit: string;
   // Offered when creating a project.
   templates?: { key: string; name: string; description: string; anchor: string | null }[];
+  // «Кто делает»: the roles of each template (by its key), a person for each.
+  roles?: Record<string, string[]>;
 }) {
   return (
     <form action={action} className="flex flex-col gap-3 text-sm">
@@ -62,6 +65,36 @@ export function ProjectForm({
             <Input type="date" name="anchorDate" className="w-auto" />
             <span className="text-muted-foreground text-xs">{t("projects.anchorHint")}</span>
           </label>
+          {templates
+            .filter((tpl) => roles[tpl.key]?.length)
+            .map((tpl) => (
+              <details key={tpl.key} className="rounded-lg border p-2.5">
+                <summary className="cursor-pointer font-medium">
+                  {t("projects.setup.rolesTitle")} · {tpl.name}
+                </summary>
+                <div className="mt-2 flex flex-col gap-2">
+                  <span className="text-muted-foreground text-xs">
+                    {t("projects.setup.rolesHint")}
+                  </span>
+                  {roles[tpl.key]!.map((role) => (
+                    <label
+                      key={role}
+                      className="grid gap-1 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)] sm:items-center"
+                    >
+                      <span>{role}</span>
+                      <NativeSelect name={`role:${role}`} defaultValue="">
+                        <option value="">{t("projects.setup.assigneeLead")}</option>
+                        {users.map((user) => (
+                          <option key={user.id} value={user.id}>
+                            {user.name}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    </label>
+                  ))}
+                </div>
+              </details>
+            ))}
         </>
       )}
       <label className="flex flex-col gap-1">
