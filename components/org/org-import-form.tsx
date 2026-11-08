@@ -27,7 +27,6 @@ export function OrgImportForm({ replaces }: { replaces: boolean }) {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap gap-2">
         <Button asChild variant="outline" size="sm">
-          {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- a file download, not a page */}
           <a href="/team/structure/template" download>
             <Download />
             {t("team.org.import.template")}
