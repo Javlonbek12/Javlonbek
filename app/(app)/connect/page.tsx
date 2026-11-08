@@ -132,8 +132,6 @@ export default async function ConnectPage({ searchParams }: PageProps<"/connect"
           </>
         }
         hintClassName="max-w-2xl"
-        // The «⋯» menu opens leftwards: it stays on the right, also on a phone.
-        className="flex-nowrap"
         actions={
           (canLead || downloadable) && (
             <MoreMenu label={t("connect.moreMenu")}>

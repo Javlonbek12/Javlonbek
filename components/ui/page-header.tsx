@@ -4,7 +4,7 @@ import { InfoHint } from "./info-hint";
 
 // The top of every section page: the title, its «?» with the long description, a line under the
 // title (optional) and the page's buttons. On a phone the buttons go under the title instead of
-// squeezing it into three lines.
+// squeezing it into three lines, and stay on the right there: a «⋯» menu opens leftwards.
 export function PageHeader({
   title,
   hint,
@@ -30,7 +30,9 @@ export function PageHeader({
         {hint && <InfoHint className={hintClassName}>{hint}</InfoHint>}
         {children && <div className="text-muted-foreground basis-full text-sm">{children}</div>}
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      {actions && (
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">{actions}</div>
+      )}
     </div>
   );
 }

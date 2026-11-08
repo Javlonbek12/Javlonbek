@@ -64,8 +64,6 @@ export default async function MeetingPage({ params, searchParams }: PageProps<"/
               )}
             </span>
           }
-          // The «⋯» menu opens leftwards: the buttons stay on the right, also on a phone.
-          className="flex-nowrap"
           actions={
             canEdit && (
               <div className="flex items-center gap-1">
