@@ -5,6 +5,7 @@ import { t } from "@/lib/i18n";
 import { withLocale } from "@/lib/i18n/server";
 import { canSeeReports } from "@/modules/reports/access";
 import { buildReport } from "@/modules/reports/data";
+import { reportExtras } from "@/modules/reports/extras";
 import { parsePeriod } from "@/modules/reports/period";
 import { reportPdf } from "@/modules/reports/pdf";
 import { reportXlsx } from "@/modules/reports/xlsx";
@@ -28,7 +29,10 @@ export async function GET(request: Request, { params }: RouteContext<"/api/repor
     const query = Object.fromEntries(new URL(request.url).searchParams);
     const period = parsePeriod(query, todayInTimezone(timezone));
     const report = await buildReport(period, timezone);
-    const body = format === "pdf" ? await reportPdf(report) : await reportXlsx(report);
+    const body =
+      format === "pdf"
+        ? await reportPdf(report, await reportExtras(user, period, report.today, timezone))
+        : await reportXlsx(report);
     const name = `${t("reports.title")} ${period.from} – ${period.to}.${format}`;
     return new Response(new Uint8Array(body), {
       headers: {

@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { chartWeeks, parsePeriod, presetPeriod, previousPeriod } from "./period";
+import {
+  chartWeeks,
+  parsePeriod,
+  periodCookieValue,
+  presetPeriod,
+  previousPeriod,
+  rememberedPeriod,
+} from "./period";
 
 // Sunday 2026-10-04 (weeks start on Monday).
 const TODAY = "2026-10-04";
@@ -47,5 +54,14 @@ describe("report periods", () => {
     expect(week.at(-1)).toBe("2026-09-28");
     expect(chartWeeks({ from: "2026-07-01", to: "2026-09-30" })).toHaveLength(13);
     expect(chartWeeks({ from: "2026-01-01", to: "2026-09-30" })).toHaveLength(13);
+  });
+
+  it("remembers the chosen period for the same person only", () => {
+    const week = { ...presetPeriod("week", TODAY), preset: "week" as const };
+    expect(rememberedPeriod(periodCookieValue("u1", week), "u1")).toEqual({ preset: "week" });
+    const own = { from: "2026-09-01", to: "2026-09-15", preset: null };
+    expect(parsePeriod(rememberedPeriod(periodCookieValue("u1", own), "u1"), TODAY)).toEqual(own);
+    expect(rememberedPeriod(periodCookieValue("u1", week), "u2")).toEqual({});
+    expect(rememberedPeriod("%E0%A4%A", "u1")).toEqual({});
   });
 });

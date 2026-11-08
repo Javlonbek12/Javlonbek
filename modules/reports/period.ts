@@ -70,3 +70,25 @@ export function chartWeeks(period: Period): string[] {
   const count = Math.min(13, Math.max(8, inPeriod));
   return Array.from({ length: count }, (_, i) => addDays(last, (i - count + 1) * 7));
 }
+
+// The last period chosen on the reports page, remembered in the browser as «<userId>:<preset>» or
+// «<userId>:<from>..<to>», so that someone else signing in on it starts from the default.
+export const PERIOD_COOKIE = "reports.period";
+
+export const periodCookieValue = (userId: string, period: Period & { preset: Preset | null }) =>
+  `${userId}:${period.preset ?? `${period.from}..${period.to}`}`;
+
+export function rememberedPeriod(value: string | undefined, userId: string) {
+  if (!value) return {};
+  let text: string;
+  try {
+    text = decodeURIComponent(value);
+  } catch {
+    return {};
+  }
+  const at = text.lastIndexOf(":");
+  if (at < 0 || text.slice(0, at) !== userId) return {};
+  const saved = text.slice(at + 1);
+  const [from, to] = saved.split("..");
+  return to ? { from, to } : { preset: saved };
+}

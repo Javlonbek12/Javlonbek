@@ -118,7 +118,9 @@ export async function buildReport(
     completed: t.completedAt ? local(t.completedAt) : null,
   }));
   const open = tasks.filter((t) => OPEN.includes(t.status));
-  const isOverdue = (t: ReportTask) => OPEN.includes(t.status) && t.due !== null && t.due < today;
+  // Handed-in work waits for acceptance: it is not overdue (owner's decision, as in the task list).
+  const isOverdue = (t: ReportTask) =>
+    OPEN.includes(t.status) && t.status !== "IN_REVIEW" && t.due !== null && t.due < today;
 
   const weeks = chartWeeks(period).map((weekStart) => {
     const range = { from: weekStart, to: addDays(weekStart, 6) };

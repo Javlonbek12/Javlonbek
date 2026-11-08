@@ -5,7 +5,10 @@ import { GET as download } from "@/app/api/reports/[format]/route";
 import { db } from "@/lib/db";
 import { createSessionToken, SESSION_COOKIE } from "@/modules/core/auth/session";
 import { updateSettings } from "@/modules/core/settings/service";
+import { withAccess } from "@/modules/core/access/actor";
+import { savePlanItem } from "@/modules/content/service";
 import { buildReport } from "@/modules/reports/data";
+import { reportExtras } from "@/modules/reports/extras";
 import { reportPdf } from "@/modules/reports/pdf";
 import { highlights } from "@/modules/reports/summary";
 import { reportXlsx } from "@/modules/reports/xlsx";
@@ -103,7 +106,45 @@ describe("management report", () => {
     expect(report.projects.map((p) => p.name)).toContain("Тестовый проект");
     expect(report.periodTasks.map((t) => t.title)).not.toContain("Личная");
     expect(report.weeks.at(-1)).toMatchObject({ weekStart: "2026-09-28", completed: 2 });
-    expect(highlights(report).join(" ")).toContain("Выполнено задач: 2 (+100%");
+    // A few tasks: the number before, not «+100%» (owner's decision on small numbers).
+    expect(highlights(report).join(" ")).toContain("Выполнено задач: 2 (в прошлом периоде — 1)");
+  });
+
+  it("work handed in is not overdue; the content plan joins «Главное»", async () => {
+    const owner = await withAccess(await createTestUser("OWNER"));
+    const a = await createTestUser("MEMBER");
+    await db.task.create({
+      data: {
+        title: "Сдана на проверку",
+        creatorId: owner.id,
+        assigneeId: a.id,
+        status: "IN_REVIEW",
+        approvedAt: new Date("2026-09-20T05:00:00Z"),
+        dueDate: day("2026-10-01"),
+      },
+    });
+    const period = { from: "2026-09-28", to: "2026-10-04" };
+    const report = await buildReport(period, TZ, NOW);
+    expect(report.now).toMatchObject({ overdue: 0, inReview: 1 });
+    expect(report.overdueTasks).toEqual([]);
+
+    // A post due in the period that wasn't sent.
+    const post = await savePlanItem(owner, null, {
+      title: "Тестовый пост",
+      channels: ["PARTNER"],
+      publishDate: "2026-10-02",
+      authorId: a.id,
+    });
+    expect(post.status).toBe("PLANNED");
+    const parts = await reportExtras(owner, period, "2026-10-05", TZ);
+    expect(parts.map((p) => p.title)).toEqual(["Контент-план", "Аналитика Connect"]);
+    expect(parts[0]!.lines).toEqual([
+      "Отправлено вовремя: 0 из 1 пост.",
+      "Не отправлено в срок: 1.",
+    ]);
+    expect(parts[1]!.lines[0]).toContain("Данных Connect за");
+    const pdf = await reportPdf(report, parts);
+    expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
   });
 
   it("produces a PDF and an Excel file from the test data", async () => {
