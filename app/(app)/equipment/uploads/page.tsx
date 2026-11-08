@@ -8,8 +8,11 @@ import { ConfirmAction } from "@/components/ui/confirm-action";
 import { Input } from "@/components/ui/input";
 import { dateFormat, t, type TranslationKey } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
+import { displayName } from "@/modules/core/users/display-name";
 import { equipmentControl } from "@/modules/distribution/control";
+import { uploadHistory } from "@/modules/distribution/equipment";
 import { canManageDistribution, dataSources, pendingImport } from "@/modules/distribution/service";
+import { typeInfo } from "@/modules/distribution/types";
 
 import {
   importEquipmentAction,
@@ -29,7 +32,8 @@ export default async function EquipmentUploadsPage({
   const query = await searchParams;
   const error = typeof query.error === "string" ? query.error : null;
   const q = (key: string) => (typeof query[key] === "string" ? Number(query[key]) : 0);
-  const sources = await dataSources();
+  const [sources, history] = await Promise.all([dataSources(), uploadHistory()]);
+  const signed = (n: number) => (n > 0 ? `+${fmt(n)}` : n < 0 ? `−${fmt(-n)}` : "0");
   const pending = typeof query.pending === "string" ? await pendingImport(query.pending) : null;
   // Right after an upload: the control table of what is now loaded.
   const control = typeof query.equipment === "string" ? await equipmentControl() : null;
@@ -98,6 +102,47 @@ export default async function EquipmentUploadsPage({
           <Button type="submit">{t("dist.import.submit")}</Button>
         </form>
       </Section>
+
+      {history.length > 0 && (
+        <Section title={t("equip.history.title")} hint={t("equip.history.hint")}>
+          <ul className="flex flex-col divide-y rounded-xl border">
+            {history.map((h) => (
+              <li key={h.id} className="flex flex-col gap-1 px-3 py-2 text-sm">
+                <span className="flex flex-wrap items-baseline gap-x-3">
+                  <span className="font-medium tabular-nums">{at.format(h.at)}</span>
+                  <span className="text-muted-foreground text-xs">
+                    {h.by ? displayName(h.by) : "—"}
+                  </span>
+                  {h.rows !== null && (
+                    <span className="text-muted-foreground text-xs">
+                      {t("equip.history.rows", { count: fmt(h.rows) })}
+                      {h.units !== null && ` · ${t("equip.history.units", { count: fmt(h.units) })}`}
+                      {h.outlets !== null &&
+                        ` · ${t("equip.history.outlets", { count: fmt(h.outlets) })}`}
+                    </span>
+                  )}
+                </span>
+                {(h.unitsDelta !== null || h.outletsDelta !== null || h.types.length > 0) && (
+                  <span className="text-xs">
+                    {t("equip.history.changed")}{" "}
+                    {[
+                      h.unitsDelta !== null &&
+                        t("equip.history.unitsDelta", { change: signed(h.unitsDelta) }),
+                      h.outletsDelta !== null &&
+                        t("equip.history.outletsDelta", { change: signed(h.outletsDelta) }),
+                      ...h.types.map(
+                        (x) => `${typeInfo(x.type)?.label ?? x.type} ${signed(x.change)}`,
+                      ),
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
 
       <Section title={t("dist.import.outletsTitle")} hint={t("dist.import.outletsHint")}>
         {typeof query.outlets === "string" && (

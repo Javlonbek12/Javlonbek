@@ -2,10 +2,13 @@ import Link from "next/link";
 
 import { Kpi, Section } from "@/components/connect/parts";
 import { fmt, pct } from "@/components/distribution/parts";
+import { DataFreshness } from "@/components/equipment/data-freshness";
+import { OutletAttention } from "@/components/equipment/outlet-attention";
 import { UzbekistanMap } from "@/components/equipment/uz-map";
 import { Card } from "@/components/ui/card";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { outletReview } from "@/modules/distribution/control";
 import { equipmentOverview } from "@/modules/distribution/equipment";
 
 const METRICS = ["installed", "stock", "outlets"] as const;
@@ -16,7 +19,7 @@ type Metric = (typeof METRICS)[number];
 export default async function EquipmentMapPage({ searchParams }: PageProps<"/equipment">) {
   const query = await searchParams;
   const metric: Metric = METRICS.find((m) => m === query.m) ?? "installed";
-  const o = await equipmentOverview();
+  const [o, review] = await Promise.all([equipmentOverview(), outletReview()]);
   if (o.regions.length === 0)
     return (
       <Card className="items-start gap-2">
@@ -35,6 +38,10 @@ export default async function EquipmentMapPage({ searchParams }: PageProps<"/equ
 
   return (
     <div className="flex flex-col gap-5 [&>*]:min-w-0">
+      <div className="flex flex-col gap-3">
+        <DataFreshness />
+        <OutletAttention review={review} />
+      </div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi label={t("equip.kpi.installed")} value={fmt(o.installedTotal)} />
         <Kpi label={t("equip.kpi.stock")} value={fmt(o.stockTotal)} />

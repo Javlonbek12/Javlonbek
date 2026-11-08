@@ -1,5 +1,9 @@
+import { Download } from "lucide-react";
+
 import { Section } from "@/components/connect/parts";
 import { fmt, Matrix } from "@/components/distribution/parts";
+import { DataFreshness } from "@/components/equipment/data-freshness";
+import { Button } from "@/components/ui/button";
 import { dateFormat, t, type TranslationKey } from "@/lib/i18n";
 import { outletReview, type OutletRow } from "@/modules/distribution/control";
 import { typeInfo } from "@/modules/distribution/types";
@@ -14,6 +18,15 @@ export default async function EquipmentOutletsPage() {
   const day = dateFormat({ dateStyle: "medium" });
   return (
     <div className="flex flex-col gap-5 [&>*]:min-w-0">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <DataFreshness />
+        <Button asChild size="sm" variant="outline">
+          <a href="/api/distribution/outlet-review">
+            <Download />
+            {t("equip.attention.excel")}
+          </a>
+        </Button>
+      </div>
       <Section
         title={`${t("equip.outlets.missingTitle")} · ${fmt(r.missing.length)}`}
         hint={t("equip.outlets.missingHint")}

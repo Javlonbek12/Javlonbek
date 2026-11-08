@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { Kpi, Section } from "@/components/connect/parts";
 import { fmt, Matrix, N } from "@/components/distribution/parts";
 import { EquipmentSketch, rowsOf } from "@/components/distribution/sketch";
+import { DataFreshness } from "@/components/equipment/data-freshness";
 import { UzbekistanMap } from "@/components/equipment/uz-map";
 import { t } from "@/lib/i18n";
 import { equipmentOverview, regionEquipment } from "@/modules/distribution/equipment";
@@ -28,6 +29,7 @@ export default async function EquipmentRegionPage({
         {t("equip.back")}
       </Link>
       <h2 className="text-xl font-semibold">{region}</h2>
+      <DataFreshness />
       <div className="grid gap-5 lg:grid-cols-[1fr_20rem] [&>*]:min-w-0">
         <div className="grid grid-cols-2 content-start gap-3 lg:grid-cols-3">
           <Kpi label={t("equip.kpi.installed")} value={fmt(r.installedTotal)} />

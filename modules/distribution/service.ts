@@ -413,27 +413,34 @@ export async function loadDistribution(orderId?: string) {
 
 export type Distribution = Awaited<ReturnType<typeof loadDistribution>>;
 
-// When each file was last loaded, and what it held.
+// When each file was last loaded, by whom, and what it held.
 export async function dataSources() {
+  const select = {
+    createdAt: true,
+    actor: { select: { firstName: true, lastName: true } },
+  } as const;
   const [equipment, outlets, units, outletCount] = await Promise.all([
     db.activityLog.findFirst({
       where: { action: { in: ["distribution.equipment", "distribution.imported"] } },
       orderBy: { createdAt: "desc" },
-      select: { createdAt: true },
+      select,
     }),
     db.activityLog.findFirst({
       where: { action: "distribution.outlets" },
       orderBy: { createdAt: "desc" },
-      select: { createdAt: true },
+      select,
     }),
     db.distUnit.count(),
     db.distOutlet.count(),
   ]);
   return {
-    equipment: equipment ? { at: equipment.createdAt, units } : null,
-    outlets: outlets ? { at: outlets.createdAt, count: outletCount } : null,
+    equipment: equipment ? { at: equipment.createdAt, by: equipment.actor, units } : null,
+    outlets: outlets ? { at: outlets.createdAt, by: outlets.actor, count: outletCount } : null,
   };
 }
+
+// An equipment file older than this is flagged: the numbers may no longer be true.
+export const STALE_DAYS = 7;
 
 const MAX_FILE = 20 * 1024 * 1024;
 
@@ -548,6 +555,9 @@ async function saveEquipment(actor: Actor & Viewer, file: ParsedEquipment, confi
   );
   const units = file.units.reduce((s, u) => s + u.units, 0);
   const noId = new Set(file.units.filter((u) => !u.outletId).map((u) => u.outletKey)).size;
+  // The file's totals stay in the log, so the upload history can say what changed between files.
+  const byType: Record<string, number> = {};
+  for (const u of file.units) byType[u.type] = (byType[u.type] ?? 0) + u.units;
   await logActivity({
     actorId: actor.id,
     action: "distribution.equipment",
@@ -558,6 +568,10 @@ async function saveEquipment(actor: Actor & Viewer, file: ParsedEquipment, confi
       stock: file.stock.length,
       skipped: file.skipped.length,
       noId,
+      units: Math.round(units),
+      stockUnits: Math.round(file.stock.reduce((s, c) => s + c.count, 0)),
+      outlets: new Set(file.units.map((u) => u.outletKey)).size,
+      byType: Object.fromEntries(Object.entries(byType).map(([k, v]) => [k, Math.round(v)])),
       ...(confirmed ? { confirmedMinus: true } : {}),
     },
   });
