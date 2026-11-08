@@ -62,6 +62,8 @@ export const ru = {
     kb: "{n} КБ",
     mb: "{n} МБ",
     gb: "{n} ГБ",
+    whatIsThis: "Что это?",
+    hide: "Скрыть",
   },
   home: {
     title: "Assistant",

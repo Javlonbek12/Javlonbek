@@ -64,6 +64,8 @@ export const en: Dictionary = {
     kb: "{n} KB",
     mb: "{n} MB",
     gb: "{n} GB",
+    whatIsThis: "What is this?",
+    hide: "Hide",
   },
   home: {
     title: "Assistant",
