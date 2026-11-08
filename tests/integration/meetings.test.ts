@@ -10,6 +10,7 @@ import {
 import type { DraftPayload } from "@/modules/bot/draft-card";
 import { proposeActionItems } from "@/modules/meetings/minutes";
 import {
+  appendNotes,
   createMeeting,
   deleteMeeting,
   getMeetingDetail,
@@ -177,6 +178,142 @@ describe("minutes via the bot (/notes)", () => {
     await handleCallback(users.owner, `d:${draft.id}:save`, deps);
     expect(await db.task.count({ where: { meetingId: meeting.id } })).toBe(3);
     expect((await db.meetingNotes.findFirstOrThrow()).text).toBe(MINUTES[0].text);
+  });
+
+  it("adds the bot's minutes below the existing ones and proposes tasks only from the new part", async () => {
+    const users = await createFixtureTeam();
+    const now = new Date(`${MEETING_DATE}T12:00:00+05:00`);
+    const meeting = await createMeeting(users.owner, input({ participantIds: [users.aziz.id] }));
+    await saveNotes(users.aziz, meeting.id, "Итоги с сайта");
+    let seen = "";
+    const deps: ConversationDeps = {
+      now,
+      interpret: async () => {
+        throw new Error("not used");
+      },
+      extract: async () => [],
+      extractActionItems: async (_u, text) => {
+        seen = text;
+        return [];
+      },
+    };
+    await handleCallback(users.owner, `m:${meeting.id}`, deps);
+    await handleText(
+      users.owner,
+      users.owner.telegramId,
+      "Голосом: Азиз звонит дистрибьютору",
+      deps,
+    );
+    const notes = await db.meetingNotes.findFirstOrThrow();
+    expect(notes.text).toBe(
+      "Итоги с сайта\n\n— Добавлено через бота: Тестовый владелец, 1 окт., 12:00 —\nГолосом: Азиз звонит дистрибьютору",
+    );
+    expect(seen).toBe("Голосом: Азиз звонит дистрибьютору");
+  });
+});
+
+describe("minutes on the site", () => {
+  beforeEach(resetDb);
+
+  it("refuses to overwrite minutes someone saved after the editor was opened", async () => {
+    const users = await createFixtureTeam();
+    const meeting = await createMeeting(users.owner, input({ participantIds: [users.aziz.id] }));
+    // Both open the empty minutes; the first save wins, the second is refused.
+    await saveNotes(users.aziz, meeting.id, "Минутки Азиза", "");
+    await expect(saveNotes(users.owner, meeting.id, "Мои минутки", "")).rejects.toMatchObject({
+      code: "conflict",
+    });
+    const saved = await db.meetingNotes.findFirstOrThrow();
+    expect(saved.text).toBe("Минутки Азиза");
+
+    // Starting from the current version works; an old version is refused again.
+    const version = saved.updatedAt.toISOString();
+    await saveNotes(users.owner, meeting.id, "Минутки Азиза + мои", version);
+    await expect(saveNotes(users.aziz, meeting.id, "Старое", version)).rejects.toMatchObject({
+      code: "conflict",
+    });
+    expect((await db.meetingNotes.findFirstOrThrow()).text).toBe("Минутки Азиза + мои");
+
+    // The bot never overwrites: it appends.
+    await appendNotes(users.aziz, meeting.id, "Ещё пункт");
+    expect((await db.meetingNotes.findFirstOrThrow()).text).toMatch(
+      /^Минутки Азиза \+ мои\n\n— Добавлено через бота: Азиз Каримов, .+ —\nЕщё пункт$/,
+    );
+  });
+});
+
+describe("editing a meeting", () => {
+  beforeEach(resetDb);
+
+  it("tells participants about a new time, invites added people and reminds again at the new time", async () => {
+    const users = await createFixtureTeam();
+    const meeting = await createMeeting(users.owner, input({ participantIds: [users.aziz.id] }));
+    const writeDigest = async () => "";
+    await runSchedulerTick(new Date(meeting.startsAt.getTime() - 10 * 60_000), { writeDigest });
+    expect(await db.notification.count({ where: { type: "meeting_reminder" } })).toBe(2);
+
+    // Title only: nobody is bothered.
+    await updateMeeting(
+      users.owner,
+      meeting.id,
+      input({ title: "Планёрка (новая)", participantIds: [users.aziz.id] }),
+    );
+    expect(await db.notification.count({ where: { type: "meeting_invite" } })).toBe(1);
+
+    // An hour later, with Dilnoza added.
+    await updateMeeting(
+      users.owner,
+      meeting.id,
+      input({
+        startsLocal: `${MEETING_DATE}T11:00`,
+        participantIds: [users.aziz.id, users.dilnoza.id],
+      }),
+    );
+    const aziz = await db.notification.findMany({
+      where: { userId: users.aziz.id, type: "meeting_invite" },
+      orderBy: { createdAt: "asc" },
+    });
+    expect(aziz.map((n) => n.title)).toEqual([
+      "📅 Приглашение на встречу",
+      "📅 Встреча перенесена",
+    ]);
+    expect(aziz[1].body).toContain("11:00");
+    expect(
+      await db.notification.count({ where: { userId: users.dilnoza.id, type: "meeting_invite" } }),
+    ).toBe(1);
+    expect(
+      await db.notification.count({ where: { userId: users.owner.id, type: "meeting_invite" } }),
+    ).toBe(0);
+
+    // The reminder for the new time is sent again (to all three).
+    const moved = await db.meeting.findUniqueOrThrow({ where: { id: meeting.id } });
+    await runSchedulerTick(new Date(moved.startsAt.getTime() - 10 * 60_000), { writeDigest });
+    expect(await db.notification.count({ where: { type: "meeting_reminder" } })).toBe(5);
+  });
+
+  it("«this and following» moves the later occurrences by the same shift", async () => {
+    const users = await createFixtureTeam();
+    await createMeeting(users.owner, input({ repeatUntil: "2026-10-22" }));
+    const all = await db.meeting.findMany({ orderBy: { startsAt: "asc" } });
+    // From the 2nd occurrence on: a day later (Friday) at 15:30, with a new title.
+    await updateMeeting(
+      users.owner,
+      all[1].id,
+      input({ title: "Пятничная", startsLocal: "2026-10-09T15:30" }),
+      true,
+    );
+    const after = await db.meeting.findMany({ orderBy: { startsAt: "asc" } });
+    expect(after.map((m) => [m.title, m.startsAt.toISOString()])).toEqual([
+      ["Планёрка", "2026-10-01T05:00:00.000Z"],
+      ["Пятничная", "2026-10-09T10:30:00.000Z"],
+      ["Пятничная", "2026-10-16T10:30:00.000Z"],
+      ["Пятничная", "2026-10-23T10:30:00.000Z"],
+    ]);
+    // Only this one: the others stay.
+    await updateMeeting(users.owner, all[3].id, input({ startsLocal: "2026-10-23T09:00" }));
+    expect(
+      (await db.meeting.findMany({ orderBy: { startsAt: "asc" } })).map((m) => m.title),
+    ).toEqual(["Планёрка", "Пятничная", "Пятничная", "Планёрка"]);
   });
 });
 

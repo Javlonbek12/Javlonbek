@@ -61,9 +61,9 @@ import { formatDateTime } from "@/lib/time";
 import { proposeActionItems, type ActionItemExtractor } from "@/modules/meetings/minutes";
 import {
   MeetingError,
+  appendNotes,
   getMeetingDetail,
   recentMeetingsForNotes,
-  saveNotes,
 } from "@/modules/meetings/service";
 import type { TelegramButton } from "./keyboard";
 
@@ -279,7 +279,8 @@ async function handleDraftCallback(user: User, parts: string[], now?: Date): Pro
   return cardReply(draftId, payload, true);
 }
 
-// Minutes sent after /notes: save them, then propose tasks from them.
+// Minutes sent after /notes: add them below the meeting's minutes, then propose tasks from what
+// was just sent (tasks from the earlier minutes were proposed back then).
 async function applyMeetingNotes(
   user: User,
   chatId: bigint,
@@ -292,7 +293,7 @@ async function applyMeetingNotes(
   await db.botDraft.delete({ where: { id: draftId } });
   let meeting;
   try {
-    meeting = await saveNotes(user, meetingId, text);
+    meeting = await appendNotes(user, meetingId, text, deps.now);
   } catch (error) {
     if (!(error instanceof MeetingError)) throw error;
     return { text: t(`meetings.errors.${error.code}`) };
@@ -301,7 +302,7 @@ async function applyMeetingNotes(
     .filter(Boolean)
     .join("\n\n");
   try {
-    const tasks = await proposeActionItems(user, meetingId, deps.extractActionItems);
+    const tasks = await proposeActionItems(user, meetingId, deps.extractActionItems, text);
     if (tasks.length === 0) return { text: `${saved}\n${t("meetings.actions.none")}` };
     return startDraft(user, chatId, tasks, saved, meetingId);
   } catch (error) {

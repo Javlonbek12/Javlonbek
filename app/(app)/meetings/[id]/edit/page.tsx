@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 
 import { MeetingForm } from "@/components/meetings/meeting-form";
 import { db } from "@/lib/db";
-import { t, type TranslationKey } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
 import { utcToZonedLocal } from "@/lib/time";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getSettings } from "@/modules/core/settings/service";
@@ -11,13 +11,9 @@ import { getMeetingDetail } from "@/modules/meetings/service";
 
 import { updateMeetingAction } from "../../actions";
 
-export default async function EditMeetingPage({
-  params,
-  searchParams,
-}: PageProps<"/meetings/[id]/edit">) {
+export default async function EditMeetingPage({ params }: PageProps<"/meetings/[id]/edit">) {
   const user = await requireUser();
   const { id } = await params;
-  const { error } = await searchParams;
   const detail = await getMeetingDetail(user, id);
   if (!detail?.canEdit) notFound();
   const { meeting } = detail;
@@ -29,24 +25,22 @@ export default async function EditMeetingPage({
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-[22px] font-medium md:text-2xl">{t("meetings.edit")}</h1>
-      {typeof error === "string" && (
-        <p role="alert" className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
-          {t(`meetings.errors.${error}` as TranslationKey)}
-        </p>
-      )}
       <MeetingForm
         action={updateMeetingAction}
         people={people.map((p) => ({ id: p.id, name: displayName(p) }))}
         isNew={false}
+        inSeries={meeting.seriesId !== null}
+        meetingId={meeting.id}
         submitLabel={t("meetings.save")}
         initial={{
-          meetingId: meeting.id,
           title: meeting.title,
           startsLocal: utcToZonedLocal(meeting.startsAt, timezone),
-          durationMinutes: meeting.durationMinutes,
+          durationMinutes: String(meeting.durationMinutes),
           agenda: meeting.agenda ?? "",
           link: meeting.link ?? "",
+          repeatUntil: "",
           participantIds: meeting.participants.map((p) => p.userId),
+          following: "",
         }}
       />
     </div>

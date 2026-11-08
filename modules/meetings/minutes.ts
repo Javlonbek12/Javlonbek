@@ -16,11 +16,13 @@ export type ActionItemExtractor = (
   ctx: PromptContext,
 ) => Promise<ExtractedTask[]>;
 
-// Proposed tasks from the saved minutes; the user confirms them before anything is created.
+// Proposed tasks from the saved minutes (or only from `text`, the part just added by the bot); the
+// user confirms them before anything is created.
 export async function proposeActionItems(
   actor: Actor,
   meetingId: string,
   extract: ActionItemExtractor = extractActionItems,
+  text?: string,
 ) {
   const meeting = await db.meeting.findUnique({
     where: { id: meetingId },
@@ -58,6 +60,6 @@ export async function proposeActionItems(
     teamNames: ordered.map((p) => displayName(p)),
     projects,
   };
-  const items = await extract(actor.id, meeting.notes.text, ctx);
+  const items = await extract(actor.id, text ?? meeting.notes.text, ctx);
   return resolveTasks(items, ordered, actor.id);
 }
