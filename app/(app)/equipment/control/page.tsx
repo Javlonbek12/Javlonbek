@@ -122,6 +122,7 @@ export default async function EquipmentControlPage({
                         action={deletePurchaseAction}
                         hidden={{ id: p.id }}
                         align="right"
+                        floating
                       />,
                     ]
                   : []),

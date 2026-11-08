@@ -5,6 +5,7 @@ import "dotenv/config";
 import { PgBoss } from "pg-boss";
 
 import { getEnv } from "@/lib/env";
+import { freezeOrdered } from "@/modules/distribution/service";
 
 import { runSchedulerTick } from "./tick";
 
@@ -26,6 +27,9 @@ export async function startWorker(connectionString = getEnv().DATABASE_URL) {
 async function main() {
   const boss = await startWorker();
   console.log("Scheduler worker started (every minute).");
+  // Campaigns ordered before the split was frozen keep the split they have today, so a new
+  // equipment file after a deploy doesn't move their plan. Done once per start; harmless to repeat.
+  await freezeOrdered().catch((error) => console.error("Freezing ordered campaigns failed", error));
   const shutdown = async () => {
     await boss.stop({ graceful: true });
     process.exit(0);

@@ -138,6 +138,9 @@ export async function saveProjectTask(
     },
     "create",
     {
+      // The lead adding a task for themselves starts it right away, as everywhere else; one with
+      // a start date ahead still waits.
+      startOwn: true,
       extra: {
         phaseId: phaseId ?? null,
         code: rest.code ?? null,

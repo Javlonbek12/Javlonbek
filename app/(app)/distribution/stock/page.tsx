@@ -204,6 +204,7 @@ export default async function DistributionStockPage({
                     action={deleteShipmentAction}
                     hidden={{ id: s.id }}
                     align="right"
+                    floating
                   />
                 ) : (
                   ""

@@ -400,7 +400,7 @@ export type StatusOptions = {
   // Accept although a blocking task was cancelled.
   despiteCancelled?: boolean;
   // Sending one's own task that the route starts right away: straight into work («Создать» in
-  // the form, the bot, repeats). A project plan's tasks keep waiting as «Утверждена».
+  // the form, the bot, repeats, a project plan). An imported plan keeps the statuses of its file.
   startOwn?: boolean;
   now?: Date;
 };

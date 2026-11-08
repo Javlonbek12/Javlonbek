@@ -105,9 +105,16 @@ describe("project templates and plan editing", () => {
       project: "Тестовый проект",
       phaseId: phase.id,
       assigneeId: lead.id,
-      status: "APPROVED",
+      // The lead's own task that has already started goes straight into work.
+      status: "IN_PROGRESS",
       isMilestone: true,
     });
+    const later = await saveProjectTask(lead, project.id, null, {
+      title: "Тестовая задача позже",
+      startDate: "2099-01-10",
+      dueDate: "2099-01-20",
+    });
+    expect((await db.task.findUniqueOrThrow({ where: { id: later } })).status).toBe("APPROVED");
     await saveProjectTask(owner, project.id, taskId, {
       title: "Тестовая задача Б",
       dueDate: "2026-10-25",
