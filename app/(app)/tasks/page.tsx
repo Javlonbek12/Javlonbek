@@ -197,6 +197,7 @@ export default async function TaskListPage({ searchParams }: PageProps<"/tasks">
           accepts={target === "DONE" && !task.isPersonal && !isDoer(user, task)}
           blocked={target === "DONE" && task.openBlockers > 0}
           back={here}
+          openHref={withParams(listHref, { task: task.id })}
         />
       ),
     };

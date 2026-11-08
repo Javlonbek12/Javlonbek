@@ -5,7 +5,7 @@ import { addDays, daysBetween, formatDay, fromDateString } from "@/lib/dates";
 import { t, dateFormat } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { ganttBar, type PhaseState, type ProjectTask } from "@/modules/projects/progress";
-import { isOverdue } from "@/modules/tasks/today";
+import { isLateWork } from "@/modules/tasks/today";
 
 type Phase = {
   id: string | null;
@@ -23,7 +23,7 @@ const monthShort = {
 
 function taskColor(task: ProjectTask, today: string) {
   if (task.status === "DONE") return "bg-emerald-500";
-  if (isOverdue(task, today)) return "bg-destructive";
+  if (isLateWork(task, today)) return "bg-destructive";
   if (task.atRisk) return "bg-amber-500";
   if (task.status === "IN_PROGRESS" || task.status === "IN_REVIEW") return "bg-blue-500";
   return "bg-blue-500/40";

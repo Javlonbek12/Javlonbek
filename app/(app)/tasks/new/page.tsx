@@ -11,10 +11,11 @@ import { routeHints } from "@/modules/tasks/route-hints";
 import { createTaskAction } from "../actions";
 
 // ?due=YYYY-MM-DD fills the due date (the calendar); ?meeting=<id> makes it a task for that
-// meeting (its page's «+ Добавить задачу»).
+// meeting (its page's «+ Добавить задачу»); ?assignee=<id> picks the assignee (the employee
+// card's «Поставить задачу») when that person can be given work.
 export default async function NewTaskPage({ searchParams }: PageProps<"/tasks/new">) {
   const user = await requireUser();
-  const { due, meeting: meetingId } = await searchParams;
+  const { due, meeting: meetingId, assignee } = await searchParams;
   const [options, routes, today, found] = await Promise.all([
     getTaskFormOptions(user),
     routeHints(user.id),
@@ -34,6 +35,11 @@ export default async function NewTaskPage({ searchParams }: PageProps<"/tasks/ne
     })
       ? { id: found.id, title: found.title }
       : undefined;
+  // Only someone the form offers (active people).
+  const assigneeId =
+    typeof assignee === "string" && options.users.some((u) => u.id === assignee)
+      ? assignee
+      : user.id;
 
   return (
     <div className="flex flex-col gap-3">
@@ -47,7 +53,7 @@ export default async function NewTaskPage({ searchParams }: PageProps<"/tasks/ne
         canAskApproval={user.role !== "OWNER"}
         meeting={meeting}
         initial={{
-          assigneeId: user.id,
+          assigneeId,
           priority: "MEDIUM",
           dueDate: typeof due === "string" && isDateString(due) ? due : "",
         }}

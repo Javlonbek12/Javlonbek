@@ -16,7 +16,7 @@ import { quickTarget } from "@/modules/tasks/quick";
 import { decisionCount, listDecisions, type TaskView } from "@/modules/tasks/service";
 
 const BASE = "/tasks/decide";
-const GROUPS = ["approve", "accept", "remove"] as const;
+const GROUPS = ["approve", "accept", "dueChange", "remove"] as const;
 
 // «Ждут решения»: everything the route gave the user to decide, in one list — tasks to approve or
 // decline, work to accept or send back, requests to delete. A task opens in the panel next to the
@@ -42,6 +42,7 @@ export default async function TaskDecisionsPage({ searchParams }: PageProps<"/ta
           accepts={target === "DONE" && !task.isPersonal && !isDoer(user, task)}
           blocked={target === "DONE" && task.openBlockers > 0}
           back={here}
+          openHref={withParams(BASE, { task: task.id })}
         />
       ),
     };

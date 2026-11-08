@@ -36,6 +36,7 @@ import { occurrencesBetween, copyDay } from "./repeat";
 import { copyMode, createDueCopies, ruleOf, setRepeat, startSeries } from "./repeat-service";
 import { copySteps, stepProgress } from "./step-rules";
 import { dropCoAssigneeRequests, listCoAssigneeDecisions } from "./co-assignees";
+import { dueChangeDeciders } from "./due-change";
 import { stopTimersOnTask } from "./time-rules";
 import { withAccess } from "@/modules/core/access/actor";
 import { notify } from "@/modules/core/notifications/service";
@@ -885,10 +886,10 @@ export async function listWaitingDecisions(actor: Actor) {
 }
 
 // Everything that waits for the actor's decision: tasks to approve, work to accept, requests to
-// delete tasks they control and to add co-assignees. The one source for «Ждут решения» wherever
+// delete tasks they control, to move a due date and to add co-assignees. The one source for «Ждут решения» wherever
 // it shows: the tab and its badge, the home screen, the morning digest and the bot's /pending.
 export async function listDecisions(actor: Actor) {
-  const [waiting, removals] = await Promise.all([
+  const [waiting, removals, dueChanges] = await Promise.all([
     listWaitingDecisions(actor),
     db.task.findMany({
       where: {
@@ -904,11 +905,25 @@ export async function listDecisions(actor: Actor) {
       include: listInclude,
       orderBy: { deleteRequestedAt: "asc" },
     }),
+    db.task.findMany({
+      where: {
+        AND: [
+          visibleTasksWhere(actor),
+          { isPersonal: false, dueChangeAt: { not: null }, NOT: { dueChangeById: actor.id } },
+        ],
+      },
+      include: listInclude,
+      orderBy: { dueChangeAt: "asc" },
+    }),
   ]);
   return {
     approve: waiting.filter((task) => task.status === "PENDING_APPROVAL"),
     accept: waiting.filter((task) => task.status === "IN_REVIEW"),
     remove: removals.filter((task) => canControl(actor, task)).map(toTaskView),
+    // Asked of the author (or whoever accepts the work): not of everyone who could decide.
+    dueChange: dueChanges
+      .filter((task) => dueChangeDeciders(task).includes(actor.id))
+      .map(toTaskView),
     coAssignees: await listCoAssigneeDecisions(actor),
   };
 }
@@ -916,8 +931,8 @@ export async function listDecisions(actor: Actor) {
 export type Decisions = Awaited<ReturnType<typeof listDecisions>>;
 
 // How many decisions wait, counted the same way everywhere.
-export function decisionCount({ approve, accept, remove, coAssignees }: Decisions) {
-  return approve.length + accept.length + remove.length + coAssignees.length;
+export function decisionCount({ approve, accept, remove, dueChange, coAssignees }: Decisions) {
+  return approve.length + accept.length + remove.length + dueChange.length + coAssignees.length;
 }
 
 export async function countDecisions(actor: Actor) {

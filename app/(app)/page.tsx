@@ -148,7 +148,7 @@ function DecisionRow({
   task,
   detail,
 }: {
-  kind: "approve" | "accept" | "remove" | "coAssignee";
+  kind: "approve" | "accept" | "remove" | "dueChange" | "coAssignee";
   task: { id: string; title: string };
   detail: string;
 }) {
@@ -156,6 +156,7 @@ function DecisionRow({
     approve: t("home.today.approveTask"),
     accept: t("home.today.acceptWork"),
     remove: t("home.today.removeRequest"),
+    dueChange: t("tasks.dueChange.request"),
     coAssignee: detail,
   }[kind];
   const quick = kind === "approve" ? "APPROVED" : kind === "accept" ? "DONE" : null;
@@ -399,6 +400,12 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
     ...decisions.accept.map((task) => ({
       key: `r${task.id}`,
       kind: "accept" as const,
+      task,
+      detail: t("home.today.from", { name: displayName(task.assignee) }),
+    })),
+    ...decisions.dueChange.map((task) => ({
+      key: `s${task.id}`,
+      kind: "dueChange" as const,
       task,
       detail: t("home.today.from", { name: displayName(task.assignee) }),
     })),

@@ -29,6 +29,8 @@ import {
   removeDependencyAction,
   reopenTaskAction,
   resolveDeleteTaskAction,
+  requestDueChangeAction,
+  resolveDueChangeAction,
   updateTaskFieldAction,
 } from "@/app/(app)/tasks/actions";
 import { setTaskRiskAction } from "@/app/(app)/projects/actions";
@@ -65,6 +67,7 @@ import { withParams } from "@/modules/tasks/back";
 import { listComments } from "@/modules/tasks/comment-service";
 import { getDeleteMode } from "@/modules/tasks/delete-service";
 import { getDependencies, listBlockerCandidates } from "@/modules/tasks/dependency-service";
+import { canDecideDueChange, canRequestDueChange } from "@/modules/tasks/due-change";
 import { quickTarget } from "@/modules/tasks/quick";
 import { routeHints } from "@/modules/tasks/route-hints";
 import {
@@ -195,10 +198,13 @@ function Field({
   label,
   children,
   edit,
+  editLabel,
 }: {
   label: string;
   children: ReactNode;
   edit?: ReactNode;
+  // Instead of «Изменить» (e.g. «Попросить перенести срок»).
+  editLabel?: string;
 }) {
   return (
     <div className="grid grid-cols-[7.5rem_minmax(0,1fr)] items-start gap-x-3 gap-y-1 py-2 text-sm">
@@ -207,8 +213,8 @@ function Field({
         <details className="group min-w-0">
           <summary className="flex cursor-pointer list-none items-start justify-between gap-2 [&::-webkit-details-marker]:hidden">
             <span className="min-w-0">{children}</span>
-            <span className="text-primary shrink-0 text-xs font-medium group-open:hidden">
-              {t("tasks.panel.change")}
+            <span className="text-primary shrink-0 text-right text-xs font-medium group-open:hidden">
+              {editLabel ?? t("tasks.panel.change")}
             </span>
             <span className="text-muted-foreground hidden shrink-0 text-xs group-open:inline">
               {t("tasks.panel.cancel")}
@@ -360,6 +366,12 @@ export async function TaskDetail({
     task.openBlockers - deps.blockedBy.filter((b) => !isClosed(b.status)).length,
   );
   const target = quickTarget(user, task);
+  // «Попросить перенести срок»: the doer who can't change the date.
+  const askDue = canRequestDueChange(user, task);
+  const dueChangeAsker =
+    task.dueChangeById === task.assigneeId
+      ? personName(task.assignee)
+      : (co?.people.find((p) => p.id === task.dueChangeById)?.name ?? null);
   // The viewer accepts handed-in work (not their own): «Что сдано» is for them.
   const accepting =
     task.status === "IN_REVIEW" && target === "DONE" && !task.isPersonal && !isDoer(user, task);
@@ -887,13 +899,30 @@ export async function TaskDetail({
       )}
       <Field
         label={t("tasks.fields.dueDate")}
+        editLabel={askDue ? t("tasks.dueChange.button") : undefined}
         edit={
-          canEdit && open
-            ? fieldForm(
-                "dueDate",
-                <Input type="date" name="value" defaultValue={task.dueDate ?? ""} />,
-              )
-            : undefined
+          canEdit && open ? (
+            fieldForm(
+              "dueDate",
+              <Input type="date" name="value" defaultValue={task.dueDate ?? ""} />,
+            )
+          ) : askDue ? (
+            <form action={requestDueChangeAction} className="flex flex-col gap-2">
+              {hidden("description")}
+              <Label className="flex-col items-start text-xs">
+                {t("tasks.dueChange.date")}
+                <Input type="date" name="date" required min={today} />
+              </Label>
+              <Label className="flex-col items-start text-xs">
+                {t("tasks.dueChange.reason")}
+                <Textarea name="reason" required maxLength={500} rows={2} />
+              </Label>
+              <span className="text-muted-foreground text-xs">{t("tasks.dueChange.hint")}</span>
+              <Button type="submit" size="sm" className="self-start">
+                {t("tasks.dueChange.send")}
+              </Button>
+            </form>
+          ) : undefined
         }
       >
         <span className={cn(overdue && "text-destructive font-medium")}>
@@ -1346,6 +1375,50 @@ export async function TaskDetail({
         >
           {stoppedText}
         </p>
+      )}
+      {task.dueChangeAt && task.dueChangeTo && (
+        <div className="flex flex-col gap-2 rounded-xl border border-amber-300/60 bg-amber-500/5 p-3 text-sm">
+          <span className="font-medium">
+            {t("tasks.dueChange.pending", {
+              name: dueChangeAsker ?? "—",
+              date: formatDay(toDateString(task.dueChangeTo)),
+            })}
+          </span>
+          {task.dueChangeReason && (
+            <span className="text-muted-foreground">
+              {t("tasks.dueChange.pendingReason", { reason: task.dueChangeReason })}
+            </span>
+          )}
+          <div className="flex flex-wrap gap-2">
+            {canDecideDueChange(user, task) && (
+              <>
+                <form action={resolveDueChangeAction}>
+                  {hidden("description")}
+                  <input type="hidden" name="decision" value="approve" />
+                  <Button type="submit" size="sm">
+                    {t("tasks.dueChange.approve")}
+                  </Button>
+                </form>
+                <form action={resolveDueChangeAction}>
+                  {hidden("description")}
+                  <input type="hidden" name="decision" value="reject" />
+                  <Button type="submit" size="sm" variant="outline">
+                    {t("tasks.dueChange.reject")}
+                  </Button>
+                </form>
+              </>
+            )}
+            {task.dueChangeById === user.id && (
+              <form action={resolveDueChangeAction}>
+                {hidden("description")}
+                <input type="hidden" name="decision" value="withdraw" />
+                <Button type="submit" size="sm" variant="outline">
+                  {t("tasks.dueChange.withdraw")}
+                </Button>
+              </form>
+            )}
+          </div>
+        </div>
       )}
       {deleteRequest && (
         <div className="border-destructive/30 bg-destructive/5 flex flex-col gap-2 rounded-xl border p-3 text-sm">

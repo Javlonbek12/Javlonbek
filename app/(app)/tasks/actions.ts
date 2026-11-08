@@ -26,6 +26,7 @@ import {
   type PanelField,
 } from "@/modules/tasks/quick-actions";
 import type { RepeatInput } from "@/modules/tasks/repeat";
+import { requestDueChange, resolveDueChange } from "@/modules/tasks/due-change";
 import { parseLabels, setTaskLabels } from "@/modules/tasks/labels";
 import {
   addTime,
@@ -611,6 +612,24 @@ export async function removeTimeEntryAction(formData: FormData) {
   const taskId = idSchema.parse(str(formData, "taskId"));
   const entryId = idSchema.parse(str(formData, "entryId"));
   await onTaskPage(formData, taskId, () => removeTimeEntry(user, entryId));
+}
+
+// «Попросить перенести срок»: the doer asks for a new date, with a reason.
+export async function requestDueChangeAction(formData: FormData) {
+  const user = await actor();
+  const taskId = idSchema.parse(str(formData, "taskId"));
+  const today = await getUserToday(user.id);
+  await onTaskPage(formData, taskId, () =>
+    requestDueChange(user, taskId, str(formData, "date"), str(formData, "reason"), today),
+  );
+}
+
+// «Перенести срок» / «Оставить срок» / «Отозвать просьбу».
+export async function resolveDueChangeAction(formData: FormData) {
+  const user = await actor();
+  const taskId = idSchema.parse(str(formData, "taskId"));
+  const decision = z.enum(["approve", "reject", "withdraw"]).parse(str(formData, "decision"));
+  await onTaskPage(formData, taskId, () => resolveDueChange(user, taskId, decision));
 }
 
 // «Исправить» on one's own entry: the hours and minutes really worked.
