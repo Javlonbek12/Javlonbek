@@ -28,8 +28,15 @@ export function generateInviteCode(): string {
 }
 
 // `orgNodeId`: an invite to a specific place in the org chart (owner only) — whoever joins
-// with it takes that place: job title and manager come from the chart.
-export async function createInvite(actor: Actor, role: Role, now = new Date(), orgNodeId?: string) {
+// with it takes that place: job title and manager come from the chart. `forName`: who the link
+// is for («Для кого»), shown in the list of open invites.
+export async function createInvite(
+  actor: Actor,
+  role: Role,
+  now = new Date(),
+  orgNodeId?: string,
+  forName?: string,
+) {
   if (!canInvite(actor.role, role)) throw new ForbiddenError();
   if (orgNodeId) {
     if (actor.role !== "OWNER") throw new ForbiddenError();
@@ -42,6 +49,7 @@ export async function createInvite(actor: Actor, role: Role, now = new Date(), o
       role,
       createdById: actor.id,
       orgNodeId: orgNodeId ?? null,
+      forName: forName?.trim().slice(0, 80) || null,
       expiresAt: new Date(now.getTime() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000),
     },
   });

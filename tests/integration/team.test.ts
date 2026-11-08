@@ -1,11 +1,14 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { db } from "@/lib/db";
+import { saveOrgNode } from "@/modules/org/service";
 import {
   addEmployeeNote,
   deleteEmployeeNote,
   getEmployeeCard,
+  listTeam,
   listTeamCards,
+  updateOwnContacts,
   updateProfile,
 } from "@/modules/team/service";
 import { changeStatus, createTask } from "@/modules/tasks/service";
@@ -134,5 +137,50 @@ describe("statistics from real tasks", () => {
   it("«my team» filter shows direct reports", async () => {
     const { boss, employee } = await team();
     expect((await listTeamCards(boss, "mine")).map((c) => c.user.id)).toEqual([employee.id]);
+  });
+
+  it("work handed in for review is not overdue (the same as in Tasks)", async () => {
+    const { owner, employee } = await team();
+    const task = await createTask(
+      owner,
+      taskInput({ assigneeId: employee.id, dueDate: "2020-01-01" }),
+      "create",
+    );
+    await changeStatus(employee, task.id, "IN_PROGRESS");
+    await changeStatus(employee, task.id, "IN_REVIEW");
+    expect((await getEmployeeCard(owner, employee.id))!.stats).toMatchObject({
+      active: 1,
+      overdue: 0,
+    });
+    expect(await listTeamCards(owner, "overdue")).toEqual([]);
+  });
+
+  it("filter chips count people; «Бот не подключён»; teams come from the org chart", async () => {
+    const { owner, employee, colleague } = await team();
+    await db.user.update({ where: { id: colleague.id }, data: { botChatId: null } });
+    await saveOrgNode(owner, null, { kind: "UNIT", name: "Тестовый отдел" }).then((unit) =>
+      saveOrgNode(owner, null, {
+        kind: "POSITION",
+        title: "Тест",
+        userId: employee.id,
+        parentId: unit.id,
+      }),
+    );
+    const { cards, counts, hasChart } = await listTeam(owner, "nobot");
+    expect(cards.map((c) => c.user.id)).toEqual([colleague.id]);
+    expect(counts).toMatchObject({ all: 5, nobot: 1, deactivated: 0 });
+    expect(hasChart).toBe(true);
+    const all = (await listTeam(owner)).cards;
+    expect(all.find((c) => c.user.id === employee.id)!.team).toBe("Тестовый отдел");
+    expect(all.find((c) => c.user.id === colleague.id)!.team).toBeNull();
+  });
+
+  it("everyone keeps their own phone and email; nothing else changes", async () => {
+    const { employee } = await team();
+    await updateOwnContacts(employee, { phone: "+998 00 000-00-00", email: "test@example.test" });
+    const saved = await db.user.findUniqueOrThrow({ where: { id: employee.id } });
+    expect(saved).toMatchObject({ phone: "+998 00 000-00-00", email: "test@example.test" });
+    expect(saved.managerId).not.toBeNull();
+    await expect(updateOwnContacts(employee, { phone: "", email: "не почта" })).rejects.toThrow();
   });
 });

@@ -10,9 +10,13 @@ export function canSeePrivateNotes(viewer: Actor, employee: EmployeeInfo): boole
   return viewer.role === "OWNER" || employee.managerId === viewer.id;
 }
 
-// Task statistics: the employee, the OWNER and managers (who approve team tasks).
+// Task statistics: the employee, the OWNER, and a manager for the people whose tasks they see
+// (Settings → Roles: all, their team, or own only) — one team's numbers don't reach another's.
 export function canSeeStats(viewer: Actor, employee: EmployeeInfo): boolean {
-  return viewer.id === employee.id || viewer.role === "OWNER" || viewer.role === "MANAGER";
+  if (viewer.id === employee.id || viewer.role === "OWNER") return true;
+  if (viewer.role !== "MANAGER") return false;
+  const scope = viewer.access?.taskScope ?? "all";
+  return scope === "all" || (scope === "team" && !!viewer.access?.teamIds.includes(employee.id));
 }
 
 export type ProfileField =

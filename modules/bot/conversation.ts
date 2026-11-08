@@ -10,7 +10,6 @@ import {
   startOfMonth,
   todayInTimezone,
 } from "@/lib/dates";
-import { getEnv } from "@/lib/env";
 import { Prisma, type User } from "@/lib/generated/prisma/client";
 import { t } from "@/lib/i18n";
 import { parseUserDate } from "@/lib/parse-date";
@@ -30,10 +29,10 @@ import { parseTaskFilters } from "@/modules/tasks/filters";
 import { shortRouteHints } from "@/modules/tasks/route-hints";
 import { completeTask, findTasksByQuery, setDueDate } from "@/modules/tasks/quick-actions";
 import { getTodayOverview, listProjects, listTasks, type TaskView } from "@/modules/tasks/service";
-import { isLateWork } from "@/modules/tasks/today";
 import type { AudioInput, SpeechToText } from "@/modules/stt";
 
 import { applyReason, handleDecisionCallback, showPending } from "./decisions";
+import { listHeader, moreLine, taskLine } from "./format";
 import { whyNotComplete, whyNotReschedule } from "./why";
 
 export { resolveTasks };
@@ -56,7 +55,7 @@ import {
   getMeetingDetail,
   recentMeetingsForNotes,
 } from "@/modules/meetings/service";
-import type { TelegramButton } from "./keyboard";
+import { escapeHtml, type TelegramButton } from "./keyboard";
 
 // What the bot should answer. `edit` = replace the message the button belongs to.
 export type BotReply = {
@@ -67,6 +66,11 @@ export type BotReply = {
   draftId?: string;
   // The reply asks for a reason: its message id is remembered, a reply to it is the reason.
   reasonPrompt?: boolean;
+  // The text is Telegram HTML (bold headers; everything else escaped).
+  html?: boolean;
+  // A page of the app: an «Открыть в приложении» button under the reply (a link in the text
+  // where Telegram can't take a link button).
+  open?: string;
 };
 
 // AI functions are injectable for tests.
@@ -182,8 +186,8 @@ async function saveTasks(user: User, draftId: string, payload: DraftPayload): Pr
   await db.botDraft.delete({ where: { id: draftId } });
   const lines = [t("bot.card.saved", { count: saved })];
   if (pending > 0) lines.push(t("bot.card.savedPending", { count: pending }));
-  lines.push(...errors, t("bot.lists.open", { url: `${getEnv().APP_URL}/tasks` }));
-  return { text: lines.join("\n"), edit: true };
+  lines.push(...errors);
+  return { text: lines.join("\n"), edit: true, open: "/tasks" };
 }
 
 async function handleDraftCallback(user: User, parts: string[], now?: Date): Promise<BotReply> {
@@ -351,49 +355,122 @@ async function findAwaitingDraft(user: User) {
 
 // ---------- task lists ----------
 
-function taskLine(task: Pick<TaskView, "title" | "dueDate" | "status">, today: string) {
-  const due = task.dueDate
-    ? ` — ${formatDay(task.dueDate)}${isLateWork(task, today) ? " 🔥" : ""}`
-    : "";
-  return `• ${task.title}${due}`;
-}
+export const LIST_KINDS = ["today", "week", "overdue", "pending"] as const;
+export type ListKind = (typeof LIST_KINDS)[number];
+// Lines per block, and how many of the numbered tasks get a «✅ n» button.
+const LIST_LIMIT = 15;
+const BUTTON_LIMIT = 8;
 
-function listBlock(title: string, tasks: TaskView[], today: string, limit = 15) {
-  const lines = [`${title} (${tasks.length})`];
-  if (tasks.length === 0) lines.push(t("bot.lists.empty"));
-  lines.push(...tasks.slice(0, limit).map((task) => taskLine(task, today)));
-  if (tasks.length > limit) lines.push(t("bot.lists.more", { count: tasks.length - limit }));
+// One block of a list: a bold header with the count, numbered lines from `start`.
+function listBlock(title: string, tasks: TaskView[], today: string, start: number, fire = true) {
+  const lines = [listHeader(title, tasks.length)];
+  if (tasks.length === 0) lines.push(escapeHtml(t("bot.lists.empty")));
+  lines.push(
+    ...tasks.slice(0, LIST_LIMIT).map((task, i) => taskLine(task, today, start + i, { fire })),
+  );
+  if (tasks.length > LIST_LIMIT) lines.push(moreLine(tasks.length - LIST_LIMIT));
   return lines.join("\n");
 }
 
-export async function showList(
-  user: User,
-  kind: "today" | "week" | "overdue" | "pending",
-  now?: Date,
-): Promise<BotReply> {
-  const { today } = await userToday(user, now);
-  const footer = t("bot.lists.open", { url: getEnv().APP_URL });
+async function listTasksOf(user: User, kind: Exclude<ListKind, "pending">, today: string) {
   if (kind === "today") {
     const { dueToday, overdue } = await getTodayOverview(user, today);
-    return {
-      text: [
-        listBlock(t("bot.lists.today"), dueToday, today),
-        listBlock(t("bot.lists.overdue"), overdue, today),
-        footer,
-      ].join("\n\n"),
-    };
+    return { blocks: [dueToday, overdue], all: [...dueToday, ...overdue] };
   }
-  if (kind === "week" || kind === "overdue") {
-    const filters = parseTaskFilters({ scope: "mine", due: kind });
-    const tasks = await listTasks(user, filters, today);
-    return {
-      text: [
-        listBlock(t(kind === "week" ? "bot.lists.week" : "bot.lists.overdue"), tasks, today),
-        footer,
-      ].join("\n\n"),
-    };
-  }
-  return showPending(user, today);
+  const tasks = await listTasks(user, parseTaskFilters({ scope: "mine", due: kind }), today);
+  return { blocks: [tasks], all: tasks };
+}
+
+// /today, /week, /overdue: numbered tasks, «✅ 1 … ✅ 8» closes a task in one tap (the list comes
+// back with the result on top), «📅 Перенести срок» asks which task and to when.
+export async function showList(
+  user: User,
+  kind: ListKind,
+  now?: Date,
+  notice?: string,
+): Promise<BotReply> {
+  const { today } = await userToday(user, now);
+  if (kind === "pending") return showPending(user, today, { notice });
+  const { blocks, all } = await listTasksOf(user, kind, today);
+  const titles =
+    kind === "today"
+      ? [t("bot.lists.today"), t("bot.lists.overdue")]
+      : [t(kind === "week" ? "bot.lists.week" : "bot.lists.overdue")];
+  let start = 1;
+  const text = blocks.map((tasks, i) => {
+    // In «🔥 Просрочено» every task is late: no 🔥 on each line.
+    const lateBlock = kind === "overdue" || (kind === "today" && i === 1);
+    const block = listBlock(titles[i]!, tasks, today, start, !lateBlock);
+    start += Math.min(tasks.length, LIST_LIMIT);
+    return block;
+  });
+  // The numbers run on through the blocks, as far as lines are shown.
+  const numbered = blocks.flatMap((tasks) => tasks.slice(0, LIST_LIMIT));
+  const buttons: TelegramButton[][] = [];
+  const done = numbered.slice(0, BUTTON_LIMIT).map((task, i) => ({
+    text: `✅ ${i + 1}`,
+    data: `k:${task.id}:${kind}`,
+  }));
+  for (let i = 0; i < done.length; i += 4) buttons.push(done.slice(i, i + 4));
+  if (all.length) buttons.push([{ text: t("bot.lists.reschedule"), data: `rs:${kind}` }]);
+  return {
+    text: [notice ? escapeHtml(notice) : null, ...text].filter(Boolean).join("\n\n"),
+    buttons,
+    html: true,
+    open: kind === "today" ? "/" : "/tasks",
+  };
+}
+
+// «📅 Перенести срок»: which task (by its number in the list)…
+async function chooseToReschedule(user: User, kind: ListKind, now?: Date): Promise<BotReply> {
+  if (kind === "pending") return { text: t("bot.card.expired") };
+  const { today } = await userToday(user, now);
+  const { blocks } = await listTasksOf(user, kind, today);
+  const numbered = blocks.flatMap((tasks) => tasks.slice(0, LIST_LIMIT)).slice(0, BUTTON_LIMIT);
+  if (numbered.length === 0) return { text: t("bot.lists.empty") };
+  return {
+    text: t("bot.lists.rescheduleWhich"),
+    buttons: numbered.map((task, i) => [
+      { text: `📅 ${i + 1}. ${task.title}`.slice(0, 60), data: `rd:${task.id}` },
+    ]),
+  };
+}
+
+// …and to when: the usual choices; any other date can be written («перенеси … на 15.10»).
+async function chooseDate(user: User, taskId: string, now?: Date): Promise<BotReply> {
+  const task = await db.task.findUnique({ where: { id: taskId }, select: { title: true } });
+  if (!task) return { text: t("bot.why.unavailable"), edit: true };
+  const { today } = await userToday(user, now);
+  const options = [
+    ["bot.edit.tomorrow", addDays(today, 1)],
+    ["bot.edit.week", addDays(today, 7)],
+    ["bot.edit.monthEnd", addDays(addMonths(startOfMonth(today), 1), -1)],
+  ] as const;
+  return {
+    text: t("bot.lists.rescheduleWhen", { title: task.title }),
+    buttons: [
+      options.map(([label, date]) => ({
+        text: `${t(label)} · ${formatDay(date)}`,
+        data: `r:${taskId}:${date.replaceAll("-", "")}`,
+      })),
+    ],
+    edit: true,
+  };
+}
+
+// The short answer to anything the bot can't take (a sticker, a photo, an unknown command): the
+// main lists as buttons, the full help one tap away.
+export function unknownReply(): BotReply {
+  return {
+    text: t("bot.unknown"),
+    buttons: [
+      [
+        { text: t("bot.menu.today"), data: "l:today" },
+        { text: t("bot.menu.pending"), data: "l:pending" },
+      ],
+      [{ text: t("bot.menu.help"), data: "h" }],
+    ],
+  };
 }
 
 // ---------- quick actions («перенеси …», «закрой …») ----------
@@ -458,7 +535,18 @@ export async function handleCallback(
     const d = parts[2];
     return reschedule(user, parts[1], `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`);
   }
-  if (parts[0] === "k" && parts[1]) return complete(user, parts[1]);
+  const kind = LIST_KINDS.find((k) => k === parts[2] || k === parts[1]);
+  if (parts[0] === "k" && parts[1]) {
+    const result = await complete(user, parts[1]);
+    // «✅ n» under a list: the list again, with the result on top.
+    return kind && parts[2]
+      ? { ...(await showList(user, kind, deps.now, result.text)), edit: true }
+      : result;
+  }
+  if (parts[0] === "rs" && kind) return chooseToReschedule(user, kind, deps.now);
+  if (parts[0] === "rd" && parts[1]) return chooseDate(user, parts[1], deps.now);
+  if (parts[0] === "l" && kind) return showList(user, kind, deps.now);
+  if (parts[0] === "h") return { text: t("bot.help") };
   if (parts[0] === "m" && parts[1]) return waitForNotes(user, parts[1], chatId);
   if (parts[0] === "cs" && parts[1] && parts[2]) {
     try {

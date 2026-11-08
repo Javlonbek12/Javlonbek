@@ -52,6 +52,12 @@ describe("employee statistics", () => {
     expect(countOverdue(tasks, TODAY)).toBe(1);
   });
 
+  it("doesn't count work on review as overdue, like the task list", () => {
+    const handedIn = task({ status: "IN_REVIEW", dueDate: "2026-09-29" });
+    expect(countActive([handedIn])).toBe(1);
+    expect(countOverdue([handedIn], TODAY)).toBe(0);
+  });
+
   it("computes the on-time share for 30 and 90 days (only tasks with a due date)", () => {
     expect(onTimeRate(tasks, TODAY, 30)).toEqual({ onTime: 1, total: 2, percent: 50 });
     expect(onTimeRate(tasks, TODAY, 90)).toEqual({ onTime: 2, total: 3, percent: 67 });

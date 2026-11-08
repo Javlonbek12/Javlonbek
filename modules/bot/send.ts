@@ -2,18 +2,20 @@ import { Api, InputFile, InputMediaBuilder } from "grammy";
 
 import { getEnv } from "@/lib/env";
 
-import { inlineKeyboard, type TelegramButton } from "./keyboard";
+import { inlineKeyboard, type KeyboardButton, type TelegramButton } from "./keyboard";
 
-export type { TelegramButton };
+export type { KeyboardButton, TelegramButton };
 
 let api: Api | undefined;
 
-// Sends a plain-text message (optionally with inline buttons). Returns false (and logs)
-// instead of throwing, so a Telegram problem never breaks the action that triggered it.
+// Sends a message (optionally with inline buttons); `html`: the text is Telegram HTML (bold
+// headers), with everything else escaped by the caller. Returns false (and logs) instead of
+// throwing, so a Telegram problem never breaks the action that triggered it.
 export async function sendTelegramMessage(
   chatId: bigint,
   text: string,
-  buttons?: TelegramButton[][],
+  buttons?: KeyboardButton[][],
+  options: { html?: boolean } = {},
 ): Promise<boolean> {
   const token = getEnv().TELEGRAM_BOT_TOKEN;
   if (!token) {
@@ -25,6 +27,7 @@ export async function sendTelegramMessage(
     await api.sendMessage(Number(chatId), text, {
       link_preview_options: { is_disabled: true },
       reply_markup: inlineKeyboard(buttons),
+      ...(options.html ? { parse_mode: "HTML" as const } : {}),
     });
     return true;
   } catch (error) {

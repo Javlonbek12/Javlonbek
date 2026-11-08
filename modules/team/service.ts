@@ -8,6 +8,7 @@ import { logActivity } from "@/modules/core/activity/service";
 import type { Actor } from "@/modules/core/permissions";
 import { getSettings } from "@/modules/core/settings/service";
 import { activeOr } from "@/modules/core/users/active";
+import { teamsOfPeople } from "@/modules/org/service";
 
 import {
   canSeePrivateNotes,
@@ -81,39 +82,74 @@ async function statTasks(employeeIds: string[], timezone: string) {
   return byUser;
 }
 
-export const TEAM_FILTERS = ["all", "mine", "overdue", "deactivated"] as const;
-
-export const countDeactivated = () => db.user.count({ where: { deactivatedAt: { not: null } } });
+// «nobot»: people who haven't connected the Telegram bot — they get no tasks or reminders there.
+export const TEAM_FILTERS = ["all", "mine", "overdue", "nobot", "deactivated"] as const;
 export type TeamFilter = (typeof TEAM_FILTERS)[number];
 
-// The team grid: everyone sees names and roles; statistics only where allowed. Deactivated people
-// show only under their own filter («Отключённые»).
-export async function listTeamCards(viewer: Actor, filter: TeamFilter = "all", search = "") {
+type TeamCard = {
+  user: Prisma.UserGetPayload<{ select: typeof userSelect }>;
+  stats: ReturnType<typeof employeeStats> | null;
+  manager: Prisma.UserGetPayload<{ select: typeof userSelect }> | null;
+  // Their team in the org chart ("" — placed under no unit); null — not in the chart.
+  team: string | null;
+};
+
+function passes(filter: TeamFilter, card: TeamCard, viewer: Actor) {
+  const { user, stats } = card;
+  if (filter === "deactivated") return user.deactivatedAt !== null;
+  if (user.deactivatedAt) return false;
+  if (filter === "mine") return user.managerId === viewer.id;
+  if (filter === "overdue") return !!stats && stats.overdue > 0;
+  if (filter === "nobot") return user.botChatId === null;
+  return true;
+}
+
+// The team list: everyone sees names and roles; statistics only where allowed. Deactivated people
+// show only under their own filter («Отключённые»). `counts`: how many people each filter would
+// show with the same search, for the filter chips.
+export async function listTeam(viewer: Actor, filter: TeamFilter = "all", search = "") {
   const { timezone } = await getSettings(viewer.id);
   const today = todayInTimezone(timezone);
-  const users = await db.user.findMany({ select: userSelect, orderBy: [{ firstName: "asc" }] });
-  const shown = users.filter((u) => (filter === "deactivated") === (u.deactivatedAt !== null));
+  const [users, teams] = await Promise.all([
+    db.user.findMany({ select: userSelect, orderBy: [{ firstName: "asc" }] }),
+    teamsOfPeople(),
+  ]);
   const tasks = await statTasks(
-    shown.map((u) => u.id),
+    users.map((u) => u.id),
     timezone,
   );
   const query = search.trim().toLowerCase();
-
-  return shown
-    .map((user) => ({
+  const found = users
+    .filter(
+      (user) =>
+        !query ||
+        [user.firstName, user.lastName, user.position, user.responsibility]
+          .filter(Boolean)
+          .some((value) => value!.toLowerCase().includes(query)),
+    )
+    .map((user): TeamCard => ({
       user,
       stats: canSeeStats(viewer, user) ? employeeStats(tasks.get(user.id) ?? [], today) : null,
       manager: users.find((u) => u.id === user.managerId) ?? null,
-    }))
-    .filter(({ user, stats }) => {
-      if (filter === "mine" && user.managerId !== viewer.id) return false;
-      if (filter === "overdue" && !(stats && stats.overdue > 0)) return false;
-      if (!query) return true;
-      return [user.firstName, user.lastName, user.position, user.responsibility]
-        .filter(Boolean)
-        .some((value) => value!.toLowerCase().includes(query));
-    });
+      team: teams.get(user.id) ?? null,
+    }));
+  return {
+    cards: found.filter((card) => passes(filter, card, viewer)),
+    counts: Object.fromEntries(
+      TEAM_FILTERS.map((f) => [f, found.filter((card) => passes(f, card, viewer)).length]),
+    ) as Record<TeamFilter, number>,
+    // The chart has places: the list can be grouped by team.
+    hasChart: teams.size > 0,
+  };
 }
+
+export async function listTeamCards(viewer: Actor, filter: TeamFilter = "all", search = "") {
+  return (await listTeam(viewer, filter, search)).cards;
+}
+
+// Open tasks still on the person (not done, not cancelled): said before switching them off.
+export const countOpenTasks = (userId: string) =>
+  db.task.count({ where: { assigneeId: userId, status: { notIn: ["DONE", "CANCELLED"] } } });
 
 export async function getEmployeeCard(viewer: Actor, employeeId: string) {
   const user = await db.user.findUnique({ where: { id: employeeId }, select: userSelect });
@@ -206,6 +242,24 @@ export async function updateProfile(viewer: Actor, employeeId: string, input: Pr
     entityType: "User",
     entityId: employeeId,
     details: { fields: Object.keys(data) },
+  });
+}
+
+// Settings → Профиль: everyone keeps their own phone and email up to date (the same right as on
+// their card), without touching the fields the owner or the manager sets.
+export async function updateOwnContacts(user: Actor, input: { phone: string; email: string }) {
+  const parsed = profileSchema.pick({ phone: true, email: true }).safeParse(input);
+  if (!parsed.success) throw new TeamError("invalid");
+  await db.user.update({
+    where: { id: user.id },
+    data: { phone: parsed.data.phone || null, email: parsed.data.email || null },
+  });
+  await logActivity({
+    actorId: user.id,
+    action: "user.profile_updated",
+    entityType: "User",
+    entityId: user.id,
+    details: { fields: ["phone", "email"] },
   });
 }
 

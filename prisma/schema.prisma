@@ -107,6 +107,8 @@ model Invite {
   revokedAt   DateTime?
   // A place in the org chart: whoever joins with this invite takes it.
   orgNodeId   String?
+  // Who the link is for («Для кого»), so open invites can be told apart.
+  forName     String?
   createdAt   DateTime  @default(now())
 
   createdBy User     @relation("InviteCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
@@ -126,6 +128,9 @@ model Notification {
   sentToTelegramAt  DateTime?
   // Created during quiet hours: the scheduler sends it to Telegram when they end.
   deliverAfterQuiet Boolean   @default(false)
+  // The decision buttons sent with it (TelegramButton[][]): kept for the morning summary after
+  // quiet hours and for the decision buttons in the app's list.
+  buttons           Json?
   createdAt         DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

@@ -1,7 +1,14 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { db } from "@/lib/db";
-import { deleteOrgNode, getOrgTree, orgPathOf, saveOrgNode } from "@/modules/org/service";
+import {
+  deleteOrgNode,
+  freeOrgPlace,
+  getOrgTree,
+  moveOrgNode,
+  orgPathOf,
+  saveOrgNode,
+} from "@/modules/org/service";
 import { teamProfiles } from "@/modules/team/profile";
 import { getEmployeeCard, updateProfile } from "@/modules/team/service";
 import { createTestUser, resetDb } from "@/tests/helpers/db";
@@ -150,6 +157,35 @@ describe("org structure", () => {
     await expect(saveOrgNode(owner, null, { kind: "POSITION" })).rejects.toMatchObject({
       code: "invalid",
     });
+  });
+
+  it("new places go last; «левее / правее» swaps neighbours; an edit keeps the place", async () => {
+    const owner = await createTestUser("OWNER");
+    const dept = await saveOrgNode(owner, null, unit("Тестовый отдел"));
+    const a = await saveOrgNode(owner, null, position("A", { parentId: dept.id }));
+    const b = await saveOrgNode(owner, null, position("B", { parentId: dept.id }));
+    const c = await saveOrgNode(owner, null, position("C", { parentId: dept.id }));
+    const order = async () => (await getOrgTree())[0]!.children.map((n) => n.title).join("");
+    expect(await order()).toBe("ABC");
+    await moveOrgNode(owner, c.id, "left");
+    expect(await order()).toBe("ACB");
+    await moveOrgNode(owner, a.id, "left"); // already first: nothing happens
+    await saveOrgNode(owner, b.id, position("B2", { parentId: dept.id }));
+    expect(await order()).toBe("ACB2");
+    const manager = await createTestUser("MANAGER");
+    await expect(moveOrgNode(manager, a.id, "right")).rejects.toMatchObject({
+      code: "forbidden",
+    });
+  });
+
+  it("«Освободить место»: only a deactivated person's place becomes a vacancy", async () => {
+    const owner = await createTestUser("OWNER");
+    const member = await createTestUser("MEMBER");
+    const place = await saveOrgNode(owner, null, position("Тест", { userId: member.id }));
+    await expect(freeOrgPlace(owner, place.id)).rejects.toMatchObject({ code: "notFound" });
+    await db.user.update({ where: { id: member.id }, data: { deactivatedAt: new Date() } });
+    await freeOrgPlace(owner, place.id);
+    expect((await getOrgTree())[0]).toMatchObject({ user: null, personName: null, title: "Тест" });
   });
 
   it("counts returns from review in the profile", async () => {

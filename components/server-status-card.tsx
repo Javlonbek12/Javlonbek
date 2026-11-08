@@ -1,10 +1,16 @@
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Info } from "lucide-react";
 
-import { Card, CardDescription, CardTitle } from "@/components/ui/card";
+import { RefreshButton } from "@/components/settings/refresh-button";
+import { Card, CardTitle } from "@/components/ui/card";
 import { intlLocale, t } from "@/lib/i18n";
 import { formatDateTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
-import { getServerStatus, serverWarnings } from "@/modules/ops/server-status";
+import {
+  getServerStatus,
+  serverWarnings,
+  type ServerStatus,
+  type ServerWarning,
+} from "@/modules/ops/server-status";
 
 const GB = 1024 ** 3;
 const MB = 1024 ** 2;
@@ -16,118 +22,156 @@ function size(bytes: number) {
   return t("common.mb", { n: nf(Math.max(bytes / MB, 0.1), bytes >= 10 * MB ? 0 : 1) });
 }
 
+const pct = (share: number) =>
+  new Intl.NumberFormat(intlLocale(), { style: "percent", maximumFractionDigits: 0 }).format(share);
+
 // A backup stamp (2026-11-08_0300, the server's clock is UTC) as a moment.
 function stampDate(stamp: string) {
   const m = /^(\d{4})-(\d{2})-(\d{2})_(\d{2})(\d{2})$/.exec(stamp);
   return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5])) : null;
 }
 
-function Meter({ share, warn }: { share: number; warn: boolean }) {
+const diskShare = (status: ServerStatus) =>
+  status.disk && status.disk.total > 0 ? 1 - status.disk.free / status.disk.total : null;
+
+// One line for the settings page: all well, or the most serious problem.
+export function serverSummary(status: ServerStatus, warnings: ServerWarning[]) {
+  if (warnings.length === 0) return { ok: true, text: t("settings.server.summaryOk") };
+  const share = diskShare(status);
+  return {
+    ok: false,
+    text:
+      warnings[0] === "diskHigh" && share !== null
+        ? t("settings.server.answers.diskFull", { share: pct(share) })
+        : t(`settings.server.warnings.${warnings[0]!}`),
+  };
+}
+
+function Answer({
+  tone,
+  title,
+  children,
+}: {
+  tone: "ok" | "warn" | "info";
+  title: string;
+  children?: React.ReactNode;
+}) {
+  const Icon = tone === "ok" ? CheckCircle2 : tone === "warn" ? AlertTriangle : Info;
   return (
-    <div className="bg-muted mt-1.5 h-1.5 overflow-hidden rounded-full" aria-hidden>
-      <div
-        className={cn("h-full rounded-full", warn ? "bg-amber-500" : "bg-primary")}
-        style={{ width: `${Math.min(100, Math.max(2, share * 100))}%` }}
+    <div
+      role={tone === "warn" ? "alert" : undefined}
+      className={cn(
+        "flex gap-3 rounded-xl border p-3",
+        tone === "warn" && "border-amber-500/40 bg-amber-500/10",
+      )}
+    >
+      <Icon
+        className={cn(
+          "mt-0.5 size-5 shrink-0",
+          tone === "ok" && "text-emerald-600 dark:text-emerald-400",
+          tone === "warn" && "text-amber-600 dark:text-amber-400",
+          tone === "info" && "text-muted-foreground",
+        )}
+        aria-hidden
       />
+      <div className="flex flex-col gap-0.5 text-sm">
+        <p className="font-medium">{title}</p>
+        {children && <div className="text-muted-foreground">{children}</div>}
+      </div>
     </div>
   );
 }
 
-function Tile({
-  label,
-  value,
-  hint,
-  children,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  children?: React.ReactNode;
-}) {
+function Tile({ label, value }: { label: string; value: string }) {
   return (
     <div className="bg-muted/40 rounded-xl border p-3">
       <p className="text-muted-foreground text-xs">{label}</p>
       <p className="mt-0.5 font-medium tabular-nums">{value}</p>
-      {children}
-      {hint && <p className="text-muted-foreground mt-1 text-xs tabular-nums">{hint}</p>}
     </div>
   );
 }
 
-// OWNER-only: the server (disk, memory, processor) and the backups, on the server and in the cloud.
+// OWNER-only: answers first — are the data saved, is there room on the disk — then the server in
+// plain words, the technical details folded away.
 export async function ServerStatusCard({ timezone }: { timezone: string }) {
   const status = await getServerStatus();
   const warnings = serverWarnings(status);
-  const pct = (share: number) =>
-    new Intl.NumberFormat(intlLocale(), { style: "percent", maximumFractionDigits: 0 }).format(
-      share,
-    );
+  const share = diskShare(status);
+  const memUsed = status.memory.total - status.memory.available;
+  const days = Math.floor(status.uptimeSeconds / 86_400);
+  const hours = Math.floor((status.uptimeSeconds % 86_400) / 3600);
+  const cloudAt = status.cloud ? stampDate(status.cloud.latest) : null;
+  const latest = status.backups?.latest ?? null;
+  const cloudFresh = status.cloud && !warnings.includes("cloudStale");
   const load = (n: number) =>
     new Intl.NumberFormat(intlLocale(), {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(n);
-  const diskUsed = status.disk ? status.disk.total - status.disk.free : 0;
-  const diskShare = status.disk && status.disk.total > 0 ? diskUsed / status.disk.total : 0;
-  const memUsed = status.memory.total - status.memory.available;
-  const memShare = status.memory.total > 0 ? memUsed / status.memory.total : 0;
-  const days = Math.floor(status.uptimeSeconds / 86_400);
-  const hours = Math.floor((status.uptimeSeconds % 86_400) / 3600);
-  const cloudAt = status.cloud ? stampDate(status.cloud.latest) : null;
+
+  const backupAnswer =
+    status.backups === null ? (
+      <Answer tone="info" title={t("settings.server.noFolder")} />
+    ) : !latest ? (
+      <Answer tone="warn" title={t("settings.server.answers.noBackups")}>
+        {t("settings.server.answers.noBackupsHint")}
+      </Answer>
+    ) : (
+      <Answer
+        tone={warnings.includes("backupStale") || !cloudFresh ? "warn" : "ok"}
+        title={
+          warnings.includes("backupStale")
+            ? t("settings.server.answers.stale")
+            : t("settings.server.answers.saved")
+        }
+      >
+        {t(cloudFresh ? "settings.server.answers.both" : "settings.server.answers.serverOnly", {
+          at: formatDateTime(latest.at, timezone),
+        })}
+        {!cloudFresh && ` ${t("settings.server.answers.cloudHint")}`}
+      </Answer>
+    );
 
   return (
     <Card className="gap-3">
-      <CardTitle>{t("settings.server.title")}</CardTitle>
-      <CardDescription>{t("settings.server.hint")}</CardDescription>
-
-      {warnings.length > 0 && (
-        <ul
-          role="alert"
-          className="flex flex-col gap-1 rounded-lg bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200"
-        >
-          {warnings.map((w) => (
-            <li key={w} className="flex gap-2">
-              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-              {t(`settings.server.warnings.${w}`)}
-            </li>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <CardTitle>{t("settings.server.title")}</CardTitle>
+        <RefreshButton />
+      </div>
+      <div className="grid gap-2 md:grid-cols-2">
+        {backupAnswer}
+        {share !== null &&
+          (warnings.includes("diskHigh") ? (
+            <Answer
+              tone="warn"
+              title={t("settings.server.answers.diskFull", { share: pct(share) })}
+            >
+              {t("settings.server.answers.diskHint")}
+            </Answer>
+          ) : (
+            <Answer tone="ok" title={t("settings.server.answers.diskOk", { share: pct(share) })} />
           ))}
-        </ul>
-      )}
-
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
-        {status.disk && (
-          <Tile
-            label={t("settings.server.disk")}
-            value={t("settings.server.ofTotal", {
-              used: size(diskUsed),
-              total: size(status.disk.total),
-            })}
-            hint={t("settings.server.free", {
-              size: size(status.disk.free),
-              share: pct(1 - diskShare),
-            })}
-          >
-            <Meter share={diskShare} warn={warnings.includes("diskHigh")} />
-          </Tile>
+        {warnings.includes("memoryLow") && (
+          <Answer tone="warn" title={t("settings.server.warnings.memoryLow")} />
         )}
+        {warnings.includes("cpuHigh") && (
+          <Answer tone="warn" title={t("settings.server.warnings.cpuHigh")} />
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
         <Tile
           label={t("settings.server.memory")}
           value={t("settings.server.ofTotal", {
             used: size(memUsed),
             total: size(status.memory.total),
           })}
-          hint={t("settings.server.available", { size: size(status.memory.available) })}
-        >
-          <Meter share={memShare} warn={warnings.includes("memoryLow")} />
-        </Tile>
+        />
         <Tile
           label={t("settings.server.cpu")}
-          value={t("settings.server.cores", { n: status.cores })}
-          hint={t("settings.server.load", {
-            one: load(status.load[0]),
-            five: load(status.load[1]),
-            fifteen: load(status.load[2]),
-          })}
+          value={t(
+            warnings.includes("cpuHigh") ? "settings.server.cpuBusy" : "settings.server.cpuCalm",
+          )}
         />
         <Tile
           label={t("settings.server.uptime")}
@@ -136,34 +180,57 @@ export async function ServerStatusCard({ timezone }: { timezone: string }) {
         {status.databaseBytes !== null && (
           <Tile label={t("settings.server.database")} value={size(status.databaseBytes)} />
         )}
-        {status.version && (
-          <Tile
-            label={t("settings.server.version")}
-            value={status.version.split(" ").slice(0, 2).join(" · ")}
-          />
-        )}
       </div>
 
-      <div className="flex flex-col gap-2 text-sm">
-        <h3 className="font-medium">{t("settings.server.backups")}</h3>
-        {status.backups === null ? (
-          <p className="text-muted-foreground">{t("settings.server.noFolder")}</p>
-        ) : (
-          <>
+      <details className="text-sm">
+        <summary className="text-muted-foreground w-fit cursor-pointer hover:underline">
+          {t("settings.server.details")}
+        </summary>
+        <div className="text-muted-foreground mt-2 flex flex-col gap-1.5">
+          {status.disk && (
             <p>
-              <span className="text-muted-foreground">{t("settings.server.onServer")}: </span>
-              {status.backups.latest
+              {t("settings.server.disk")}:{" "}
+              {t("settings.server.ofTotal", {
+                used: size(status.disk.total - status.disk.free),
+                total: size(status.disk.total),
+              })}
+              ,{" "}
+              {t("settings.server.free", {
+                size: size(status.disk.free),
+                share: pct(1 - (share ?? 0)),
+              })}
+            </p>
+          )}
+          <p>
+            {t("settings.server.cpu")}: {t("settings.server.cores", { n: status.cores })},{" "}
+            {t("settings.server.load", {
+              one: load(status.load[0]),
+              five: load(status.load[1]),
+              fifteen: load(status.load[2]),
+            })}
+          </p>
+          {status.version && (
+            <p>
+              {t("settings.server.version")}: {status.version.split(" ").slice(0, 2).join(" · ")}
+            </p>
+          )}
+          {status.backups && (
+            <p>
+              {t("settings.server.onServer")}:{" "}
+              {latest
                 ? t("settings.server.serverCopy", {
-                    at: formatDateTime(status.backups.latest.at, timezone),
-                    database: size(status.backups.latest.databaseBytes),
-                    files: size(status.backups.latest.uploadsBytes),
+                    at: formatDateTime(latest.at, timezone),
+                    database: size(latest.databaseBytes),
+                    files: size(latest.uploadsBytes),
                     count: status.backups.count,
                     total: size(status.backups.totalBytes),
                   })
                 : t("settings.server.none")}
             </p>
+          )}
+          {status.backups && (
             <p>
-              <span className="text-muted-foreground">{t("settings.server.inCloud")}: </span>
+              {t("settings.server.inCloud")}:{" "}
               {status.cloud
                 ? t("settings.server.cloudCopy", {
                     at: cloudAt ? formatDateTime(cloudAt, timezone) : status.cloud.latest,
@@ -173,10 +240,10 @@ export async function ServerStatusCard({ timezone }: { timezone: string }) {
                   })
                 : t("settings.server.cloudOff")}
             </p>
-          </>
-        )}
-        <p className="text-muted-foreground text-xs">{t("settings.server.more")}</p>
-      </div>
+          )}
+          <p className="text-xs">{t("settings.server.more")}</p>
+        </div>
+      </details>
     </Card>
   );
 }
