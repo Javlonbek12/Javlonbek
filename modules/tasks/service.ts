@@ -997,7 +997,7 @@ export async function listOverdueAtDoers(actor: Actor, today: string) {
 // yet), plus anyone else whose tasks they can see.
 export async function listTaskPeople(actor: Actor) {
   const scope = oversight(actor);
-  const select = { id: true, firstName: true, lastName: true } as const;
+  const select = { id: true, firstName: true, lastName: true, position: true } as const;
   const [overseen, withTasks] = await Promise.all([
     scope === "none"
       ? []

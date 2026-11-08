@@ -1091,9 +1091,10 @@ export const en: Dictionary = {
     fields: {
       title: "Title",
       level: "Level",
-      period: "Period (any date inside)",
+      period: "Which period",
       parent: "Part of plan",
       personal: "Personal plan (only you see it)",
+      periodHint: "Pick any day: the plan takes the week, month, quarter or year it falls in.",
     },
     create: "Create plan",
     progress: "{done} of {total} done ({percent}%)",

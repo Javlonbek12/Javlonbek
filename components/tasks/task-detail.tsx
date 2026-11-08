@@ -76,9 +76,9 @@ import {
   getTaskDetail,
   getTaskHistory,
   listAssignableUsers,
-  listProjects,
 } from "@/modules/tasks/service";
 import { getTaskSettings } from "@/modules/tasks/settings";
+import { getTaskFormOptions } from "@/modules/tasks/form-options";
 import {
   canPlanSteps,
   canTickSteps,
@@ -316,7 +316,9 @@ export async function TaskDetail({
     projectOfTask(task),
     getDeleteMode(user, task.id),
     getTaskSettings(),
-    canEdit ? listProjects(user) : Promise.resolve([]),
+    canEdit
+      ? getTaskFormOptions(user).then((options) => options.projects.map((p) => p.name))
+      : Promise.resolve([] as string[]),
     assigneeEditable || convertible
       ? listAssignableUsers(assigneeEditable ? [task.assigneeId] : [])
       : Promise.resolve([]),
@@ -786,19 +788,17 @@ export async function TaskDetail({
           canEdit && open
             ? fieldForm(
                 "project",
-                <>
-                  <Input
-                    name="value"
-                    list={`projects-${task.id}`}
-                    maxLength={60}
-                    defaultValue={task.project ?? ""}
-                  />
-                  <datalist id={`projects-${task.id}`}>
-                    {projects.map((p) => (
-                      <option key={p} value={p} />
-                    ))}
-                  </datalist>
-                </>,
+                // Chosen from the list: a typo can't leave the task outside its project.
+                <NativeSelect name="value" defaultValue={task.project ?? ""} className="w-full">
+                  <option value="">{t("tasks.form.noProject")}</option>
+                  {[...new Set([...projects, ...(task.project ? [task.project] : [])])].map(
+                    (name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ),
+                  )}
+                </NativeSelect>,
               )
             : undefined
         }

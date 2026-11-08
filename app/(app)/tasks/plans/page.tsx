@@ -1,3 +1,5 @@
+import { Plus } from "lucide-react";
+
 import { PlanTree } from "@/components/tasks/plan-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -46,58 +48,70 @@ export default async function PlansPage({ searchParams }: PageProps<"/tasks/plan
         <PlanTree plans={tree} />
       )}
 
-      <Card className="gap-3">
-        <CardTitle>{t("plans.newPlan")}</CardTitle>
-        <form action={createPlanAction} className="flex flex-col gap-3">
-          <div className="grid grid-cols-2 gap-3">
+      {/* The form waits behind «+ Новый план» (always open when there are no plans yet). */}
+      <details open={plans.length === 0 || undefined} className="group">
+        <summary className="list-none [&::-webkit-details-marker]:hidden">
+          <span className="bg-primary text-primary-foreground inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-full px-4 text-sm font-medium group-open:hidden">
+            <Plus className="size-4" />
+            {t("plans.newPlan")}
+          </span>
+        </summary>
+        <Card className="gap-3">
+          <CardTitle>{t("plans.newPlan")}</CardTitle>
+          <form action={createPlanAction} className="flex flex-col gap-3">
+            <div className="grid grid-cols-2 gap-3">
+              <Label className="flex-col items-start">
+                {t("plans.fields.level")}
+                <NativeSelect name="level" defaultValue="MONTH" className="w-full">
+                  {PLAN_LEVELS.map((level) => (
+                    <option key={level} value={level}>
+                      {t(`plans.level.${level}`)}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Label>
+              <Label className="flex-col items-start">
+                {t("plans.fields.period")}
+                <Input type="date" name="date" required defaultValue={today} />
+                <span className="text-muted-foreground text-xs font-normal">
+                  {t("plans.fields.periodHint")}
+                </span>
+              </Label>
+            </div>
             <Label className="flex-col items-start">
-              {t("plans.fields.level")}
-              <NativeSelect name="level" defaultValue="MONTH" className="w-full">
-                {PLAN_LEVELS.map((level) => (
-                  <option key={level} value={level}>
-                    {t(`plans.level.${level}`)}
-                  </option>
-                ))}
+              {t("plans.fields.title")}
+              <Input name="title" maxLength={200} placeholder={t("plans.titlePlaceholder")} />
+            </Label>
+            <Label className="flex-col items-start">
+              {t("plans.fields.parent")}
+              <NativeSelect name="parentId" defaultValue="" className="w-full">
+                <option value="">{t("tasks.fields.none")}</option>
+                {plans
+                  .filter((p) => p.level !== "WEEK")
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {t(`plans.level.${p.level}`)}: {p.title}
+                    </option>
+                  ))}
               </NativeSelect>
             </Label>
-            <Label className="flex-col items-start">
-              {t("plans.fields.period")}
-              <Input type="date" name="date" required defaultValue={today} />
+            <Label>
+              <input
+                type="checkbox"
+                name="isPersonal"
+                className="size-4"
+                defaultChecked={!canTeam}
+                disabled={!canTeam}
+              />
+              {t("plans.fields.personal")}
+              {!canTeam && <input type="hidden" name="isPersonal" value="on" />}
             </Label>
-          </div>
-          <Label className="flex-col items-start">
-            {t("plans.fields.title")}
-            <Input name="title" maxLength={200} placeholder={t("plans.titlePlaceholder")} />
-          </Label>
-          <Label className="flex-col items-start">
-            {t("plans.fields.parent")}
-            <NativeSelect name="parentId" defaultValue="" className="w-full">
-              <option value="">{t("tasks.fields.none")}</option>
-              {plans
-                .filter((p) => p.level !== "WEEK")
-                .map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {t(`plans.level.${p.level}`)}: {p.title}
-                  </option>
-                ))}
-            </NativeSelect>
-          </Label>
-          <Label>
-            <input
-              type="checkbox"
-              name="isPersonal"
-              className="size-4"
-              defaultChecked={!canTeam}
-              disabled={!canTeam}
-            />
-            {t("plans.fields.personal")}
-            {!canTeam && <input type="hidden" name="isPersonal" value="on" />}
-          </Label>
-          <Button type="submit" className="self-start">
-            {t("plans.create")}
-          </Button>
-        </form>
-      </Card>
+            <Button type="submit" className="self-start">
+              {t("plans.create")}
+            </Button>
+          </form>
+        </Card>
+      </details>
     </div>
   );
 }

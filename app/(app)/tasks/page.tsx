@@ -44,6 +44,7 @@ import {
 } from "@/modules/tasks/service";
 import { displayName } from "@/modules/core/users/display-name";
 import { knownLabels } from "@/modules/tasks/labels";
+import { distinctNames } from "@/modules/tasks/names";
 import { rememberedScope, SCOPE_COOKIE } from "@/modules/tasks/scope-cookie";
 import { bucketOf, BUCKETS } from "@/modules/tasks/sort";
 import { withParams } from "@/modules/tasks/back";
@@ -174,6 +175,8 @@ export default async function TaskListPage({ searchParams }: PageProps<"/tasks">
       ? "creator"
       : "assignee";
   const chosen = moreFilters(filters);
+  // Two people with one name get their position after it.
+  const names = distinctNames(people);
 
   // The task opened next to the list (?task=…): the list stays, the panel shows the card.
   const link = (change: Partial<TaskFilters>) => hrefWith(filters, change, defaults);
@@ -247,7 +250,7 @@ export default async function TaskListPage({ searchParams }: PageProps<"/tasks">
                 <option value="">{t("tasks.filters.personAny")}</option>
                 {people.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.id === user.id ? `${displayName(p)} (${t("common.you")})` : displayName(p)}
+                    {p.id === user.id ? `${names.get(p.id)} (${t("common.you")})` : names.get(p.id)}
                   </option>
                 ))}
               </IconSelect>
