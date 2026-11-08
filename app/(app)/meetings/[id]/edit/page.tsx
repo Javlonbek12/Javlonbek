@@ -6,7 +6,8 @@ import { t } from "@/lib/i18n";
 import { utcToZonedLocal } from "@/lib/time";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getSettings } from "@/modules/core/settings/service";
-import { displayName } from "@/modules/core/users/display-name";
+import { activeOr } from "@/modules/core/users/active";
+import { personName } from "@/modules/core/users/display-name";
 import { getMeetingDetail } from "@/modules/meetings/service";
 
 import { updateMeetingAction } from "../../actions";
@@ -18,7 +19,11 @@ export default async function EditMeetingPage({ params }: PageProps<"/meetings/[
   if (!detail?.canEdit) notFound();
   const { meeting } = detail;
   const [people, { timezone }] = await Promise.all([
-    db.user.findMany({ orderBy: { firstName: "asc" } }),
+    // Active people, and whoever is already in the meeting (so saving keeps them).
+    db.user.findMany({
+      where: activeOr(meeting.participants.map((p) => p.userId)),
+      orderBy: { firstName: "asc" },
+    }),
     getSettings(user.id),
   ]);
 
@@ -27,7 +32,7 @@ export default async function EditMeetingPage({ params }: PageProps<"/meetings/[
       <h1 className="text-[22px] font-medium md:text-2xl">{t("meetings.edit")}</h1>
       <MeetingForm
         action={updateMeetingAction}
-        people={people.map((p) => ({ id: p.id, name: displayName(p) }))}
+        people={people.map((p) => ({ id: p.id, name: personName(p) }))}
         isNew={false}
         inSeries={meeting.seriesId !== null}
         meetingId={meeting.id}

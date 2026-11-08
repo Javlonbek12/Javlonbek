@@ -276,7 +276,7 @@ export async function updatePosmAction(form: FormData) {
 export async function addShipmentAction(form: FormData) {
   const user = await requireUser();
   await run("/distribution/stock", async () => {
-    const { destinations } = await loadDistribution();
+    const d = await loadDistribution();
     await addShipment(
       user,
       {
@@ -285,8 +285,9 @@ export async function addShipmentAction(form: FormData) {
         quantity: int(form, "quantity"),
         shippedOn: str(form, "shippedOn"),
         note: str(form, "note"),
+        overPlan: form.get("overPlan") === "on",
       },
-      destinations,
+      d,
     );
     return "/distribution/stock?added=1";
   });

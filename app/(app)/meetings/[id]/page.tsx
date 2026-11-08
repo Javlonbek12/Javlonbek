@@ -13,7 +13,7 @@ import { t, type TranslationKey } from "@/lib/i18n";
 import { formatDateTime } from "@/lib/time";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getSettings } from "@/modules/core/settings/service";
-import { displayName } from "@/modules/core/users/display-name";
+import { displayName, personName } from "@/modules/core/users/display-name";
 import { getMeetingDetail } from "@/modules/meetings/service";
 
 import { actionItemsAction, deleteMeetingAction, saveNotesAction } from "../actions";
@@ -66,7 +66,7 @@ export default async function MeetingPage({ params, searchParams }: PageProps<"/
         )}
         <p className="text-sm">
           <span className="text-muted-foreground">{t("meetings.fields.participants")}: </span>
-          {meeting.participants.map((p) => displayName(p.user)).join(", ")}
+          {meeting.participants.map((p) => personName(p.user)).join(", ")}
         </p>
         {meeting.agenda && <p className="text-sm whitespace-pre-wrap">{meeting.agenda}</p>}
         {canEdit && (

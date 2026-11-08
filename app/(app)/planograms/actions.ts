@@ -9,6 +9,9 @@ import { createRateLimiter } from "@/lib/rate-limit";
 import { requireModule } from "@/modules/core/access/guard";
 import { sendTelegramPhoto } from "@/modules/bot/send";
 import { getEnv } from "@/lib/env";
+import { AiError } from "@/modules/ai/run";
+import { getUserToday } from "@/modules/core/settings/service";
+import { suggestLayout } from "@/modules/planograms/ai-layout";
 import { PlanogramError } from "@/modules/planograms/errors";
 import { planogramPng, slideSubtitle, slideTitle } from "@/modules/planograms/export";
 import type { Layout } from "@/modules/planograms/layout";
@@ -135,6 +138,36 @@ export async function saveLayoutAction(
   }
 }
 
+// «Предложить раскладку ИИ»: the layout as it is in the editor now and the request in words; the
+// answer goes back into the editor unsaved.
+export async function suggestLayoutAction(
+  planogramId: string,
+  layoutJson: string,
+  request: string,
+): Promise<
+  | { ok: true; layout: Layout; note: string; unknown: string[]; overflow: string[] }
+  | { ok: false; error: string }
+> {
+  const user = await actor();
+  try {
+    const current = JSON.parse(layoutJson) as Layout;
+    const result = await suggestLayout(
+      user,
+      idSchema.parse(planogramId),
+      current,
+      String(request),
+      await getUserToday(user.id),
+    );
+    return { ok: true, ...result };
+  } catch (error) {
+    if (error instanceof AiError) return { ok: false, error: `ai.errors.${error.code}` };
+    if (error instanceof PlanogramError)
+      return { ok: false, error: `planograms.errors.${error.code}` };
+    if (error instanceof SyntaxError) return { ok: false, error: "planograms.errors.layout" };
+    throw error;
+  }
+}
+
 export async function workflowAction(formData: FormData) {
   const user = await actor();
   const id = idSchema.parse(str(formData, "planogramId"));
@@ -221,7 +254,7 @@ export async function sendToTelegramAction(formData: FormData) {
     const png = await planogramPng(loaded);
     const caption = `${slideTitle(loaded)}\n${slideSubtitle(loaded)}\n${getEnv().APP_URL}/p/${loaded.record.shareToken}`;
     const recipients = await db.user.findMany({
-      where: { id: { in: userIds }, botChatId: { not: null } },
+      where: { id: { in: userIds }, botChatId: { not: null }, deactivatedAt: null },
     });
     let sent = 0;
     for (const r of recipients) if (await sendTelegramPhoto(r.botChatId!, png, caption)) sent += 1;

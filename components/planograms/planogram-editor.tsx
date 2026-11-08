@@ -9,12 +9,13 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import { ArrowDown, ArrowUp, Copy, Redo2, Undo2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, Redo2, Sparkles, Undo2, X } from "lucide-react";
 import { useCallback, useEffect, useId, useMemo, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import { Textarea } from "@/components/ui/textarea";
 import { useT } from "@/components/locale-provider";
 import { cn } from "@/lib/utils";
 import { describeChange, describeViolation } from "@/modules/planograms/describe";
@@ -45,6 +46,10 @@ import {
 
 type SaveResult = { ok: boolean; error?: string };
 
+type SuggestResult =
+  | { ok: true; layout: Layout; note: string; unknown: string[]; overflow: string[] }
+  | { ok: false; error: string };
+
 type Props = {
   planogramId: string;
   geometry: Geometry;
@@ -67,6 +72,8 @@ type Props = {
     headerPosmId: string | null,
     shelftalkers: string,
   ) => Promise<SaveResult>;
+  // «Предложить раскладку ИИ»: only where the AI key is set.
+  suggest?: (planogramId: string, layout: string, request: string) => Promise<SuggestResult>;
 };
 
 const BADGES = ["YANGI", "1mg", "2mg"];
@@ -212,6 +219,16 @@ export function PlanogramEditor(props: Props) {
   // A move refused because the layout would not fit: the reason and the cells to show.
   const [blocked, setBlocked] = useState<{ text: string; cells: string[] } | null>(null);
   const [pending, startTransition] = useTransition();
+  // The AI panel: open or not, the request, and what came back (said under the request).
+  const [ai, setAi] = useState<{ open: boolean; request: string; lines: string[]; error: boolean }>(
+    {
+      open: false,
+      request: "",
+      lines: [],
+      error: false,
+    },
+  );
+  const [thinking, startThinking] = useTransition();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
   const skuById = useMemo(() => new Map(skus.map((s) => [s.id, s])), [skus]);
@@ -406,6 +423,36 @@ export function PlanogramEditor(props: Props) {
     });
   };
 
+  const onSuggest = () => {
+    const suggest = props.suggest;
+    const request = ai.request.trim();
+    if (!suggest || !request) return;
+    startThinking(async () => {
+      const result = await suggest(props.planogramId, JSON.stringify(layout), request);
+      if (!result.ok) {
+        setAi((a) => ({ ...a, lines: [t(result.error as never)], error: true }));
+        return;
+      }
+      // One step in the history: undo takes the whole suggestion back.
+      apply(result.layout);
+      setSelection([]);
+      setAi((a) => ({
+        ...a,
+        error: false,
+        lines: [
+          result.note,
+          result.unknown.length > 0
+            ? t("planograms.editor.ai.unknown", { codes: result.unknown.join(", ") })
+            : "",
+          result.overflow.length > 0
+            ? t("planograms.editor.ai.overflow", { names: result.overflow.join(", ") })
+            : "",
+          t("planograms.editor.ai.done"),
+        ].filter(Boolean),
+      }));
+    });
+  };
+
   return (
     <DndContext id={dndId} sensors={sensors} onDragEnd={onDragEnd}>
       <div className="flex flex-col gap-3 lg:flex-row">
@@ -480,6 +527,18 @@ export function PlanogramEditor(props: Props) {
                 ))}
               </NativeSelect>
             )}
+            {props.suggest && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                aria-expanded={ai.open}
+                onClick={() => setAi((a) => ({ ...a, open: !a.open }))}
+              >
+                <Sparkles />
+                {t("planograms.editor.ai.open")}
+              </Button>
+            )}
             <Button type="button" onClick={onSave} disabled={pending}>
               {t("planograms.actions.save")}
             </Button>
@@ -488,6 +547,59 @@ export function PlanogramEditor(props: Props) {
             )}
             {message && !dirty && <span className="text-muted-foreground text-xs">{message}</span>}
           </div>
+          {ai.open && props.suggest && (
+            <div className="bg-muted/40 flex flex-col gap-2 rounded-lg border p-3 text-sm">
+              <div className="flex items-start justify-between gap-2">
+                <label htmlFor={`${dndId}-ai`} className="font-medium">
+                  {t("planograms.editor.ai.title")}
+                </label>
+                <button
+                  type="button"
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={() => setAi((a) => ({ ...a, open: false }))}
+                  aria-label={t("planograms.editor.ai.close")}
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+              <Textarea
+                id={`${dndId}-ai`}
+                value={ai.request}
+                maxLength={1000}
+                rows={3}
+                onChange={(e) => setAi((a) => ({ ...a, request: e.target.value }))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) onSuggest();
+                }}
+                placeholder={t("planograms.editor.ai.placeholder")}
+              />
+              <p className="text-muted-foreground text-xs">{t("planograms.editor.ai.hint")}</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={onSuggest}
+                  disabled={thinking || !ai.request.trim()}
+                >
+                  <Sparkles />
+                  {thinking ? t("planograms.editor.ai.thinking") : t("planograms.editor.ai.submit")}
+                </Button>
+              </div>
+              {ai.lines.length > 0 && !thinking && (
+                <div
+                  role={ai.error ? "alert" : "status"}
+                  className={cn(
+                    "flex flex-col gap-1 rounded-md p-2",
+                    ai.error ? "bg-destructive/10 text-destructive" : "bg-card border",
+                  )}
+                >
+                  {ai.lines.map((line, i) => (
+                    <p key={i}>{line}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           {stillPending && (
             <p className="text-sm text-amber-700 dark:text-amber-300">
               {t("planograms.editor.pendingWarning")}

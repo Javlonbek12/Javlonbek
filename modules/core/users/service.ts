@@ -12,14 +12,14 @@ import { canChangeRole, type Actor } from "@/modules/core/permissions";
 
 import { displayName } from "./display-name";
 
-export type LoginFailure = Exclude<InviteStatus, "valid"> | "invite_required";
+export type LoginFailure = Exclude<InviteStatus, "valid"> | "invite_required" | "deactivated";
 
 export type LoginResult =
   | { ok: true; user: { id: string; role: Role; firstName: string }; created: boolean }
   | { ok: false; reason: LoginFailure };
 
 // One entry point for web login and bot /start:
-// - known Telegram user -> refresh profile and log in;
+// - known Telegram user -> refresh profile and log in (a deactivated one is refused);
 // - nobody in the system yet -> the first user becomes OWNER;
 // - otherwise a valid invite is required; it is used up atomically.
 export async function loginWithTelegram(
@@ -38,6 +38,8 @@ export async function loginWithTelegram(
     async (tx): Promise<LoginResult & { inviterId?: string }> => {
       const existing = await tx.user.findUnique({ where: { telegramId: profile.telegramId } });
       if (existing) {
+        // Deactivated by the owner: no way in (web, dev login, an invitation, the bot's /start).
+        if (existing.deactivatedAt) return { ok: false, reason: "deactivated" };
         const user = await tx.user.update({ where: { id: existing.id }, data: profileData });
         return { ok: true, user, created: false };
       }

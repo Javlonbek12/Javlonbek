@@ -56,7 +56,7 @@ import { formatDateTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import type { Actor } from "@/modules/core/permissions";
 import { getSettings } from "@/modules/core/settings/service";
-import { displayName } from "@/modules/core/users/display-name";
+import { displayName, personName } from "@/modules/core/users/display-name";
 import { projectOfTask } from "@/modules/projects/service";
 import { canControl, canViewTask, isClosed, isDoer } from "@/modules/tasks/access";
 import { listAttachments, MAX_FILE_MB } from "@/modules/tasks/attachment-service";
@@ -67,6 +67,7 @@ import { getDependencies, listBlockerCandidates } from "@/modules/tasks/dependen
 import { quickTarget } from "@/modules/tasks/quick";
 import { routeHints } from "@/modules/tasks/route-hints";
 import {
+  canChangeAssignee,
   canReopen,
   getTaskDetail,
   getTaskHistory,
@@ -271,8 +272,8 @@ export async function TaskDetail({
       </div>
     );
   const { task, buttons, route, cancelledBlockers, canEdit } = detail;
-  const assigneeEditable =
-    canEdit && !task.isPersonal && ["DRAFT", "PENDING_APPROVAL", "APPROVED"].includes(task.status);
+  // Before work starts — or any time while open once the assignee was deactivated.
+  const assigneeEditable = canEdit && canChangeAssignee(task);
   const coManage = canManageCoAssignees(user, task);
   // A personal task its author may make a team task (BACKLOG item 15).
   const convertible = task.isPersonal && task.creatorId === user.id && !isClosed(task.status);
@@ -308,7 +309,9 @@ export async function TaskDetail({
     getDeleteMode(user, task.id),
     getTaskSettings(),
     canEdit ? listProjects(user) : Promise.resolve([]),
-    assigneeEditable || convertible ? listAssignableUsers() : Promise.resolve([]),
+    assigneeEditable || convertible
+      ? listAssignableUsers(assigneeEditable ? [task.assigneeId] : [])
+      : Promise.resolve([]),
     assigneeEditable || convertible
       ? routeHints(task.creatorId)
       : Promise.resolve({} as Awaited<ReturnType<typeof routeHints>>),
@@ -481,9 +484,9 @@ export async function TaskDetail({
         id,
         name:
           id === task.assigneeId
-            ? displayName(task.assignee)
+            ? personName(task.assignee)
             : id === task.creatorId
-              ? displayName(task.creator)
+              ? personName(task.creator)
               : (co?.people.find((p) => p.id === id)?.name ?? "?"),
       }))}
       finish={
@@ -526,7 +529,7 @@ export async function TaskDetail({
         {!task.isPersonal && (
           <>
             <dt className="text-muted-foreground">{t("tasks.fields.creator")}</dt>
-            <dd>{displayName(task.creator)}</dd>
+            <dd>{personName(task.creator)}</dd>
           </>
         )}
         {task.series && (
@@ -1073,7 +1076,7 @@ export async function TaskDetail({
                     "assigneeId",
                     <AssigneePicker
                       initial={task.assigneeId}
-                      people={people.map((p) => ({ id: p.id, label: displayName(p) }))}
+                      people={people.map((p) => ({ id: p.id, label: personName(p) }))}
                       hints={Object.fromEntries(
                         Object.entries(hints).map(([id, hint]) => [id, hint.plain.text]),
                       )}
@@ -1082,7 +1085,7 @@ export async function TaskDetail({
                 : undefined
             }
           >
-            {displayName(task.assignee)}
+            {personName(task.assignee)}
           </Field>
         )}
         {co && (co.people.length > 0 || co.requests.length > 0 || coManage) && (

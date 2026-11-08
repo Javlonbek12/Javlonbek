@@ -105,6 +105,7 @@
 | `npm run dev` | Запуск в режиме разработки (http://localhost:3000) |
 | `npm run build` / `npm start` | Сборка и запуск «боевой» версии |
 | `npm test` | Все тесты (нужна запущенная база; тесты используют отдельную базу `assistant_test`) |
+| `npm run test:e2e` | Проверки в браузере (Playwright): вход, задачи, таймер, меню на телефоне, планограммы. Сначала `npm run build`; один раз — `npx playwright install chromium` и база `assistant_e2e_test` (`docker compose exec postgres createdb -U assistant assistant_e2e_test`, другая — через `E2E_DATABASE_URL`). Эту базу тесты очищают и заполняют сами |
 | `npm run lint` | Проверка кода и форматирования |
 | `npm run format` | Автоматически исправить форматирование |
 | `npm run typecheck` | Проверка типов TypeScript |
@@ -143,7 +144,7 @@ tests/        интеграционные тесты (с настоящей б�
 
 Пошаговая инструкция — [`docs/SETUP-SERVER.md`](docs/SETUP-SERVER.md): Ubuntu 24.04, Docker, домен с HTTPS,
 бот, ежедневные бэкапы, мониторинг. После настройки секретов `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`
-каждый push в `main` с зелёными проверками сам обновляет сервер. Остальное — кнопкой Actions → Server (`.github/workflows/server.yml`): установка, состояние, журналы, перезапуск, бэкап и `backup-export` (скачать архив к себе), `usage` (кто работает в приложении), `team-check` / `team-fix` (люди, роли, места, удаление сотрудника), `org-import` / `org-replace`, `project-import` / `project-create`, `data-key` / `data-load` (загрузка данных), `demo-add` / `demo-remove`. Описание действий — в `docs/SETUP-SERVER.md`.
+каждый push в `main` с зелёными проверками сам обновляет сервер. Остальное — кнопкой Actions → Server (`.github/workflows/server.yml`): установка, состояние, журналы, перезапуск, бэкап, `backup-export` (скачать архив к себе), `backup-cloud` (копия в облако, сама каждую ночь), `restore` (восстановить копию с сервера или из облака), `usage` (кто работает в приложении), `team-check` / `team-fix` (люди, роли, места, удаление сотрудника), `org-import` / `org-replace`, `project-import` / `project-create`, `data-key` / `data-load` (загрузка данных), `demo-add` / `demo-remove`. Описание действий — в `docs/SETUP-SERVER.md`.
 
 Руководство для сотрудников — [`docs/USER-GUIDE.md`](docs/USER-GUIDE.md).
 

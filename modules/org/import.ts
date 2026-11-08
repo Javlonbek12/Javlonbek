@@ -32,7 +32,7 @@ export const importSchema = z.array(nodeSchema).min(1);
 export async function importOrgChart(input: unknown, options: { replace?: boolean } = {}) {
   const roots = importSchema.parse(input);
   const owner = await db.user.findFirst({
-    where: { role: "OWNER" },
+    where: { role: "OWNER", deactivatedAt: null },
     orderBy: { createdAt: "asc" },
   });
   if (!owner) throw new Error("No owner yet: log in to the site first.");
@@ -41,7 +41,10 @@ export async function importOrgChart(input: unknown, options: { replace?: boolea
       throw new Error("The org chart is not empty. Run with replace to load it again.");
     await db.orgNode.deleteMany();
   }
-  const users = await db.user.findMany({ select: { id: true, firstName: true, lastName: true } });
+  const users = await db.user.findMany({
+    where: { deactivatedAt: null },
+    select: { id: true, firstName: true, lastName: true },
+  });
   const linked = new Set<string>();
   const stats = { units: 0, people: 0, linked: 0, vacancies: 0 };
 

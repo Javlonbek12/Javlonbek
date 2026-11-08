@@ -42,11 +42,16 @@ model User {
   email            String?
   startedAt        DateTime? @db.Date
   managerId        String?
+  // Deactivated by the owner (employee card): can't sign in and gets nothing; history stays.
+  deactivatedAt    DateTime?
+  deactivatedById  String?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
   invitedBy      User?          @relation("UserInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
   invitedUsers   User[]         @relation("UserInvitedBy")
+  deactivatedBy  User?          @relation("UserDeactivatedBy", fields: [deactivatedById], references: [id], onDelete: SetNull)
+  deactivated    User[]         @relation("UserDeactivatedBy")
   manager        User?          @relation("ManagerReports", fields: [managerId], references: [id], onDelete: SetNull)
   reports        User[]         @relation("ManagerReports")
   notesAbout     EmployeeNote[] @relation("NoteEmployee")

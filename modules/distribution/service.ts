@@ -62,7 +62,8 @@ export class DistributionError extends Error {
       | "noLines"
       | "ordered"
       | "noReplacement"
-      | "elementInUse",
+      | "elementInUse"
+      | "overPlan",
   ) {
     super(code);
     this.name = "DistributionError";
@@ -772,6 +773,10 @@ export async function updatePosmSettings(actor: Actor & Viewer, id: string, inpu
   });
 }
 
+// One shipment typed in on «Склад». It is checked against what the plan leaves for that
+// destination (a waybill is capped the same way): more than that needs «сверх плана» ticked, so
+// a typo can't eat another region's share. A second click with the same line within a minute
+// records nothing new.
 export async function addShipment(
   actor: Actor & Viewer,
   input: {
@@ -780,39 +785,70 @@ export async function addShipment(
     quantity: number;
     shippedOn: string;
     note?: string;
+    overPlan?: boolean;
   },
-  destinations: string[],
+  plan: { plans: ItemPlan[]; destinations: string[] },
+  now = new Date(),
 ) {
   if (!canSeeDistribution(actor)) throw new DistributionError("forbidden");
   if (
     !Number.isInteger(input.quantity) ||
     input.quantity <= 0 ||
     !isDateString(input.shippedOn) ||
-    !destinations.includes(input.destination)
+    !plan.destinations.includes(input.destination)
   )
     throw new DistributionError("invalid");
-  const item = await db.distPosm.findUnique({
-    where: { id: input.posmId },
-    include: { order: { select: { closed: true } } },
+  const created = await db.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "DistPosm" WHERE "id" = ${input.posmId} FOR UPDATE`;
+    const item = await tx.distPosm.findUnique({
+      where: { id: input.posmId },
+      include: { order: { select: { closed: true } } },
+    });
+    if (!item) throw new DistributionError("notFound");
+    if (item.order.closed) throw new DistributionError("closed");
+    const shippedOn = fromDateString(input.shippedOn);
+    const repeat = await tx.distShipment.findFirst({
+      where: {
+        posmId: input.posmId,
+        destination: input.destination,
+        quantity: input.quantity,
+        shippedOn,
+        createdById: actor.id,
+        createdAt: { gte: new Date(now.getTime() - 60_000) },
+      },
+    });
+    if (repeat) return null;
+    const itemPlan = plan.plans.find((p) => p.item.id === input.posmId);
+    if (itemPlan && !input.overPlan) {
+      const shipments = await tx.distShipment.findMany({
+        where: { posmId: input.posmId },
+        select: { posmId: true, destination: true, quantity: true },
+      });
+      if (input.quantity > remainder(itemPlan, input.destination, shipments).toSend)
+        throw new DistributionError("overPlan");
+    }
+    return tx.distShipment.create({
+      data: {
+        posmId: input.posmId,
+        destination: input.destination,
+        quantity: input.quantity,
+        shippedOn,
+        note: input.note?.trim() || null,
+        createdById: actor.id,
+      },
+    });
   });
-  if (!item) throw new DistributionError("notFound");
-  if (item.order.closed) throw new DistributionError("closed");
-  const created = await db.distShipment.create({
-    data: {
-      posmId: input.posmId,
-      destination: input.destination,
-      quantity: input.quantity,
-      shippedOn: fromDateString(input.shippedOn),
-      note: input.note?.trim() || null,
-      createdById: actor.id,
-    },
-  });
+  if (!created) return null;
   await logActivity({
     actorId: actor.id,
     action: "distribution.shipped",
     entityType: "DistShipment",
     entityId: created.id,
-    details: { destination: input.destination, quantity: input.quantity },
+    details: {
+      destination: input.destination,
+      quantity: input.quantity,
+      ...(input.overPlan ? { overPlan: true } : {}),
+    },
   });
   return created;
 }

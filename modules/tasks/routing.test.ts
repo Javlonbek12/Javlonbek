@@ -134,3 +134,40 @@ describe("routing v2: the table «Когда нужно утверждение»
     expect(route("mB", "mB").reviewerId).toBe("owner");
   });
 });
+
+describe("deactivated people", () => {
+  // mA is deactivated: the route goes past them, as if their people were under the owner.
+  const off = people.map((p) => (p.id === "mA" ? { ...p, deactivated: true } : p));
+  const offRoute = (from: string, to: string) => resolveRoute(off, team, from, to);
+
+  it("never decide or accept: the next manager up does, or the owner", () => {
+    expect(nearestManager(off, "a1")).toBe("owner");
+    // b1 → a1 waited for mA; now for the owner.
+    expect(offRoute("b1", "a1")).toMatchObject({
+      status: "PENDING_APPROVAL",
+      deciderIds: ["owner"],
+    });
+    // a1's own task: the owner accepts.
+    expect(offRoute("a1", "a1").reviewerId).toBe("owner");
+    // A task mA gave: whoever stands above them accepts instead.
+    expect(offRoute("mA", "a2").reviewerId).toBe("owner");
+    // A request «up» to them is no request any more.
+    expect(offRoute("b1", "mA").kind).not.toBe("up");
+  });
+
+  it("a deactivated owner decides nothing; with nobody left to accept, the assignee is stored", () => {
+    const solo: Person[] = [
+      { id: "owner", role: "OWNER", managerId: null },
+      { id: "x", role: "MEMBER", managerId: null, deactivated: true },
+    ];
+    // x's task for the owner: the owner can't accept their own work, nobody else is there.
+    expect(resolveRoute(solo, team, "x", "owner").reviewerId).toBe("owner");
+    const twoOwners: Person[] = [
+      { id: "o1", role: "OWNER", managerId: null },
+      { id: "o2", role: "OWNER", managerId: null, deactivated: true },
+      { id: "m", role: "MEMBER", managerId: null },
+    ];
+    expect(nearestManager(twoOwners, "m")).toBe("o1");
+    expect(nearestManager(twoOwners, "o1")).toBeNull();
+  });
+});

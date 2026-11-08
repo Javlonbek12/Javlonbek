@@ -199,7 +199,10 @@ export async function createProject(
   if (template?.anchor && !anchorDate) throw new ProjectError("invalid");
   if (await db.project.findUnique({ where: { name: fields.name } }))
     throw new ProjectError("nameTaken");
-  if (fields.leadId && !(await db.user.findUnique({ where: { id: fields.leadId } })))
+  if (
+    fields.leadId &&
+    !(await db.user.findFirst({ where: { id: fields.leadId, deactivatedAt: null } }))
+  )
     throw new ProjectError("invalid");
   const color = (await db.project.count()) % 8;
   const assigneeId = fields.leadId ?? actor.id;
@@ -259,7 +262,16 @@ export async function updateProject(
   if (actor.role !== "OWNER") data.leadId = project.leadId;
   if (data.name !== project.name && (await db.project.findUnique({ where: { name: data.name } })))
     throw new ProjectError("nameTaken");
-  if (data.leadId && !(await db.user.findUnique({ where: { id: data.leadId } })))
+  // A new lead must be active; a deactivated one only stays where they already are.
+  if (
+    data.leadId &&
+    !(await db.user.findFirst({
+      where: {
+        id: data.leadId,
+        ...(data.leadId === project.leadId ? {} : { deactivatedAt: null }),
+      },
+    }))
+  )
     throw new ProjectError("invalid");
   const handOver = options.moveTasks && data.leadId && data.leadId !== project.leadId;
   await db.$transaction([

@@ -41,7 +41,9 @@ export async function proposeActionItems(
 
   const [user, people, projects, settings] = await Promise.all([
     db.user.findUniqueOrThrow({ where: { id: actor.id } }),
+    // Tasks from the minutes go to active people only.
     db.user.findMany({
+      where: { deactivatedAt: null },
       select: { id: true, firstName: true, lastName: true, telegramUsername: true },
     }),
     listProjects(actor),

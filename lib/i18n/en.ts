@@ -157,6 +157,7 @@ export const en: Dictionary = {
       invite_revoked: "The invitation was cancelled. Ask for a new one.",
       too_many_requests: "Too many attempts. Wait a minute and try again.",
       dev_login_disabled: "Developer sign-in is off.",
+      deactivated: "Your access is turned off. If this is a mistake, ask your manager.",
     },
   },
   invite: {
@@ -244,6 +245,7 @@ export const en: Dictionary = {
     filterAll: "All",
     filterMine: "My reports",
     filterOverdue: "With overdue tasks",
+    filterDeactivated: "Deactivated",
     noPosition: "no job title",
     openCard: "Open profile",
     profile: {
@@ -317,6 +319,34 @@ export const en: Dictionary = {
     inviteManagerHint: "The new employee joins your team.",
     invite: "Invite",
     invitesHint: "Invite a new employee and see the active invitations.",
+    deactivation: {
+      mark: "deactivated",
+      badge: "Deactivated",
+      deactivate: "Deactivate employee",
+      confirmTitle: "Deactivate this employee?",
+      hint: "They won't be able to sign in to the app or use the bot, and get no notifications. Their tasks, comments and meetings stay in the history. You can turn them back on here.",
+      handOver: "Hand over open tasks",
+      handOverNone: "— don't hand over —",
+      handOverHint:
+        "Their tasks whose work isn't handed in go to the chosen person along the usual route. They are taken off as a co-assignee; their decisions go to the next person on the route or the owner.",
+      confirm: "Yes, deactivate",
+      done: "Employee deactivated. Tasks handed over: {moved}.",
+      notMoved: "Couldn't hand over {count} tasks — change the assignee in the tasks themselves.",
+      off: "Deactivated on {date}. Can't sign in to the app or the bot, gets no notifications. The history is kept.",
+      reactivate: "Turn back on",
+      reactivateTitle: "Turn this employee back on?",
+      reactivateHint:
+        "They can sign in again and will get notifications. Tasks handed over stay with their new assignees.",
+      reactivateConfirm: "Yes, turn on",
+      reactivated: "Employee turned back on.",
+      botOff: "Your access to Assistant is turned off. If this is a mistake, ask your manager.",
+      errors: {
+        self: "You can't deactivate yourself.",
+        lastOwner: "The last owner can't be deactivated.",
+        handOver: "Tasks can only go to an active employee.",
+        state: "The employee is already deactivated or already active.",
+      },
+    },
   },
   notifications: {
     title: "Notifications",
@@ -1230,6 +1260,19 @@ export const en: Dictionary = {
       pendingWarning:
         "The planogram awaits approval. Saving returns it to draft — send it for approval again afterwards.",
       dropped: "Didn't fit on the new equipment and were not carried over: {names}.",
+      ai: {
+        open: "Suggest a layout with AI",
+        title: "Describe how to lay out the products",
+        placeholder:
+          "E.g. ESSE on the top two shelves with 2 facings each, new items at eye level, Simple at the bottom",
+        hint: "AI places the SKUs into the free places; POSM stays where it is. The result appears as an unsaved change: check it and save, or undo.",
+        submit: "Suggest",
+        thinking: "AI is thinking…",
+        close: "Close",
+        done: "AI layout applied, not saved. Check the rules on the right and press «Save», or undo ↶.",
+        unknown: "Not in the catalog, skipped: {codes}.",
+        overflow: "Did not fit: {names}.",
+      },
     },
     validation: {
       title: "Rule check",
@@ -2897,6 +2940,7 @@ export const en: Dictionary = {
       quantity: "Quantity, pcs",
       date: "Date",
       note: "Comment",
+      overPlan: "Over the plan (more than the plan leaves)",
       save: "Record",
       history: "Shipment log",
       who: "By",
@@ -3260,6 +3304,8 @@ export const en: Dictionary = {
       posmDeleted: "Item removed from the campaign.",
     },
     errors: {
+      overPlan:
+        "That is more than the plan leaves for this destination. Check the quantity or tick «Over the plan».",
       elementInUse:
         "The element is in campaigns' composition or lists — it can't be deleted. Remove it from those campaigns first.",
       forbidden: "You can't do this.",

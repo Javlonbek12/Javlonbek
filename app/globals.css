@@ -193,3 +193,23 @@
   height: 1.5rem;
   border-left: 1px solid var(--org-line);
 }
+
+/* ConfirmAction floating: the native popover opens in the middle of the screen; where the browser
+   can anchor it, right under its button instead (above it when there is no room below). */
+.confirm-popover {
+  margin: auto;
+}
+.confirm-popover::backdrop {
+  background: transparent;
+}
+@supports (position-area: bottom) {
+  .confirm-popover {
+    inset: auto;
+    margin: 0.25rem 0;
+    position-area: bottom span-right;
+    position-try-fallbacks: flip-block;
+  }
+  .confirm-popover[data-align="right"] {
+    position-area: bottom span-left;
+  }
+}

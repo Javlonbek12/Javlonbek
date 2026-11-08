@@ -91,8 +91,10 @@ async function userToday(user: User, now = new Date()) {
   return { today: todayInTimezone(timezone, now), timezone };
 }
 
+// People the bot matches names against: active ones only (deactivated people get no new work).
 async function team() {
   return db.user.findMany({
+    where: { deactivatedAt: null },
     select: { id: true, firstName: true, lastName: true, telegramUsername: true },
     orderBy: { firstName: "asc" },
   });
@@ -544,6 +546,7 @@ export async function handleText(
 // languages, so names come out right and Uzbek is written in Latin letters.
 async function voicePrompt() {
   const people = await db.user.findMany({
+    where: { deactivatedAt: null },
     select: { firstName: true, lastName: true },
     orderBy: { createdAt: "asc" },
     take: 40,
