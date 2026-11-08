@@ -15,6 +15,7 @@ import {
 import {
   createProject,
   ProjectError,
+  setProjectFinished,
   setTaskRisk,
   updateProject,
 } from "@/modules/projects/service";
@@ -61,6 +62,21 @@ export async function updateProjectAction(form: FormData) {
   }
   revalidatePath("/projects", "layout");
   revalidatePath("/tasks", "layout");
+  redirect(target);
+}
+
+export async function finishProjectAction(form: FormData) {
+  const actor = await requireUser();
+  const id = str(form, "projectId");
+  let target = `/projects/${id}`;
+  try {
+    await setProjectFinished(actor, id, str(form, "finished") === "1");
+  } catch (error) {
+    if (!(error instanceof ProjectError)) throw error;
+    target += `?error=${error.code}`;
+  }
+  // «Сегодня» lists projects in work too.
+  revalidatePath("/", "layout");
   redirect(target);
 }
 

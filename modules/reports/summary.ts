@@ -10,7 +10,8 @@ export function changePercent(current: number, previous: number): string | null 
   return `${change > 0 ? "+" : "−"}${Math.abs(change)}%`;
 }
 
-// "▲ +12%", "▼ −3 п.п.", "без изменений"; compared with the previous period (explained once on the page).
+// "▲ +12%", "▼ −3 п.п." ("pp" in English), "без изменений"; compared with the previous period
+// (explained once on the page).
 export function changeNote(
   current: number | null,
   previous: number | null,
@@ -21,7 +22,7 @@ export function changeNote(
     const diff = current - previous;
     return diff === 0
       ? t("reports.kpi.noChange")
-      : `${diff > 0 ? "▲ +" : "▼ −"}${Math.abs(diff)} п.п.`;
+      : `${diff > 0 ? "▲ +" : "▼ −"}${t("reports.kpi.points", { n: Math.abs(diff) })}`;
   }
   const change = changePercent(current, previous);
   if (!change) return t("reports.kpi.noData");

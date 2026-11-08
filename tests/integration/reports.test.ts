@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { GET as download } from "@/app/api/reports/[format]/route";
 import { db } from "@/lib/db";
 import { createSessionToken, SESSION_COOKIE } from "@/modules/core/auth/session";
+import { updateSettings } from "@/modules/core/settings/service";
 import { buildReport } from "@/modules/reports/data";
 import { reportPdf } from "@/modules/reports/pdf";
 import { highlights } from "@/modules/reports/summary";
@@ -115,6 +116,35 @@ describe("management report", () => {
     const xlsx = await reportXlsx(report);
     expect(xlsx.subarray(0, 2).toString()).toBe("PK");
   }, 30_000);
+
+  it("counts as held only meetings that already started", async () => {
+    const owner = await createTestUser("OWNER");
+    for (const startsAt of ["2026-10-05T04:00:00Z", "2026-10-05T09:00:00Z"])
+      await db.meeting.create({
+        data: { title: "Тестовая встреча", startsAt: new Date(startsAt), createdById: owner.id },
+      });
+    // Monday 11:00 in Tashkent: the morning meeting is held, the afternoon one is ahead.
+    const report = await buildReport({ from: "2026-10-05", to: "2026-10-05" }, TZ, NOW);
+    expect(report.meetings.held).toBe(1);
+  });
+
+  it("downloads in the user's language", async () => {
+    const owner = await createTestUser("OWNER");
+    await updateSettings(owner.id, {
+      timezone: TZ,
+      telegramEnabled: true,
+      quietHoursStart: null,
+      quietHoursEnd: null,
+      disabledTypes: [],
+      digestTime: 510,
+      locale: "en",
+    });
+    const url = "http://localhost/api/reports/xlsx?preset=month";
+    const response = await download(request(url, owner.id), route("xlsx"));
+    expect(decodeURIComponent(response.headers.get("content-disposition")!)).toContain(
+      "Team work report",
+    );
+  });
 
   it("lets owners and managers download, not employees", async () => {
     const owner = await createTestUser("OWNER");

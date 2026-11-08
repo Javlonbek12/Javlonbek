@@ -13,7 +13,7 @@ import { ProgressBar } from "@/components/projects/progress-bar";
 import { ProjectForm } from "@/components/projects/project-form";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
-import { formatDay, toDateString } from "@/lib/dates";
+import { formatDay, todayInTimezone, toDateString } from "@/lib/dates";
 import { t, type TranslationKey } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { requireUser } from "@/modules/core/auth/current-user";
@@ -34,7 +34,7 @@ import { getProject } from "@/modules/projects/service";
 import { templateByKey } from "@/modules/projects/templates";
 import { listAssignableUsers } from "@/modules/tasks/service";
 
-import { updateProjectAction } from "../actions";
+import { finishProjectAction, updateProjectAction } from "../actions";
 
 const STATE_STYLES: Record<PhaseState, string> = {
   done: "text-emerald-700 dark:text-emerald-300",
@@ -109,7 +109,29 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
             aria-hidden
           />
           <h1 className="text-[22px] font-medium md:text-2xl">{project.name}</h1>
-          <HealthBadge health={stats.health} />
+          {project.finishedAt ? (
+            <span className="bg-secondary rounded-full px-2.5 py-0.5 text-xs font-medium">
+              {t("projects.finishedOn", {
+                date: formatDay(todayInTimezone(settings.timezone, project.finishedAt)),
+              })}
+            </span>
+          ) : (
+            <HealthBadge health={stats.health} />
+          )}
+          {canManage && (
+            <form action={finishProjectAction} className="ml-auto">
+              <input type="hidden" name="projectId" value={project.id} />
+              <input type="hidden" name="finished" value={project.finishedAt ? "" : "1"} />
+              <Button
+                type="submit"
+                size="sm"
+                variant="outline"
+                title={project.finishedAt ? undefined : t("projects.finishHint")}
+              >
+                {t(project.finishedAt ? "projects.reopen" : "projects.finish")}
+              </Button>
+            </form>
+          )}
         </div>
         <p className="text-muted-foreground text-sm">
           {[

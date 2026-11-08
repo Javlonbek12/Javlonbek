@@ -9,7 +9,14 @@ import {
   paymentStage,
   type Dataset,
 } from "./analytics";
-import { detectKind, parseDateTime, parseRow, type OosRecord, type PaymentRecord } from "./parse";
+import {
+  detectKind,
+  parseDateTime,
+  parseRow,
+  type OosRecord,
+  type PaymentRecord,
+  type VisitRecord,
+} from "./parse";
 import { parseConnectQuery, periodMonths } from "./report";
 
 const base = (id: string, extra: Partial<OosRecord> = {}) => ({
@@ -233,6 +240,29 @@ describe("Connect exports", () => {
     expect(x.paymentIssues.map((p) => p.stage)).toEqual(["blocked", "waitingBdm"]);
     expect(x.paymentIssues[0]?.failed).toEqual(["Тестовый пункт"]);
     expect(executorView(d, "TSM_TEST_2 - Тестовый сотрудник 2", "2026-10-21").openCount).toBe(0);
+  });
+
+  it("counts a visit scored 0% in the visit score", () => {
+    const visit = (id: string, percent: number | null): VisitRecord => ({
+      ...base(id),
+      template: "Аудит",
+      status: "Выполнено",
+      percent,
+      creator: null,
+      doneAt: null,
+      taskStatus: null,
+      problems: 0,
+      problemList: [],
+      photos: 0,
+      answers: [],
+    });
+    const d: Dataset = {
+      oos: [],
+      orders: [],
+      payments: [],
+      visits: [visit("1", 100), visit("2", 0), visit("3", null)],
+    };
+    expect(executiveView(d, ["2026-10"]).kpis.visitScore).toBe(50);
   });
 
   it("reads the page query: employees only get the executor level", () => {

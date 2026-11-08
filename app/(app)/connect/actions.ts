@@ -6,11 +6,14 @@ import { redirect } from "next/navigation";
 import { clearConnectData, ConnectError, importConnectFiles } from "@/modules/connect/service";
 import { requireUser } from "@/modules/core/auth/current-user";
 
-// Uploads Connect exports; the result (or the error) is shown on the upload page.
-export async function importConnectAction(form: FormData) {
+export type ConnectUploadResult = { lines: string[]; error: string | null };
+
+// Uploads one export (the page sends the chosen files one by one, so several big files never
+// hit the request size limit together). Returns the result lines for the upload page:
+// file|kind|created|updated|skipped|kept|newer.
+export async function importConnectFileAction(form: FormData): Promise<ConnectUploadResult> {
   const actor = await requireUser();
   const files = form.getAll("files").filter((f): f is File => f instanceof File && f.size > 0);
-  let target: string;
   try {
     const results = await importConnectFiles(
       actor,
@@ -18,16 +21,19 @@ export async function importConnectAction(form: FormData) {
         files.map(async (f) => ({ name: f.name, buffer: Buffer.from(await f.arrayBuffer()) })),
       ),
     );
-    const lines = results.flatMap((r) =>
-      r.sheets.map((s) => [r.name, s.kind, s.created, s.updated, s.skipped].join("|")),
-    );
-    target = `/connect/import?${new URLSearchParams({ done: lines.join("\n") })}`;
+    revalidatePath("/connect", "layout");
+    return {
+      error: null,
+      lines: results.flatMap((r) =>
+        r.sheets.map((s) =>
+          [r.name, s.kind, s.created, s.updated, s.skipped, s.kept, s.newer ?? ""].join("|"),
+        ),
+      ),
+    };
   } catch (error) {
     if (!(error instanceof ConnectError)) throw error;
-    target = `/connect/import?error=${error.code}`;
+    return { error: error.code, lines: [] };
   }
-  revalidatePath("/connect", "layout");
-  redirect(target);
 }
 
 export async function clearConnectAction() {

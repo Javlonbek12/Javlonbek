@@ -35,8 +35,8 @@ export function presetPeriod(preset: Preset, today: string): Period {
   }
 }
 
-// Reads ?preset= or ?from=&to= from the page / download URL; defaults to this week.
-// Custom periods are limited to a year.
+// Reads ?preset= or ?from=&to= from the page / download URL; defaults to last week (on a Monday
+// "this week" is a single day). Custom periods are limited to a year.
 export function parsePeriod(
   params: { preset?: unknown; from?: unknown; to?: unknown },
   today: string,
@@ -52,7 +52,7 @@ export function parsePeriod(
   ) {
     return { from, to, preset: null };
   }
-  const preset = PRESETS.includes(params.preset as Preset) ? (params.preset as Preset) : "week";
+  const preset = PRESETS.includes(params.preset as Preset) ? (params.preset as Preset) : "lastWeek";
   return { ...presetPeriod(preset, today), preset };
 }
 
