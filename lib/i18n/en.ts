@@ -2223,8 +2223,9 @@ export const en: Dictionary = {
     planDoc: {
       intro: "The plan document: what must be settled in each section before the launch.",
       filled: "Sections filled: {done} of {total}",
-      save: "Save plan",
-      saved: "Plan saved.",
+      saving: "Saving…",
+      saved: "Saved",
+      error: "Not saved — check the connection and try again.",
       empty: "Not filled",
       readOnly: "The plan can be changed by the owner and the project lead.",
     },

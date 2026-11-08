@@ -111,7 +111,6 @@ async function planAction(
   try {
     const result = await action(projectId);
     if (typeof result === "number") target += `&shifted=${result}`;
-    if (tab === "plan") target += "&saved=1";
   } catch (error) {
     if (!(error instanceof ProjectError)) throw error;
     target += `&error=${error.code}`;
@@ -171,10 +170,25 @@ export async function shiftProjectAction(form: FormData) {
   );
 }
 
-export async function savePlanSectionsAction(form: FormData) {
+// The launch plan saves itself while typing (no page reload): says whether it was saved.
+export async function savePlanDraftAction(
+  projectId: unknown,
+  sections: unknown,
+): Promise<{ ok: boolean }> {
   const actor = await requireUser();
-  const sections: Record<string, string> = {};
-  for (const [key, value] of form.entries())
-    if (key.startsWith("section.") && typeof value === "string") sections[key.slice(8)] = value;
-  await planAction(form, "plan", (projectId) => savePlanSections(actor, projectId, sections));
+  if (typeof projectId !== "string" || !sections || typeof sections !== "object")
+    return { ok: false };
+  const texts = Object.fromEntries(
+    Object.entries(sections).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string",
+    ),
+  );
+  try {
+    await savePlanSections(actor, projectId, texts);
+  } catch (error) {
+    if (error instanceof ProjectError) return { ok: false };
+    throw error;
+  }
+  revalidatePath(`/projects/${projectId}`);
+  return { ok: true };
 }

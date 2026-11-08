@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { fromDateString, isDateString, toDateString, todayInTimezone } from "@/lib/dates";
+import type { Prisma } from "@/lib/generated/prisma/client";
 import { logActivity } from "@/modules/core/activity/service";
 import { canUseModule } from "@/modules/core/access/actor";
 import type { Actor } from "@/modules/core/permissions";
@@ -28,12 +29,12 @@ export class ProjectError extends Error {
   }
 }
 
-// The owner sees all projects. Others see a project they lead, or one they have tasks in
-// (if "Projects" is switched on for their role).
-async function visibleProjectsWhere(actor: Actor) {
+// The projects a person may open: the owner — all; others — the ones they lead and the ones with
+// tasks they see. Those with tasks in a project see its page even when «Проекты» is off for their
+// role (read only: changing it stays with the owner and the lead). Also used by global search.
+export async function visibleProjectsWhere(actor: Actor): Promise<Prisma.ProjectWhereInput> {
   if (actor.role === "OWNER") return {};
   const own = { leadId: actor.id };
-  if (!canUseModule(actor, "projects")) return own;
   const rows = await db.task.findMany({
     where: { AND: [visibleTasksWhere(actor), { project: { not: null } }] },
     select: { project: true },
@@ -356,5 +357,6 @@ export async function setProjectFinished(
 // The "Projects" section: the owner, roles it is switched on for, and project leads.
 export async function canOpenProjects(actor: Actor) {
   if (actor.role === "OWNER" || canUseModule(actor, "projects")) return true;
-  return (await db.project.count({ where: { leadId: actor.id } })) > 0;
+  // Leads, and (to look) whoever has tasks in a project.
+  return (await db.project.count({ where: await visibleProjectsWhere(actor) })) > 0;
 }

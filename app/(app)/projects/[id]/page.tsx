@@ -67,7 +67,7 @@ type Tab = (typeof TABS)[number];
 export default async function ProjectPage({ params, searchParams }: PageProps<"/projects/[id]">) {
   const user = await requireUser();
   const { id } = await params;
-  const { error, tab: tabParam, saved, shifted, edit } = await searchParams;
+  const { error, tab: tabParam, shifted, edit } = await searchParams;
   const [today, settings] = await Promise.all([getUserToday(user.id), getSettings(user.id)]);
   const data = await getProject(user, id, settings.timezone);
   if (!data) notFound();
@@ -211,7 +211,6 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
           sections={template.sections}
           values={(project.planSections ?? {}) as Record<string, string>}
           canEdit={canManage}
-          saved={saved === "1"}
         />
       )}
 
