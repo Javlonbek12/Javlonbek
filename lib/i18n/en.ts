@@ -162,13 +162,22 @@ export const en: Dictionary = {
       dev_login_disabled: "Developer sign-in is off.",
       deactivated: "Your access is turned off. If this is a mistake, ask your manager.",
     },
+    tabTitle: "Sign in",
+    noInvite: "No invitation? Ask your manager for a link — sign-in is for the team only.",
   },
   invite: {
     title: "Invitation to Assistant",
-    description:
-      "You are invited to the team as “{role}”. Sign in with Telegram to accept the invitation.",
-    orBot: "Or open the bot — it will ask you to confirm:",
-    validUntil: "Valid until {date}",
+    orBot: "Or sign in through the bot — it will ask you to confirm:",
+    validUntil: "the link is valid until {date}",
+    tabTitle: "Invitation",
+    invitedBy: "{name} invites you to the team",
+    role: "Role: {role}",
+    place: "place: {place}",
+    steps: {
+      login: "Press the button below and confirm the sign-in in Telegram.",
+      bot: "Open the bot {bot} and press Start — tasks and reminders will come there.",
+      today: "Done: «Today» opens — your tasks and meetings for the day.",
+    },
   },
   team: {
     profile360: {
@@ -2437,6 +2446,9 @@ export const en: Dictionary = {
   errors: {
     forbidden: "Not enough rights for this.",
     generic: "Something went wrong. Please try again.",
+    title: "The page couldn't be opened",
+    retry: "Try again",
+    backHome: "Back to «Today»",
   },
   watchdog: {
     down: "⚠️ Assistant: problem — {what}",
