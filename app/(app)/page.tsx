@@ -330,10 +330,10 @@ function TeamTable({ rows }: { rows: TeamRow[] }) {
               className="px-1 pb-1 text-center font-medium"
               title={t(`home.today.${full}`)}
             >
-              <span className="sm:hidden lg:inline xl:hidden">{t(`home.today.${short}`)}</span>
-              <span className="hidden sm:inline lg:hidden xl:inline">
-                {t(`home.today.${full}`)}
-              </span>
+              {/* Full words only while the card spans the page (tablet); in the side column and
+                  on a phone they don't fit, the full name is in the tooltip. */}
+              <span className="sm:hidden lg:inline">{t(`home.today.${short}`)}</span>
+              <span className="hidden sm:inline lg:hidden">{t(`home.today.${full}`)}</span>
             </th>
           ))}
         </tr>

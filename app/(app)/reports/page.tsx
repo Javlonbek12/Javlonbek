@@ -107,10 +107,11 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
   return (
     <div className="flex flex-col gap-5 [&>*]:min-w-0">
       <RememberPeriod name={PERIOD_COOKIE} value={periodCookieValue(user.id, period)} />
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-[22px] font-medium md:text-2xl">{t("reports.title")}</h1>
-          <p className="text-muted-foreground text-sm">
+          {/* On screen the period picker below shows the dates; the printed page needs them here. */}
+          <p className="text-muted-foreground hidden text-sm print:block">
             {t("reports.subtitle", {
               from: formatReportDate(period.from),
               to: formatReportDate(period.to),

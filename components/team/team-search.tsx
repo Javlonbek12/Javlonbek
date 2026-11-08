@@ -30,7 +30,8 @@ export function TeamSearch({ q, hidden }: { q: string; hidden: Record<string, st
         if (timer.current) clearTimeout(timer.current);
         timer.current = setTimeout(() => form.current?.requestSubmit(), SEARCH_DELAY_MS);
       }}
-      className="min-w-0 flex-1"
+      // At least 16rem wide: on a phone the list/cards switch goes to the next line instead.
+      className="min-w-0 flex-1 basis-64"
     >
       {Object.entries(hidden).map(([name, value]) => (
         <input key={name} type="hidden" name={name} value={value} />
