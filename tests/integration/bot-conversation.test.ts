@@ -265,7 +265,7 @@ describe("commands and natural requests", () => {
     // Under a notice: the result in place of the notice.
     const approved = await handleCallback(users.owner, `t:${pending.id}:A`);
     expect(approved).toMatchObject({ edit: true });
-    expect(approved.text).toContain("Утверждена: «На утверждение»");
+    expect(approved.text).toContain("К выполнению: «На утверждение»");
     expect((await db.task.findUniqueOrThrow({ where: { id: pending.id } })).status).toBe(
       "APPROVED",
     );
@@ -288,7 +288,7 @@ describe("commands and natural requests", () => {
     expect(list.buttons).toHaveLength(12);
     const reply = await handleCallback(users.owner, `t:${tasks[0]!.id}:A:l`);
     expect(reply.edit).toBe(true);
-    expect(reply.text.split("\n\n")[0]).toBe("Утверждена: «Запрос 1» (Тестовый владелец)");
+    expect(reply.text.split("\n\n")[0]).toBe("К выполнению: «Запрос 1» (Тестовый владелец)");
     expect(reply.text).toContain("Ждут вашего решения (11)");
     expect(reply.buttons).toHaveLength(11);
     expect(reply.buttons!.flat().some((b) => b.data.includes(tasks[0]!.id))).toBe(false);
@@ -496,7 +496,7 @@ describe("commands and natural requests", () => {
     // Someone else decided first.
     await changeStatus(users.owner, pending.id, "APPROVED");
     expect((await handleCallback(users.owner, `t:${pending.id}:D`)).text).toBe(
-      "Решение уже принято: задача сейчас «Утверждена».",
+      "Решение уже принято: задача сейчас «К выполнению».",
     );
   });
 

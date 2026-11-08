@@ -80,7 +80,7 @@ describe("routing v2", () => {
     await expect(changeStatus(a1, own.id, "DONE")).rejects.toMatchObject({ code: "forbidden" });
     await expect(changeStatus(manager, own.id, "DONE")).resolves.toMatchObject({ status: "DONE" });
 
-    // One that starts later waits as «Утверждена»; with «Требует утверждения» it waits too.
+    // One that starts later waits as «К выполнению» (APPROVED); with «Требует утверждения» it waits too.
     const later = await createTask(
       a1,
       taskInput({ assigneeId: a1.id, startDate: "2099-01-01", dueDate: "2099-01-02" }),
