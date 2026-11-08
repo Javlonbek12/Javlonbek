@@ -76,7 +76,13 @@ case "${1:-}" in
       fi
     done
     echo "In the cloud now:"
-    stamps | head -40 ;;
+    stamps | head -40
+    # A note for the owner's «Сервер и бэкапы» card in the settings (the app reads the backup folder).
+    latest="$(stamps | head -1)"
+    bytes="$(s3 s3 ls "s3://$BUCKET/$PREFIX/backup-$latest.7z" | awk '{print $3}' | head -1)"
+    printf '{"latest":"%s","bytes":%s,"copies":%s,"checkedAt":"%s"}\n' \
+      "$latest" "${bytes:-0}" "$(stamps | wc -l)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      | ssh vps 'cat > ~/assistant-backups/cloud-status.json' ;;
   list)
     stamps ;;
   download)

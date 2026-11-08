@@ -19,6 +19,7 @@ x-app: &app
     NODE_ENV: production
     DATABASE_URL: postgresql://assistant:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/assistant
     UPLOAD_DIR: /data/uploads
+    SERVER_BACKUPS_DIR: /backups
   volumes:
     - uploads:/data/uploads
   depends_on:
@@ -50,6 +51,10 @@ services:
 
   app:
     <<: *app
+    # The backup folder, read-only, for the owner's «Сервер и бэкапы» card in the settings.
+    volumes:
+      - uploads:/data/uploads
+      - ~/assistant-backups:/backups:ro
     depends_on:
       migrate:
         condition: service_completed_successfully
