@@ -1480,23 +1480,23 @@ export const en: Dictionary = {
       prices: {
         sheet: "Prices",
         helpSheet: "How to fill in",
-        helpFrom: "Prices are taken from the latest price list: {list}.",
+        helpFrom: "Prices are taken from the price list in force: {list}.",
         helpEdit:
           "Change only the «Цена» (price) column, in sum, as a whole number. You may delete rows: they keep their old prices.",
         helpUpload:
           "Upload the file on the «Price lists» page: a new price list appears, showing which planograms change.",
-        download: "Download the template with current prices",
-        current: "Current prices",
+        download: "Download the template with the prices in force",
+        current: "Prices in force",
         listPrices: "Prices of this price list",
         currentHint:
-          "Every SKU with its price in the latest price list «{list}». Change the prices you need and save: a new price list is made, as with an uploaded file.",
+          "The prices in force today: price list «{list}». Where a later price list changes a price, it is shown next to it: “from 1 Jan 2027: 99 000”. Change the prices you need and save: a new price list is made, as with an uploaded file.",
         currentEmpty: "There are no price lists yet: enter prices and save the first one.",
         listHint:
           "Every SKU with this price list's price and the difference from the previous one, «{list}».",
         listHintFirst: "Every SKU with this price list's price.",
         editable: "The price list isn't applied yet: you can change its prices right here.",
         readonly:
-          "The price list is applied to planograms, so its prices don't change. New prices go in «Current prices».",
+          "The price list is applied to planograms, so its prices don't change. New prices go in «Prices in force».",
         code: "Code",
         brand: "Brand",
         skuName: "Name",
@@ -1515,7 +1515,7 @@ export const en: Dictionary = {
         name: "Name",
         effectiveFrom: "Valid from",
         file: "Excel / CSV file (columns: code, price)",
-        hint: "You can upload only the changed prices: the rest come from the previous price list.",
+        hint: "You can upload only the changed prices: the rest come from the price list in force on that date.",
         upload: "Upload and see what changes",
         preview: "What changes",
         noChanges: "No approved planogram will change.",
@@ -1538,6 +1538,23 @@ export const en: Dictionary = {
         applyHint:
           "Approved planograms getting a new version: {versions}. Drafts and versions awaiting approval on older prices moving to this list: {drafts}. This can't be undone.",
         applyConfirm: "Yes, apply",
+        next: "Next price",
+        futureFrom: "from {date}: {price}",
+        futureWaiting: "once applied: {price}",
+        status: {
+          current: "In force",
+          future: "Future",
+          waiting: "Not applied",
+          past: "Past",
+        },
+        statusHint: {
+          current: "In force now: these prices are on the planograms, and new planograms get them.",
+          future:
+            "Comes into force on {date}. Until then the planograms and «Prices in force» keep the earlier prices.",
+          waiting:
+            "Its date has come, but the price list isn't applied: the planograms keep the earlier prices. Apply it to change them.",
+          past: "Past: a later price list replaced it.",
+        },
       },
       mass: {
         title: "Bulk actions",
@@ -1583,7 +1600,7 @@ export const en: Dictionary = {
       badFile: "Couldn't read the file. An Excel (.xlsx) or CSV file with headers is needed.",
       noChanges: "The prices didn't change, so there is nothing to save.",
       applied:
-        "This price list has already been applied to planograms. Change prices in the «Current prices» table: a new price list is saved.",
+        "This price list has already been applied to planograms. Change prices in the «Prices in force» table: a new price list is saved.",
       stale:
         "This version was not made from the one in force: approving it replaces the version in force. Read the warning on the card and confirm.",
       posmInUse:

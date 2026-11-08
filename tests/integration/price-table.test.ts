@@ -3,6 +3,7 @@ import { rm } from "node:fs/promises";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { db } from "@/lib/db";
+import { toDateString } from "@/lib/dates";
 import { parseSpreadsheet } from "@/modules/planograms/import";
 import {
   priceTable,
@@ -10,7 +11,7 @@ import {
   savePricesAsNewList,
   updatePriceListPrices,
 } from "@/modules/planograms/price-table";
-import { applyPriceList, createPriceList } from "@/modules/planograms/pricing";
+import { applyPriceList, createPriceList, listPriceLists } from "@/modules/planograms/pricing";
 import { seedPlanogramLibrary } from "@/modules/planograms/seed-library";
 import { createTestUser, resetDb } from "@/tests/helpers/db";
 
@@ -68,7 +69,7 @@ describe("price table (Planograms → Price lists)", () => {
     edits.set(id, before + 1000);
     const list = await savePricesAsNewList(
       member,
-      { name: "Со страницы (тест)", effectiveFrom: "2026-12-01" },
+      { name: "Со страницы (тест)", effectiveFrom: "2099-12-01" },
       edits,
     );
     const table = await priceTable(list.id);
@@ -76,7 +77,59 @@ describe("price table (Planograms → Price lists)", () => {
       price: before + 1000,
       previous: before,
     });
-    expect((await priceTable()).list?.id).toBe(list.id);
+    // Dated ahead, the new list is the next price beside the one in force, not in its place.
+    const now = await priceTable();
+    expect(now.list?.id).not.toBe(list.id);
+    expect(now.rows.find((r) => r.skuId === id)).toMatchObject({
+      price: before,
+      future: { from: "2099-12-01", price: before + 1000, waiting: false },
+    });
+  });
+
+  it("a future list never passes for the price in force; lists say where they stand", async () => {
+    const { owner } = await setup();
+    const gold = await skuId("SKU-TEST-001");
+    const seeded = (await db.priceList.findFirstOrThrow()).id;
+    const { list: future } = await createPriceList(
+      owner,
+      { name: "С января (тест)", effectiveFrom: "2099-01-01" },
+      [{ code: "SKU-TEST-001", price: 99000 }],
+    );
+    const { rows, list } = await priceTable();
+    expect(list?.id).toBe(seeded);
+    expect(rows.find((r) => r.skuId === gold)).toMatchObject({
+      price: 31000,
+      future: { from: "2099-01-01", price: 99000, waiting: false },
+    });
+    // A price the later list doesn't change has no «future» beside it.
+    expect(rows.find((r) => r.code === "SKU-TEST-002")?.future).toBeNull();
+    const statuses = new Map((await listPriceLists()).map((l) => [l.id, l.status]));
+    expect(statuses.get(seeded)).toBe("current");
+    expect(statuses.get(future.id)).toBe("future");
+
+    // A list put between today and January follows today's prices, not January's.
+    const { list: between } = await createPriceList(
+      owner,
+      { name: "С декабря (тест)", effectiveFrom: "2098-12-01" },
+      [{ code: "SKU-TEST-002", price: 1000 }],
+    );
+    expect((await priceTable(between.id)).rows.find((r) => r.skuId === gold)?.price).toBe(31000);
+
+    // Its date has come but nobody applied it: the planograms' prices stay, the list waits.
+    const applied = await db.priceList.update({
+      where: { id: seeded },
+      data: { appliedAt: new Date() },
+    });
+    const { list: late } = await createPriceList(
+      owner,
+      { name: "Не применён (тест)", effectiveFrom: toDateString(applied.effectiveFrom) },
+      [{ code: "SKU-TEST-001", price: 30000 }],
+    );
+    expect((await listPriceLists()).find((l) => l.id === late.id)?.status).toBe("waiting");
+    expect((await priceTable()).rows.find((r) => r.skuId === gold)).toMatchObject({
+      price: 31000,
+      future: { price: 30000, waiting: true },
+    });
   });
 
   it("a list not applied yet is edited in place; an applied one is not", async () => {
