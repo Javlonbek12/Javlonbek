@@ -32,8 +32,10 @@ export async function weeklySummaryText(
   const pending = await db.task.count({
     where: { AND: [zone], isPersonal: false, status: "PENDING_APPROVAL" },
   });
+  // Handed-in work waits for acceptance: it is not overdue (owner's decision, as in the task list).
   const isOverdue = (task: (typeof teamTasks)[number]) =>
     !CLOSED_STATUSES.includes(task.status) &&
+    task.status !== "IN_REVIEW" &&
     task.dueDate !== null &&
     task.dueDate < fromDateString(today);
 

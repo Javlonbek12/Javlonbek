@@ -45,10 +45,10 @@ export type RoleConfig = z.infer<typeof configSchema>;
 // it in Settings → Roles and access).
 export const DEFAULT_ROLE_CONFIG: RoleConfig = {
   MANAGER: {
-    modules: ["meetings", "planograms", "projects", "content", "connect", "distribution"],
+    modules: ["team", "meetings", "planograms", "projects", "content", "connect", "distribution"],
     taskScope: "team",
   },
-  MEMBER: { modules: ["meetings", "planograms", "content"], taskScope: "own" },
+  MEMBER: { modules: ["team", "meetings", "planograms", "content"], taskScope: "own" },
   LAWYER: LAWYER_DEFAULT,
 };
 

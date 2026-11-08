@@ -27,7 +27,12 @@ export function sectionOfPath(link: string): ConfigurableModule[] | null {
   return null;
 }
 
-export function canOpenPath(actor: Parameters<typeof canUseModule>[0], link: string): boolean {
+export function canOpenPath(
+  actor: Parameters<typeof canUseModule>[0] & { id?: string },
+  link: string,
+): boolean {
+  // Everyone opens their own card, with or without «Команда».
+  if (actor.id && link.split(/[?#]/)[0] === `/team/${actor.id}`) return true;
   const modules = sectionOfPath(link);
   return !modules || modules.some((m) => canUseModule(actor, m));
 }
