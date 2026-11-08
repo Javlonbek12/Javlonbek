@@ -1,8 +1,8 @@
 import { db } from "@/lib/db";
-import { canUseModule, withAccess } from "@/modules/core/access/actor";
+import { canUseModule } from "@/modules/core/access/actor";
 import type { Actor } from "@/modules/core/permissions";
 import { displayName } from "@/modules/core/users/display-name";
-import { canPlanContent } from "@/modules/content/service";
+import { postsAwaitingDecision } from "@/modules/content/service";
 import { canApprovePlanograms } from "@/modules/planograms/access";
 import { loadRouting, nearestManager, type Person } from "@/modules/tasks/routing";
 
@@ -77,44 +77,21 @@ async function pendingPlanograms(actor: Actor): Promise<OtherApproval[]> {
   });
 }
 
-// Who reviews a post (as modules/content/service.ts tells them): the planner who put it in the
-// plan; for a post an employee added themselves — the owner and the managers with the section.
-// The lawyer checks posts a planner approved.
+// Posts waiting for this person's check: the content plan decides who is asked (the planner, the
+// owner and managers, the lawyer for the legal step) and never offers one's own post.
 async function postsToReview(actor: Actor): Promise<OtherApproval[]> {
-  if (!canPlanContent(actor) && actor.role !== "LAWYER") return [];
-  const lawyer = actor.role === "LAWYER";
-  const posts = await db.contentPost.findMany({
-    where: {
-      status: lawyer ? "LEGAL_REVIEW" : "REVIEW",
-      // Never one's own post (without an author: the one who added it).
-      OR: [{ authorId: { not: actor.id } }, { authorId: null, createdById: { not: actor.id } }],
-    },
-    include: { author: { select: { firstName: true, lastName: true } }, createdBy: true },
-    orderBy: { publishDate: "asc" },
-  });
-  const result: OtherApproval[] = [];
-  for (const post of posts) {
-    if (!lawyer) {
-      const creator = post.createdBy;
-      const authorIsCreator = post.authorId === creator.id;
-      const creatorReviews =
-        !creator.deactivatedAt && !authorIsCreator && canPlanContent(await withAccess(creator));
-      const reviewer = creatorReviews
-        ? creator.id === actor.id
-        : actor.role === "OWNER" || actor.role === "MANAGER";
-      if (!reviewer) continue;
-    }
-    result.push({
+  const posts = await postsAwaitingDecision(actor);
+  return posts
+    .filter((post) => post.asked)
+    .map((post) => ({
       kind: "post",
       id: post.id,
       title: post.title,
       from: post.author ? displayName(post.author) : "",
       href: `/content/${post.id}`,
       image: null,
-      legal: lawyer,
-    });
-  }
-  return result;
+      legal: post.status === "LEGAL_REVIEW",
+    }));
 }
 
 export async function listOtherApprovals(actor: Actor): Promise<OtherApproval[]> {
