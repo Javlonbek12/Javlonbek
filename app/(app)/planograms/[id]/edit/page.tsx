@@ -3,12 +3,13 @@ import { notFound, redirect } from "next/navigation";
 
 import { PlanogramEditor } from "@/components/planograms/planogram-editor";
 import { t } from "@/lib/i18n";
+import { isAiConfigured } from "@/modules/ai/client";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { canManagePlanograms } from "@/modules/planograms/access";
 import { editorData } from "@/modules/planograms/editor-data";
 import { loadPlanogram } from "@/modules/planograms/repository";
 
-import { saveLayoutAction } from "../../actions";
+import { saveLayoutAction, suggestLayoutAction } from "../../actions";
 
 export default async function EditPlanogramPage({
   params,
@@ -51,6 +52,7 @@ export default async function EditPlanogramPage({
           rules={loaded.rules}
           pendingApproval={loaded.record.status === "PENDING_APPROVAL"}
           save={saveLayoutAction}
+          suggest={isAiConfigured() ? suggestLayoutAction : undefined}
           {...data}
         />
       </div>

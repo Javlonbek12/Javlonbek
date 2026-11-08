@@ -1230,6 +1230,19 @@ export const en: Dictionary = {
       pendingWarning:
         "The planogram awaits approval. Saving returns it to draft — send it for approval again afterwards.",
       dropped: "Didn't fit on the new equipment and were not carried over: {names}.",
+      ai: {
+        open: "Suggest a layout with AI",
+        title: "Describe how to lay out the products",
+        placeholder:
+          "E.g. ESSE on the top two shelves with 2 facings each, new items at eye level, Simple at the bottom",
+        hint: "AI places the SKUs into the free places; POSM stays where it is. The result appears as an unsaved change: check it and save, or undo.",
+        submit: "Suggest",
+        thinking: "AI is thinking…",
+        close: "Close",
+        done: "AI layout applied, not saved. Check the rules on the right and press «Save», or undo ↶.",
+        unknown: "Not in the catalog, skipped: {codes}.",
+        overflow: "Did not fit: {names}.",
+      },
     },
     validation: {
       title: "Rule check",
