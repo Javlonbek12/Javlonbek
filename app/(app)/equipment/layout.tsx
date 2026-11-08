@@ -12,7 +12,7 @@ export default async function EquipmentLayout({ children }: LayoutProps<"/equipm
   const toCheck = reviewCount(await outletReview());
   return (
     <div className="flex flex-col gap-5 [&>*]:min-w-0">
-      <div className="flex flex-wrap items-center gap-x-1">
+      <div className="flex flex-wrap items-center gap-x-1 print:hidden">
         <h1 className="text-[22px] font-medium md:text-2xl">{t("equip.title")}</h1>
         <InfoHint className="max-w-3xl">{t("equip.intro")}</InfoHint>
       </div>

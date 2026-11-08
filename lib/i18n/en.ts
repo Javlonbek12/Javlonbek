@@ -1253,6 +1253,7 @@ export const en: Dictionary = {
       copied: "Copied",
       shareTelegram: "Share in Telegram",
       sendPeople: "Or send it to colleagues who have the bot connected:",
+      adaptRun: "Make a copy",
     },
     editor: {
       palette: "SKU and POSM",
@@ -3144,7 +3145,7 @@ export const en: Dictionary = {
         "“Daily BW-POG management” is the only source of quantities and regions: the “BW management” sheet (every unit with its region, outlet ID, name and TIN) and the “Current stock” block on the “Warehouse” sheet. The control table shows right after the upload; with a minus in it the file is saved only once you confirm. Uploads never change the purchase journal.",
       equipmentDone:
         "Uploaded: {rows} equipment rows ({units} units), {stock} units in warehouses.",
-      skipped: "Rows skipped: {count} (the list is in “Equipment → Outlet check”).",
+      skipped: "Rows skipped: {count}.",
       noId: "Outlets without an ID (counted by TIN or name): {count}.",
       minus:
         "The file is not saved: the control equation has a minus ({rows} rows in the file). A minus usually means duplicate rows or dismantled equipment still in the file. Check the table and save only if you are sure.",
@@ -3288,7 +3289,6 @@ export const en: Dictionary = {
       previewHint: "Copy and paste it into the EAS — the tables stay; or download it for Word.",
       copy: "Copy",
       copied: "Copied",
-      printHint: "For a PDF, print the page (Ctrl+P).",
       fields: {
         budgetMonth: "Budget Month",
         budgetCategory: "Budget Category",

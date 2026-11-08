@@ -60,27 +60,44 @@ export default async function PlanogramPage({
   const canSend = user.role === "OWNER" || user.role === "MANAGER";
   const draft = r.status === "DRAFT" || r.status === "PENDING_APPROVAL";
 
-  const [svg, violations, changes, history, equipment, people, priceLists, names, stale, sent] =
-    await Promise.all([
-      planogramSvg(loaded, { imageBase: "/api/planogram-images" }),
-      validateStored(loaded),
-      changesVsPrevious(loaded),
-      versionHistory(r.rootId ?? r.id),
-      db.equipment.findMany({ where: { id: { not: r.equipmentId } }, orderBy: { name: "asc" } }),
-      db.user.findMany({
-        where: { botChatId: { not: null }, deactivatedAt: null },
-        orderBy: { firstName: "asc" },
-      }),
-      listPriceLists(),
-      Promise.all([
-        db.sku.findMany({ select: { id: true, name: true } }),
-        db.posm.findMany({ select: { id: true, name: true } }),
-      ]).then(([a, b]) => new Map([...a, ...b].map((x) => [x.id, x.name]))),
-      staleBase(loaded),
-      r.status === "PENDING_APPROVAL"
-        ? submissions([r]).then((m) => m.get(r.id) ?? null)
-        : Promise.resolve(null),
-    ]);
+  const [
+    svg,
+    violations,
+    changes,
+    history,
+    equipment,
+    people,
+    priceLists,
+    names,
+    stale,
+    sent,
+    projects,
+  ] = await Promise.all([
+    planogramSvg(loaded, { imageBase: "/api/planogram-images" }),
+    validateStored(loaded),
+    changesVsPrevious(loaded),
+    versionHistory(r.rootId ?? r.id),
+    db.equipment.findMany({ where: { id: { not: r.equipmentId } }, orderBy: { name: "asc" } }),
+    db.user.findMany({
+      where: { botChatId: { not: null }, deactivatedAt: null },
+      orderBy: { firstName: "asc" },
+    }),
+    listPriceLists(),
+    Promise.all([
+      db.sku.findMany({ select: { id: true, name: true } }),
+      db.posm.findMany({ select: { id: true, name: true } }),
+    ]).then(([a, b]) => new Map([...a, ...b].map((x) => [x.id, x.name]))),
+    staleBase(loaded),
+    r.status === "PENDING_APPROVAL"
+      ? submissions([r]).then((m) => m.get(r.id) ?? null)
+      : Promise.resolve(null),
+    db.planogram.findMany({
+      where: { project: { not: null }, isTemplate: false },
+      distinct: ["project"],
+      select: { project: true },
+      orderBy: { project: "asc" },
+    }),
+  ]);
   const critical = hasCritical(violations);
   // The approve button is there for an approver on a version sent to them or on their own draft.
   const approvable =
@@ -460,7 +477,7 @@ export default async function PlanogramPage({
                 ))}
               </NativeSelect>
               <Button type="submit" size="sm" variant="outline">
-                {t("planograms.actions.adapt")}
+                {t("planograms.actions.adaptRun")}
               </Button>
             </form>
           </Card>
@@ -489,7 +506,17 @@ export default async function PlanogramPage({
             </Label>
             <Label className="flex-col items-start">
               {t("planograms.fields.project")}
-              <Input name="project" defaultValue={r.project ?? ""} />
+              <Input
+                name="project"
+                defaultValue={r.project ?? ""}
+                list="planogram-projects"
+                autoComplete="off"
+              />
+              <datalist id="planogram-projects">
+                {projects.map((p) => (
+                  <option key={p.project} value={p.project!} />
+                ))}
+              </datalist>
             </Label>
             <Label className="flex-col items-start">
               {t("planograms.fields.priceList")}

@@ -1,10 +1,12 @@
-import { Download, Printer } from "lucide-react";
+import { Download } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { Section } from "@/components/connect/parts";
 import { CopyHtmlButton } from "@/components/distribution/copy-html";
+import { PrintButton } from "@/components/distribution/print-button";
 import { Button } from "@/components/ui/button";
+import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { t, type TranslationKey } from "@/lib/i18n";
@@ -225,9 +227,13 @@ export default async function DistributionEasPage({
           </form>
         )}
 
-        <Section title={t("dist.eas.preview")} hint={t("dist.eas.previewHint")}>
+        {/* Printed, only the document itself: no card, title or buttons. */}
+        <Card className="min-w-0 gap-3 print:border-0 print:p-0 print:shadow-none">
+          <CardTitle className="print:hidden">{t("dist.eas.preview")}</CardTitle>
+          <CardDescription className="print:hidden">{t("dist.eas.previewHint")}</CardDescription>
           <div className="flex flex-wrap gap-2 print:hidden">
             <CopyHtmlButton html={html} text={plain} />
+            <PrintButton />
             <Button asChild variant="outline" size="sm">
               <a href={`/api/distribution/campaigns/${id}/eas`}>
                 <Download />
@@ -243,14 +249,10 @@ export default async function DistributionEasPage({
           </div>
           {/* Our own markup, every value escaped in easHtml. */}
           <div
-            className="overflow-x-auto rounded-lg border bg-white p-4 text-black"
+            className="overflow-x-auto rounded-lg border bg-white p-4 text-black print:overflow-visible print:border-0 print:p-0"
             dangerouslySetInnerHTML={{ __html: html }}
           />
-          <p className="text-muted-foreground flex items-center gap-1.5 text-xs print:hidden">
-            <Printer className="size-3.5" />
-            {t("dist.eas.printHint")}
-          </p>
-        </Section>
+        </Card>
       </div>
     </div>
   );

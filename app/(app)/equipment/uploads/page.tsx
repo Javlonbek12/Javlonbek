@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Section } from "@/components/connect/parts";
@@ -56,6 +57,11 @@ export default async function EquipmentUploadsPage({
             {q("noId") > 0 && ` ${t("dist.import.noId", { count: fmt(q("noId")) })}`}
             {q("skipped") > 0 && ` ${t("dist.import.skipped", { count: fmt(q("skipped")) })}`}
           </p>
+        )}
+        {typeof query.equipment === "string" && (q("skipped") > 0 || q("noId") > 0) && (
+          <Button asChild size="sm" variant="outline" className="self-start">
+            <Link href="/equipment/outlets">{t("equip.tabs.outlets")}</Link>
+          </Button>
         )}
         {control && control.rows.length > 0 && <ControlTable rows={control.rows} />}
         {typeof query.dropped === "string" && (

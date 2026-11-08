@@ -28,7 +28,7 @@ export default async function NewPlanogramPage({ searchParams }: PageProps<"/pla
   const user = await requireUser();
   if (!canManagePlanograms(user.role)) notFound();
   const query = await searchParams;
-  const [equipment, templates, priceLists, current] = await Promise.all([
+  const [equipment, templates, priceLists, current, projects] = await Promise.all([
     db.equipment.findMany({ orderBy: { name: "asc" } }),
     db.planogram.findMany({
       where: { isTemplate: true },
@@ -37,6 +37,11 @@ export default async function NewPlanogramPage({ searchParams }: PageProps<"/pla
     }),
     getUserToday(user.id).then((today) => listPriceLists(today)),
     getUserToday(user.id).then((today) => currentPriceList(today)),
+    db.planogram.findMany({
+      where: { project: { not: null }, isTemplate: false },
+      distinct: ["project"],
+      select: { project: true },
+    }),
   ]);
   // Back from an error: what was typed; otherwise the prices in force today.
   const values: Record<string, string> = Object.fromEntries(
@@ -61,6 +66,7 @@ export default async function NewPlanogramPage({ searchParams }: PageProps<"/pla
           id: p.id,
           label: `${p.name} · ${priceListDate(p.effectiveFrom)} · ${t(`planograms.library.prices.status.${p.status}`).toLowerCase()}`,
         }))}
+        projects={projects.map((p) => p.project!).sort()}
         values={values}
       />
     </div>
