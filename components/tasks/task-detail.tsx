@@ -26,6 +26,7 @@ import {
   changeStatusAction,
   removeAttachmentAction,
   removeDependencyAction,
+  reopenTaskAction,
   resolveDeleteTaskAction,
   updateTaskFieldAction,
 } from "@/app/(app)/tasks/actions";
@@ -40,6 +41,7 @@ import { TaskNotes } from "@/components/tasks/task-notes";
 import { PriorityBadge, StatusBadge } from "@/components/tasks/task-badges";
 import { TaskActions } from "@/components/tasks/task-actions";
 import { TaskDeleteControl } from "@/components/tasks/task-delete";
+import { ConfirmAction } from "@/components/ui/confirm-action";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,7 +58,7 @@ import type { Actor } from "@/modules/core/permissions";
 import { getSettings } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
 import { projectOfTask } from "@/modules/projects/service";
-import { canControl, isClosed, isDoer } from "@/modules/tasks/access";
+import { canControl, canViewTask, isClosed, isDoer } from "@/modules/tasks/access";
 import { listAttachments, MAX_FILE_MB } from "@/modules/tasks/attachment-service";
 import { withParams } from "@/modules/tasks/back";
 import { listComments } from "@/modules/tasks/comment-service";
@@ -65,6 +67,7 @@ import { getDependencies, listBlockerCandidates } from "@/modules/tasks/dependen
 import { quickTarget } from "@/modules/tasks/quick";
 import { routeHints } from "@/modules/tasks/route-hints";
 import {
+  canReopen,
   getTaskDetail,
   getTaskHistory,
   listAssignableUsers,
@@ -89,7 +92,8 @@ import {
 } from "@/modules/tasks/co-assignees";
 import { canEditNote, getNote } from "@/modules/tasks/notes";
 import { listSteps } from "@/modules/tasks/steps";
-import { isOverdue } from "@/modules/tasks/today";
+import { isLateWork } from "@/modules/tasks/today";
+import { db } from "@/lib/db";
 
 // The task card. One view for both places a task opens: its own page (links from notifications
 // and the bot) and the panel next to the list. Every form in it comes back to where it was sent
@@ -225,9 +229,23 @@ type Props = {
   tab?: string;
   error?: string;
   notice?: string;
+  // «<minutes>.<taskId>»: starting the timer here stopped the one on that task.
+  stopped?: string;
   // The panel's ✕: the list without the task.
   closeHref?: string;
 };
+
+// «Таймер на «X» остановлен: 25 мин» — the timer another start stopped, if the viewer sees it.
+async function stoppedTimerText(user: Actor, stopped: string | undefined) {
+  const match = stopped ? /^(\d{1,4})\.([\w-]{1,64})$/.exec(stopped) : null;
+  if (!match) return null;
+  const other = await db.task.findUnique({ where: { id: match[2] } });
+  if (!other || !canViewTask(user, other)) return null;
+  const minutes = Number(match[1]);
+  if (minutes < 1) return t("tasks.time.stoppedShort", { title: other.title });
+  const d = durationText(minutes);
+  return t("tasks.time.stoppedOther", { title: other.title, duration: t(d.key, d.values) });
+}
 
 export async function TaskDetail({
   user,
@@ -237,6 +255,7 @@ export async function TaskDetail({
   tab,
   error,
   notice,
+  stopped,
   closeHref,
 }: Props) {
   const detail = await getTaskDetail(user, taskId);
@@ -301,12 +320,19 @@ export async function TaskDetail({
     coManage ? coAssigneeHints(user.id) : Promise.resolve({} as Record<string, string>),
     getTaskTime(task, user),
   ]);
+  const stoppedText = await stoppedTimerText(user, stopped);
   const labelable = canLabelTask(user, task);
   const tz = settings.timezone;
   const today = todayInTimezone(tz);
-  const overdue = isOverdue(task, today);
+  // Handed-in work waits for acceptance: not «overdue» (modules/tasks/sort.ts).
+  const overdue = isLateWork(task, today);
   const days = task.dueDate ? daysBetween(today, task.dueDate) : null;
   const open = !isClosed(task.status);
+  const reopenable = canReopen(user, task);
+  // A timer entry's day: a timer by when it started where the viewer is, time added by hand by
+  // the day it was added for.
+  const entryDay = (e: { at: string; manual: boolean }) =>
+    e.manual ? toDateString(new Date(e.at)) : todayInTimezone(tz, new Date(e.at));
   const back = (key: string) => withParams(base, { tab: key });
   const hidden = (key: string) => (
     <>
@@ -415,6 +441,29 @@ export async function TaskDetail({
       )}
     </div>
   );
+
+  const noLinks =
+    deps.blockedBy.length === 0 && deps.blocks.length === 0 && task.openBlockers === 0;
+  const addLink =
+    canEdit && candidates.length > 0 ? (
+      <form action={addDependencyAction} className="flex flex-wrap gap-2">
+        {hidden("description")}
+        <NativeSelect
+          name="blockerId"
+          className="min-w-0 flex-1"
+          aria-label={t("tasks.dependencies.add")}
+        >
+          {candidates.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.title}
+            </option>
+          ))}
+        </NativeSelect>
+        <Button type="submit" variant="outline" size="sm">
+          {t("tasks.dependencies.add")}
+        </Button>
+      </form>
+    ) : null;
 
   const stepCount = stepProgress(steps);
   const tickSteps = canTickSteps(user, task);
@@ -538,105 +587,103 @@ export async function TaskDetail({
         </form>
       )}
 
-      <div className="flex flex-col gap-2 border-t pt-3">
-        <span className="text-sm font-medium">{t("tasks.dependencies.title")}</span>
-        {task.openBlockers > 0 && open && (
-          <p className="text-destructive flex items-center gap-1 text-sm">
-            <Lock className="size-4" />
-            {t("tasks.dependencies.openBlockers", { count: task.openBlockers })}
-          </p>
-        )}
-        <div className="flex flex-col gap-1 text-sm">
-          <span className="text-muted-foreground">{t("tasks.dependencies.blockedBy")}</span>
-          {deps.blockedBy.length === 0 && hiddenBlockers === 0 && (
-            <span>{t("tasks.fields.none")}</span>
-          )}
-          {deps.blockedBy.map((blocker) => (
-            <div key={blocker.id} className="flex items-center justify-between gap-2">
-              <Link
-                href={`/tasks/${blocker.id}`}
-                className={cn("underline", !isClosed(blocker.status) && "text-destructive")}
-              >
-                {blocker.title}
-              </Link>
-              <span className="flex items-center gap-1">
-                <StatusBadge status={blocker.status} />
-                {canEdit && (
-                  <form action={removeDependencyAction}>
-                    {hidden("description")}
-                    <input type="hidden" name="blockerId" value={blocker.id} />
-                    <Button type="submit" variant="ghost" size="sm">
-                      {t("tasks.dependencies.remove")}
-                    </Button>
-                  </form>
-                )}
+      {noLinks ? (
+        // No links yet: one line, the form one click away.
+        <details className="border-t pt-3 text-sm">
+          <summary className="flex cursor-pointer list-none flex-wrap items-center gap-1 [&::-webkit-details-marker]:hidden">
+            <span className="font-medium">{t("tasks.dependencies.title")}:</span>
+            <span className="text-muted-foreground">{t("tasks.dependencies.noneShort")}</span>
+            {addLink && (
+              <span className="text-primary text-xs font-medium">
+                · {t("tasks.dependencies.addShort")}
               </span>
-            </div>
-          ))}
-        </div>
-        {hiddenBlockers > 0 && (
-          <p className="text-muted-foreground text-sm">
-            {t("tasks.dependencies.hidden", { count: hiddenBlockers })}
-          </p>
-        )}
-        {canEdit && candidates.length > 0 && (
-          <form action={addDependencyAction} className="flex flex-wrap gap-2">
-            {hidden("description")}
-            <NativeSelect
-              name="blockerId"
-              className="min-w-0 flex-1"
-              aria-label={t("tasks.dependencies.add")}
-            >
-              {candidates.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.title}
-                </option>
-              ))}
-            </NativeSelect>
-            <Button type="submit" variant="outline" size="sm">
-              {t("tasks.dependencies.add")}
-            </Button>
-          </form>
-        )}
-        <div className="flex flex-col gap-1 text-sm">
-          <span className="text-muted-foreground">{t("tasks.dependencies.blocks")}</span>
-          {deps.blocks.length === 0 && <span>{t("tasks.fields.none")}</span>}
-          {deps.blocks.map((blocked) => (
-            <div key={blocked.id} className="flex items-center justify-between gap-2">
-              <Link href={`/tasks/${blocked.id}`} className="underline">
-                {blocked.title}
-              </Link>
-              <StatusBadge status={blocked.status} />
-            </div>
-          ))}
-        </div>
-        {(deps.upstream.length > 1 || deps.downstream.length > 1) && (
+            )}
+          </summary>
+          {addLink && <div className="mt-2">{addLink}</div>}
+        </details>
+      ) : (
+        <div className="flex flex-col gap-2 border-t pt-3">
+          <span className="text-sm font-medium">{t("tasks.dependencies.title")}</span>
+          {task.openBlockers > 0 && open && (
+            <p className="text-destructive flex items-center gap-1 text-sm">
+              <Lock className="size-4" />
+              {t("tasks.dependencies.openBlockers", { count: task.openBlockers })}
+            </p>
+          )}
           <div className="flex flex-col gap-1 text-sm">
-            <span className="text-muted-foreground">{t("tasks.dependencies.chain")}</span>
-            <ol className="flex flex-wrap items-center gap-1">
-              {[
-                ...deps.upstream,
-                { id: task.id, title: task.title, status: task.status },
-                ...deps.downstream,
-              ].map((item, index) => (
-                <li key={item.id} className="flex items-center gap-1">
-                  {index > 0 && <span className="text-muted-foreground">→</span>}
-                  <span
-                    className={cn(
-                      "rounded border px-1.5 py-0.5 text-xs",
-                      item.id === task.id && "border-primary font-medium",
-                      !isClosed(item.status) && item.id !== task.id && "border-amber-500",
-                      isClosed(item.status) && "text-muted-foreground line-through",
-                    )}
-                  >
-                    {item.title}
-                  </span>
-                </li>
-              ))}
-            </ol>
+            <span className="text-muted-foreground">{t("tasks.dependencies.blockedBy")}</span>
+            {deps.blockedBy.length === 0 && hiddenBlockers === 0 && (
+              <span>{t("tasks.fields.none")}</span>
+            )}
+            {deps.blockedBy.map((blocker) => (
+              <div key={blocker.id} className="flex items-center justify-between gap-2">
+                <Link
+                  href={`/tasks/${blocker.id}`}
+                  className={cn("underline", !isClosed(blocker.status) && "text-destructive")}
+                >
+                  {blocker.title}
+                </Link>
+                <span className="flex items-center gap-1">
+                  <StatusBadge status={blocker.status} />
+                  {canEdit && (
+                    <form action={removeDependencyAction}>
+                      {hidden("description")}
+                      <input type="hidden" name="blockerId" value={blocker.id} />
+                      <Button type="submit" variant="ghost" size="sm">
+                        {t("tasks.dependencies.remove")}
+                      </Button>
+                    </form>
+                  )}
+                </span>
+              </div>
+            ))}
           </div>
-        )}
-      </div>
+          {hiddenBlockers > 0 && (
+            <p className="text-muted-foreground text-sm">
+              {t("tasks.dependencies.hidden", { count: hiddenBlockers })}
+            </p>
+          )}
+          {addLink}
+          <div className="flex flex-col gap-1 text-sm">
+            <span className="text-muted-foreground">{t("tasks.dependencies.blocks")}</span>
+            {deps.blocks.length === 0 && <span>{t("tasks.fields.none")}</span>}
+            {deps.blocks.map((blocked) => (
+              <div key={blocked.id} className="flex items-center justify-between gap-2">
+                <Link href={`/tasks/${blocked.id}`} className="underline">
+                  {blocked.title}
+                </Link>
+                <StatusBadge status={blocked.status} />
+              </div>
+            ))}
+          </div>
+          {(deps.upstream.length > 1 || deps.downstream.length > 1) && (
+            <div className="flex flex-col gap-1 text-sm">
+              <span className="text-muted-foreground">{t("tasks.dependencies.chain")}</span>
+              <ol className="flex flex-wrap items-center gap-1">
+                {[
+                  ...deps.upstream,
+                  { id: task.id, title: task.title, status: task.status },
+                  ...deps.downstream,
+                ].map((item, index) => (
+                  <li key={item.id} className="flex items-center gap-1">
+                    {index > 0 && <span className="text-muted-foreground">→</span>}
+                    <span
+                      className={cn(
+                        "rounded border px-1.5 py-0.5 text-xs",
+                        item.id === task.id && "border-primary font-medium",
+                        !isClosed(item.status) && item.id !== task.id && "border-amber-500",
+                        isClosed(item.status) && "text-muted-foreground line-through",
+                      )}
+                    >
+                      {item.title}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+        </div>
+      )}
     </>
   );
 
@@ -664,13 +711,16 @@ export async function TaskDetail({
             )}
           </a>
           {(a.uploadedById === user.id || canEdit) && (
-            <form action={removeAttachmentAction}>
-              {hidden("files")}
-              <input type="hidden" name="attachmentId" value={a.id} />
-              <Button type="submit" variant="ghost" size="sm">
-                {t("tasks.attachments.remove")}
-              </Button>
-            </form>
+            <ConfirmAction
+              label={t("tasks.attachments.remove")}
+              title={t("tasks.attachments.removeTitle")}
+              hint={t("tasks.attachments.removeHint", { title: a.title })}
+              confirm={t("tasks.attachments.removeYes")}
+              action={removeAttachmentAction}
+              hidden={{ taskId: task.id, back: back("files"), attachmentId: a.id }}
+              align="right"
+              className="shrink-0"
+            />
           )}
         </div>
       ))}
@@ -827,6 +877,9 @@ export async function TaskDetail({
             {t("tasks.look.overdueBy", { count: -days })}
           </span>
         )}
+        {task.status === "IN_REVIEW" && (
+          <span className="text-muted-foreground text-xs">{t("tasks.look.awaitsAcceptance")}</span>
+        )}
         {task.isMilestone && <Badge variant="outline">◆ {t("projects.task.milestone")}</Badge>}
         {task.atRisk && open && (
           <Badge className="bg-amber-500 text-white">{t("projects.risk.badge")}</Badge>
@@ -843,6 +896,14 @@ export async function TaskDetail({
       {shownNotice && (
         <p className="rounded-md bg-emerald-500/10 p-3 text-sm text-emerald-800 dark:text-emerald-300">
           {t(`tasks.remove.${shownNotice}`)}
+        </p>
+      )}
+      {stoppedText && (
+        <p
+          role="status"
+          className="rounded-md bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300"
+        >
+          {stoppedText}
         </p>
       )}
       {deleteRequest && (
@@ -1190,7 +1251,7 @@ export async function TaskDetail({
                             <span className="min-w-0">
                               <span className="font-medium">{t(d.key, d.values)}</span>{" "}
                               <span className="text-muted-foreground text-xs">
-                                · {e.name} · {formatDay(toDateString(new Date(e.at)))}
+                                · {e.name} · {formatDay(entryDay(e))}
                                 {e.manual && ` · ${t("tasks.time.manual")}`}
                                 {e.running && ` · ${t("tasks.time.running")}`}
                               </span>
@@ -1267,6 +1328,24 @@ export async function TaskDetail({
         trashDays={task.isPersonal ? null : taskSettings.trashDays}
         back={withParams(base, {})}
       />
+
+      {reopenable && (
+        <form
+          action={reopenTaskAction}
+          className={cn(
+            "flex flex-wrap items-center justify-end gap-2",
+            panel &&
+              "bg-card/95 sticky bottom-0 -mx-4 -mb-4 border-t px-4 py-3 backdrop-blur md:-mx-5 md:-mb-5 md:px-5",
+          )}
+        >
+          <input type="hidden" name="taskId" value={task.id} />
+          <input type="hidden" name="back" value={withParams(base, {})} />
+          <span className="text-muted-foreground text-xs">{t("tasks.reopen.hint")}</span>
+          <Button type="submit" size="sm" variant="outline">
+            {t("tasks.reopen.action")}
+          </Button>
+        </form>
+      )}
 
       {(main || buttons.some((b) => b.reason === "required")) && (
         <div

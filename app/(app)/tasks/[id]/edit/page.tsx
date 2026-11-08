@@ -4,10 +4,15 @@ import { TaskForm } from "@/components/tasks/task-form";
 import { toDateString } from "@/lib/dates";
 import { t } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
+import { getUserToday } from "@/modules/core/settings/service";
 import { getTaskFormOptions } from "@/modules/tasks/form-options";
+import { routeHints } from "@/modules/tasks/route-hints";
 import { getTaskDetail } from "@/modules/tasks/service";
 
 import { updateTaskAction } from "../../actions";
+
+// Statuses in which the assignee may still change (the route is worked out again).
+const ASSIGNEE_OPEN = ["DRAFT", "PENDING_APPROVAL", "APPROVED"];
 
 export default async function EditTaskPage({ params }: PageProps<"/tasks/[id]/edit">) {
   const user = await requireUser();
@@ -17,20 +22,31 @@ export default async function EditTaskPage({ params }: PageProps<"/tasks/[id]/ed
   const { task } = detail;
   // A stopped or finished series shows as "don't repeat".
   const series = task.series?.nextDate ? task.series : null;
-  const options = await getTaskFormOptions(user);
+  const assigneeLocked = !task.isPersonal && !ASSIGNEE_OPEN.includes(task.status);
+  const [options, routes, today] = await Promise.all([
+    getTaskFormOptions(user),
+    // What a new assignee would mean, from the task's author — as in the task panel.
+    task.isPersonal || assigneeLocked ? Promise.resolve(undefined) : routeHints(task.creatorId),
+    getUserToday(user.id),
+  ]);
 
   return (
     <div className="flex flex-col gap-3">
-      <h2 className="text-lg font-medium">{t("tasks.edit")}</h2>
+      {/* On a phone the title is in the short header above (← Назад). */}
+      <h2 className="hidden text-lg font-medium md:block">{t("tasks.edit")}</h2>
       <TaskForm
         action={updateTaskAction}
         isNew={false}
+        routes={routes}
+        assigneeLocked={assigneeLocked}
+        today={today}
         initial={{
           taskId: task.id,
           title: task.title,
           description: task.description ?? "",
           isPersonal: task.isPersonal ? "on" : "",
           assigneeId: task.assigneeId,
+          needsApproval: task.needsApproval ? "on" : "",
           startDate: task.startDate ?? "",
           dueDate: task.dueDate ?? "",
           priority: task.priority,
