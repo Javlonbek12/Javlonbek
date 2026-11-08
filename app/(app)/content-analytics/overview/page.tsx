@@ -4,6 +4,8 @@ import { BRAND_COLOR, sectionMeta } from "@/components/content/analytics-charts"
 import { AnalyticsTabs } from "@/components/content/analytics-tabs";
 import { BOT_COLOR } from "@/components/content/bot-chip";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
+import { InfoHint } from "@/components/ui/info-hint";
+import { PeriodPicker } from "@/components/ui/period-picker";
 import { formatDay, formatMonth } from "@/lib/dates";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -18,6 +20,7 @@ import {
   type Horizon,
 } from "@/modules/content/overview";
 import { listSections } from "@/modules/content/sections";
+import { formatRange, plural } from "@/modules/reports/format";
 
 // The big picture for directors: one screen, the plan ahead in plain numbers and words.
 export default async function ContentOverviewPage({
@@ -47,33 +50,26 @@ export default async function ContentOverviewPage({
       </div>
       <AnalyticsTabs active="overview" />
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-x-1">
           <h2 className="font-display text-lg font-medium">{t("content.overview.title")}</h2>
-          <p className="text-muted-foreground max-w-2xl text-sm">{t("content.overview.intro")}</p>
+          <InfoHint className="max-w-2xl">{t("content.overview.intro")}</InfoHint>
         </div>
-        <div className="flex flex-col items-start gap-1 sm:items-end">
-          <div className="bg-secondary/70 inline-flex gap-0.5 rounded-full p-1 text-sm">
-            {HORIZONS.map((h) => (
-              <Link
-                key={h}
-                href={`/content-analytics/overview?months=${h}`}
-                className={cn(
-                  "rounded-full px-3 py-1 whitespace-nowrap",
-                  h === horizon ? "bg-card font-medium shadow-sm" : "text-muted-foreground",
-                )}
-              >
-                {t(`content.overview.horizons.${h}`)}
-              </Link>
-            ))}
-          </div>
-          <span className="text-muted-foreground text-xs">
-            {t("content.overview.period", {
-              from: formatDay(period.from),
-              to: formatDay(period.to),
-            })}
-          </span>
-        </div>
+        {/* The plan ahead: unlike the analytics tab, these periods look forward. */}
+        <PeriodPicker
+          label={t("content.overview.next")}
+          chips={HORIZONS.map((h) => {
+            const p = overviewPeriod(today, h);
+            return {
+              key: String(h),
+              label: t(`content.overview.horizons.${h}`),
+              href: `/content-analytics/overview?months=${h}`,
+              dates: formatRange(p.from, p.to, today),
+            };
+          })}
+          active={String(horizon)}
+          dates={formatRange(period.from, period.to, today)}
+        />
       </div>
 
       {o.total === 0 ? (
@@ -90,16 +86,23 @@ export default async function ContentOverviewPage({
             </Card>
             <Card className="gap-1.5 p-4 md:p-5">
               <span className="text-muted-foreground text-xs">{t("content.overview.ready")}</span>
-              <span className="font-display text-3xl font-semibold">{o.readyPercent}%</span>
+              {/* On a few posts a percentage says less than «2 из 3». */}
+              <span className="font-display text-3xl font-semibold">
+                {o.total < 10
+                  ? t("content.overview.readyOf", { ready: o.ready, total: o.total })
+                  : `${o.readyPercent}%`}
+              </span>
               <span className="bg-muted h-1.5 overflow-hidden rounded-full">
                 <span
                   className="block h-full rounded-full bg-emerald-600"
                   style={{ width: `${o.readyPercent}%` }}
                 />
               </span>
-              <span className="text-muted-foreground text-xs">
-                {t("content.overview.readyOf", { ready: o.ready, total: o.total })}
-              </span>
+              {o.total >= 10 && (
+                <span className="text-muted-foreground text-xs">
+                  {t("content.overview.readyOf", { ready: o.ready, total: o.total })}
+                </span>
+              )}
             </Card>
             <Card className="gap-1 p-4 md:p-5">
               <span className="text-muted-foreground text-xs">
@@ -116,7 +119,7 @@ export default async function ContentOverviewPage({
                   </span>
                   <span className="text-muted-foreground text-xs">
                     {o.mainTopic.percent}% ·{" "}
-                    {t("content.overview.posts", { count: o.mainTopic.count })}
+                    {plural("content.analytics.postsCount", o.mainTopic.count)}
                   </span>
                 </>
               ) : (
@@ -191,7 +194,7 @@ export default async function ContentOverviewPage({
                     <div className="flex items-baseline justify-between gap-2">
                       <span className="font-medium">{t(`content.channels.${b.channel}`)}</span>
                       <span className="text-muted-foreground text-xs">
-                        {t("content.overview.posts", { count: b.count })}
+                        {plural("content.analytics.postsCount", b.count)}
                       </span>
                     </div>
                     {b.topics.length > 0 ? (
@@ -251,6 +254,9 @@ export default async function ContentOverviewPage({
                 </li>
               ))}
             </ul>
+            <p className="text-muted-foreground text-xs">
+              {t("content.analytics.brands.general", { count: o.general })}
+            </p>
           </Card>
 
           {/* Month by month: how much, the themes and the key messages. */}
@@ -265,7 +271,7 @@ export default async function ContentOverviewPage({
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="font-display font-medium">{formatMonth(m.month)}</span>
                     <span className="text-muted-foreground text-xs">
-                      {t("content.overview.posts", { count: m.count })}
+                      {plural("content.analytics.postsCount", m.count)}
                     </span>
                   </div>
                   {m.topics.length > 0 && (

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/lib/db";
 import { withAccess } from "@/modules/core/access/actor";
 import { saveRoleConfig } from "@/modules/core/access/config";
+import { loadExecution, planExecution } from "@/modules/content/execution";
 import { addPostFile, removePostFile } from "@/modules/content/files";
 import {
   approvePost,
@@ -66,6 +67,24 @@ describe("content: lawyer, withdrawing, moving", () => {
     expect(
       await db.notification.count({ where: { userId: author.id, type: "content_approved" } }),
     ).toBe(1);
+  });
+
+  it("plan execution counts the reviewer's and the lawyer's returns apart", async () => {
+    const { owner, author, lawyer, post } = await setup();
+    await submitForReview(author, post.id);
+    await returnWithFeedback(owner, post.id, "Тестовое замечание проверяющего");
+    await submitForReview(author, post.id);
+    await approvePost(owner, post.id);
+    await returnWithFeedback(lawyer, post.id, "Тестовое замечание юриста");
+    const [row] = await loadExecution(owner, "2026-10-01", "2026-10-31", "Asia/Tashkent");
+    expect(row).toMatchObject({
+      id: post.id,
+      status: "CHANGES",
+      returns: { review: 1, legal: 1 },
+      authorId: author.id,
+    });
+    // The day passed and it wasn't sent.
+    expect(planExecution([row!], "2026-10-31")).toMatchObject({ due: 1, notSent: 1 });
   });
 
   it("without a lawyer the planner's approval is final", async () => {

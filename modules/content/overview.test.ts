@@ -37,17 +37,32 @@ describe("content overview", () => {
     expect([o.total, o.ready, o.readyPercent]).toEqual([4, 2, 50]);
     expect(o.mainTopic).toEqual({ id: "PRICES", count: 2, percent: 50 });
     expect(o.topics.map((s) => s.id)).toEqual(["PRICES", NO_TOPIC, "TRAINING"]);
-    expect(o.brands.map((b) => [b.id, b.count])).toEqual([
-      ["ESSE", 2],
-      ["PINE", 1],
-      ["GENERAL", 1],
+    // «Общее» stays out of the shares, counted on its own.
+    expect(o.brands.map((b) => [b.id, b.count, b.percent])).toEqual([
+      ["ESSE", 2, 67],
+      ["PINE", 1, 33],
     ]);
+    expect(o.general).toBe(1);
     const connect = o.bots.find((b) => b.channel === "CONNECT")!;
     expect(connect.count).toBe(2);
     expect(connect.topics.map((s) => s.id)).toEqual(["PRICES", "TRAINING"]);
     expect(o.months.map((m) => m.count)).toEqual([3, 1]);
     // The post going to two bots leads the month.
     expect(o.months[0]!.headlines[0]!.title).toBe("Тестовый общий");
+    // Key messages are listed by date.
+    const dated = contentOverview(
+      [
+        post({ publishDate: "2026-10-10", channels: ["PARTNER", "CONNECT"] }),
+        post({ publishDate: "2026-10-03" }),
+        post({ publishDate: "2026-10-06" }),
+      ],
+      ["2026-10-01"],
+    );
+    expect(dated.months[0]!.headlines.map((h) => h.date)).toEqual([
+      "2026-10-03",
+      "2026-10-06",
+      "2026-10-10",
+    ]);
     // Untagged posts aren't shown as a month's theme.
     expect(o.months[1]!.topics).toEqual([]);
   });
