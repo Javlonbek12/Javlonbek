@@ -67,6 +67,8 @@ export async function changeRoleAction(formData: FormData) {
   const user = await actor();
   const userId = idSchema.parse(formData.get("userId"));
   await changeRole(user, userId, roleSchema.parse(formData.get("role")));
+  // The bot's command menu follows the role's sections.
+  await syncBotCommands(userId);
   revalidatePath("/", "layout");
   const back = backTo(formData.get("back"), "");
   if (back) redirect(`${back}?tab=manage&roleChanged=1`);
