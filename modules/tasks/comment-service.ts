@@ -10,7 +10,7 @@ import { displayName } from "@/modules/core/users/display-name";
 import { withAccess } from "@/modules/core/access/actor";
 import { getRoleConfig } from "@/modules/core/access/config";
 
-import { canViewTask, isDoer } from "./access";
+import { canViewTask, isDoer, reviewerOf } from "./access";
 import { TaskError } from "./errors";
 import { mentionedUserIds } from "./mentions";
 
@@ -32,15 +32,21 @@ export async function addComment(actor: Actor, taskId: string, body: string) {
     entityId: taskId,
   });
 
-  // Creator, assignee and co-assignees hear about it, and anyone @mentioned (routing v2), if they can see the
-  // task and didn't write it.
+  // Creator, assignee and co-assignees hear about it, whoever accepts the result, whoever decides
+  // while the task waits, and anyone @mentioned (routing v2) — if they can see the task and didn't
+  // write it.
   const author = await db.user.findUniqueOrThrow({ where: { id: actor.id } });
   const people = await db.user.findMany();
   const mentioned = new Set(mentionedUserIds(text.data, people));
+  const involved = new Set([
+    task.creatorId,
+    ...(task.isPersonal ? [] : [reviewerOf(task)]),
+    ...(task.status === "PENDING_APPROVAL" ? task.deciderIds : []),
+  ]);
   const recipients = people.filter(
     (user) =>
       user.id !== actor.id &&
-      (mentioned.has(user.id) || user.id === task.creatorId || isDoer(user, task)),
+      (mentioned.has(user.id) || involved.has(user.id) || isDoer(user, task)),
   );
   const config = recipients.length ? await getRoleConfig() : undefined;
   for (const user of recipients) {

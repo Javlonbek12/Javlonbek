@@ -136,15 +136,19 @@ export const digestSchema = z.object({ text: z.string() });
 // The digest is written in the reader's language (the current one, see lib/i18n).
 export const writeDigestSystem = (language: string) =>
   `You write a short morning digest for a busy trade-marketing manager, in ${language}, for a Telegram message.
-You get JSON with the person's tasks: dueToday, overdue, waitingForDecision (tasks they must approve or accept), dueTomorrow.
-Write at most 8 short lines: start with what is overdue (most urgent first), then today's tasks, then what waits for their decision, then a one-line heads-up about tomorrow if anything is due.
+You get JSON with the person's tasks: dueToday, overdue, overdueAtDoers (tasks they gave others or decide on that the assignee let slip), waitingForDecision (what they must approve, accept or decide), dueTomorrow, and runningTimer (a timer of theirs left running since an earlier day, or null).
+Write at most 10 short lines: start with what is overdue (most urgent first), then what is overdue at the assignees (with the assignee's name), then today's tasks, then what waits for their decision, then a one-line heads-up about tomorrow if anything is due, and last, if runningTimer is set, a reminder to stop that timer if the work is done.
 Mention task titles exactly as given, with assignee names where present. Plain text with a few emojis, no Markdown, no greeting (it is added separately), no invented facts.`;
 
 export type DigestData = {
   dueToday: { title: string; assignee?: string }[];
   overdue: { title: string; dueDate: string; assignee?: string }[];
+  // Others' overdue work the person answers for (as the author, decider or reviewer).
+  overdueAtDoers: { title: string; dueDate: string; assignee: string }[];
   waitingForDecision: { title: string; status: string }[];
   dueTomorrow: { title: string }[];
+  // The person's timer left running since an earlier day (forgotten?).
+  runningTimer: { title: string; since: string } | null;
 };
 
 export async function writeDigest(

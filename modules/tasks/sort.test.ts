@@ -45,6 +45,22 @@ describe("smart sort", () => {
     expect(bucketOf(tasks[0]!, TODAY)).toBe("closed");
   });
 
+  it("«Ближайшие 7 дней» with «Сегодня» are the same 7 days as the «На 7 дней» chip", () => {
+    expect(bucketOf(task("d6", { dueDate: "2026-10-14" }), TODAY)).toBe("week");
+    expect(bucketOf(task("d7", { dueDate: "2026-10-15" }), TODAY)).toBe("later");
+    const tasks = ["2026-10-08", "2026-10-09", "2026-10-14", "2026-10-15"].map((d) =>
+      task(d, { dueDate: d }),
+    );
+    const inGroups = tasks.filter((t) => ["today", "week"].includes(bucketOf(t, TODAY))).length;
+    expect(quickCounts(tasks, TODAY).week).toBe(inGroups);
+  });
+
+  it("handed-in work is never overdue: it waits for acceptance", () => {
+    const handedIn = { ...task("review", { dueDate: "2026-10-01" }), status: "IN_REVIEW" as const };
+    expect(bucketOf(handedIn, TODAY)).toBe("review");
+    expect(quickCounts([handedIn], TODAY).overdue).toBe(0);
+  });
+
   it("counts the quick filters", () => {
     const tasks = [
       task("a", { dueDate: "2026-10-01", priority: "HIGH" }),

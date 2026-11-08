@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { renderCardButtons, renderCardText, type DraftPayload } from "./draft-card";
+import {
+  assigneeButtons,
+  PEOPLE_PER_PAGE,
+  renderCardButtons,
+  renderCardText,
+  type DraftPayload,
+} from "./draft-card";
 
 const people = [
   { id: "u1", firstName: "Азиз", lastName: "Каримов" },
@@ -67,12 +73,39 @@ describe("confirmation card", () => {
       "d:D1:av:0:u2",
       "d:D1:av:0:me",
       "d:D1:av:0:mine",
-      "d:D1:as:0",
+      "d:D1:as:0:0",
     ]);
     // Telegram limits callback data to 64 bytes.
     const longest = renderCardButtons("c".repeat(25), unresolved, [
       { id: "x".repeat(25), firstName: "A", lastName: null },
     ]);
     for (const b of longest.flat()) expect(Buffer.byteLength(b.data)).toBeLessThanOrEqual(64);
+  });
+
+  it("offers everyone page by page, not only the first 20", () => {
+    const team = Array.from({ length: 25 }, (_, i) => ({
+      id: `p${i}`,
+      firstName: `Сотрудник ${i + 1}`,
+      lastName: null,
+    }));
+    const pick = (page: number) =>
+      assigneeButtons(
+        "D1",
+        0,
+        { ...task, title: "Отчёт", assigneeId: null, dueDate: null },
+        team,
+        true,
+        page,
+      )
+        .flat()
+        .map((b) => b.data);
+    expect(pick(0).filter((d) => d.includes(":av:0:p"))).toHaveLength(PEOPLE_PER_PAGE);
+    expect(pick(0)).toContain("d:D1:as:0:1");
+    // The last page: the 21st..25th person, and the way back.
+    expect(pick(2).filter((d) => d.includes(":av:0:p"))).toEqual(
+      ["p20", "p21", "p22", "p23", "p24"].map((id) => `d:D1:av:0:${id}`),
+    );
+    expect(pick(2)).toContain("d:D1:as:0:1");
+    expect(pick(2)).not.toContain("d:D1:as:0:3");
   });
 });

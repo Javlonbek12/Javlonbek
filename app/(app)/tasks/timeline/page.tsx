@@ -21,9 +21,9 @@ import { cn } from "@/lib/utils";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getUserToday } from "@/modules/core/settings/service";
 import { parseTaskFilters } from "@/modules/tasks/filters";
-import { listTimeline, type TaskView } from "@/modules/tasks/service";
+import { listTimeline, TIMELINE_LIMIT, type TaskView } from "@/modules/tasks/service";
 import { layoutBars, TIMELINE_DAYS, timelineStart } from "@/modules/tasks/timeline";
-import { isOverdue } from "@/modules/tasks/today";
+import { isLateWork } from "@/modules/tasks/today";
 
 const MIN_COL = 40; // px per day at least; wider screens stretch the days to the full width
 const ROW = 46; // px per task row
@@ -55,7 +55,7 @@ const PILL: Record<State, string> = {
 
 function stateOf(task: TaskView, today: string): State {
   if (task.status === "DONE") return "done";
-  if (isOverdue(task, today)) return "overdue";
+  if (isLateWork(task, today)) return "overdue";
   if (task.status === "IN_PROGRESS") return "inProgress";
   if (task.status === "IN_REVIEW") return "review";
   return "notStarted";
@@ -425,6 +425,11 @@ export default async function TimelinePage({ searchParams }: PageProps<"/tasks/t
             </span>
           </div>
         </div>
+      )}
+      {tasks.length >= TIMELINE_LIMIT && (
+        <p className="rounded-md bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
+          {t("tasks.look.cut", { count: TIMELINE_LIMIT })}
+        </p>
       )}
       <p className="text-muted-foreground text-xs">
         {t("tasks.timeline.hint")} {t("tasks.timeline.noDates")}

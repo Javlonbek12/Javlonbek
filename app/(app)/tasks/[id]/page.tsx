@@ -11,7 +11,7 @@ import { db } from "@/lib/db";
 export default async function TaskPage({ params, searchParams }: PageProps<"/tasks/[id]">) {
   const user = await requireUser();
   const { id } = await params;
-  const { error, notice, tab } = await searchParams;
+  const { error, notice, tab, stopped } = await searchParams;
   const task = await db.task.findUnique({ where: { id } });
   if (!task || !canViewTask(user, task)) notFound();
   return (
@@ -24,6 +24,7 @@ export default async function TaskPage({ params, searchParams }: PageProps<"/tas
         tab={typeof tab === "string" ? tab : undefined}
         error={typeof error === "string" ? error : undefined}
         notice={typeof notice === "string" ? notice : undefined}
+        stopped={typeof stopped === "string" ? stopped : undefined}
       />
     </Card>
   );

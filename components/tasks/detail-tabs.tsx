@@ -34,10 +34,8 @@ export function DetailTabs({ tabs, initial }: { tabs: DetailTab[]; initial: stri
   };
   return (
     <div className="flex flex-col gap-3">
-      <div
-        role="tablist"
-        className="bg-muted/60 -mx-1 flex gap-1 overflow-x-auto rounded-xl p-1 text-sm"
-      >
+      {/* Every tab in sight: on a phone they wrap to a second row (never scrolled off-screen). */}
+      <div role="tablist" className="bg-muted/60 -mx-1 flex flex-wrap gap-1 rounded-xl p-1 text-sm">
         {tabs.map((tab) => (
           <button
             key={tab.key}
@@ -48,7 +46,7 @@ export function DetailTabs({ tabs, initial }: { tabs: DetailTab[]; initial: stri
             aria-controls={`tabpanel-${tab.key}`}
             onClick={() => choose(tab.key)}
             className={cn(
-              "flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 font-medium transition-colors",
+              "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-medium transition-colors sm:px-3",
               active === tab.key
                 ? "bg-primary text-primary-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground",

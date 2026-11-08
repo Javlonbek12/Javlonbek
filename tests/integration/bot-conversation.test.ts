@@ -10,14 +10,17 @@ import {
   showList,
   type ConversationDeps,
 } from "@/modules/bot/conversation";
+import { rememberReasonMessage } from "@/modules/bot/decisions";
 import type { DraftPayload } from "@/modules/bot/draft-card";
 import { MockStt } from "@/modules/stt";
+import { addCoAssignee } from "@/modules/tasks/co-assignees";
 import { requestTaskDeletion } from "@/modules/tasks/delete-service";
 import { changeStatus, createTask } from "@/modules/tasks/service";
 import { PHRASES, TODAY } from "@/tests/fixtures/phrases";
 import { resetDb } from "@/tests/helpers/db";
 import { taskInput } from "@/tests/helpers/tasks";
 import { createFixtureTeam } from "@/tests/helpers/team";
+import { telegramMock } from "@/tests/helpers/telegram";
 
 const NOW = new Date(`${TODAY}T09:00:00+05:00`);
 const CHAT = 9000001n;
@@ -65,7 +68,7 @@ describe("text → confirmation card (18 phrases: Russian, Uzbek, mixed)", () =>
 describe("confirmation card actions", () => {
   beforeEach(resetDb);
 
-  it("saves: own task as a team task on oneself, others' approved right away by the OWNER", async () => {
+  it("saves: own task as a team task on oneself (in work at once), others' approved right away by the OWNER", async () => {
     const users = await createFixtureTeam();
     const phrase = PHRASES.find((p) => p.model.length === 3)!;
     const reply = await handleText(users.owner, CHAT, phrase.text, depsFor(phrase));
@@ -76,7 +79,7 @@ describe("confirmation card actions", () => {
 
     const tasks = await db.task.findMany({ orderBy: { createdAt: "asc" } });
     expect(tasks.map((t) => [t.isPersonal, t.status, t.assigneeId === users.owner.id])).toEqual([
-      [false, "APPROVED", true],
+      [false, "IN_PROGRESS", true],
       [false, "APPROVED", false],
       [false, "APPROVED", false],
     ]);
@@ -97,9 +100,10 @@ describe("confirmation card actions", () => {
     await handleCallback(users.aziz, `d:${reply.draftId}:av:1:mine`);
     await handleCallback(users.aziz, `d:${reply.draftId}:save`);
     const tasks = await db.task.findMany({ orderBy: { createdAt: "asc" } });
-    expect(tasks.slice(0, 2).map((t) => [t.isPersonal, t.assigneeId])).toEqual([
-      [true, users.aziz.id],
-      [true, users.aziz.id],
+    // Personal ones start in work, as from the web form.
+    expect(tasks.slice(0, 2).map((t) => [t.isPersonal, t.assigneeId, t.status])).toEqual([
+      [true, users.aziz.id, "IN_PROGRESS"],
+      [true, users.aziz.id, "IN_PROGRESS"],
     ]);
   });
 
@@ -256,13 +260,69 @@ describe("commands and natural requests", () => {
 
     const list = await showList(users.owner, "pending", NOW);
     expect(list.text).toContain("На утверждение");
-    expect(list.buttons![0][0].data).toBe(`t:${pending.id}:A`);
+    expect(list.buttons![0][0].data).toBe(`t:${pending.id}:A:l`);
 
+    // Under a notice: the result in place of the notice.
     const approved = await handleCallback(users.owner, `t:${pending.id}:A`);
+    expect(approved).toMatchObject({ edit: true });
     expect(approved.text).toContain("Утверждена: «На утверждение»");
     expect((await db.task.findUniqueOrThrow({ where: { id: pending.id } })).status).toBe(
       "APPROVED",
     );
+  });
+
+  it("/pending: a button redraws the list — the decided row goes, the others keep their buttons", async () => {
+    const users = await createFixtureTeam();
+    const tasks: { id: string }[] = [];
+    for (let i = 1; i <= 12; i++)
+      tasks.push(
+        await createTask(
+          users.aziz,
+          taskInput({ title: `Запрос ${i}`, assigneeId: users.dilnoza.id }),
+          "create",
+          { needsApproval: true },
+        ),
+      );
+    const list = await showList(users.owner, "pending", NOW);
+    // Every listed item has its buttons (not only the first 8).
+    expect(list.buttons).toHaveLength(12);
+    const reply = await handleCallback(users.owner, `t:${tasks[0]!.id}:A:l`);
+    expect(reply.edit).toBe(true);
+    expect(reply.text.split("\n\n")[0]).toBe("Утверждена: «Запрос 1» (Тестовый владелец)");
+    expect(reply.text).toContain("Ждут вашего решения (11)");
+    expect(reply.buttons).toHaveLength(11);
+    expect(reply.buttons!.flat().some((b) => b.data.includes(tasks[0]!.id))).toBe(false);
+  });
+
+  it("«✖️» asks «Отменить задачу?» first; «Нет» keeps it, «Да» cancels", async () => {
+    const users = await createFixtureTeam();
+    const task = await createTask(
+      users.aziz,
+      taskInput({ title: "Выставка", assigneeId: users.dilnoza.id }),
+      "create",
+      { needsApproval: true },
+    );
+    // In the list: the row turns into Да / Нет.
+    const ask = await handleCallback(users.owner, `t:${task.id}:C:l`);
+    expect(ask.text).toContain("Отменить задачу «Выставка»?");
+    expect(ask.buttons![0]!.map((b) => b.data)).toEqual([`tc:${task.id}:y:l`, `tc:${task.id}:n:l`]);
+    const statusOf = async () =>
+      (await db.task.findUniqueOrThrow({ where: { id: task.id } })).status;
+    expect(await statusOf()).toBe("PENDING_APPROVAL");
+    const kept = await handleCallback(users.owner, `tc:${task.id}:n:l`);
+    expect(kept.buttons![0]![0]!.data).toBe(`t:${task.id}:A:l`);
+    expect(await statusOf()).toBe("PENDING_APPROVAL");
+
+    // Under a notice: the question comes as a message of its own.
+    const question = await handleCallback(users.owner, `t:${task.id}:C`);
+    expect(question.edit).toBeFalsy();
+    expect(question.buttons![0]!.map((b) => b.data)).toEqual([
+      `tc:${task.id}:y`,
+      `tc:${task.id}:n`,
+    ]);
+    const cancelled = await handleCallback(users.owner, `tc:${task.id}:y`);
+    expect(cancelled.text).toContain("Отменена: «Выставка»");
+    expect(await statusOf()).toBe("CANCELLED");
   });
 
   it("declining from /pending asks for the reason and sends it to the author", async () => {
@@ -291,6 +351,113 @@ describe("commands and natural requests", () => {
     expect(notice?.body).toContain("Сначала закроем прошлую");
   });
 
+  it("a reason is a reply to the question (or a message within 5 minutes); «Отмена» drops it", async () => {
+    const users = await createFixtureTeam();
+    const pending = await createTask(
+      users.aziz,
+      taskInput({ title: "Нужна причина", assigneeId: users.dilnoza.id }),
+      "create",
+      { needsApproval: true },
+    );
+    const statusOf = async () =>
+      (await db.task.findUniqueOrThrow({ where: { id: pending.id } })).status;
+    const ask = await handleCallback(users.owner, `t:${pending.id}:D`);
+    expect(ask).toMatchObject({ reasonPrompt: true });
+    expect(ask.buttons![0]![0]!.data).toBe("rc");
+    await rememberReasonMessage(users.owner.id, 501);
+
+    // Ten minutes later a plain message is just a message (here, a new task), not the reason.
+    const key = `bot.reason:${users.owner.id}`;
+    const state = JSON.parse((await db.systemState.findUniqueOrThrow({ where: { key } })).value);
+    await db.systemState.update({
+      where: { key },
+      data: { value: JSON.stringify({ ...state, at: Date.now() - 10 * 60_000 }) },
+    });
+    const card = await handleText(users.owner, CHAT, PHRASES[0].text, depsFor(PHRASES[0]));
+    expect(card.draftId).toBeDefined();
+    // A reply to some other message is not the reason either.
+    await handleCallback(users.owner, `d:${card.draftId}:cancel`);
+    const other = await handleText(users.owner, CHAT, "Позже", depsFor(PHRASES[0]), undefined, 777);
+    expect(other.draftId).toBeDefined();
+    expect(await statusOf()).toBe("PENDING_APPROVAL");
+    // A reply to the question is.
+    const done = await handleText(
+      users.owner,
+      CHAT,
+      "Не в этом месяце",
+      depsFor(PHRASES[0]),
+      undefined,
+      501,
+    );
+    expect(done.text).toContain("Черновик");
+    expect(await statusOf()).toBe("DRAFT");
+
+    // «Отмена»: nothing waits any more, the next message is handled as usual.
+    const again = await createTask(
+      users.aziz,
+      taskInput({ title: "Ещё одна", assigneeId: users.dilnoza.id }),
+      "create",
+      { needsApproval: true },
+    );
+    await handleCallback(users.owner, `t:${again.id}:D`);
+    expect((await handleCallback(users.owner, "rc")).text).toBe("Хорошо, ничего не меняем.");
+    const next = await handleText(users.owner, CHAT, PHRASES[0].text, depsFor(PHRASES[0]));
+    expect(next.draftId).toBeDefined();
+    expect((await db.task.findUniqueOrThrow({ where: { id: again.id } })).status).toBe(
+      "PENDING_APPROVAL",
+    );
+  });
+
+  it("notices come with the decision buttons: approve / decline, accept / return, add / decline", async () => {
+    const users = await createFixtureTeam();
+    telegramMock.mockClear();
+    const buttonsFor = (chatId: bigint) =>
+      telegramMock.mock.calls
+        .filter(([chat]) => chat === chatId)
+        .map(([, , buttons]) => buttons?.flat().map((b) => b.data) ?? []);
+    const pending = await createTask(
+      users.aziz,
+      taskInput({ title: "Ждёт", assigneeId: users.dilnoza.id }),
+      "create",
+      { needsApproval: true },
+    );
+    expect(buttonsFor(users.owner.botChatId!)).toContainEqual([
+      `t:${pending.id}:A`,
+      `t:${pending.id}:D`,
+    ]);
+
+    const work = await createTask(
+      users.aziz,
+      taskInput({ title: "Сдать", assigneeId: users.dilnoza.id }),
+      "create",
+    );
+    await changeStatus(users.dilnoza, work.id, "IN_PROGRESS");
+    await changeStatus(users.dilnoza, work.id, "IN_REVIEW");
+    expect(buttonsFor(users.aziz.botChatId!)).toContainEqual([`t:${work.id}:F`, `t:${work.id}:W`]);
+    const accepted = await handleCallback(users.aziz, `t:${work.id}:F`);
+    expect(accepted.text).toContain("Выполнена: «Сдать»");
+
+    // Asking to add someone from another team: the request comes with Добавить / Отказать.
+    await db.user.update({ where: { id: users.sardor.id }, data: { managerId: users.owner.id } });
+    await db.user.update({ where: { id: users.dilnoza.id }, data: { managerId: users.sardor.id } });
+    const shared = await createTask(
+      users.owner,
+      taskInput({ title: "Вместе", assigneeId: users.aziz.id }),
+      "create",
+    );
+    expect(await addCoAssignee(users.aziz, shared.id, users.dilnoza.id)).toBe("requested");
+    const request = await db.taskCoAssigneeRequest.findFirstOrThrow();
+    expect(buttonsFor(users.sardor.botChatId!)).toContainEqual([
+      `ca:${request.id}:y`,
+      `ca:${request.id}:n`,
+    ]);
+    const added = await handleCallback(users.sardor, `ca:${request.id}:y`);
+    expect(added.text).toContain("Дильноза Юсупова — соисполнитель задачи «Вместе»");
+    expect((await db.task.findUniqueOrThrow({ where: { id: shared.id } })).coAssigneeIds).toEqual([
+      users.dilnoza.id,
+    ]);
+  });
+
   it("asks to delete come with Delete / Keep buttons in /pending", async () => {
     const users = await createFixtureTeam();
     const task = await createTask(
@@ -301,15 +468,16 @@ describe("commands and natural requests", () => {
     await changeStatus(users.dilnoza, task.id, "IN_PROGRESS");
     await requestTaskDeletion(users.aziz, task.id, "Дубль");
     const list = await showList(users.owner, "pending", NOW);
-    expect(list.text).toContain("Просят удалить");
-    const row = list.buttons!.find((r) => r[0]!.data === `x:${task.id}:y`)!;
-    expect(row[1]!.data).toBe(`x:${task.id}:n`);
-    const kept = await handleCallback(users.owner, `x:${task.id}:n`);
+    expect(list.text).toContain("• Лишняя · просят удалить");
+    const row = list.buttons!.find((r) => r[0]!.data === `x:${task.id}:y:l`)!;
+    expect(row[1]!.data).toBe(`x:${task.id}:n:l`);
+    const kept = await handleCallback(users.owner, `x:${task.id}:n:l`);
     expect(kept.text).toContain("осталась");
+    expect(kept.text).toContain("Ждут вашего решения (0)");
     expect(await db.task.count({ where: { id: task.id } })).toBe(1);
   });
 
-  it("a MEMBER pressing an approve button gets a polite refusal", async () => {
+  it("a refused button says why and who decides, not just «недоступно»", async () => {
     const users = await createFixtureTeam();
     const pending = await createTask(
       users.aziz,
@@ -317,8 +485,55 @@ describe("commands and natural requests", () => {
       "create",
       { needsApproval: true },
     );
-    const reply = await handleCallback(users.dilnoza, `t:${pending.id}:A`);
-    expect(reply.text).toBe("Это действие вам недоступно.");
+    // The author can't approve their own request: the owner decides.
+    expect((await handleCallback(users.aziz, `t:${pending.id}:A`)).text).toBe(
+      "Это решает: Тестовый владелец.",
+    );
+    // The assignee doesn't see the task before it is approved.
+    expect((await handleCallback(users.dilnoza, `t:${pending.id}:A`)).text).toContain(
+      "Задача недоступна",
+    );
+    // Someone else decided first.
+    await changeStatus(users.owner, pending.id, "APPROVED");
+    expect((await handleCallback(users.owner, `t:${pending.id}:D`)).text).toBe(
+      "Решение уже принято: задача сейчас «Утверждена».",
+    );
+  });
+
+  it("«перенеси» by the assignee: only the author moves the due date, and the bot names them", async () => {
+    const users = await createFixtureTeam();
+    await createTask(
+      users.owner,
+      taskInput({ title: "Отчёт по выкладке", assigneeId: users.aziz.id, dueDate: TODAY }),
+      "create",
+    );
+    const move: InterpretedCommand = {
+      intent: "reschedule",
+      taskQuery: "отчёт выкладке",
+      newDueDate: "2026-10-08",
+    };
+    const reply = await handleText(users.aziz, 9000002n, "перенеси", depsFor(PHRASES[0], move));
+    expect(reply.text).toBe(
+      "Срок меняет автор задачи — Тестовый владелец. Попросите его или напишите в комментарии к задаче.",
+    );
+  });
+
+  it("«закрой» a task already handed in: it says who accepts it", async () => {
+    const users = await createFixtureTeam();
+    const task = await createTask(
+      users.owner,
+      taskInput({ title: "Выкладка ESSE", assigneeId: users.aziz.id }),
+      "create",
+    );
+    await changeStatus(users.aziz, task.id, "IN_PROGRESS");
+    await changeStatus(users.aziz, task.id, "IN_REVIEW");
+    const close: InterpretedCommand = {
+      intent: "complete",
+      taskQuery: "выкладка",
+      newDueDate: null,
+    };
+    const reply = await handleText(users.aziz, 9000002n, "закрой", depsFor(PHRASES[0], close));
+    expect(reply.text).toBe("Задача уже на проверке — работу принимает Тестовый владелец.");
   });
 
   it("«перенеси отчёт на четверг» and «закрой задачу отчёт»", async () => {

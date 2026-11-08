@@ -14,6 +14,8 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 
 import { moveTaskAction } from "@/app/(app)/tasks/actions";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import type { TaskStatus } from "@/lib/generated/prisma/enums";
 import { formatDay } from "@/lib/dates";
 import { type TranslationKey } from "@/lib/i18n";
@@ -30,7 +32,83 @@ export type KanbanCard = {
   blocked: boolean;
   // Statuses this user may move the card to.
   transitions: TaskStatus[];
+  // Of those, the ones that need a reason (declining, sending back): asked in a small dialog.
+  reasonFor: TaskStatus[];
+  // A blocking task was cancelled: accepting asks to confirm it on purpose.
+  despiteCancelled: boolean;
 };
+
+// A move waiting for its reason (or the «despite» tick) before it is sent.
+type PendingMove = { card: KanbanCard; to: TaskStatus; reason: boolean; despite: boolean };
+
+function MoveDialog({
+  move,
+  onCancel,
+  onConfirm,
+}: {
+  move: PendingMove;
+  onCancel: () => void;
+  onConfirm: (extra: { reason?: string; despiteCancelled?: boolean }) => void;
+}) {
+  const t = useT();
+  const [reason, setReason] = useState("");
+  const [despite, setDespite] = useState(false);
+  const ready = (!move.reason || reason.trim().length > 0) && (!move.despite || despite);
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="kanban-move-title"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center"
+      onKeyDown={(e) => e.key === "Escape" && onCancel()}
+    >
+      <form
+        className="bg-card flex w-full max-w-sm flex-col gap-3 rounded-2xl border p-4 shadow-xl"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (ready) onConfirm({ reason: reason.trim() || undefined, despiteCancelled: despite });
+        }}
+      >
+        <span id="kanban-move-title" className="font-medium">
+          {t("tasks.kanban.moveTitle", {
+            title: move.card.title,
+            status: t(`tasks.status.${move.to}` as TranslationKey),
+          })}
+        </span>
+        {move.reason && (
+          <Textarea
+            autoFocus
+            required
+            maxLength={1000}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder={t("tasks.reason.required")}
+            aria-label={t("tasks.reason.required")}
+          />
+        )}
+        {move.despite && (
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="size-4"
+              checked={despite}
+              onChange={(e) => setDespite(e.target.checked)}
+            />
+            {t("tasks.reason.despiteCancelled")}
+          </label>
+        )}
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+            {t("tasks.panel.cancel")}
+          </Button>
+          <Button type="submit" size="sm" disabled={!ready}>
+            {t("tasks.reason.confirm")}
+          </Button>
+        </div>
+      </form>
+    </div>
+  );
+}
 
 function Card({ card }: { card: KanbanCard }) {
   const t = useT();
@@ -111,12 +189,34 @@ export function KanbanBoard({
   const [cards, setCards] = useState(initialCards);
   const [dragging, setDragging] = useState<KanbanCard | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [pending, setPending] = useState<PendingMove | null>(null);
   const [, startTransition] = useTransition();
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     // On phones a short hold starts dragging, so the board can still be scrolled.
     useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
   );
+
+  function move(
+    card: KanbanCard,
+    to: TaskStatus,
+    extra: { reason?: string; despiteCancelled?: boolean } = {},
+  ) {
+    const previous = cards;
+    setCards(
+      cards.map((c) =>
+        c.id === card.id ? { ...c, status: to, transitions: [], reasonFor: [] } : c,
+      ),
+    );
+    setMessage(null);
+    startTransition(async () => {
+      const result = await moveTaskAction(card.id, to, extra);
+      if (!result.ok) {
+        setCards(previous);
+        setMessage(t(`tasks.errors.${result.error}` as TranslationKey));
+      }
+    });
+  }
 
   function onDragEnd(event: DragEndEvent) {
     setDragging(null);
@@ -127,16 +227,11 @@ export function KanbanBoard({
       setMessage(t("tasks.kanban.moveFailed"));
       return;
     }
-    const previous = cards;
-    setCards(cards.map((c) => (c.id === card.id ? { ...c, status: to, transitions: [] } : c)));
-    setMessage(null);
-    startTransition(async () => {
-      const result = await moveTaskAction(card.id, to);
-      if (!result.ok) {
-        setCards(previous);
-        setMessage(t(`tasks.errors.${result.error}` as TranslationKey));
-      }
-    });
+    const reason = card.reasonFor.includes(to);
+    const despite = to === "DONE" && card.despiteCancelled;
+    // A move that needs words opens a small dialog first instead of failing.
+    if (reason || despite) setPending({ card, to, reason, despite });
+    else move(card, to);
   }
 
   return (
@@ -164,6 +259,16 @@ export function KanbanBoard({
           ))}
         </div>
       </DndContext>
+      {pending && (
+        <MoveDialog
+          move={pending}
+          onCancel={() => setPending(null)}
+          onConfirm={(extra) => {
+            setPending(null);
+            move(pending.card, pending.to, extra);
+          }}
+        />
+      )}
     </div>
   );
 }

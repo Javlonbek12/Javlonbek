@@ -34,6 +34,7 @@ export function TaskPanel({
         tab={one("tab")}
         error={one("error")}
         notice={one("notice")}
+        stopped={one("stopped")}
         closeHref={closeHref}
       />
     </aside>

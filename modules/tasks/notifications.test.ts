@@ -18,21 +18,40 @@ describe("task notifications (routing v2)", () => {
     const notices = taskEventRecipients(task, { kind: "started", teamNoticeId: "boss" }, "author");
     expect(ids(notices)).toEqual(["worker", "boss"]);
     expect(notices[1]!.type).toBe("task_team");
-    expect(notices[1]!.buttons?.[0]?.[0]?.data).toBe("t:t1:C");
+    expect(notices[1]!.buttons?.()[0]?.[0]?.data).toBe("t:t1:C");
   });
 
-  it("waiting: only the deciders; a decline: the author", () => {
-    expect(ids(taskEventRecipients(task, { kind: "pending" }, "author"))).toEqual(["boss"]);
+  it("waiting: only the deciders, with Approve / Decline; a decline: the author", () => {
+    const pending = taskEventRecipients(task, { kind: "pending" }, "author");
+    expect(ids(pending)).toEqual(["boss"]);
+    expect(pending[0]!.buttons?.()[0]?.map((b) => b.data)).toEqual(["t:t1:A", "t:t1:D"]);
     expect(ids(taskEventRecipients(task, { kind: "rejected", reason: "нет" }, "boss"))).toEqual([
       "author",
     ]);
   });
 
-  it("started work: the author hears it; handed in: the reviewer", () => {
+  it("started work: the author hears it; handed in: the reviewer, with Accept / Return", () => {
     expect(ids(taskEventRecipients(task, { kind: "taken" }, "worker"))).toEqual(["author"]);
-    expect(
-      ids(taskEventRecipients(task, { kind: "review", reviewerIds: ["author"] }, "worker")),
-    ).toEqual(["author"]);
+    const review = taskEventRecipients(task, { kind: "review", reviewerIds: ["author"] }, "worker");
+    expect(ids(review)).toEqual(["author"]);
+    expect(review[0]!.buttons?.()[0]?.map((b) => b.data)).toEqual(["t:t1:F", "t:t1:W"]);
+  });
+
+  it("a co-assignee request comes with Add / Decline for whoever decides", () => {
+    const notices = taskEventRecipients(
+      task,
+      { kind: "coRequested", requestId: "r1", deciderIds: ["boss"], name: "Дилноза" },
+      "author",
+    );
+    expect(ids(notices)).toEqual(["boss"]);
+    expect(notices[0]!.buttons?.()[0]?.map((b) => b.data)).toEqual(["ca:r1:y", "ca:r1:n"]);
+  });
+
+  it("back in work: the assignee and the author", () => {
+    expect(ids(taskEventRecipients(task, { kind: "reopened" }, "boss"))).toEqual([
+      "worker",
+      "author",
+    ]);
   });
 
   it("cancelled while waiting: the deciders too, but not an assignee who never saw it", () => {
@@ -82,7 +101,7 @@ describe("task notifications (routing v2)", () => {
       ids(
         taskEventRecipients(
           shared,
-          { kind: "coRequested", deciderIds: ["other"], name: "Тест" },
+          { kind: "coRequested", requestId: "r1", deciderIds: ["other"], name: "Тест" },
           "worker",
         ),
       ),
