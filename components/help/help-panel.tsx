@@ -82,7 +82,10 @@ export function HelpPanel({
     setTurns((all) => [...all, { role: "user", text: asked }]);
     setQuestion("");
     startTransition(async () => {
-      const result = await ask({ question: asked, history, path: pathname });
+      // A lost connection or a server error stays inside the sheet instead of the error page.
+      const result = await ask({ question: asked, history, path: pathname }).catch(
+        (): HelpResult => ({ ok: false, error: "errors.generic" }),
+      );
       setTurns((all) => [
         ...all,
         result.ok

@@ -89,6 +89,14 @@ describe("HelpPanel", () => {
     ]);
   });
 
+  it("keeps a failed request inside the sheet", async () => {
+    const { dialog } = setUp(vi.fn<AskHelp>().mockRejectedValue(new Error("offline")));
+    await act(async () =>
+      fireEvent.click(dialog.getByRole("button", { name: "Как поставить задачу сотруднику?" })),
+    );
+    expect(dialog.getByRole("alert")).toHaveTextContent("Что-то пошло не так");
+  });
+
   it("starts a new conversation and closes", async () => {
     const { dialog, onClose } = setUp(vi.fn<AskHelp>().mockResolvedValue(answered));
     await act(async () =>

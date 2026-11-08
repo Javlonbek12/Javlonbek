@@ -18,7 +18,7 @@ import {
   MAX_QUESTION,
   type HelpTurn,
 } from "./help-shared";
-import { runStructured, type ModelCall } from "./run";
+import { AiError, runStructured, type ModelCall } from "./run";
 
 // The AI help button: an employee asks how something works in the app, Claude answers from the
 // user guide (docs/USER-GUIDE.md) for this person's role, sections and page. It only explains.
@@ -45,10 +45,16 @@ const GUIDE_PATH = path.join(process.cwd(), "docs", "USER-GUIDE.md");
 let guideCache: string | undefined;
 
 // The guide ships with the app (see next.config.ts). Read once in production; in development
-// every question sees the latest edit.
+// every question sees the latest edit. Without it there is nothing to answer from.
 export async function loadUserGuide(): Promise<string> {
   if (guideCache) return guideCache;
-  const guide = await readFile(GUIDE_PATH, "utf8");
+  let guide: string;
+  try {
+    guide = await readFile(GUIDE_PATH, "utf8");
+  } catch (error) {
+    console.error("AI help: the user guide is missing", error);
+    throw new AiError("unavailable");
+  }
   if (getEnv().NODE_ENV === "production") guideCache = guide;
   return guide;
 }
