@@ -3,6 +3,7 @@ import { addDays, fromDateString, startOfWeek, todayInTimezone } from "@/lib/dat
 import type { Actor } from "@/modules/core/permissions";
 
 import { CLOSED_STATUSES, doerWhere, visibleTasksWhere } from "./access";
+import { countTaskStates } from "./today";
 
 export const DASHBOARD_WEEKS = 10;
 
@@ -48,6 +49,11 @@ export async function getMyDashboard(actor: Actor, today: string, timeZone: stri
   ]);
   const doneOn = done.map((task) => todayInTimezone(timeZone, task.completedAt!));
   const due = (task: { dueDate: Date | null }) => task.dueDate?.toISOString().slice(0, 10);
+  // «В работе» and «Просрочено» by the shared words: each task once, handed-in work not overdue.
+  const counts = countTaskStates(
+    open.map((task) => ({ status: task.status, dueDate: due(task) ?? null })),
+    today,
+  );
   const doneThisWeek = doneOn.filter((day) => day >= weekStart).length;
   // Last week up to the same weekday: on Monday morning a whole last week would always win.
   const lastWeekStart = addDays(weekStart, -7);
@@ -56,9 +62,8 @@ export async function getMyDashboard(actor: Actor, today: string, timeZone: stri
   ).length;
   return {
     open: open.length,
-    inProgress: open.filter((t) => t.status === "IN_PROGRESS" || t.status === "IN_REVIEW").length,
-    // Handed in and waiting for acceptance is not the doer's delay.
-    overdue: open.filter((t) => t.status !== "IN_REVIEW" && (due(t) ?? "9999") < today).length,
+    inProgress: counts.inWork,
+    overdue: counts.late,
     doneSameDaysLastWeek,
     doneThisWeek,
     // Done this week plus what is still open and due by Sunday.

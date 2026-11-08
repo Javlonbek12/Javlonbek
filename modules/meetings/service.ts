@@ -17,6 +17,7 @@ import { visibleTasksWhere } from "@/modules/tasks/access";
 
 import { canEditMeeting, canViewMeeting, visibleMeetingsWhere } from "./access";
 import { weeklyOccurrences } from "./recurrence";
+import { meetingPhase } from "./status";
 
 export class MeetingError extends Error {
   constructor(public readonly code: "invalid" | "forbidden" | "noNotes" | "conflict" | "tooLong") {
@@ -274,6 +275,8 @@ export async function deleteMeeting(actor: Actor, meetingId: string, following =
   return count;
 }
 
+// Meetings starting in [from, to). `notes`: whether the outcome («Итоги встречи») is written, for
+// «Итоги не записаны».
 export async function listMeetingsBetween(actor: Actor, from: Date, to: Date, onlyMine = false) {
   return db.meeting.findMany({
     where: {
@@ -282,9 +285,27 @@ export async function listMeetingsBetween(actor: Actor, from: Date, to: Date, on
         { startsAt: { gte: from, lt: to } },
       ],
     },
-    include,
+    include: { ...include, notes: { select: { updatedAt: true } } },
     orderBy: { startsAt: "asc" },
   });
+}
+
+export type MeetingRow = Awaited<ReturnType<typeof listMeetingsBetween>>[number];
+
+// Past meetings (up to `now`, the last 90 days) whose outcome nobody wrote yet: the number on the
+// «Прошедшие» tab.
+export async function countMeetingsWithoutNotes(actor: Actor, now = new Date(), onlyMine = false) {
+  const started = await db.meeting.findMany({
+    where: {
+      AND: [
+        onlyMine ? { participants: { some: { userId: actor.id } } } : visibleMeetingsWhere(actor),
+        { startsAt: { gte: new Date(now.getTime() - 90 * 86_400_000), lt: now } },
+        { notes: null },
+      ],
+    },
+    select: { startsAt: true, durationMinutes: true },
+  });
+  return started.filter((m) => meetingPhase(m, now) === "past").length;
 }
 
 export async function getMeetingDetail(actor: Actor, meetingId: string) {

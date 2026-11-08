@@ -1,4 +1,5 @@
 import {
+  AlertCircle,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
@@ -11,6 +12,7 @@ import {
 import Link from "next/link";
 
 import { Ring } from "@/components/dashboard/ring";
+import { MEETING_DOT, MEETING_TONE } from "@/components/meetings/meeting-line";
 import { TaskTableRow } from "@/components/tasks/task-table-row";
 import { Button } from "@/components/ui/button";
 import {
@@ -44,46 +46,46 @@ import { countTaskStates, isLateWork } from "@/modules/tasks/today";
 
 type Meeting = Awaited<ReturnType<typeof listMeetingsBetween>>[number];
 
-// Colours of calendar items (the legend on the right lists them).
+// Colours of calendar items (the legend on the right lists them). Red means overdue only;
+// importance is an icon; meetings are violet, as everywhere.
 const KIND = {
-  high: { dot: "bg-red-500", box: "bg-red-50 text-red-800 dark:bg-red-950/40 dark:text-red-200" },
-  medium: {
-    dot: "bg-amber-500",
-    box: "bg-amber-50 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200",
+  overdue: {
+    dot: "bg-red-500",
+    box: "bg-red-50 text-red-800 dark:bg-red-950/40 dark:text-red-200",
   },
-  low: {
-    dot: "bg-emerald-500",
-    box: "bg-emerald-50 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200",
-  },
-  meeting: {
-    dot: "bg-blue-500",
-    box: "bg-blue-50 text-blue-900 dark:bg-blue-950/40 dark:text-blue-200",
-  },
+  task: { dot: "bg-sky-500", box: "bg-sky-50 text-sky-900 dark:bg-sky-950/40 dark:text-sky-100" },
   personal: {
-    dot: "bg-violet-500",
-    box: "bg-violet-50 text-violet-900 dark:bg-violet-950/40 dark:text-violet-200",
+    dot: "bg-slate-400",
+    box: "bg-slate-100 text-slate-800 dark:bg-slate-800/50 dark:text-slate-200",
   },
+  meeting: { dot: MEETING_DOT, box: MEETING_TONE },
 } as const;
 const LEGEND = [
-  ["high", "colorUrgent"],
-  ["medium", "colorMedium"],
-  ["low", "colorLow"],
-  ["meeting", "colorMeeting"],
+  ["task", "colorTask"],
   ["personal", "colorPersonal"],
+  ["meeting", "colorMeeting"],
+  ["overdue", "colorOverdue"],
 ] as const;
 
-function kindOf(task: TaskView): keyof typeof KIND {
-  if (task.isPersonal) return "personal";
-  if (task.priority === "URGENT" || task.priority === "HIGH") return "high";
-  return task.priority === "LOW" ? "low" : "medium";
+function kindOf(task: TaskView, today: string): keyof typeof KIND {
+  if (isLateWork(task, today)) return "overdue";
+  return task.isPersonal ? "personal" : "task";
 }
 
 function TaskItem({ task, today, compact }: { task: TaskView; today: string; compact?: boolean }) {
-  const kind = isLateWork(task, today) ? KIND.high : KIND[kindOf(task)];
+  const kind = KIND[kindOf(task, today)];
+  const important = task.priority === "HIGH" || task.priority === "URGENT";
   const body = (
     <>
       <span className="flex items-center gap-1.5 font-medium">
-        <span className={cn("size-1.5 shrink-0 rounded-full", kind.dot)} />
+        {important ? (
+          <AlertCircle
+            className="size-3 shrink-0 text-orange-500"
+            aria-label={t(`tasks.priority.${task.priority}`)}
+          />
+        ) : (
+          <span className={cn("size-1.5 shrink-0 rounded-full", kind.dot)} />
+        )}
         <span className="truncate">{task.title}</span>
       </span>
       {(task.project || task.isPersonal) && (
@@ -564,6 +566,10 @@ export default async function CalendarPage({ searchParams }: PageProps<"/tasks/c
               {t(`tasks.look.${label}`)}
             </span>
           ))}
+          <span className="flex items-center gap-2.5 text-sm">
+            <AlertCircle className="size-3 text-orange-500" />
+            {t("tasks.look.colorImportant")}
+          </span>
           <span className="flex items-center gap-2.5 text-sm">
             <span className="border-muted-foreground/60 size-3 rounded-full border border-dashed" />
             {t("tasks.calendar.plannedHint")}

@@ -1,15 +1,18 @@
-// Where a task form goes after the action: back to the view it was sent from (the task page, or
-// the list with the task panel open), never outside the task section.
+// Where a task form goes after the action: back to the view it was sent from (the task page, the
+// list with the task panel open, or «Сегодня» with the panel open), never anywhere else.
 
 const ORIGIN = "http://local";
 
-// The address the form says to go back to, if it is a task-section path; otherwise the fallback.
+// The task section, and «Сегодня» (which opens a task in the same panel as the list).
+const allowed = (pathname: string) => pathname.startsWith("/tasks") || pathname === "/";
+
+// The address the form says to go back to, if it is one of those paths; otherwise the fallback.
 export function safeBack(back: string | null | undefined, fallback: string): string {
-  if (!back || !back.startsWith("/tasks") || back.startsWith("//") || back.includes("\\"))
+  if (!back || !back.startsWith("/") || back.startsWith("//") || back.includes("\\"))
     return fallback;
   try {
     const url = new URL(back, ORIGIN);
-    if (url.origin !== ORIGIN || !url.pathname.startsWith("/tasks")) return fallback;
+    if (url.origin !== ORIGIN || !allowed(url.pathname)) return fallback;
     return url.pathname + url.search;
   } catch {
     return fallback;
