@@ -117,7 +117,7 @@ export default async function DistributionPage() {
               cells: [
                 d.tsms.has(region) ? (
                   <Link href="/distribution/plan#tsm" className="hover:underline">
-                    {region} · TSM {d.tsms.get(region)!.size}
+                    {region} · {t("dist.regions.tsmCount", { count: d.tsms.get(region)!.size })}
                   </Link>
                 ) : (
                   region

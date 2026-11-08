@@ -1171,8 +1171,6 @@ export const en: Dictionary = {
     },
     newPlanogram: "New planogram",
     empty: "No planograms yet.",
-    filterActive: "Current",
-    filterAll: "All",
     list: {
       search: "Search by title",
       hasDraft: "draft v{version}",
@@ -1223,7 +1221,6 @@ export const en: Dictionary = {
       saved: "Saved",
       submit: "Send for approval",
       approve: "Approve",
-      returnToDraft: "Back to draft",
       newVersion: "New version",
       saveTemplate: "Save as template",
       archive: "Archive",
@@ -2778,10 +2775,6 @@ export const en: Dictionary = {
       tables: "Tables",
     },
     empty: "No equipment yet — upload the equipment file.",
-    groups: {
-      installed: "Installed",
-      reference: "Reference",
-    },
     upload: "Upload the equipment file →",
     kpi: {
       installed: "Installed, units",
@@ -2919,9 +2912,6 @@ export const en: Dictionary = {
       help: "Instruction",
     },
     empty: "No campaigns yet. Create a campaign on the Campaigns tab.",
-    emptyOrder:
-      "The order has no items or no equipment is uploaded. Upload the equipment file and the outlet base.",
-    emptyNoAccess: "No data yet — the owner or a manager uploads it.",
     excel: "Excel",
     total: "Total",
     pcs: "pcs",
@@ -2959,6 +2949,7 @@ export const en: Dictionary = {
       stockOut: "{count} units in warehouses are not counted in the base.",
       noSlots: "No slot count for types: {types}.",
       central: "{count} pcs stay at the central warehouse: reserve and rounding leftovers.",
+      tagNone: "The campaign orders no price tags; the planograms need {need} pcs.",
     },
     regions: {
       title: "By region",
@@ -2969,6 +2960,7 @@ export const en: Dictionary = {
       pieces: "Planned POSM",
       shipped: "Shipped",
       waybill: "Waybill",
+      tsmCount: "TSMs: {count}",
     },
     coverage: {
       title: "Equipment type coverage",
@@ -3043,10 +3035,6 @@ export const en: Dictionary = {
       viaTsm: "Sent to TSMs",
       viaTsmHint:
         "Part of the region's share already went straight to its TSMs — «To send» is reduced by it so nothing goes twice.",
-      shipTitle: "Record the shipment: {destination}?",
-      shipHint:
-        "The whole remainder will be recorded as shipped — {count} pcs. If part was shipped meanwhile, only what is still left is recorded.",
-      shipConfirm: "Yes, shipped",
       title: "Waybill: {destination}",
       units: "Equipment in the base: {count}",
       posm: "POSM",
@@ -3055,7 +3043,6 @@ export const en: Dictionary = {
       shipped: "Already shipped",
       toSend: "To send",
       received: "Received (signature)",
-      ship: "Record the shipment of this waybill",
       date: "Shipping date",
       print: "Print",
       back: "← Distribution",
@@ -3096,8 +3083,6 @@ export const en: Dictionary = {
       shipped: "Shipped",
       onHand: "In stock now",
       toSend: "Left to send",
-      where: "Where it went",
-      whereHint: "Shipped by destination, pcs.",
       destination: "Destination",
       add: "Record a shipment",
       quantity: "Quantity, pcs",
@@ -3106,13 +3091,10 @@ export const en: Dictionary = {
       overPlan: "Over the plan (more than the plan leaves)",
       save: "Record",
       history: "Shipment log",
-      who: "By",
       delete: "Delete",
       empty: "No shipments yet.",
       added: "Shipment recorded.",
       deleted: "Record deleted.",
-      plan: "Plan",
-      fact: "Actual",
     },
     posm: {
       deleteTitle: "Delete «{name}»?",
@@ -3142,13 +3124,12 @@ export const en: Dictionary = {
       dropHint: "The file with a minus in the control is dropped; the data stays as it was.",
       dropConfirm: "Yes, don't save",
       title: "Upload data",
-      link: "Upload data",
       equipmentTitle: "Equipment file",
       equipmentHint:
         "“Daily BW-POG management” is the only source of quantities and regions: the “BW management” sheet (every unit with its region, outlet ID, name and TIN) and the “Current stock” block on the “Warehouse” sheet. The control table shows right after the upload; with a minus in it the file is saved only once you confirm. Uploads never change the purchase journal.",
       equipmentDone:
         "Uploaded: {rows} equipment rows ({units} units), {stock} units in warehouses.",
-      skipped: "Rows skipped: {count} (the list is in “Equipment → New outlets”).",
+      skipped: "Rows skipped: {count} (the list is in “Equipment → Outlet check”).",
       noId: "Outlets without an ID (counted by TIN or name): {count}.",
       minus:
         "The file is not saved: the control equation has a minus ({rows} rows in the file). A minus usually means duplicate rows or dismantled equipment still in the file. Check the table and save only if you are sure.",
@@ -3330,17 +3311,6 @@ export const en: Dictionary = {
       removeFileConfirm: "Yes, delete",
       back: "← Campaigns",
       closedHint: "The campaign is closed — view only.",
-      steps: {
-        concept: "Concept",
-        kv: "Key visual",
-        composition: "Equipment and elements",
-        reserve: "Reserve",
-        list: "List",
-        prices: "Prices",
-        ordered: "EAS and order",
-        distribution: "Distribution",
-        replacement: "Replacement in shops",
-      },
       conceptTitle: "Concept",
       conceptHint:
         "The campaign's description and concept files. The concept can be worked on in a project — its tasks and phases.",

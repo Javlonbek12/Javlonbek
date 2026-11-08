@@ -418,7 +418,15 @@ export function findings(input: {
   }
 
   const planned = tags.filter((t) => t.need > 0);
-  if (planned.length > 0) {
+  const hasTags = items.some((i) => tagPrice(i.name) !== null);
+  // A campaign that orders no price tags gets one line about them, not one per price.
+  if (planned.length > 0 && !hasTags) {
+    out.push({
+      tone: "info",
+      key: "tagNone",
+      params: { need: fmt(planned.reduce((s, t) => s + t.need, 0)) },
+    });
+  } else if (planned.length > 0) {
     for (const t of planned)
       if (t.available < t.need)
         out.push({

@@ -242,6 +242,22 @@ describe("the distribution model", () => {
     expect(out.findIndex((f) => f.tone === "info")).toBeGreaterThan(
       out.findIndex((f) => f.tone === "warn"),
     );
+
+    // Without price tags in the campaign: one quiet line instead of a red line per price.
+    const noTags = [items[0]!];
+    const quiet = findings({
+      items: noTags,
+      regions,
+      tsms,
+      counts,
+      includeStock: true,
+      plans: noTags.map((i) => planItem(i, regions, tsms, facts)),
+      controls: noTags.map((i) => controlItem(i, total)),
+      tags: priceTagNeed(noTags, total, facts),
+      facts,
+    }).map((f) => f.key);
+    expect(quiet).not.toContain("tagShort");
+    expect(quiet).toContain("tagNone");
   });
 });
 
