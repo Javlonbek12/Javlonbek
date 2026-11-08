@@ -54,8 +54,10 @@ export function isDoer(
 }
 
 // Who accepts the result: the author; for one's own task, the nearest manager (stored by the route);
-// nobody for the owner's own task (handing it in closes it).
+// nobody for the owner's own task (handing it in closes it). The assignee stored as the reviewer
+// means nobody as well: the author was deactivated and nobody else is above (routing.ts).
 export function reviewerOf(task: Pick<TaskAccessInfo, "creatorId" | "assigneeId" | "reviewerId">) {
+  if (task.reviewerId && task.reviewerId === task.assigneeId) return null;
   return task.reviewerId ?? (task.creatorId !== task.assigneeId ? task.creatorId : null);
 }
 

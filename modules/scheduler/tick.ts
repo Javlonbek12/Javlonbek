@@ -9,6 +9,7 @@ import { t } from "@/lib/i18n";
 import { formatTime } from "@/lib/time";
 import { deliverDeferredNotifications, notify } from "@/modules/core/notifications/service";
 import { getSettings } from "@/modules/core/settings/service";
+import { ACTIVE_USER } from "@/modules/core/users/active";
 import { displayName } from "@/modules/core/users/display-name";
 import { tagPendingContent } from "@/modules/content/tagging";
 import { CLOSED_STATUSES, reviewerOf } from "@/modules/tasks/access";
@@ -155,9 +156,9 @@ async function decisionReminders(now: Date) {
     where: { isPersonal: false, status: { in: ["PENDING_APPROVAL", "IN_REVIEW"] } },
   });
   if (waiting.length === 0) return;
-  const owners = (await db.user.findMany({ where: { role: "OWNER" }, select: { id: true } })).map(
-    (u) => u.id,
-  );
+  const owners = (
+    await db.user.findMany({ where: { role: "OWNER", ...ACTIVE_USER }, select: { id: true } })
+  ).map((u) => u.id);
   const names = new Map(
     (await db.user.findMany({ select: { id: true, firstName: true, lastName: true } })).map((u) => [
       u.id,
@@ -240,7 +241,8 @@ export type TickDeps = { writeDigest?: DigestWriter };
 export async function runSchedulerTick(now = new Date(), deps: TickDeps = {}) {
   const writer = deps.writeDigest ?? defaultDigestWriter;
   const config = await getRoleConfig();
-  const users = await db.user.findMany();
+  // Deactivated people get no digests, reminders or summaries.
+  const users = await db.user.findMany({ where: ACTIVE_USER });
   for (const plain of users) {
     // Digests and summaries follow the role settings, like the site.
     const user = await withAccess(plain, config);

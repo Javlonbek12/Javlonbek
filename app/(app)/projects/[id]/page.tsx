@@ -18,7 +18,7 @@ import { t, type TranslationKey } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getSettings, getUserToday } from "@/modules/core/settings/service";
-import { displayName } from "@/modules/core/users/display-name";
+import { personName } from "@/modules/core/users/display-name";
 import {
   attention,
   burnUp,
@@ -68,7 +68,8 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
   const data = await getProject(user, id, settings.timezone);
   if (!data) notFound();
   const { project, phases, tasks, canManage } = data;
-  const users = canManage ? await listAssignableUsers() : [];
+  // The lead stays in the list even if deactivated, so saving the form keeps them.
+  const users = canManage ? await listAssignableUsers([project.leadId]) : [];
 
   const stats = projectStats(tasks, today);
   const range = projectRange(tasks);
@@ -375,7 +376,7 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
                   action={updateProjectAction}
                   projectId={project.id}
                   values={project}
-                  users={users.map((u) => ({ id: u.id, name: displayName(u) }))}
+                  users={users.map((u) => ({ id: u.id, name: personName(u) }))}
                   canChangeLead={user.role === "OWNER"}
                   submit={t("projects.save")}
                 />

@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { createRateLimiter } from "@/lib/rate-limit";
 import { requireUser } from "@/modules/core/auth/current-user";
+import { deactivateUser, reactivateUser, type DeactivateResult } from "@/modules/team/deactivation";
 import {
   addEmployeeNote,
   deleteEmployeeNote,
@@ -27,10 +28,15 @@ const str = (formData: FormData, key: string) => {
 };
 const idSchema = z.string().min(1).max(64);
 
-async function onCard(employeeId: string, run: () => Promise<unknown>, success: string) {
-  let query = success;
+async function onCard(
+  employeeId: string,
+  run: () => Promise<unknown>,
+  success: string | ((result: unknown) => string),
+) {
+  let query = typeof success === "string" ? success : "";
   try {
-    await run();
+    const result = await run();
+    if (typeof success === "function") query = success(result);
   } catch (error) {
     if (!(error instanceof TeamError)) throw error;
     query = `error=${error.code}`;
@@ -65,6 +71,30 @@ export async function addNoteAction(formData: FormData) {
     () => addEmployeeNote(user, employeeId, str(formData, "kind"), str(formData, "text")),
     "note=1",
   );
+}
+
+// The owner deactivates an employee, optionally handing their open tasks to someone else.
+export async function deactivateUserAction(formData: FormData) {
+  const user = await actor();
+  const employeeId = idSchema.parse(str(formData, "employeeId"));
+  await onCard(
+    employeeId,
+    () => deactivateUser(user, employeeId, { handOverTo: str(formData, "handOverTo") || null }),
+    (result) => {
+      const { moved, notMoved } = result as DeactivateResult;
+      return new URLSearchParams({
+        deactivated: "1",
+        moved: String(moved),
+        notMoved: String(notMoved),
+      }).toString();
+    },
+  );
+}
+
+export async function reactivateUserAction(formData: FormData) {
+  const user = await actor();
+  const employeeId = idSchema.parse(str(formData, "employeeId"));
+  await onCard(employeeId, () => reactivateUser(user, employeeId), "reactivated=1");
 }
 
 export async function deleteNoteAction(formData: FormData) {

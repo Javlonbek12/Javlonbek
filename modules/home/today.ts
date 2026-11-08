@@ -10,9 +10,12 @@ import { toTaskView, type TaskView } from "@/modules/tasks/service";
 // and for whoever oversees a team — how the team is doing today.
 
 // The same shape as the task lists use, so rows look the same everywhere.
+const person = {
+  select: { id: true, firstName: true, lastName: true, deactivatedAt: true },
+} as const;
 const include = {
-  assignee: { select: { id: true, firstName: true, lastName: true } },
-  creator: { select: { id: true, firstName: true, lastName: true } },
+  assignee: person,
+  creator: person,
   blockedBy: { select: { blocker: { select: { status: true } } } },
   steps: { select: { doneAt: true } },
 } satisfies Prisma.TaskInclude;
@@ -123,7 +126,10 @@ export async function getTeamToday(actor: Actor, today: string) {
   const scope = oversight(actor);
   if (scope === "none") return null;
   const people = await db.user.findMany({
-    where: scope === "all" ? { NOT: { id: actor.id } } : { id: { in: scope, not: actor.id } },
+    where: {
+      deactivatedAt: null,
+      ...(scope === "all" ? { NOT: { id: actor.id } } : { id: { in: scope, not: actor.id } }),
+    },
     select: { id: true, firstName: true, lastName: true },
   });
   if (people.length === 0) return null;

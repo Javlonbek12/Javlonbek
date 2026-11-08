@@ -13,6 +13,7 @@ import { canUseModule, withAccess } from "@/modules/core/access/actor";
 import { logActivity } from "@/modules/core/activity/service";
 import { notify } from "@/modules/core/notifications/service";
 import type { Actor } from "@/modules/core/permissions";
+import { activeOr } from "@/modules/core/users/active";
 import { displayName } from "@/modules/core/users/display-name";
 
 import { BRANDS } from "./tagging";
@@ -209,8 +210,13 @@ export async function savePlanItem(actor: Actor, id: string | null, input: PlanI
     const existing = id ? await db.contentPost.findUnique({ where: { id } }) : null;
     rest.authorId = existing ? existing.authorId : actor.id;
   }
-  if (rest.authorId && !(await db.user.findUnique({ where: { id: rest.authorId } })))
-    throw new ContentError("invalid");
+  if (rest.authorId) {
+    // An active author; a deactivated one only stays where they already are.
+    const author = await db.user.findUnique({ where: { id: rest.authorId } });
+    const kept =
+      id && (await db.contentPost.findUnique({ where: { id } }))?.authorId === rest.authorId;
+    if (!author || (author.deactivatedAt && !kept)) throw new ContentError("invalid");
+  }
   // Changed wording: topic and brand are re-checked in the background.
   const data = { ...rest, publishDate: fromDateString(publishDate), tagPending: true };
   let post;
@@ -335,9 +341,16 @@ export async function submitForReview(actor: Actor, id: string) {
 // themselves — the owner and the managers who have the section.
 async function reviewersOf(post: { createdById: string }, actor: Actor) {
   const creator = await db.user.findUnique({ where: { id: post.createdById } });
-  if (creator && creator.id !== actor.id && canPlanContent(await withAccess(creator)))
+  if (
+    creator &&
+    !creator.deactivatedAt &&
+    creator.id !== actor.id &&
+    canPlanContent(await withAccess(creator))
+  )
     return [creator.id];
-  const candidates = await db.user.findMany({ where: { role: { in: ["OWNER", "MANAGER"] } } });
+  const candidates = await db.user.findMany({
+    where: { role: { in: ["OWNER", "MANAGER"] }, deactivatedAt: null },
+  });
   const ids: string[] = [];
   for (const user of candidates)
     if (user.id !== actor.id && canPlanContent(await withAccess(user))) ids.push(user.id);
@@ -386,11 +399,12 @@ export async function returnWithFeedback(actor: Actor, id: string, feedback: str
   }
 }
 
-// Every post passes the lawyer once somebody has the role; without a lawyer the step is skipped.
+// Every post passes the lawyer once somebody (active) has the role; without one the step is skipped.
+const lawyers = { role: "LAWYER", deactivatedAt: null } as const;
 const lawyerIds = async () =>
-  (await db.user.findMany({ where: { role: "LAWYER" }, select: { id: true } })).map((u) => u.id);
+  (await db.user.findMany({ where: lawyers, select: { id: true } })).map((u) => u.id);
 
-export const hasLawyer = async () => (await db.user.count({ where: { role: "LAWYER" } })) > 0;
+export const hasLawyer = async () => (await db.user.count({ where: lawyers })) > 0;
 
 // A planner approves; the post then goes to the lawyer (or straight to approved without one).
 export async function approvePost(actor: Actor, id: string, now = new Date()) {
@@ -539,9 +553,11 @@ export async function addContentComment(actor: Actor, id: string, body: string) 
   await db.contentComment.create({ data: { postId: id, authorId: actor.id, body: text } });
 }
 
-export async function listContentAuthors() {
+// Active people; `keep`: the post's author, shown even if deactivated so the form keeps them.
+export async function listContentAuthors(keep: string | null = null) {
   return db.user.findMany({
-    select: { id: true, firstName: true, lastName: true },
+    where: activeOr([keep]),
+    select: { id: true, firstName: true, lastName: true, deactivatedAt: true },
     orderBy: { firstName: "asc" },
   });
 }

@@ -159,7 +159,13 @@ export async function importPlanXlsx(actor: Actor, data: Buffer): Promise<Import
   if (!index.has("date") || !index.has("title")) throw new ContentError("invalid");
 
   const users = await db.user.findMany({
-    select: { id: true, firstName: true, lastName: true, telegramUsername: true },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      telegramUsername: true,
+      deactivatedAt: true,
+    },
   });
   const result: ImportResult = { created: 0, updated: 0, returned: 0, errors: [] };
   for (let r = 2; r <= ws.rowCount; r++) {
@@ -201,6 +207,12 @@ export async function importPlanXlsx(actor: Actor, data: Buffer): Promise<Import
       const existing = id ? await db.contentPost.findUnique({ where: { id } }) : null;
       if (id && !existing) {
         fail("пост с таким ID не найден");
+        continue;
+      }
+      // A deactivated person stays the author only of the posts they already have.
+      const gone = users.find((u) => u.id === authorId)?.deactivatedAt;
+      if (gone && existing?.authorId !== authorId) {
+        fail(`автор «${author}» отключён`);
         continue;
       }
       const textRu = index.has("textRu") ? text("textRu") : (existing?.textRu ?? "");

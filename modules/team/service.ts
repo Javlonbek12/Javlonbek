@@ -7,6 +7,7 @@ import type { Prisma } from "@/lib/generated/prisma/client";
 import { logActivity } from "@/modules/core/activity/service";
 import type { Actor } from "@/modules/core/permissions";
 import { getSettings } from "@/modules/core/settings/service";
+import { activeOr } from "@/modules/core/users/active";
 
 import {
   canSeePrivateNotes,
@@ -17,8 +18,18 @@ import {
 } from "./access";
 import { employeeStats, type StatTask } from "./stats";
 
+export type TeamErrorCode =
+  | "forbidden"
+  | "invalid"
+  | "manager"
+  // Deactivation (deactivation.ts): oneself, the last owner, a deactivated heir, already done.
+  | "self"
+  | "lastOwner"
+  | "handOver"
+  | "state";
+
 export class TeamError extends Error {
-  constructor(public readonly code: "forbidden" | "invalid" | "manager") {
+  constructor(public readonly code: TeamErrorCode) {
     super(code);
     this.name = "TeamError";
   }
@@ -38,6 +49,7 @@ const userSelect = {
   managerId: true,
   botChatId: true,
   createdAt: true,
+  deactivatedAt: true,
 } satisfies Prisma.UserSelect;
 
 // Team tasks of the employee (personal tasks stay private), as statistic inputs.
@@ -69,21 +81,25 @@ async function statTasks(employeeIds: string[], timezone: string) {
   return byUser;
 }
 
-export const TEAM_FILTERS = ["all", "mine", "overdue"] as const;
+export const TEAM_FILTERS = ["all", "mine", "overdue", "deactivated"] as const;
+
+export const countDeactivated = () => db.user.count({ where: { deactivatedAt: { not: null } } });
 export type TeamFilter = (typeof TEAM_FILTERS)[number];
 
-// The team grid: everyone sees names and roles; statistics only where allowed.
+// The team grid: everyone sees names and roles; statistics only where allowed. Deactivated people
+// show only under their own filter («Отключённые»).
 export async function listTeamCards(viewer: Actor, filter: TeamFilter = "all", search = "") {
   const { timezone } = await getSettings(viewer.id);
   const today = todayInTimezone(timezone);
   const users = await db.user.findMany({ select: userSelect, orderBy: [{ firstName: "asc" }] });
+  const shown = users.filter((u) => (filter === "deactivated") === (u.deactivatedAt !== null));
   const tasks = await statTasks(
-    users.map((u) => u.id),
+    shown.map((u) => u.id),
     timezone,
   );
   const query = search.trim().toLowerCase();
 
-  return users
+  return shown
     .map((user) => ({
       user,
       stats: canSeeStats(viewer, user) ? employeeStats(tasks.get(user.id) ?? [], today) : null,
@@ -104,17 +120,10 @@ export async function getEmployeeCard(viewer: Actor, employeeId: string) {
   if (!user) return null;
   const { timezone } = await getSettings(viewer.id);
   const today = todayInTimezone(timezone);
+  const person = { id: true, firstName: true, lastName: true, deactivatedAt: true } as const;
   const [manager, reports, tasks] = await Promise.all([
-    user.managerId
-      ? db.user.findUnique({
-          where: { id: user.managerId },
-          select: { id: true, firstName: true, lastName: true },
-        })
-      : null,
-    db.user.findMany({
-      where: { managerId: user.id },
-      select: { id: true, firstName: true, lastName: true },
-    }),
+    user.managerId ? db.user.findUnique({ where: { id: user.managerId }, select: person }) : null,
+    db.user.findMany({ where: { managerId: user.id }, select: person }),
     statTasks([user.id], timezone),
   ]);
   const seeNotes = canSeePrivateNotes(viewer, user);
@@ -183,7 +192,7 @@ export async function updateProfile(viewer: Actor, employeeId: string, input: Pr
     const manager = values.managerId
       ? await db.user.findUnique({ where: { id: values.managerId } })
       : null;
-    if (values.managerId && !manager) throw new TeamError("manager");
+    if (values.managerId && (!manager || manager.deactivatedAt)) throw new TeamError("manager");
     const all = await db.user.findMany({ select: { id: true, managerId: true } });
     const managerOf = new Map(all.map((u) => [u.id, u.managerId]));
     if (!isValidManager(employeeId, manager, managerOf)) throw new TeamError("manager");
@@ -250,9 +259,11 @@ export async function deleteEmployeeNote(viewer: Actor, noteId: string) {
   });
 }
 
-export async function listManagerCandidates() {
+// Active owners and managers; `keep`: the current manager, shown even if deactivated so the form
+// keeps them.
+export async function listManagerCandidates(keep: string | null = null) {
   return db.user.findMany({
-    where: { role: { in: ["OWNER", "MANAGER"] } },
+    where: { role: { in: ["OWNER", "MANAGER"] }, ...activeOr([keep]) },
     select: { id: true, firstName: true, lastName: true },
     orderBy: { firstName: "asc" },
   });

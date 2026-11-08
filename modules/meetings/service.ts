@@ -11,6 +11,7 @@ import { logActivity } from "@/modules/core/activity/service";
 import { notify } from "@/modules/core/notifications/service";
 import type { Actor } from "@/modules/core/permissions";
 import { getSettings } from "@/modules/core/settings/service";
+import { activeOr } from "@/modules/core/users/active";
 import { displayName } from "@/modules/core/users/display-name";
 import { visibleTasksWhere } from "@/modules/tasks/access";
 
@@ -51,9 +52,13 @@ export const meetingInputSchema = z.object({
 
 export type MeetingInput = z.input<typeof meetingInputSchema>;
 
+const person = {
+  select: { id: true, firstName: true, lastName: true, deactivatedAt: true },
+} as const;
+
 const include = {
-  participants: { include: { user: { select: { id: true, firstName: true, lastName: true } } } },
-  createdBy: { select: { id: true, firstName: true, lastName: true } },
+  participants: { include: { user: person } },
+  createdBy: person,
 } as const;
 
 function accessInfo(meeting: { createdById: string; participants: { userId: string }[] }) {
@@ -69,8 +74,12 @@ function parse(input: MeetingInput) {
   return parsed.data;
 }
 
-async function validParticipants(ids: string[], creatorId: string) {
-  const users = await db.user.findMany({ where: { id: { in: ids } }, select: { id: true } });
+// Active people; `keep`: those already in the meeting stay even if deactivated since.
+async function validParticipants(ids: string[], creatorId: string, keep: string[] = []) {
+  const users = await db.user.findMany({
+    where: { AND: [{ id: { in: ids } }, activeOr(keep)] },
+    select: { id: true },
+  });
   return [...new Set([creatorId, ...users.map((u) => u.id)])];
 }
 
@@ -168,7 +177,11 @@ export async function updateMeeting(
   if (!meeting || !canEditMeeting(actor, accessInfo(meeting))) throw new MeetingError("forbidden");
   const data = parse(input);
   const { timezone } = await getSettings(actor.id);
-  const participantIds = await validParticipants(data.participantIds, meeting.createdById);
+  const participantIds = await validParticipants(
+    data.participantIds,
+    meeting.createdById,
+    meeting.participants.map((p) => p.userId),
+  );
 
   const targets =
     following && meeting.seriesId

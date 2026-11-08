@@ -36,7 +36,8 @@ export function formatTelegramText(event: NotificationEvent, appUrl: string): st
 // Single entry point for notifications: saves it for the UI and sends it to Telegram
 // when the user linked the bot, has Telegram enabled, didn't turn this type off
 // and is not in quiet hours. A type turned off in Settings still shows in the app: the switch is
-// for Telegram only (owner's decision, 2026-11-08). Returns null only for an unknown user.
+// for Telegram only (owner's decision, 2026-11-08). Returns null for an unknown user and for a
+// deactivated one: they get nothing, in the app or in Telegram.
 // `event` is best given as a function: it is then made in the recipient's language.
 export async function notify(
   userId: string,
@@ -45,7 +46,7 @@ export async function notify(
 ) {
   const { sendTelegram = sendTelegramMessage, now = new Date() } = deps ?? {};
   const user = await db.user.findUnique({ where: { id: userId } });
-  if (!user) return null;
+  if (!user || user.deactivatedAt) return null;
   const settings = await getSettings(userId);
   const event =
     typeof eventOrBuild === "function"
@@ -158,7 +159,7 @@ export async function deliverDeferredNotifications(
   let sent = 0;
   for (const n of pending) {
     const settings = n.user.settings;
-    if (!n.user.botChatId || !settings?.telegramEnabled) {
+    if (!n.user.botChatId || !settings?.telegramEnabled || n.user.deactivatedAt) {
       await db.notification.update({ where: { id: n.id }, data: { deliverAfterQuiet: false } });
       continue;
     }

@@ -52,7 +52,7 @@ export async function saveTaskSettings(actor: Actor, input: z.input<typeof schem
 // Who can lead a team for the «утверждать внутри команды» flags: the owner and the managers.
 export async function listTeamLeads() {
   return db.user.findMany({
-    where: { role: { in: ["OWNER", "MANAGER"] } },
+    where: { role: { in: ["OWNER", "MANAGER"] }, deactivatedAt: null },
     select: { id: true, firstName: true, lastName: true, role: true },
     orderBy: { firstName: "asc" },
   });

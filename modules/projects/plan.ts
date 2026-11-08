@@ -120,8 +120,12 @@ export async function saveProjectTask(
     return taskId;
   }
   // A new task of the plan goes along the route like any task (routing v2): the project lead
-  // hears «Вам назначена задача», or whoever decides gets it for approval.
-  const assigneeId = project.leadId ?? actor.id;
+  // hears «Вам назначена задача», or whoever decides gets it for approval. A deactivated lead gets
+  // no new work: the task is the actor's.
+  const lead = project.leadId
+    ? await db.user.findFirst({ where: { id: project.leadId, deactivatedAt: null } })
+    : null;
+  const assigneeId = lead?.id ?? actor.id;
   const task = await createTask(
     actor,
     {

@@ -131,7 +131,10 @@ type CreateCopy = (
 // estimate, labels, the same distance between start and due dates, and its steps (not done). Comments, files and links
 // stay with the original.
 export async function createDueCopies(now: Date, createCopy: CreateCopy) {
-  const series = await db.taskSeries.findMany({ where: { nextDate: { not: null } } });
+  // A deactivated creator's series wait (their series are stopped when they are deactivated).
+  const series = await db.taskSeries.findMany({
+    where: { nextDate: { not: null }, creator: { deactivatedAt: null } },
+  });
   let made = 0;
   for (const s of series) {
     try {

@@ -8,7 +8,9 @@ import { getTaskSettings } from "./settings";
 // exception: a task waits for a decision only when its author disposes of someone else's time.
 // Inside one's own team a task starts right away and the manager follows it afterwards.
 
-export type Person = { id: string; role: Role; managerId: string | null };
+// `deactivated`: switched off by the owner. Such a person never decides or accepts: the route goes
+// past them to the next manager up (or the owner), and their people stay under that manager.
+export type Person = { id: string; role: Role; managerId: string | null; deactivated?: boolean };
 
 export type RouteSettings = {
   // The managers' zone (Settings → Roles): with «Только свои» they decide nothing.
@@ -31,7 +33,11 @@ export type Route = {
   teamNoticeId: string | null;
 };
 
-const isBoss = (p: Person | undefined) => p?.role === "OWNER" || p?.role === "MANAGER";
+const isBoss = (p: Person | undefined) =>
+  !p?.deactivated && (p?.role === "OWNER" || p?.role === "MANAGER");
+
+const activeOwners = (people: Person[]) =>
+  people.filter((p) => p.role === "OWNER" && !p.deactivated).map((p) => p.id);
 
 // The first manager or owner above the person; without one, the owner.
 export function nearestManager(people: Person[], id: string): string | null {
@@ -41,7 +47,7 @@ export function nearestManager(people: Person[], id: string): string | null {
     seen.add(up);
     if (isBoss(byId.get(up))) return up;
   }
-  return people.find((p) => p.role === "OWNER" && p.id !== id)?.id ?? null;
+  return activeOwners(people).find((owner) => owner !== id) ?? null;
 }
 
 // `who` stands below `of` in the reporting lines (any depth). Everyone is below the owner.
@@ -67,10 +73,19 @@ export function sameTeam(people: Person[], a: string, b: string): boolean {
 // Who decides for the people of this manager: the manager, unless their zone is «Только свои»
 // (then the owner).
 function decidersFor(people: Person[], settings: RouteSettings, managerId: string | null) {
-  const manager = people.find((p) => p.id === managerId);
+  const manager = people.find((p) => p.id === managerId && !p.deactivated);
   if (manager?.role === "OWNER" || (manager?.role === "MANAGER" && settings.managerScope !== "own"))
     return [manager.id];
-  return people.filter((p) => p.role === "OWNER").map((p) => p.id);
+  return activeOwners(people);
+}
+
+// Who accepts the result instead of a deactivated author: the next manager up from them (or the
+// owner); if that is the assignee, the assignee's nearest manager. With nobody left, the assignee
+// is stored, which means nobody: handing in closes it (see reviewerOf in access.ts).
+function standInReviewer(people: Person[], authorId: string, assigneeId: string): string {
+  const up = nearestManager(people, authorId);
+  if (up && up !== assigneeId) return up;
+  return nearestManager(people, assigneeId) ?? assigneeId;
 }
 
 export function resolveRoute(
@@ -85,7 +100,13 @@ export function resolveRoute(
   const assignee = byId.get(assigneeId);
   const ownerAuthor = author?.role === "OWNER";
   const reviewerId =
-    authorId !== assigneeId ? authorId : ownerAuthor ? null : nearestManager(people, assigneeId);
+    authorId === assigneeId
+      ? ownerAuthor
+        ? null
+        : nearestManager(people, assigneeId)
+      : author?.deactivated
+        ? standInReviewer(people, authorId, assigneeId)
+        : authorId;
   const assigneeManager = nearestManager(people, assigneeId);
   const sees = (id: string | null) => id !== null && decidersFor(people, settings, id).includes(id);
   const pending = (kind: RouteKind, deciderIds: string[]): Route => ({
@@ -128,11 +149,13 @@ export function resolveRoute(
 }
 
 export async function loadRouting(): Promise<{ people: Person[]; settings: RouteSettings }> {
-  const [people, roles, task] = await Promise.all([
-    db.user.findMany({ select: { id: true, role: true, managerId: true } }),
+  const [users, roles, task] = await Promise.all([
+    db.user.findMany({ select: { id: true, role: true, managerId: true, deactivatedAt: true } }),
     getRoleConfig(),
     getTaskSettings(),
   ]);
+  // Deactivated people stay in the list: the reporting lines run through them.
+  const people = users.map(({ deactivatedAt, ...p }) => ({ ...p, deactivated: !!deactivatedAt }));
   return {
     people,
     settings: { managerScope: roles.MANAGER.taskScope, teamApproval: task.teamApproval },

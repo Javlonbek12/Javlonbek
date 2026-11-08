@@ -10,17 +10,23 @@ import { requireSessionSecret } from "@/lib/env";
 
 import { readSessionToken, SESSION_COOKIE } from "./session";
 
-// Cached per request, so layout and page share one DB query.
-export const getCurrentUser = cache(async () => {
+// The person the session cookie names, deactivated or not. Cached per request, so layout and page
+// share one DB query.
+const sessionUser = cache(async () => {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return null;
   const userId = readSessionToken(token, requireSessionSecret());
   if (!userId) return null;
-  const user = await db.user.findUnique({
+  return db.user.findUnique({
     where: { id: userId },
     include: { settings: { select: { locale: true } } },
   });
-  if (!user) return null;
+});
+
+export const getCurrentUser = cache(async () => {
+  const user = await sessionUser();
+  // A deactivated person's session stops working at once.
+  if (!user || user.deactivatedAt) return null;
   // The page is drawn in the user's language.
   const { settings, ...rest } = user;
   const locale = isLocale(settings?.locale) ? settings.locale : "ru";
@@ -31,7 +37,8 @@ export const getCurrentUser = cache(async () => {
 
 export async function requireUser() {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  // Sign-in is outside the proxy, so a deactivated session lands there once and stays (no loop).
+  if (!user) redirect((await sessionUser()) ? "/login?error=deactivated" : "/login");
   return user;
 }
 

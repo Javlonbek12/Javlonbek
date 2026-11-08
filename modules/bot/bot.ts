@@ -35,7 +35,23 @@ async function currentUser(ctx: Context): Promise<User | null> {
   if (!ctx.from) return null;
   const user = await db.user.findUnique({ where: { telegramId: BigInt(ctx.from.id) } });
   // The bot shows the same tasks as the site: role settings attached.
-  return user ? withAccess(user) : null;
+  return user && !user.deactivatedAt ? withAccess(user) : null;
+}
+
+// A deactivated person hears once (per deactivation) that their access is off; after that the
+// bot stays silent and does nothing for them.
+async function deactivatedNotice(ctx: Context) {
+  const user = await db.user.findFirst({
+    where: { telegramId: BigInt(ctx.from!.id), deactivatedAt: { not: null } },
+  });
+  if (!user) return false;
+  if (ctx.callbackQuery) await ctx.answerCallbackQuery();
+  const { count } = await db.scheduledSend.createMany({
+    data: [{ userId: user.id, kind: "access_off", key: user.deactivatedAt!.toISOString() }],
+    skipDuplicates: true,
+  });
+  if (count) await ctx.reply(t("team.deactivation.botOff"));
+  return true;
 }
 
 async function send(ctx: Context, reply: BotReply) {
@@ -97,6 +113,10 @@ export function createBot(
       return;
     }
     await next();
+  });
+
+  bot.use(async (ctx, next) => {
+    if (!(await deactivatedNotice(ctx))) await next();
   });
 
   bot.command("start", async (ctx) => {
