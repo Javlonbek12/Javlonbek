@@ -204,7 +204,9 @@ async function proposeFromMinutes(formData: FormData): Promise<ProposalState> {
   const user = await actor();
   const id = idSchema.parse(str(formData, "meetingId"));
   const hints = await routeHints(user.id);
-  const people = (await db.user.findMany({ orderBy: { firstName: "asc" } }))
+  const people = (
+    await db.user.findMany({ where: { deactivatedAt: null }, orderBy: { firstName: "asc" } })
+  )
     .filter((u) => u.id !== user.id)
     .map((u) => ({ id: u.id, name: displayName(u), route: hints[u.id]?.plain.short ?? "" }));
   const self = hints[user.id]?.plain.short ?? "";

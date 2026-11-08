@@ -12,12 +12,18 @@ import { canUseModule } from "@/modules/core/access/actor";
 import { invitableRoles } from "@/modules/core/permissions";
 import { getSettings } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
-import { listTeamCards, TEAM_FILTERS, type TeamFilter } from "@/modules/team/service";
+import {
+  countDeactivated,
+  listTeamCards,
+  TEAM_FILTERS,
+  type TeamFilter,
+} from "@/modules/team/service";
 
 const FILTER_LABELS = {
   all: "team.filterAll",
   mine: "team.filterMine",
   overdue: "team.filterOverdue",
+  deactivated: "team.filterDeactivated",
 } as const;
 
 export default async function TeamPage({ searchParams }: PageProps<"/team">) {
@@ -25,10 +31,15 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
   const params = await searchParams;
   const filter = TEAM_FILTERS.find((f) => f === params.filter) ?? "all";
   const search = typeof params.q === "string" ? params.q.slice(0, 100) : "";
-  const [cards, settings] = await Promise.all([
+  const [cards, settings, deactivated] = await Promise.all([
     listTeamCards(user, filter as TeamFilter, search),
     getSettings(user.id),
+    countDeactivated(),
   ]);
+  // «Отключённые» appears once somebody is deactivated.
+  const filters = TEAM_FILTERS.filter(
+    (f) => f !== "deactivated" || deactivated > 0 || f === filter,
+  );
   const canInvite = invitableRoles(user.role).length > 0;
   const filterHref = (f: string) =>
     `/team?${new URLSearchParams({ filter: f, ...(search ? { q: search } : {}) })}`;
@@ -67,7 +78,7 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
           </Button>
         </form>
         <div className="flex flex-wrap gap-1 text-sm">
-          {TEAM_FILTERS.map((f) => (
+          {filters.map((f) => (
             <Link
               key={f}
               href={filterHref(f)}
@@ -94,6 +105,9 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
                 </Badge>
                 {member.id === user.id && (
                   <span className="text-muted-foreground text-xs">({t("common.you")})</span>
+                )}
+                {member.deactivatedAt && (
+                  <Badge variant="outline">{t("team.deactivation.badge")}</Badge>
                 )}
               </span>
               <span className="text-muted-foreground text-xs">

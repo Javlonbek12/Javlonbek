@@ -11,7 +11,7 @@ import { createMeetingAction } from "../actions";
 export default async function NewMeetingPage() {
   const user = await requireUser();
   const [people, today] = await Promise.all([
-    db.user.findMany({ orderBy: { firstName: "asc" } }),
+    db.user.findMany({ where: { deactivatedAt: null }, orderBy: { firstName: "asc" } }),
     getUserToday(user.id),
   ]);
 

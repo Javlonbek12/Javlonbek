@@ -5,6 +5,7 @@ import { LoadChart } from "@/components/team/load-chart";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
+import { ConfirmAction } from "@/components/ui/confirm-action";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -18,14 +19,22 @@ import { canUseModule } from "@/modules/core/access/actor";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { canChangeRole, canSendTestNotification } from "@/modules/core/permissions";
 import { getSettings } from "@/modules/core/settings/service";
-import { displayName } from "@/modules/core/users/display-name";
+import { displayName, personName } from "@/modules/core/users/display-name";
 import { orgPathOf } from "@/modules/org/service";
+import { listAssignableUsers } from "@/modules/tasks/service";
+import { canDeactivate } from "@/modules/team/deactivation";
 import { teamProfiles } from "@/modules/team/profile";
 import { getEmployeeCard, listManagerCandidates } from "@/modules/team/service";
 import { ProfileRadar } from "@/components/team/profile-radar";
 
 import { changeRoleAction, sendTestNotificationAction } from "../../actions";
-import { addNoteAction, deleteNoteAction, updateProfileAction } from "../actions";
+import {
+  addNoteAction,
+  deactivateUserAction,
+  deleteNoteAction,
+  reactivateUserAction,
+  updateProfileAction,
+} from "../actions";
 
 function Stat({ label, value, alert }: { label: string; value: string; alert?: boolean }) {
   return (
@@ -56,10 +65,14 @@ export default async function EmployeePage({ params, searchParams }: PageProps<"
       )}
     </span>
   );
-  const [{ timezone }, managers, orgPath] = await Promise.all([
+  const deactivatable = canDeactivate(viewer, user);
+  const off = user.deactivatedAt !== null;
+  const [{ timezone }, managers, orgPath, heirs] = await Promise.all([
     getSettings(viewer.id),
-    listManagerCandidates(),
+    // The current manager stays in the list even if deactivated, so saving keeps them.
+    listManagerCandidates(user.managerId),
     orgPathOf(user.id),
+    deactivatable && !off ? listAssignableUsers() : Promise.resolve([]),
   ]);
   // The radar is shown to the same people who may see the statistics.
   const profiles = stats ? await teamProfiles(timezone) : null;
@@ -82,13 +95,30 @@ export default async function EmployeePage({ params, searchParams }: PageProps<"
           {t("team.testSent")}
         </p>
       )}
+      {query.deactivated && (
+        <p role="status" className="bg-secondary rounded-md p-3 text-sm">
+          {t("team.deactivation.done", { moved: Number(query.moved) || 0 })}
+          {Number(query.notMoved) > 0 &&
+            ` ${t("team.deactivation.notMoved", { count: Number(query.notMoved) })}`}
+        </p>
+      )}
+      {query.reactivated && (
+        <p role="status" className="bg-secondary rounded-md p-3 text-sm">
+          {t("team.deactivation.reactivated")}
+        </p>
+      )}
       {typeof query.error === "string" && (
         <p role="alert" className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
           {query.error === "manager"
             ? t("team.profile.errorManager")
             : query.error === "invalid"
               ? t("team.profile.errorInvalid")
-              : t("errors.forbidden")}
+              : query.error === "self" ||
+                  query.error === "lastOwner" ||
+                  query.error === "handOver" ||
+                  query.error === "state"
+                ? t(`team.deactivation.errors.${query.error}`)
+                : t("errors.forbidden")}
         </p>
       )}
 
@@ -97,7 +127,13 @@ export default async function EmployeePage({ params, searchParams }: PageProps<"
         <Badge variant={user.role === "OWNER" ? "default" : "secondary"}>
           {t(`roles.${user.role}`)}
         </Badge>
+        {off && <Badge variant="outline">{t("team.deactivation.badge")}</Badge>}
       </div>
+      {user.deactivatedAt && (
+        <p className="bg-muted rounded-md p-3 text-sm">
+          {t("team.deactivation.off", { date: formatDay(toDateString(user.deactivatedAt)) })}
+        </p>
+      )}
       <p className="text-muted-foreground -mt-2 text-sm">
         {user.position ?? t("team.noPosition")}
         {user.telegramUsername && ` · @${user.telegramUsername}`}
@@ -249,7 +285,7 @@ export default async function EmployeePage({ params, searchParams }: PageProps<"
                     .filter((m) => m.id !== user.id)
                     .map((m) => (
                       <option key={m.id} value={m.id}>
-                        {displayName(m)}
+                        {personName(m)}
                       </option>
                     ))}
                 </NativeSelect>
@@ -257,7 +293,7 @@ export default async function EmployeePage({ params, searchParams }: PageProps<"
                 <span className="flex flex-col py-2 font-normal">
                   {manager ? (
                     <Link className="underline" href={`/team/${manager.id}`}>
-                      {displayName(manager)}
+                      {personName(manager)}
                     </Link>
                   ) : (
                     t("team.profile.noManager")
@@ -274,7 +310,7 @@ export default async function EmployeePage({ params, searchParams }: PageProps<"
                 <span key={r.id}>
                   {i > 0 && ", "}
                   <Link className="underline" href={`/team/${r.id}`}>
-                    {displayName(r)}
+                    {personName(r)}
                   </Link>
                 </span>
               ))}
@@ -345,7 +381,7 @@ export default async function EmployeePage({ params, searchParams }: PageProps<"
         </Card>
       )}
 
-      {(assignable.length > 0 || canSendTestNotification(viewer, user.id)) && (
+      {(assignable.length > 0 || canSendTestNotification(viewer, user.id) || deactivatable) && (
         <Card className="gap-3">
           <CardTitle>{t("team.manage")}</CardTitle>
           <p className="text-muted-foreground text-xs">
@@ -372,7 +408,7 @@ export default async function EmployeePage({ params, searchParams }: PageProps<"
                 </Button>
               </form>
             )}
-            {canSendTestNotification(viewer, user.id) && (
+            {canSendTestNotification(viewer, user.id) && !off && (
               <form action={sendTestNotificationAction}>
                 <input type="hidden" name="userId" value={user.id} />
                 <input type="hidden" name="back" value={`/team/${user.id}`} />
@@ -380,6 +416,44 @@ export default async function EmployeePage({ params, searchParams }: PageProps<"
                   {t("team.sendTest")}
                 </Button>
               </form>
+            )}
+            {deactivatable && !off && (
+              <ConfirmAction
+                label={t("team.deactivation.deactivate")}
+                title={t("team.deactivation.confirmTitle")}
+                hint={t("team.deactivation.hint")}
+                confirm={t("team.deactivation.confirm")}
+                action={deactivateUserAction}
+                hidden={{ employeeId: user.id }}
+              >
+                <Label className="flex-col items-start text-xs">
+                  {t("team.deactivation.handOver")}
+                  <NativeSelect name="handOverTo" defaultValue="" className="w-full">
+                    <option value="">{t("team.deactivation.handOverNone")}</option>
+                    {heirs
+                      .filter((h) => h.id !== user.id)
+                      .map((h) => (
+                        <option key={h.id} value={h.id}>
+                          {displayName(h)}
+                        </option>
+                      ))}
+                  </NativeSelect>
+                </Label>
+                <span className="text-muted-foreground text-xs">
+                  {t("team.deactivation.handOverHint")}
+                </span>
+              </ConfirmAction>
+            )}
+            {deactivatable && off && (
+              <ConfirmAction
+                label={t("team.deactivation.reactivate")}
+                title={t("team.deactivation.reactivateTitle")}
+                hint={t("team.deactivation.reactivateHint")}
+                confirm={t("team.deactivation.reactivateConfirm")}
+                action={reactivateUserAction}
+                hidden={{ employeeId: user.id }}
+                tone="default"
+              />
             )}
           </div>
         </Card>

@@ -9,7 +9,7 @@ import { toDateString, todayInTimezone } from "@/lib/dates";
 import { t, type TranslationKey } from "@/lib/i18n";
 import { requireModule } from "@/modules/core/access/guard";
 import { getSettings } from "@/modules/core/settings/service";
-import { displayName } from "@/modules/core/users/display-name";
+import { personName } from "@/modules/core/users/display-name";
 import { getEnv } from "@/lib/env";
 import { activePlaceInvites, INVITE_TTL_DAYS } from "@/modules/core/invites/service";
 import { canEditOrg, getOrgTree, type OrgTreeNode } from "@/modules/org/service";
@@ -48,7 +48,11 @@ export default async function StructurePage({ searchParams }: PageProps<"/team/s
   const view = viewParam === "list" ? "list" : "chart";
   const [tree, users, { timezone }] = await Promise.all([
     getOrgTree(),
-    db.user.findMany({ orderBy: { firstName: "asc" } }),
+    // Active people; a deactivated one only where they already have a place (shown as such).
+    db.user.findMany({
+      where: { OR: [{ deactivatedAt: null }, { orgNode: { isNot: null } }] },
+      orderBy: { firstName: "asc" },
+    }),
     getSettings(user.id),
   ]);
   const editable = canEditOrg(user);
@@ -70,7 +74,7 @@ export default async function StructurePage({ searchParams }: PageProps<"/team/s
     ]),
   );
   const options = {
-    people: users.map((u) => ({ id: u.id, name: displayName(u) })),
+    people: users.map((u) => ({ id: u.id, name: personName(u) })),
     nodes: flatten(tree),
     invites,
     inviteDays: INVITE_TTL_DAYS,

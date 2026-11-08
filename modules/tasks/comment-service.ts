@@ -5,6 +5,7 @@ import { t } from "@/lib/i18n";
 import { logActivity } from "@/modules/core/activity/service";
 import { notify } from "@/modules/core/notifications/service";
 import type { Actor } from "@/modules/core/permissions";
+import { ACTIVE_USER } from "@/modules/core/users/active";
 import { displayName } from "@/modules/core/users/display-name";
 
 import { withAccess } from "@/modules/core/access/actor";
@@ -36,7 +37,8 @@ export async function addComment(actor: Actor, taskId: string, body: string) {
   // while the task waits, and anyone @mentioned (routing v2) — if they can see the task and didn't
   // write it.
   const author = await db.user.findUniqueOrThrow({ where: { id: actor.id } });
-  const people = await db.user.findMany();
+  // Deactivated people are not mentioned and hear nothing.
+  const people = await db.user.findMany({ where: ACTIVE_USER });
   const mentioned = new Set(mentionedUserIds(text.data, people));
   const involved = new Set([
     task.creatorId,

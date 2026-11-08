@@ -7,12 +7,9 @@ import { requireUser } from "@/modules/core/auth/current-user";
 import { getUserToday } from "@/modules/core/settings/service";
 import { getTaskFormOptions } from "@/modules/tasks/form-options";
 import { routeHints } from "@/modules/tasks/route-hints";
-import { getTaskDetail } from "@/modules/tasks/service";
+import { canChangeAssignee, getTaskDetail } from "@/modules/tasks/service";
 
 import { updateTaskAction } from "../../actions";
-
-// Statuses in which the assignee may still change (the route is worked out again).
-const ASSIGNEE_OPEN = ["DRAFT", "PENDING_APPROVAL", "APPROVED"];
 
 export default async function EditTaskPage({ params }: PageProps<"/tasks/[id]/edit">) {
   const user = await requireUser();
@@ -22,9 +19,12 @@ export default async function EditTaskPage({ params }: PageProps<"/tasks/[id]/ed
   const { task } = detail;
   // A stopped or finished series shows as "don't repeat".
   const series = task.series?.nextDate ? task.series : null;
-  const assigneeLocked = !task.isPersonal && !ASSIGNEE_OPEN.includes(task.status);
+  // The assignee may still change before work starts (the route is worked out again), or while
+  // open once they were deactivated.
+  const assigneeLocked = !task.isPersonal && !canChangeAssignee(task);
   const [options, routes, today] = await Promise.all([
-    getTaskFormOptions(user),
+    // The current assignee stays in the list even if deactivated, so saving keeps them.
+    getTaskFormOptions(user, [task.assigneeId]),
     // What a new assignee would mean, from the task's author — as in the task panel.
     task.isPersonal || assigneeLocked ? Promise.resolve(undefined) : routeHints(task.creatorId),
     getUserToday(user.id),

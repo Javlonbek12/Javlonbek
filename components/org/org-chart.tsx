@@ -44,7 +44,9 @@ function NodeCard({
       </div>
     );
   }
-  const vacant = !node.user && !node.personName;
+  // A deactivated person's place looks vacant, with their name and «отключён».
+  const off = node.user?.deactivated === true;
+  const vacant = (!node.user && !node.personName) || off;
   const name = node.user?.name ?? node.personName ?? t("team.org.vacancy");
   const stats = node.user ? load?.get(node.user.id) : undefined;
   const body = (
@@ -63,7 +65,7 @@ function NodeCard({
         )}
         aria-hidden
       >
-        {vacant ? "?" : initials(name)}
+        {vacant && !off ? "?" : initials(name)}
       </span>
       <span
         className={cn(
@@ -76,6 +78,9 @@ function NodeCard({
       <span className="text-muted-foreground text-xs leading-tight">{node.title}</span>
       {node.personName && !node.user && (
         <span className="text-muted-foreground text-[10px]">({t("team.org.notInApp")})</span>
+      )}
+      {off && (
+        <span className="text-muted-foreground text-[10px]">({t("team.deactivation.mark")})</span>
       )}
       {invited?.has(node.id) && (
         <span className="rounded-full border px-2 py-0.5 text-[10px]">

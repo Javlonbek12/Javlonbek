@@ -19,7 +19,8 @@ export async function getUserFromRequest(request: Request) {
   const userId = readSessionToken(decodeURIComponent(token), requireSessionSecret());
   if (!userId) return null;
   const found = await db.user.findUnique({ where: { id: userId }, include: { settings: true } });
-  if (!found) return null;
+  // A deactivated person's session no longer works.
+  if (!found || found.deactivatedAt) return null;
   const { settings, ...user } = found;
   const locale: Locale = isLocale(settings?.locale) ? settings.locale : "ru";
   return { ...(await withAccess(user)), locale };

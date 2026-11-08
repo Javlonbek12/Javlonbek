@@ -6,7 +6,8 @@ import type { Prisma, Task, TaskStatus } from "@/lib/generated/prisma/client";
 import { TaskPriority } from "@/lib/generated/prisma/enums";
 import { logActivity } from "@/modules/core/activity/service";
 import type { Actor } from "@/modules/core/permissions";
-import { displayName } from "@/modules/core/users/display-name";
+import { activeOr, ACTIVE_USER } from "@/modules/core/users/active";
+import { displayName, personName } from "@/modules/core/users/display-name";
 
 import {
   canEditTask,
@@ -142,7 +143,7 @@ export async function createTask(
   if (!data.isPersonal) {
     if (!data.assigneeId) throw new TaskError("invalid");
     const assignee = await db.user.findUnique({ where: { id: data.assigneeId } });
-    if (!assignee) throw new TaskError("invalid");
+    if (!assignee || assignee.deactivatedAt) throw new TaskError("invalid");
     assigneeId = assignee.id;
   }
   await assertPlanAllowed(actor, data.planId, data.isPersonal);
@@ -231,11 +232,12 @@ export async function updateTask(
 
   let assigneeId = task.assigneeId;
   if (!task.isPersonal && data.assigneeId && data.assigneeId !== task.assigneeId) {
-    // Only before work starts: the route is worked out again for the new assignee.
-    if (!["DRAFT", "PENDING_APPROVAL", "APPROVED"].includes(task.status))
+    // Only before work starts (the route is worked out again for the new assignee) — or at any
+    // time while open when the assignee was deactivated: their work goes to someone else.
+    if (!assigneeOpen(task.status) && !(await isDeactivated(task.assigneeId)))
       throw new TaskError("assigneeLocked");
     const assignee = await db.user.findUnique({ where: { id: data.assigneeId } });
-    if (!assignee) throw new TaskError("invalid");
+    if (!assignee || assignee.deactivatedAt) throw new TaskError("invalid");
     assigneeId = assignee.id;
   }
 
@@ -330,7 +332,7 @@ export async function makeTeamTask(
   if (!task || !task.isPersonal || task.creatorId !== actor.id || isClosed(task.status))
     throw new TaskError("forbidden");
   const assignee = await db.user.findUnique({ where: { id: input.assigneeId } });
-  if (!assignee) throw new TaskError("invalid");
+  if (!assignee || assignee.deactivatedAt) throw new TaskError("invalid");
   const needsApproval = input.needsApproval ?? false;
   const route = await routeFor(actor.id, assignee.id, needsApproval);
   const goesOn =
@@ -378,6 +380,25 @@ async function routeFor(authorId: string, assigneeId: string, needsApproval: boo
 
 async function actorName(userId: string) {
   return displayName(await db.user.findUniqueOrThrow({ where: { id: userId } }));
+}
+
+// Statuses in which the assignee can be changed: before work starts.
+const ASSIGNEE_OPEN: TaskStatus[] = ["DRAFT", "PENDING_APPROVAL", "APPROVED"];
+const assigneeOpen = (status: TaskStatus) => ASSIGNEE_OPEN.includes(status);
+
+async function isDeactivated(userId: string) {
+  const user = await db.user.findUnique({ where: { id: userId }, select: { deactivatedAt: true } });
+  return Boolean(user?.deactivatedAt);
+}
+
+// The assignee can be changed now: before work starts, or while open if they were deactivated.
+export function canChangeAssignee(task: {
+  isPersonal: boolean;
+  status: TaskStatus;
+  assignee: { deactivatedAt: Date | null };
+}) {
+  if (task.isPersonal || isClosed(task.status)) return false;
+  return assigneeOpen(task.status) || task.assignee.deactivatedAt !== null;
 }
 
 export async function countOpenBlockers(taskId: string) {
@@ -557,9 +578,13 @@ export async function undoQuickClose(actor: Actor, taskId: string, now = new Dat
   return reopenTask(actor, taskId, now);
 }
 
+const person = {
+  select: { id: true, firstName: true, lastName: true, deactivatedAt: true },
+} as const;
+
 const listInclude = {
-  assignee: { select: { id: true, firstName: true, lastName: true } },
-  creator: { select: { id: true, firstName: true, lastName: true } },
+  assignee: person,
+  creator: person,
   blockedBy: { select: { blocker: { select: { status: true } } } },
   steps: { select: { doneAt: true } },
 } satisfies Prisma.TaskInclude;
@@ -765,14 +790,11 @@ export async function getTaskDetail(actor: Actor, taskId: string) {
     (id): id is string => id !== null,
   );
   const people = ids.length
-    ? await db.user.findMany({
-        where: { id: { in: ids } },
-        select: { id: true, firstName: true, lastName: true },
-      })
+    ? await db.user.findMany({ where: { id: { in: ids } }, ...person })
     : [];
   const name = (id: string | null) => {
-    const person = id ? people.find((p) => p.id === id) : null;
-    return person ? displayName(person) : null;
+    const found = id ? people.find((p) => p.id === id) : null;
+    return found ? personName(found) : null;
   };
   return {
     task: {
@@ -949,7 +971,11 @@ export async function listTaskPeople(actor: Actor) {
     scope === "none"
       ? []
       : db.user.findMany({
-          where: scope === "all" ? {} : { id: { in: [actor.id, ...scope] } },
+          // Deactivated people stay in the filter only through the tasks they have.
+          where: {
+            ...ACTIVE_USER,
+            ...(scope === "all" ? {} : { id: { in: [actor.id, ...scope] } }),
+          },
           select,
         }),
     db.task.findMany({
@@ -962,9 +988,11 @@ export async function listTaskPeople(actor: Actor) {
   return [...people.values()].sort((a, b) => displayName(a).localeCompare(displayName(b)));
 }
 
-export async function listAssignableUsers() {
+// People new work can go to: active ones (plus `keep`, someone already chosen in the form).
+export async function listAssignableUsers(keep: (string | null)[] = []) {
   return db.user.findMany({
-    select: { id: true, firstName: true, lastName: true },
+    where: activeOr(keep),
+    select: { id: true, firstName: true, lastName: true, deactivatedAt: true },
     orderBy: { firstName: "asc" },
   });
 }
@@ -973,13 +1001,27 @@ export async function listAssignableUsers() {
 export async function createRepeatCopies(now = new Date()) {
   return createDueCopies(now, async (creatorId, copy, seriesId, previousOpenId) => {
     const creator = await withAccess(await db.user.findUniqueOrThrow({ where: { id: creatorId } }));
+    // A deactivated assignee: the copy goes to whoever set up the repeat (they can pass it on);
+    // deactivated co-assignees are left out.
+    const gone = new Set(
+      (
+        await db.user.findMany({
+          where: {
+            id: { in: [copy.assigneeId, ...copy.coAssigneeIds] },
+            deactivatedAt: { not: null },
+          },
+          select: { id: true },
+        })
+      ).map((u) => u.id),
+    );
+    const assigneeId = gone.has(copy.assigneeId) ? creatorId : copy.assigneeId;
     const task = await createTask(
       creator,
       {
         title: copy.title,
         description: copy.description,
         isPersonal: copy.isPersonal,
-        assigneeId: copy.isPersonal ? null : copy.assigneeId,
+        assigneeId: copy.isPersonal ? null : assigneeId,
         startDate: copy.startDate,
         dueDate: copy.dueDate,
         priority: copy.priority as TaskInput["priority"],
@@ -996,7 +1038,7 @@ export async function createRepeatCopies(now = new Date()) {
             ...copy.labels.filter((label) => label !== PREVIOUS_OPEN_LABEL),
             ...(previousOpenId ? [PREVIOUS_OPEN_LABEL] : []),
           ],
-          coAssigneeIds: copy.coAssigneeIds.filter((id) => id !== copy.assigneeId),
+          coAssigneeIds: copy.coAssigneeIds.filter((id) => id !== assigneeId && !gone.has(id)),
         },
       },
     );

@@ -3,7 +3,7 @@ import { t } from "@/lib/i18n";
 import type { Task } from "@/lib/generated/prisma/client";
 import { logActivity } from "@/modules/core/activity/service";
 import type { Actor } from "@/modules/core/permissions";
-import { displayName } from "@/modules/core/users/display-name";
+import { displayName, personName } from "@/modules/core/users/display-name";
 
 import {
   canEditTask,
@@ -72,7 +72,7 @@ export async function addCoAssignee(
   const task = await db.task.findUnique({ where: { id: taskId } });
   if (!task || !canManageCoAssignees(actor, task)) throw new TaskError("forbidden");
   const user = await db.user.findUnique({ where: { id: userId } });
-  if (!user) throw new TaskError("invalid");
+  if (!user || user.deactivatedAt) throw new TaskError("invalid");
   if (isDoer(user, task)) throw new TaskError("coAssigneeExists");
   if (reviewerOf(task) === user.id) throw new TaskError("coAssigneeReviewer");
   if (task.coAssigneeIds.length >= MAX_CO_ASSIGNEES) throw new TaskError("tooManyCoAssignees");
@@ -163,8 +163,8 @@ export async function decideCoAssignee(actor: Actor, requestId: string, approve:
   if (!request || !canDecideCoAssignee(actor, request)) throw new TaskError("forbidden");
   const { task, user } = request;
   await db.taskCoAssigneeRequest.delete({ where: { id: requestId } });
-  // A task closed meanwhile: the request is simply gone.
-  if (isClosed(task.status)) return;
+  // A task closed meanwhile, or the person deactivated: the request is simply gone.
+  if (isClosed(task.status) || user.deactivatedAt) return;
   const full = approve && !isDoer(user, task) && task.coAssigneeIds.length >= MAX_CO_ASSIGNEES;
   if (full) throw new TaskError("tooManyCoAssignees");
   if (approve && reviewerOf(task) === user.id) throw new TaskError("coAssigneeReviewer");
@@ -208,7 +208,9 @@ export async function withdrawCoAssigneeRequest(actor: Actor, requestId: string)
   });
 }
 
-const person = { select: { id: true, firstName: true, lastName: true } } as const;
+const person = {
+  select: { id: true, firstName: true, lastName: true, deactivatedAt: true },
+} as const;
 
 // The co-assignees of a task and its requests waiting for a decision, by name, for the card.
 export async function getCoAssignees(task: Pick<Task, "id" | "coAssigneeIds">) {
@@ -228,17 +230,17 @@ export async function getCoAssignees(task: Pick<Task, "id" | "coAssigneeIds">) {
     : [];
   const name = (id: string) => {
     const found = deciders.find((d) => d.id === id);
-    return found ? displayName(found) : null;
+    return found ? personName(found) : null;
   };
   return {
     people: task.coAssigneeIds
       .map((id) => people.find((p) => p.id === id))
       .filter((p) => p !== undefined)
-      .map((p) => ({ id: p.id, name: displayName(p) })),
+      .map((p) => ({ id: p.id, name: personName(p) })),
     requests: requests.map((r) => ({
       id: r.id,
       userId: r.userId,
-      name: displayName(r.user),
+      name: personName(r.user),
       requestedById: r.requestedById,
       requestedBy: displayName(r.requestedBy),
       deciderIds: r.deciderIds,

@@ -19,7 +19,7 @@ import { formatDateTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getSettings } from "@/modules/core/settings/service";
-import { displayName } from "@/modules/core/users/display-name";
+import { displayName, personName } from "@/modules/core/users/display-name";
 import { MAX_FILE_MB, MAX_FILES_PER_LANG } from "@/modules/content/files";
 import {
   changeSendsBackToReview,
@@ -60,7 +60,7 @@ export default async function ContentPostPage({
   if (!found) notFound();
   const { post, rights } = found;
   const { timezone } = await getSettings(user.id);
-  const users = rights.editPlan && rights.planner ? await listContentAuthors() : [];
+  const users = rights.editPlan && rights.planner ? await listContentAuthors(post.authorId) : [];
   const sections = await listSections();
   const meta = sectionMeta(sections);
   const language = lang === "uz" ? "uz" : "ru";
@@ -550,7 +550,7 @@ export default async function ContentPostPage({
                 publishTime: post.publishTime,
                 authorId: post.authorId,
               }}
-              users={users.map((u) => ({ id: u.id, name: displayName(u) }))}
+              users={users.map((u) => ({ id: u.id, name: personName(u) }))}
               submit={t("content.actions.save")}
               showAuthor={rights.planner}
             />

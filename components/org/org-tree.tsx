@@ -185,8 +185,18 @@ function NodeBody({ node }: { node: OrgTreeNode }) {
     <div>
       {node.label && <p className="text-muted-foreground mb-0.5 text-xs">{node.label}</p>}
       {node.user ? (
-        <Link href={`/team/${node.user.id}`} className="font-semibold hover:underline">
+        <Link
+          href={`/team/${node.user.id}`}
+          className={
+            node.user.deactivated
+              ? "text-muted-foreground font-semibold italic hover:underline"
+              : "font-semibold hover:underline"
+          }
+        >
           {node.user.name}
+          {node.user.deactivated && (
+            <span className="ml-1 text-xs font-normal">({t("team.deactivation.mark")})</span>
+          )}
         </Link>
       ) : (
         <p className={vacant ? "text-muted-foreground font-semibold italic" : "font-semibold"}>

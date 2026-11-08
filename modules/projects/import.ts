@@ -74,7 +74,7 @@ export type ProjectImport = z.input<typeof projectImportSchema>;
 export async function importProject(input: unknown, now = new Date()) {
   const plan = projectImportSchema.parse(input);
   const owner = await db.user.findFirst({
-    where: { role: "OWNER" },
+    where: { role: "OWNER", deactivatedAt: null },
     orderBy: { createdAt: "asc" },
   });
   if (!owner) throw new Error("No owner yet: log in to the site first.");
@@ -87,7 +87,10 @@ export async function importProject(input: unknown, now = new Date()) {
     if (task.start && task.due && task.start > task.due)
       throw new Error(`Task ${task.code ?? task.title}: starts after its due date.`);
   }
-  const users = await db.user.findMany({ select: { id: true, firstName: true, lastName: true } });
+  const users = await db.user.findMany({
+    where: { deactivatedAt: null },
+    select: { id: true, firstName: true, lastName: true },
+  });
   const leadId = plan.lead ? matchUser(plan.lead, users) : null;
   const assigneeId = leadId ?? owner.id;
   const color = existing ? existing.color : (await db.project.count()) % 8;

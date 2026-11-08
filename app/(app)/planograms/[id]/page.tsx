@@ -62,7 +62,10 @@ export default async function PlanogramPage({
       changesVsPrevious(loaded),
       versionHistory(r.rootId ?? r.id),
       db.equipment.findMany({ where: { id: { not: r.equipmentId } }, orderBy: { name: "asc" } }),
-      db.user.findMany({ where: { botChatId: { not: null } }, orderBy: { firstName: "asc" } }),
+      db.user.findMany({
+        where: { botChatId: { not: null }, deactivatedAt: null },
+        orderBy: { firstName: "asc" },
+      }),
       db.priceList.findMany({ orderBy: [{ effectiveFrom: "desc" }] }),
       Promise.all([
         db.sku.findMany({ select: { id: true, name: true } }),

@@ -29,7 +29,8 @@ export async function teamReport() {
   for (const u of users) {
     lines.push(
       `- ${displayName(u)}${u.telegramUsername ? ` (@${u.telegramUsername})` : ""} — ${u.role}` +
-        ` · place: ${u.orgNode?.title ?? "none"} · manager: ${u.manager ? displayName(u.manager) : "none"}`,
+        ` · place: ${u.orgNode?.title ?? "none"} · manager: ${u.manager ? displayName(u.manager) : "none"}` +
+        (u.deactivatedAt ? " · deactivated" : ""),
     );
   }
   // Task counts per person (no titles): team tasks by status, personal ones only counted.

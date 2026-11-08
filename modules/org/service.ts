@@ -27,7 +27,8 @@ export type OrgTreeNode = {
   title: string | null;
   label: string | null;
   personName: string | null;
-  user: { id: string; name: string } | null;
+  // A deactivated person keeps their place, shown as «отключён» (the place is in effect vacant).
+  user: { id: string; name: string; deactivated: boolean } | null;
   parentId: string | null;
   sortOrder: number;
   children: OrgTreeNode[];
@@ -35,7 +36,9 @@ export type OrgTreeNode = {
 
 export async function getOrgTree(): Promise<OrgTreeNode[]> {
   const rows = await db.orgNode.findMany({
-    include: { user: { select: { id: true, firstName: true, lastName: true } } },
+    include: {
+      user: { select: { id: true, firstName: true, lastName: true, deactivatedAt: true } },
+    },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
   });
   const nodes = new Map<string, OrgTreeNode>(
@@ -48,7 +51,9 @@ export async function getOrgTree(): Promise<OrgTreeNode[]> {
         title: r.title,
         label: r.label,
         personName: r.personName,
-        user: r.user ? { id: r.user.id, name: displayName(r.user) } : null,
+        user: r.user
+          ? { id: r.user.id, name: displayName(r.user), deactivated: !!r.user.deactivatedAt }
+          : null,
         parentId: r.parentId,
         sortOrder: r.sortOrder,
         children: [],
@@ -117,7 +122,9 @@ export async function saveOrgNode(actor: Actor, id: string | null, input: OrgNod
   if (data.userId) {
     const taken = await db.orgNode.findUnique({ where: { userId: data.userId } });
     if (taken && taken.id !== id) throw new OrgError("userTaken");
-    if (!(await db.user.findUnique({ where: { id: data.userId } }))) throw new OrgError("notFound");
+    // A deactivated person keeps their own place but can't be put in a new one.
+    const user = await db.user.findUnique({ where: { id: data.userId } });
+    if (!user || (user.deactivatedAt && taken?.id !== id)) throw new OrgError("notFound");
   }
   const saved = id
     ? await db.orgNode.update({ where: { id }, data })
@@ -155,7 +162,10 @@ export async function deleteOrgNode(actor: Actor, id: string) {
 export async function linkPeopleByName() {
   const [nodes, users] = await Promise.all([
     db.orgNode.findMany({ where: { kind: "POSITION" } }),
-    db.user.findMany({ select: { id: true, firstName: true, lastName: true } }),
+    db.user.findMany({
+      where: { deactivatedAt: null },
+      select: { id: true, firstName: true, lastName: true },
+    }),
   ]);
   const placed = new Set(nodes.map((n) => n.userId).filter(Boolean));
   const free = users.filter((u) => !placed.has(u.id));
@@ -177,10 +187,11 @@ export async function linkPeopleByName() {
 
 // People placed in the chart get their job title from it, and as manager the nearest person
 // above them who can be a manager (OWNER or MANAGER — the same rule as in the employee card).
-// For them both fields are set here only; the employee card shows them read-only.
+// For them both fields are set here only; the employee card shows them read-only. A deactivated
+// manager is passed over: their people get the next manager up (back again once they return).
 export async function syncPeople() {
   const rows = await db.orgNode.findMany({
-    include: { user: { select: { id: true, role: true } } },
+    include: { user: { select: { id: true, role: true, deactivatedAt: true } } },
   });
   const byId = new Map(rows.map((r) => [r.id, r]));
   for (const node of rows) {
@@ -196,6 +207,7 @@ export async function syncPeople() {
       if (
         up.user &&
         up.user.id !== node.user.id &&
+        !up.user.deactivatedAt &&
         (up.user.role === "OWNER" || up.user.role === "MANAGER")
       ) {
         managerId = up.user.id;

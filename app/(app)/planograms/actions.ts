@@ -221,7 +221,7 @@ export async function sendToTelegramAction(formData: FormData) {
     const png = await planogramPng(loaded);
     const caption = `${slideTitle(loaded)}\n${slideSubtitle(loaded)}\n${getEnv().APP_URL}/p/${loaded.record.shareToken}`;
     const recipients = await db.user.findMany({
-      where: { id: { in: userIds }, botChatId: { not: null } },
+      where: { id: { in: userIds }, botChatId: { not: null }, deactivatedAt: null },
     });
     let sent = 0;
     for (const r of recipients) if (await sendTelegramPhoto(r.botChatId!, png, caption)) sent += 1;

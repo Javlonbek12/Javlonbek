@@ -11,7 +11,7 @@ export async function approverIdsFor(task: {
 }): Promise<string[]> {
   const [people, config] = await Promise.all([
     db.user.findMany({
-      where: { role: { in: ["OWNER", "MANAGER"] } },
+      where: { role: { in: ["OWNER", "MANAGER"] }, deactivatedAt: null },
       select: { id: true, role: true },
     }),
     getRoleConfig(),
