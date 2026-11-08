@@ -20,6 +20,8 @@ export function DocumentTitle() {
 
   useEffect(() => {
     const apply = () => {
+      // Already ours: writing it again would wake the observer below, and so on forever.
+      if (document.title === title) return;
       if (document.title !== app && document.title !== ours.current) return;
       document.title = title;
       ours.current = title;
