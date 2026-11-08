@@ -590,6 +590,8 @@ export const en: Dictionary = {
     decision: {
       waiting: "Waiting for: {names}",
       reviewer: "Accepts the result: {name}",
+      setAndAccepts: "Set and accepts: {name}",
+      setBy: "Set by: {name}",
       approvedBy: "Approved by: {name}",
       acceptedBy: "Accepted by: {name}",
       historical: "Moved from the archive",
@@ -633,12 +635,11 @@ export const en: Dictionary = {
       labels: "Labels",
       unavailable: "The task is not available: it was deleted or you have no access to it.",
       tabs: {
-        description: "Description",
+        description: "Main",
         work: "Work",
         notes: "Notes",
         files: "Files",
-        comments: "Comments",
-        history: "History",
+        comments: "Discussion",
       },
       quick: {
         DONE: "Mark as done",
@@ -650,6 +651,17 @@ export const en: Dictionary = {
       },
       noDescription: "No description.",
       reroute: "Changing the assignee works the route out again.",
+      handed: {
+        title: "What was handed in",
+        report: "Comment on handing in",
+        noReport: "The assignee wrote nothing when handing in.",
+        files: "Files",
+        steps: "Steps: {done} of {total}",
+        time: "Time spent: {duration}",
+        onTime: "Handed in on time, {date}",
+        late: "Handed in {days} days late, {date}",
+        noDue: "Handed in {date}",
+      },
     },
     makeTeam: {
       label: "Visibility",
@@ -945,7 +957,7 @@ export const en: Dictionary = {
       badge: "deletion requested",
     },
     dependencies: {
-      title: "Links",
+      title: "Linked tasks",
       blockedBy: "Depends on (blocking tasks)",
       blocks: "Blocks",
       chain: "Whole chain",

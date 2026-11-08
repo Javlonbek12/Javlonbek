@@ -111,6 +111,7 @@ const FIELD_LABELS: Record<string, TranslationKey> = {
   project: "tasks.fields.project",
   planId: "tasks.fields.plan",
   estimateMinutes: "tasks.fields.estimate",
+  phaseId: "projects.task.phase",
 };
 
 function historyText(action: string, details: unknown): string {
@@ -359,6 +360,9 @@ export async function TaskDetail({
     task.openBlockers - deps.blockedBy.filter((b) => !isClosed(b.status)).length,
   );
   const target = quickTarget(user, task);
+  // The viewer accepts handed-in work (not their own): «Что сдано» is for them.
+  const accepting =
+    task.status === "IN_REVIEW" && target === "DONE" && !task.isPersonal && !isDoer(user, task);
   const main = buttons.find(
     (b) => b.variant === "default" && b.reason === null && b.to !== "PENDING_APPROVAL",
   );
@@ -510,29 +514,26 @@ export async function TaskDetail({
       ) : (
         <p className="text-muted-foreground text-sm">{t("tasks.panel.noDescription")}</p>
       )}
-      {(route.deciders.length > 0 || route.reviewer || route.approvedBy || route.acceptedBy) && (
-        <ul className="text-muted-foreground flex flex-col gap-0.5 text-sm">
-          {route.deciders.length > 0 && (
-            <li className="font-medium text-amber-700 dark:text-amber-300">
-              {t("tasks.decision.waiting", { names: route.deciders.join(", ") })}
-            </li>
-          )}
-          {route.approvedBy && (
-            <li>{t("tasks.decision.approvedBy", { name: route.approvedBy })}</li>
-          )}
-          {route.reviewer && <li>{t("tasks.decision.reviewer", { name: route.reviewer })}</li>}
-          {route.acceptedBy && (
-            <li>{t("tasks.decision.acceptedBy", { name: route.acceptedBy })}</li>
-          )}
-        </ul>
-      )}
-      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-        {!task.isPersonal && (
-          <>
-            <dt className="text-muted-foreground">{t("tasks.fields.creator")}</dt>
-            <dd>{personName(task.creator)}</dd>
-          </>
+      <ul className="text-muted-foreground flex flex-col gap-0.5 text-sm">
+        {route.deciders.length > 0 && (
+          <li className="font-medium text-amber-700 dark:text-amber-300">
+            {t("tasks.decision.waiting", { names: route.deciders.join(", ") })}
+          </li>
         )}
+        {/* Who set the task and who accepts it: one line when it is the same person. */}
+        {!task.isPersonal &&
+          (route.reviewer === personName(task.creator) ? (
+            <li>{t("tasks.decision.setAndAccepts", { name: route.reviewer })}</li>
+          ) : (
+            <>
+              <li>{t("tasks.decision.setBy", { name: personName(task.creator) })}</li>
+              {route.reviewer && <li>{t("tasks.decision.reviewer", { name: route.reviewer })}</li>}
+            </>
+          ))}
+        {route.approvedBy && <li>{t("tasks.decision.approvedBy", { name: route.approvedBy })}</li>}
+        {route.acceptedBy && <li>{t("tasks.decision.acceptedBy", { name: route.acceptedBy })}</li>}
+      </ul>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
         {task.series && (
           <>
             <dt className="text-muted-foreground">{t("tasks.repeat.title")}</dt>
@@ -765,19 +766,384 @@ export async function TaskDetail({
     </>
   );
 
-  const commentsTab = (
-    <>
-      {comments.length === 0 && (
-        <p className="text-muted-foreground text-sm">{t("tasks.comments.none")}</p>
-      )}
-      {comments.map((c) => (
-        <div key={c.id} className="flex flex-col gap-0.5 text-sm">
-          <span className="text-muted-foreground text-xs">
-            {displayName(c.author)} · {formatDateTime(c.createdAt, tz)}
+  const fieldsBlock = (
+    <div className="divide-y border-t">
+      <Field
+        label={t("tasks.panel.project")}
+        edit={
+          canEdit && open
+            ? fieldForm(
+                "project",
+                <>
+                  <Input
+                    name="value"
+                    list={`projects-${task.id}`}
+                    maxLength={60}
+                    defaultValue={task.project ?? ""}
+                  />
+                  <datalist id={`projects-${task.id}`}>
+                    {projects.map((p) => (
+                      <option key={p} value={p} />
+                    ))}
+                  </datalist>
+                </>,
+              )
+            : undefined
+        }
+      >
+        {project ? (
+          <span className="flex items-center gap-1.5">
+            <Folder className="text-primary size-4 shrink-0" />
+            <Link className="truncate underline" href={`/projects/${project.id}`}>
+              {project.name}
+            </Link>
+            {project.phase && <span className="text-muted-foreground">· {project.phase}</span>}
           </span>
-          <p className="whitespace-pre-wrap">{c.body}</p>
+        ) : task.project ? (
+          <span className="flex items-center gap-1.5">
+            <Folder className="text-primary size-4 shrink-0" />
+            {task.project}
+          </span>
+        ) : (
+          t("tasks.fields.none")
+        )}
+      </Field>
+      {convertible && (
+        <Field
+          label={t("tasks.makeTeam.label")}
+          edit={
+            <form action={makeTeamTaskAction} className="flex flex-col gap-2">
+              {hidden("description")}
+              <AssigneePicker
+                initial={user.id}
+                hintInitial
+                people={people.map((p) => ({ id: p.id, label: displayName(p) }))}
+                hints={Object.fromEntries(
+                  Object.entries(hints).map(([id, hint]) => [id, hint.plain.text]),
+                )}
+              />
+              <Label className="font-normal">
+                <input type="checkbox" name="needsApproval" className="size-4" />
+                {t("tasks.route.needsApproval")}
+              </Label>
+              <span className="text-muted-foreground text-xs">{t("tasks.makeTeam.hint")}</span>
+              <Button type="submit" size="sm" className="self-start">
+                {t("tasks.makeTeam.action")}
+              </Button>
+            </form>
+          }
+        >
+          <span className="flex items-center gap-1.5">
+            <Lock className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
+            {t("tasks.makeTeam.personal")}
+          </span>
+        </Field>
+      )}
+      {!task.isPersonal && (
+        <Field
+          label={t("tasks.fields.assignee")}
+          edit={
+            assigneeEditable
+              ? fieldForm(
+                  "assigneeId",
+                  <AssigneePicker
+                    initial={task.assigneeId}
+                    people={people.map((p) => ({ id: p.id, label: personName(p) }))}
+                    hints={Object.fromEntries(
+                      Object.entries(hints).map(([id, hint]) => [id, hint.plain.text]),
+                    )}
+                  />,
+                )
+              : undefined
+          }
+        >
+          {personName(task.assignee)}
+        </Field>
+      )}
+      {co && (co.people.length > 0 || co.requests.length > 0 || coManage) && (
+        <Field
+          label={t("tasks.coAssignees.title")}
+          edit={
+            coManage ||
+            co.people.some((p) => p.id === user.id) ||
+            co.requests.some((r) => r.requestedById === user.id || canDecideCoAssignee(user, r))
+              ? coEdit
+              : undefined
+          }
+        >
+          {co.people.length === 0 && co.requests.length === 0 ? (
+            <span className="text-muted-foreground">—</span>
+          ) : (
+            <span className="flex flex-col gap-0.5">
+              {co.people.length > 0 && <span>{co.people.map((p) => p.name).join(", ")}</span>}
+              {co.requests.map((r) => (
+                <span key={r.id} className="text-muted-foreground text-xs">
+                  {r.name} — {t("tasks.coAssignees.waiting", { names: r.deciders.join(", ") })}
+                </span>
+              ))}
+            </span>
+          )}
+        </Field>
+      )}
+      <Field
+        label={t("tasks.fields.dueDate")}
+        edit={
+          canEdit && open
+            ? fieldForm(
+                "dueDate",
+                <Input type="date" name="value" defaultValue={task.dueDate ?? ""} />,
+              )
+            : undefined
+        }
+      >
+        <span className={cn(overdue && "text-destructive font-medium")}>
+          {task.dueDate ? formatDay(task.dueDate) : t("tasks.fields.none")}
+          {overdue && days !== null && ` · ${t("tasks.look.overdueBy", { count: -days })}`}
+        </span>
+      </Field>
+      {task.startDate && (
+        <Field label={t("tasks.fields.startDate")}>{formatDay(task.startDate)}</Field>
+      )}
+      <Field
+        label={t("tasks.fields.priority")}
+        edit={
+          canEdit && open
+            ? fieldForm(
+                "priority",
+                <NativeSelect name="value" defaultValue={task.priority} className="w-full">
+                  {Object.values(TaskPriority).map((p) => (
+                    <option key={p} value={p}>
+                      {t(`tasks.priority.${p}`)}
+                    </option>
+                  ))}
+                </NativeSelect>,
+              )
+            : undefined
+        }
+      >
+        {t(`tasks.priority.${task.priority}`)}
+      </Field>
+      <Field
+        label={t("tasks.fields.status")}
+        edit={
+          buttons.length > 0 ? (
+            <div className="flex flex-col items-start gap-2">
+              <TaskActions
+                taskId={task.id}
+                buttons={buttons}
+                action={changeStatusAction}
+                openBlockers={task.openBlockers}
+                cancelledBlockers={cancelledBlockers}
+                back={back("description")}
+              />
+            </div>
+          ) : undefined
+        }
+      >
+        <StatusBadge status={task.status} />
+      </Field>
+      {(task.labels.length > 0 || labelable) && (
+        <Field
+          label={t("tasks.panel.labels")}
+          edit={
+            labelable ? (
+              <form action={setTaskLabelsAction} className="flex flex-col gap-2">
+                {hidden("description")}
+                <Input
+                  name="value"
+                  list={`labels-${task.id}`}
+                  defaultValue={task.labels.join(", ")}
+                  placeholder={t("tasks.labels.placeholder")}
+                  aria-label={t("tasks.panel.labels")}
+                  maxLength={400}
+                />
+                <datalist id={`labels-${task.id}`}>
+                  {allLabels
+                    .filter((l) => !task.labels.includes(l))
+                    .map((l) => (
+                      <option key={l} value={[...task.labels, l].join(", ")} />
+                    ))}
+                </datalist>
+                <span className="text-muted-foreground text-xs">{t("tasks.labels.hint")}</span>
+                <Button type="submit" size="sm" className="self-start">
+                  {t("tasks.panel.save")}
+                </Button>
+              </form>
+            ) : undefined
+          }
+        >
+          {task.labels.length > 0 ? (
+            <span className="flex flex-wrap gap-1">
+              {task.labels.map((label) => (
+                <Link key={label} href={`/tasks?label=${encodeURIComponent(label)}`}>
+                  <Badge variant="secondary" className="hover:bg-secondary/70">
+                    {label}
+                  </Badge>
+                </Link>
+              ))}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
+        </Field>
+      )}
+      {(time.canTrack || time.entries.length > 0) && (
+        <div className="grid grid-cols-[7.5rem_minmax(0,1fr)] items-start gap-x-3 gap-y-1 py-2 text-sm">
+          <span className="text-muted-foreground pt-1">{t("tasks.time.title")}</span>
+          <div className="flex min-w-0 flex-col gap-2">
+            <TimeTracker
+              taskId={task.id}
+              back={back("description")}
+              totalMinutes={time.totalMinutes}
+              running={time.running}
+              estimateMinutes={task.estimateMinutes}
+              // Whoever accepts handed-in work doesn't start a timer on it.
+              canTrack={time.canTrack && !accepting}
+              workingNow={time.people
+                .filter((p) => p.running && p.id !== user.id)
+                .map((p) => p.name)}
+            />
+            <details className="group">
+              <summary className="text-primary cursor-pointer list-none text-xs font-medium [&::-webkit-details-marker]:hidden">
+                {time.entries.length > 0 ? t("tasks.time.entries") : t("tasks.time.add")}
+              </summary>
+              <div className="mt-2 flex flex-col gap-3">
+                {time.people.length > 1 && (
+                  <p className="text-muted-foreground text-xs">
+                    {time.people
+                      .map((p) => {
+                        const d = durationText(p.minutes);
+                        return `${p.name} — ${t(d.key, d.values)}`;
+                      })
+                      .join(" · ")}
+                  </p>
+                )}
+                {time.entries.length > 0 && (
+                  <ul className="flex flex-col gap-1">
+                    {time.entries.map((e) => {
+                      const d = durationText(e.minutes);
+                      return (
+                        <li key={e.id} className="flex items-center justify-between gap-2">
+                          <span className="min-w-0">
+                            <span className="font-medium">{t(d.key, d.values)}</span>{" "}
+                            <span className="text-muted-foreground text-xs">
+                              · {e.name} · {formatDay(entryDay(e))}
+                              {e.manual && ` · ${t("tasks.time.manual")}`}
+                              {e.running && ` · ${t("tasks.time.running")}`}
+                            </span>
+                          </span>
+                          {e.mine && time.canTrack && !e.running && (
+                            <span className="flex shrink-0 items-start gap-1">
+                              <details className="group relative">
+                                <summary className="text-primary hover:bg-accent flex h-8 cursor-pointer list-none items-center rounded-full px-3 text-sm font-medium [&::-webkit-details-marker]:hidden">
+                                  {t("tasks.time.correct")}
+                                </summary>
+                                <form
+                                  action={correctTimeEntryAction}
+                                  className="bg-card absolute right-0 z-10 mt-1 flex items-end gap-2 rounded-xl border p-2 shadow-lg"
+                                >
+                                  {hidden("description")}
+                                  <input type="hidden" name="entryId" value={e.id} />
+                                  <Label className="flex-col items-start text-xs">
+                                    {t("tasks.time.hours")}
+                                    <Input
+                                      type="number"
+                                      name="hours"
+                                      min={0}
+                                      max={24}
+                                      defaultValue={Math.floor(e.minutes / 60)}
+                                      className="w-16"
+                                    />
+                                  </Label>
+                                  <Label className="flex-col items-start text-xs">
+                                    {t("tasks.time.minutes")}
+                                    <Input
+                                      type="number"
+                                      name="minutes"
+                                      min={0}
+                                      max={59}
+                                      defaultValue={e.minutes % 60}
+                                      className="w-16"
+                                    />
+                                  </Label>
+                                  <Button type="submit" size="sm">
+                                    {t("tasks.time.correctSave")}
+                                  </Button>
+                                </form>
+                              </details>
+                              <form action={removeTimeEntryAction}>
+                                {hidden("description")}
+                                <input type="hidden" name="entryId" value={e.id} />
+                                <Button type="submit" size="sm" variant="ghost">
+                                  {t("tasks.time.remove")}
+                                </Button>
+                              </form>
+                            </span>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                {time.canTrack && (
+                  <form action={addTimeAction} className="flex flex-wrap items-end gap-2">
+                    {hidden("description")}
+                    <Label className="flex-col items-start text-xs">
+                      {t("tasks.time.hours")}
+                      <Input
+                        type="number"
+                        name="hours"
+                        min={0}
+                        max={24}
+                        defaultValue={0}
+                        className="w-20"
+                      />
+                    </Label>
+                    <Label className="flex-col items-start text-xs">
+                      {t("tasks.time.minutes")}
+                      <Input
+                        type="number"
+                        name="minutes"
+                        min={0}
+                        max={59}
+                        step={5}
+                        defaultValue={30}
+                        className="w-20"
+                      />
+                    </Label>
+                    <Label className="flex-col items-start text-xs">
+                      {t("tasks.time.day")}
+                      <Input
+                        type="date"
+                        name="day"
+                        max={today}
+                        defaultValue={today}
+                        className="w-40"
+                      />
+                    </Label>
+                    <Button type="submit" size="sm" variant="outline">
+                      {t("tasks.time.addButton")}
+                    </Button>
+                    <span className="text-muted-foreground w-full text-xs">
+                      {t("tasks.time.hint")}
+                    </span>
+                  </form>
+                )}
+              </div>
+            </details>
+          </div>
         </div>
-      ))}
+      )}
+    </div>
+  );
+
+  // «Обсуждение»: comments and the task's history in one feed, newest first.
+  const feed = [
+    ...comments.map((c) => ({ key: `c${c.id}`, at: c.createdAt, comment: c, entry: null })),
+    ...history.map((h) => ({ key: `h${h.id}`, at: h.createdAt, comment: null, entry: h })),
+  ].sort((a, b) => b.at.getTime() - a.at.getTime());
+  const discussionTab = (
+    <>
       <form action={addCommentAction} className="flex flex-col gap-2">
         {hidden("comments")}
         <Textarea
@@ -790,23 +1156,94 @@ export async function TaskDetail({
           {t("tasks.comments.add")}
         </Button>
       </form>
+      {feed.length === 0 && (
+        <p className="text-muted-foreground text-sm">{t("tasks.comments.none")}</p>
+      )}
+      <ul className="flex flex-col gap-2.5 text-sm">
+        {feed.map((item) =>
+          item.comment ? (
+            <li key={item.key} className="bg-muted/50 flex flex-col gap-0.5 rounded-lg p-2.5">
+              <span className="text-muted-foreground text-xs">
+                {displayName(item.comment.author)} · {formatDateTime(item.at, tz)}
+              </span>
+              <p className="whitespace-pre-wrap">{item.comment.body}</p>
+            </li>
+          ) : (
+            <li key={item.key} className="text-muted-foreground px-2.5 text-xs">
+              {formatDateTime(item.at, tz)} ·{" "}
+              {item.entry!.actor ? displayName(item.entry!.actor) : ""}{" "}
+              {historyText(item.entry!.action, item.entry!.details)}
+            </li>
+          ),
+        )}
+      </ul>
     </>
   );
 
-  const historyTab = (
-    <>
-      {history.length === 0 && (
-        <p className="text-muted-foreground text-sm">{t("tasks.history.none")}</p>
+  // «Что сдано»: for whoever accepts handed-in work — the report, files, steps, time and whether it
+  // came on time, before the decision buttons.
+  const doers = new Set([task.assigneeId, ...task.coAssigneeIds]);
+  const report = accepting ? comments.filter((c) => doers.has(c.authorId)).at(-1) : undefined;
+  const handedOn = todayInTimezone(tz, task.statusChangedAt);
+  const lateBy = task.dueDate ? daysBetween(task.dueDate, handedOn) : 0;
+  const spent = durationText(time.totalMinutes);
+  const handed = accepting && (
+    <section className="flex flex-col gap-2 rounded-xl border border-violet-200 bg-violet-50/60 p-3 text-sm dark:border-violet-900 dark:bg-violet-950/30">
+      <h3 className="font-semibold">{t("tasks.panel.handed.title")}</h3>
+      <p
+        className={cn(
+          "text-xs",
+          lateBy > 0 ? "text-destructive font-medium" : "text-muted-foreground",
+        )}
+      >
+        {!task.dueDate
+          ? t("tasks.panel.handed.noDue", { date: formatDay(handedOn) })
+          : lateBy > 0
+            ? t("tasks.panel.handed.late", { days: lateBy, date: formatDay(handedOn) })
+            : t("tasks.panel.handed.onTime", { date: formatDay(handedOn) })}
+      </p>
+      {report ? (
+        <div className="flex flex-col gap-0.5">
+          <span className="text-muted-foreground text-xs">
+            {t("tasks.panel.handed.report")} · {displayName(report.author)}
+          </span>
+          <p className="whitespace-pre-wrap">{report.body}</p>
+        </div>
+      ) : (
+        <p className="text-muted-foreground text-xs">{t("tasks.panel.handed.noReport")}</p>
       )}
-      <ul className="flex flex-col gap-1 text-sm">
-        {history.map((h) => (
-          <li key={h.id}>
-            <span className="text-muted-foreground text-xs">{formatDateTime(h.createdAt, tz)}</span>{" "}
-            {h.actor ? displayName(h.actor) : ""} {historyText(h.action, h.details)}
-          </li>
-        ))}
-      </ul>
-    </>
+      {attachments.length > 0 && (
+        <div className="flex flex-col gap-0.5">
+          <span className="text-muted-foreground text-xs">{t("tasks.panel.handed.files")}</span>
+          {attachments.slice(0, 5).map((a) => (
+            <a
+              key={a.id}
+              className="flex min-w-0 items-center gap-1.5 underline"
+              href={a.kind === "LINK" ? a.url! : `/api/attachments/${a.id}`}
+              target={a.kind === "LINK" ? "_blank" : undefined}
+              rel="noopener noreferrer"
+            >
+              {a.kind === "LINK" ? (
+                <ExternalLink className="size-4 shrink-0" />
+              ) : (
+                <FileText className="size-4 shrink-0" />
+              )}
+              <span className="truncate">{a.title}</span>
+            </a>
+          ))}
+        </div>
+      )}
+      <p className="text-muted-foreground flex flex-wrap gap-x-3 text-xs">
+        {stepCount.total > 0 && (
+          <span>
+            {t("tasks.panel.handed.steps", { done: stepCount.done, total: stepCount.total })}
+          </span>
+        )}
+        {time.totalMinutes > 0 && (
+          <span>{t("tasks.panel.handed.time", { duration: t(spent.key, spent.values) })}</span>
+        )}
+      </p>
+    </section>
   );
 
   return (
@@ -957,10 +1394,22 @@ export async function TaskDetail({
         </div>
       )}
 
+      {handed}
+
       <DetailTabs
-        initial={tab ?? "description"}
+        // Old links to «История» open the feed that holds it now.
+        initial={tab === "history" ? "comments" : (tab ?? "description")}
         tabs={[
-          { key: "description", label: t("tasks.panel.tabs.description"), content: descriptionTab },
+          {
+            key: "description",
+            label: t("tasks.panel.tabs.description"),
+            content: (
+              <>
+                {descriptionTab}
+                {fieldsBlock}
+              </>
+            ),
+          },
           {
             key: "work",
             label: t("tasks.panel.tabs.work"),
@@ -990,379 +1439,10 @@ export async function TaskDetail({
             key: "comments",
             label: t("tasks.panel.tabs.comments"),
             count: comments.length,
-            content: commentsTab,
+            content: discussionTab,
           },
-          { key: "history", label: t("tasks.panel.tabs.history"), content: historyTab },
         ]}
       />
-
-      <div className="divide-y border-t">
-        <Field
-          label={t("tasks.panel.project")}
-          edit={
-            canEdit && open
-              ? fieldForm(
-                  "project",
-                  <>
-                    <Input
-                      name="value"
-                      list={`projects-${task.id}`}
-                      maxLength={60}
-                      defaultValue={task.project ?? ""}
-                    />
-                    <datalist id={`projects-${task.id}`}>
-                      {projects.map((p) => (
-                        <option key={p} value={p} />
-                      ))}
-                    </datalist>
-                  </>,
-                )
-              : undefined
-          }
-        >
-          {project ? (
-            <span className="flex items-center gap-1.5">
-              <Folder className="text-primary size-4 shrink-0" />
-              <Link className="truncate underline" href={`/projects/${project.id}`}>
-                {project.name}
-              </Link>
-              {project.phase && <span className="text-muted-foreground">· {project.phase}</span>}
-            </span>
-          ) : task.project ? (
-            <span className="flex items-center gap-1.5">
-              <Folder className="text-primary size-4 shrink-0" />
-              {task.project}
-            </span>
-          ) : (
-            t("tasks.fields.none")
-          )}
-        </Field>
-        {convertible && (
-          <Field
-            label={t("tasks.makeTeam.label")}
-            edit={
-              <form action={makeTeamTaskAction} className="flex flex-col gap-2">
-                {hidden("description")}
-                <AssigneePicker
-                  initial={user.id}
-                  hintInitial
-                  people={people.map((p) => ({ id: p.id, label: displayName(p) }))}
-                  hints={Object.fromEntries(
-                    Object.entries(hints).map(([id, hint]) => [id, hint.plain.text]),
-                  )}
-                />
-                <Label className="font-normal">
-                  <input type="checkbox" name="needsApproval" className="size-4" />
-                  {t("tasks.route.needsApproval")}
-                </Label>
-                <span className="text-muted-foreground text-xs">{t("tasks.makeTeam.hint")}</span>
-                <Button type="submit" size="sm" className="self-start">
-                  {t("tasks.makeTeam.action")}
-                </Button>
-              </form>
-            }
-          >
-            <span className="flex items-center gap-1.5">
-              <Lock className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
-              {t("tasks.makeTeam.personal")}
-            </span>
-          </Field>
-        )}
-        {!task.isPersonal && (
-          <Field
-            label={t("tasks.fields.assignee")}
-            edit={
-              assigneeEditable
-                ? fieldForm(
-                    "assigneeId",
-                    <AssigneePicker
-                      initial={task.assigneeId}
-                      people={people.map((p) => ({ id: p.id, label: personName(p) }))}
-                      hints={Object.fromEntries(
-                        Object.entries(hints).map(([id, hint]) => [id, hint.plain.text]),
-                      )}
-                    />,
-                  )
-                : undefined
-            }
-          >
-            {personName(task.assignee)}
-          </Field>
-        )}
-        {co && (co.people.length > 0 || co.requests.length > 0 || coManage) && (
-          <Field
-            label={t("tasks.coAssignees.title")}
-            edit={
-              coManage ||
-              co.people.some((p) => p.id === user.id) ||
-              co.requests.some((r) => r.requestedById === user.id || canDecideCoAssignee(user, r))
-                ? coEdit
-                : undefined
-            }
-          >
-            {co.people.length === 0 && co.requests.length === 0 ? (
-              <span className="text-muted-foreground">—</span>
-            ) : (
-              <span className="flex flex-col gap-0.5">
-                {co.people.length > 0 && <span>{co.people.map((p) => p.name).join(", ")}</span>}
-                {co.requests.map((r) => (
-                  <span key={r.id} className="text-muted-foreground text-xs">
-                    {r.name} — {t("tasks.coAssignees.waiting", { names: r.deciders.join(", ") })}
-                  </span>
-                ))}
-              </span>
-            )}
-          </Field>
-        )}
-        <Field
-          label={t("tasks.fields.dueDate")}
-          edit={
-            canEdit && open
-              ? fieldForm(
-                  "dueDate",
-                  <Input type="date" name="value" defaultValue={task.dueDate ?? ""} />,
-                )
-              : undefined
-          }
-        >
-          <span className={cn(overdue && "text-destructive font-medium")}>
-            {task.dueDate ? formatDay(task.dueDate) : t("tasks.fields.none")}
-            {overdue && days !== null && ` · ${t("tasks.look.overdueBy", { count: -days })}`}
-          </span>
-        </Field>
-        {task.startDate && (
-          <Field label={t("tasks.fields.startDate")}>{formatDay(task.startDate)}</Field>
-        )}
-        <Field
-          label={t("tasks.fields.priority")}
-          edit={
-            canEdit && open
-              ? fieldForm(
-                  "priority",
-                  <NativeSelect name="value" defaultValue={task.priority} className="w-full">
-                    {Object.values(TaskPriority).map((p) => (
-                      <option key={p} value={p}>
-                        {t(`tasks.priority.${p}`)}
-                      </option>
-                    ))}
-                  </NativeSelect>,
-                )
-              : undefined
-          }
-        >
-          {t(`tasks.priority.${task.priority}`)}
-        </Field>
-        <Field
-          label={t("tasks.fields.status")}
-          edit={
-            buttons.length > 0 ? (
-              <div className="flex flex-col items-start gap-2">
-                <TaskActions
-                  taskId={task.id}
-                  buttons={buttons}
-                  action={changeStatusAction}
-                  openBlockers={task.openBlockers}
-                  cancelledBlockers={cancelledBlockers}
-                  back={back("description")}
-                />
-              </div>
-            ) : undefined
-          }
-        >
-          <StatusBadge status={task.status} />
-        </Field>
-        {(task.labels.length > 0 || labelable) && (
-          <Field
-            label={t("tasks.panel.labels")}
-            edit={
-              labelable ? (
-                <form action={setTaskLabelsAction} className="flex flex-col gap-2">
-                  {hidden("description")}
-                  <Input
-                    name="value"
-                    list={`labels-${task.id}`}
-                    defaultValue={task.labels.join(", ")}
-                    placeholder={t("tasks.labels.placeholder")}
-                    aria-label={t("tasks.panel.labels")}
-                    maxLength={400}
-                  />
-                  <datalist id={`labels-${task.id}`}>
-                    {allLabels
-                      .filter((l) => !task.labels.includes(l))
-                      .map((l) => (
-                        <option key={l} value={[...task.labels, l].join(", ")} />
-                      ))}
-                  </datalist>
-                  <span className="text-muted-foreground text-xs">{t("tasks.labels.hint")}</span>
-                  <Button type="submit" size="sm" className="self-start">
-                    {t("tasks.panel.save")}
-                  </Button>
-                </form>
-              ) : undefined
-            }
-          >
-            {task.labels.length > 0 ? (
-              <span className="flex flex-wrap gap-1">
-                {task.labels.map((label) => (
-                  <Link key={label} href={`/tasks?label=${encodeURIComponent(label)}`}>
-                    <Badge variant="secondary" className="hover:bg-secondary/70">
-                      {label}
-                    </Badge>
-                  </Link>
-                ))}
-              </span>
-            ) : (
-              <span className="text-muted-foreground">—</span>
-            )}
-          </Field>
-        )}
-        {(time.canTrack || time.entries.length > 0) && (
-          <div className="grid grid-cols-[7.5rem_minmax(0,1fr)] items-start gap-x-3 gap-y-1 py-2 text-sm">
-            <span className="text-muted-foreground pt-1">{t("tasks.time.title")}</span>
-            <div className="flex min-w-0 flex-col gap-2">
-              <TimeTracker
-                taskId={task.id}
-                back={back("description")}
-                totalMinutes={time.totalMinutes}
-                running={time.running}
-                estimateMinutes={task.estimateMinutes}
-                canTrack={time.canTrack}
-                workingNow={time.people
-                  .filter((p) => p.running && p.id !== user.id)
-                  .map((p) => p.name)}
-              />
-              <details className="group">
-                <summary className="text-primary cursor-pointer list-none text-xs font-medium [&::-webkit-details-marker]:hidden">
-                  {time.entries.length > 0 ? t("tasks.time.entries") : t("tasks.time.add")}
-                </summary>
-                <div className="mt-2 flex flex-col gap-3">
-                  {time.people.length > 1 && (
-                    <p className="text-muted-foreground text-xs">
-                      {time.people
-                        .map((p) => {
-                          const d = durationText(p.minutes);
-                          return `${p.name} — ${t(d.key, d.values)}`;
-                        })
-                        .join(" · ")}
-                    </p>
-                  )}
-                  {time.entries.length > 0 && (
-                    <ul className="flex flex-col gap-1">
-                      {time.entries.map((e) => {
-                        const d = durationText(e.minutes);
-                        return (
-                          <li key={e.id} className="flex items-center justify-between gap-2">
-                            <span className="min-w-0">
-                              <span className="font-medium">{t(d.key, d.values)}</span>{" "}
-                              <span className="text-muted-foreground text-xs">
-                                · {e.name} · {formatDay(entryDay(e))}
-                                {e.manual && ` · ${t("tasks.time.manual")}`}
-                                {e.running && ` · ${t("tasks.time.running")}`}
-                              </span>
-                            </span>
-                            {e.mine && time.canTrack && !e.running && (
-                              <span className="flex shrink-0 items-start gap-1">
-                                <details className="group relative">
-                                  <summary className="text-primary hover:bg-accent flex h-8 cursor-pointer list-none items-center rounded-full px-3 text-sm font-medium [&::-webkit-details-marker]:hidden">
-                                    {t("tasks.time.correct")}
-                                  </summary>
-                                  <form
-                                    action={correctTimeEntryAction}
-                                    className="bg-card absolute right-0 z-10 mt-1 flex items-end gap-2 rounded-xl border p-2 shadow-lg"
-                                  >
-                                    {hidden("description")}
-                                    <input type="hidden" name="entryId" value={e.id} />
-                                    <Label className="flex-col items-start text-xs">
-                                      {t("tasks.time.hours")}
-                                      <Input
-                                        type="number"
-                                        name="hours"
-                                        min={0}
-                                        max={24}
-                                        defaultValue={Math.floor(e.minutes / 60)}
-                                        className="w-16"
-                                      />
-                                    </Label>
-                                    <Label className="flex-col items-start text-xs">
-                                      {t("tasks.time.minutes")}
-                                      <Input
-                                        type="number"
-                                        name="minutes"
-                                        min={0}
-                                        max={59}
-                                        defaultValue={e.minutes % 60}
-                                        className="w-16"
-                                      />
-                                    </Label>
-                                    <Button type="submit" size="sm">
-                                      {t("tasks.time.correctSave")}
-                                    </Button>
-                                  </form>
-                                </details>
-                                <form action={removeTimeEntryAction}>
-                                  {hidden("description")}
-                                  <input type="hidden" name="entryId" value={e.id} />
-                                  <Button type="submit" size="sm" variant="ghost">
-                                    {t("tasks.time.remove")}
-                                  </Button>
-                                </form>
-                              </span>
-                            )}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                  {time.canTrack && (
-                    <form action={addTimeAction} className="flex flex-wrap items-end gap-2">
-                      {hidden("description")}
-                      <Label className="flex-col items-start text-xs">
-                        {t("tasks.time.hours")}
-                        <Input
-                          type="number"
-                          name="hours"
-                          min={0}
-                          max={24}
-                          defaultValue={0}
-                          className="w-20"
-                        />
-                      </Label>
-                      <Label className="flex-col items-start text-xs">
-                        {t("tasks.time.minutes")}
-                        <Input
-                          type="number"
-                          name="minutes"
-                          min={0}
-                          max={59}
-                          step={5}
-                          defaultValue={30}
-                          className="w-20"
-                        />
-                      </Label>
-                      <Label className="flex-col items-start text-xs">
-                        {t("tasks.time.day")}
-                        <Input
-                          type="date"
-                          name="day"
-                          max={today}
-                          defaultValue={today}
-                          className="w-40"
-                        />
-                      </Label>
-                      <Button type="submit" size="sm" variant="outline">
-                        {t("tasks.time.addButton")}
-                      </Button>
-                      <span className="text-muted-foreground w-full text-xs">
-                        {t("tasks.time.hint")}
-                      </span>
-                    </form>
-                  )}
-                </div>
-              </details>
-            </div>
-          </div>
-        )}
-      </div>
 
       <TaskDeleteControl
         taskId={task.id}
@@ -1377,8 +1457,9 @@ export async function TaskDetail({
           action={reopenTaskAction}
           className={cn(
             "flex flex-wrap items-center justify-end gap-2",
-            panel &&
-              "bg-card/95 sticky bottom-0 -mx-4 -mb-4 border-t px-4 py-3 backdrop-blur md:-mx-5 md:-mb-5 md:px-5",
+            panel
+              ? "bg-card/95 sticky bottom-0 -mx-4 -mb-4 border-t px-4 py-3 backdrop-blur md:-mx-5 md:-mb-5 md:px-5"
+              : "bg-card/95 sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-10 -mx-2 rounded-xl border px-3 py-3 shadow-lg backdrop-blur md:bottom-3",
           )}
         >
           <input type="hidden" name="taskId" value={task.id} />
@@ -1394,8 +1475,9 @@ export async function TaskDetail({
         <div
           className={cn(
             "flex flex-wrap items-start justify-end gap-2",
-            panel &&
-              "bg-card/95 sticky bottom-0 -mx-4 -mb-4 border-t px-4 py-3 backdrop-blur md:-mx-5 md:-mb-5 md:px-5",
+            panel
+              ? "bg-card/95 sticky bottom-0 -mx-4 -mb-4 border-t px-4 py-3 backdrop-blur md:-mx-5 md:-mb-5 md:px-5"
+              : "bg-card/95 sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-10 -mx-2 rounded-xl border px-3 py-3 shadow-lg backdrop-blur md:bottom-3",
           )}
         >
           <TaskActions

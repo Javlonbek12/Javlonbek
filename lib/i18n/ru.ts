@@ -589,6 +589,8 @@ export const ru = {
     decision: {
       waiting: "Ждёт решения: {names}",
       reviewer: "Принимает результат: {name}",
+      setAndAccepts: "Поставил(а) и принимает: {name}",
+      setBy: "Поставил(а): {name}",
       approvedBy: "Утвердил(а): {name}",
       acceptedBy: "Принял(а): {name}",
       historical: "Перенесена из архива",
@@ -632,12 +634,11 @@ export const ru = {
       labels: "Метки",
       unavailable: "Задача недоступна: её удалили или у вас нет к ней доступа.",
       tabs: {
-        description: "Описание",
+        description: "Главное",
         work: "Работа",
         notes: "Заметки",
         files: "Файлы",
-        comments: "Комментарии",
-        history: "История",
+        comments: "Обсуждение",
       },
       quick: {
         DONE: "Отметить выполненной",
@@ -649,6 +650,17 @@ export const ru = {
       },
       noDescription: "Описания нет.",
       reroute: "При смене исполнителя маршрут посчитается заново.",
+      handed: {
+        title: "Что сдано",
+        report: "Комментарий при сдаче",
+        noReport: "Исполнитель ничего не написал при сдаче.",
+        files: "Файлы",
+        steps: "Шаги: {done} из {total}",
+        time: "Потрачено: {duration}",
+        onTime: "Сдано вовремя, {date}",
+        late: "Сдано на {days} дн. позже срока, {date}",
+        noDue: "Сдано {date}",
+      },
     },
     makeTeam: {
       label: "Видимость",
@@ -948,7 +960,7 @@ export const ru = {
       badge: "просят удалить",
     },
     dependencies: {
-      title: "Связи",
+      title: "Связанные задачи",
       blockedBy: "Зависит от (блокирующие задачи)",
       blocks: "Блокирует",
       chain: "Вся цепочка",
