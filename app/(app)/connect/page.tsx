@@ -7,7 +7,7 @@ import { FilterSelect } from "@/components/connect/filter-select";
 import { ManagerView } from "@/components/connect/manager-view";
 import { menuItem, MoreMenu } from "@/components/content/more-menu";
 import { Card, CardDescription } from "@/components/ui/card";
-import { InfoHint } from "@/components/ui/info-hint";
+import { PageHeader } from "@/components/ui/page-header";
 import { PeriodPicker } from "@/components/ui/period-picker";
 import { dateFormat, t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -124,48 +124,50 @@ export default async function ConnectPage({ searchParams }: PageProps<"/connect"
 
   return (
     <div className="flex flex-col gap-5 [&>*]:min-w-0">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-col gap-1">
-          <div className="flex flex-wrap items-center gap-x-1">
-            <h1 className="text-[22px] font-medium md:text-2xl">{t("connect.title")}</h1>
-            <InfoHint className="max-w-2xl">
-              {t("connect.intro")} {t("connect.testNote")}
-            </InfoHint>
-          </div>
-          {report.dataDate && (
-            <p className="text-muted-foreground text-xs">
-              <span className="text-foreground font-medium">
-                {t("connect.dataDate", {
-                  date: formatRange(report.dataDate, report.dataDate, today),
-                })}
-              </span>
-              {uploaded && ` · ${t("connect.uploadedAt", { date: uploaded })}`}
-            </p>
-          )}
-        </div>
-        {(canLead || downloadable) && (
-          <MoreMenu label={t("connect.moreMenu")}>
-            {canLead && (
-              <Link href="/connect/import" className={menuItem}>
-                <Upload />
-                {t("connect.import.link")}
-              </Link>
-            )}
-            {downloadable && (
-              <>
-                <a href={connectHref("/api/connect/xlsx", q)} download className={menuItem}>
-                  <FileSpreadsheet />
-                  {t("connect.download.xlsx")}
-                </a>
-                <a href={connectHref("/api/connect/pptx", q)} download className={menuItem}>
-                  <Presentation />
-                  {t("connect.download.pptx")}
-                </a>
-              </>
-            )}
-          </MoreMenu>
+      <PageHeader
+        title={t("connect.title")}
+        hint={
+          <>
+            {t("connect.intro")} {t("connect.testNote")}
+          </>
+        }
+        hintClassName="max-w-2xl"
+        actions={
+          (canLead || downloadable) && (
+            <MoreMenu label={t("connect.moreMenu")}>
+              {canLead && (
+                <Link href="/connect/import" className={menuItem}>
+                  <Upload />
+                  {t("connect.import.link")}
+                </Link>
+              )}
+              {downloadable && (
+                <>
+                  <a href={connectHref("/api/connect/xlsx", q)} download className={menuItem}>
+                    <FileSpreadsheet />
+                    {t("connect.download.xlsx")}
+                  </a>
+                  <a href={connectHref("/api/connect/pptx", q)} download className={menuItem}>
+                    <Presentation />
+                    {t("connect.download.pptx")}
+                  </a>
+                </>
+              )}
+            </MoreMenu>
+          )
+        }
+      >
+        {report.dataDate && (
+          <p className="text-xs">
+            <span className="text-foreground font-medium">
+              {t("connect.dataDate", {
+                date: formatRange(report.dataDate, report.dataDate, today),
+              })}
+            </span>
+            {uploaded && ` · ${t("connect.uploadedAt", { date: uploaded })}`}
+          </p>
         )}
-      </div>
+      </PageHeader>
 
       {report.facets.total === 0 ? (
         <Card>

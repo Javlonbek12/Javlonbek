@@ -1,4 +1,5 @@
 import { MeetingForm } from "@/components/meetings/meeting-form";
+import { PageHeader } from "@/components/ui/page-header";
 import { addDays } from "@/lib/dates";
 import { t } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
@@ -16,7 +17,7 @@ export default async function NewMeetingPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-[22px] font-medium md:text-2xl">{t("meetings.newMeeting")}</h1>
+      <PageHeader title={t("meetings.newMeeting")} />
       <MeetingForm
         action={createMeetingAction}
         people={people}

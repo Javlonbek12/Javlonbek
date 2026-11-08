@@ -8,6 +8,7 @@ import { OrgNodeForm, OrgTree } from "@/components/org/org-tree";
 import { inviteMessage } from "@/components/team/invite-section";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { db } from "@/lib/db";
 import { getEnv } from "@/lib/env";
 import { toDateString, todayInTimezone } from "@/lib/dates";
@@ -128,25 +129,27 @@ export default async function StructurePage({ searchParams }: PageProps<"/team/s
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-[22px] font-medium md:text-2xl">{t("team.org.title")}</h1>
-        <div className="flex flex-wrap gap-1">
-          <Button asChild size="sm" variant={view === "chart" ? "default" : "outline"}>
-            <Link href="/team/structure">{t("team.org.viewChart")}</Link>
-          </Button>
-          <Button asChild size="sm" variant={view === "list" ? "default" : "outline"}>
-            <Link href="/team/structure?view=list">{t("team.org.viewList")}</Link>
-          </Button>
-          {editable && (
-            <Button asChild size="sm" variant="ghost">
-              <Link href="/team/structure/import">
-                <FileSpreadsheet />
-                {t("team.org.import.open")}
-              </Link>
+      <PageHeader
+        title={t("team.org.title")}
+        actions={
+          <>
+            <Button asChild size="sm" variant={view === "chart" ? "default" : "outline"}>
+              <Link href="/team/structure">{t("team.org.viewChart")}</Link>
             </Button>
-          )}
-        </div>
-      </div>
+            <Button asChild size="sm" variant={view === "list" ? "default" : "outline"}>
+              <Link href="/team/structure?view=list">{t("team.org.viewList")}</Link>
+            </Button>
+            {editable && (
+              <Button asChild size="sm" variant="ghost">
+                <Link href="/team/structure/import">
+                  <FileSpreadsheet />
+                  {t("team.org.import.open")}
+                </Link>
+              </Button>
+            )}
+          </>
+        }
+      />
       {params.imported && (
         <p role="status" className="bg-secondary rounded-md p-3 text-sm">
           {t("team.org.import.done")}

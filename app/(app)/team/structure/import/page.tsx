@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { OrgImportForm } from "@/components/org/org-import-form";
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { db } from "@/lib/db";
 import { t } from "@/lib/i18n";
 import { requireModule } from "@/modules/core/access/guard";
@@ -18,7 +19,7 @@ export default async function OrgImportPage() {
       <Link href="/team/structure" className="text-muted-foreground w-fit text-sm hover:underline">
         ← {t("team.org.title")}
       </Link>
-      <h1 className="text-[22px] font-medium md:text-2xl">{t("team.org.import.title")}</h1>
+      <PageHeader title={t("team.org.import.title")} />
       <ol className="text-muted-foreground list-decimal pl-5 text-sm">
         <li>{t("team.org.import.step1")}</li>
         <li>{t("team.org.import.step2")}</li>

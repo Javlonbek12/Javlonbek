@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { PlanForm } from "@/components/content/plan-form";
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { isDateString } from "@/lib/dates";
 import { t } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
@@ -20,7 +21,7 @@ export default async function NewContentPage({ searchParams }: PageProps<"/conte
   const users = planner ? await listContentAuthors() : [];
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-[22px] font-medium md:text-2xl">{t("content.newTitle")}</h1>
+      <PageHeader title={t("content.newTitle")} />
       <Card>
         <PlanForm
           action={createPlanItemAction}

@@ -15,6 +15,7 @@ import { ProjectForm } from "@/components/projects/project-form";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { InfoHint } from "@/components/ui/info-hint";
+import { PageHeader } from "@/components/ui/page-header";
 import { formatDay, todayInTimezone, toDateString } from "@/lib/dates";
 import { t, type TranslationKey } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -110,57 +111,64 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
         <Link href="/projects" className="text-muted-foreground text-sm hover:underline">
           ← {t("projects.title")}
         </Link>
-        <div className="flex flex-wrap items-center gap-2">
-          {/* The dot stays on the title's line, also on a phone. */}
-          <h1 className="flex min-w-0 items-center gap-2 text-[22px] font-medium md:text-2xl">
-            <span
-              className="size-3.5 shrink-0 rounded-full"
-              style={{ background: projectColor(project.color) }}
-              aria-hidden
-            />
-            <span className="min-w-0 break-words">{project.name}</span>
-          </h1>
-          {project.finishedAt ? (
-            <span className="bg-secondary rounded-full px-2.5 py-0.5 text-xs font-medium">
-              {t("projects.finishedOn", {
-                date: formatDay(todayInTimezone(settings.timezone, project.finishedAt)),
-              })}
+        <PageHeader
+          title={
+            // The dot stays on the title's line, also on a phone.
+            <span className="flex min-w-0 items-center gap-2">
+              <span
+                className="size-3.5 shrink-0 rounded-full"
+                style={{ background: projectColor(project.color) }}
+                aria-hidden
+              />
+              <span className="min-w-0 break-words">{project.name}</span>
             </span>
-          ) : (
-            <HealthBadge health={stats.health} />
-          )}
-          {canManage && (
-            <div className="ml-auto flex flex-wrap gap-2">
-              <Button asChild size="sm" variant="outline">
-                <Link href={editing ? base : `${base}?edit=1`} aria-expanded={editing}>
-                  <Pencil />
-                  {t("projects.edit")}
-                </Link>
-              </Button>
-              <form action={finishProjectAction}>
-                <input type="hidden" name="projectId" value={project.id} />
-                <input type="hidden" name="finished" value={project.finishedAt ? "" : "1"} />
-                <Button
-                  type="submit"
-                  size="sm"
-                  variant="outline"
-                  title={project.finishedAt ? undefined : t("projects.finishHint")}
-                >
-                  {t(project.finishedAt ? "projects.reopen" : "projects.finish")}
+          }
+          actions={
+            canManage && (
+              <>
+                <Button asChild size="sm" variant="outline">
+                  <Link href={editing ? base : `${base}?edit=1`} aria-expanded={editing}>
+                    <Pencil />
+                    {t("projects.edit")}
+                  </Link>
                 </Button>
-              </form>
-            </div>
-          )}
-        </div>
-        <p className="text-muted-foreground text-sm">
-          {[
-            project.team,
-            data.lead && t("projects.leadName", { name: data.lead }),
-            range && `${formatDay(range.from)} – ${formatDay(range.to)}`,
-          ]
-            .filter(Boolean)
-            .join(" · ")}
-        </p>
+                <form action={finishProjectAction}>
+                  <input type="hidden" name="projectId" value={project.id} />
+                  <input type="hidden" name="finished" value={project.finishedAt ? "" : "1"} />
+                  <Button
+                    type="submit"
+                    size="sm"
+                    variant="outline"
+                    title={project.finishedAt ? undefined : t("projects.finishHint")}
+                  >
+                    {t(project.finishedAt ? "projects.reopen" : "projects.finish")}
+                  </Button>
+                </form>
+              </>
+            )
+          }
+        >
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            {project.finishedAt ? (
+              <span className="bg-secondary text-foreground rounded-full px-2.5 py-0.5 text-xs font-medium">
+                {t("projects.finishedOn", {
+                  date: formatDay(todayInTimezone(settings.timezone, project.finishedAt)),
+                })}
+              </span>
+            ) : (
+              <HealthBadge health={stats.health} />
+            )}
+            <span>
+              {[
+                project.team,
+                data.lead && t("projects.leadName", { name: data.lead }),
+                range && `${formatDay(range.from)} – ${formatDay(range.to)}`,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+          </span>
+        </PageHeader>
         {project.description && (
           <p className="text-sm whitespace-pre-wrap">{project.description}</p>
         )}

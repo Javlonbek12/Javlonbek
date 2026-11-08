@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { MeetingForm } from "@/components/meetings/meeting-form";
+import { PageHeader } from "@/components/ui/page-header";
 import { t } from "@/lib/i18n";
 import { utcToZonedLocal } from "@/lib/time";
 import { requireUser } from "@/modules/core/auth/current-user";
@@ -27,9 +28,7 @@ export default async function EditMeetingPage({ params }: PageProps<"/meetings/[
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-[22px] font-medium md:text-2xl">
-        {t("meetings.editTitle", { title: meeting.title })}
-      </h1>
+      <PageHeader title={t("meetings.editTitle", { title: meeting.title })} />
       <MeetingForm
         action={updateMeetingAction}
         people={people}

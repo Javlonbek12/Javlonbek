@@ -12,6 +12,7 @@ import {
   type ConversationDeps,
 } from "@/modules/bot/conversation";
 import { commandsFor } from "@/modules/bot/commands";
+import { formatDay } from "@/lib/dates";
 import { rememberReasonMessage } from "@/modules/bot/decisions";
 import type { DraftPayload } from "@/modules/bot/draft-card";
 import { MockStt } from "@/modules/stt";
@@ -258,7 +259,10 @@ describe("commands and natural requests", () => {
     // Numbered, with bold headers; in «🔥 Просрочено» the lines carry no 🔥 of their own.
     const today = await showList(users.owner, "today", NOW);
     expect(today.text).toContain("<b>📋 На сегодня (1)</b>\n1. Сегодняшняя");
-    expect(today.text.endsWith("<b>🔥 Просрочено (1)</b>\n2. Старая — 20 сент.")).toBe(true);
+    // A date of another year carries its year: the expected text follows the calendar.
+    expect(
+      today.text.endsWith(`<b>🔥 Просрочено (1)</b>\n2. Старая — ${formatDay("2026-09-20")}`),
+    ).toBe(true);
     expect(today).toMatchObject({ html: true, open: "/" });
     // «✅ 1», «✅ 2» close a task in one tap; «📅 Перенести срок» asks which one.
     expect(today.buttons!.map((row) => row.map((b) => b.text))).toEqual([

@@ -853,7 +853,6 @@ export const ru = {
     },
     timeReport: {
       title: "Кто сколько времени потратил",
-      subtitle: "{from} – {to}",
       hint: "Время из таймера и добавленное вручную — по задачам, которые вы видите. Идущий сейчас таймер попадёт в отчёт, когда его остановят.",
       total: "Всего времени",
       tasks: "Задач",
@@ -4134,7 +4133,6 @@ export const ru = {
       journalFilter: "Куда",
       waybillShort: "№ {number}",
       single: "отдельной строкой",
-      apply: "Показать",
     },
   },
   offline: {

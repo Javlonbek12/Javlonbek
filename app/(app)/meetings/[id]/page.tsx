@@ -9,6 +9,7 @@ import { StatusBadge } from "@/components/tasks/task-badges";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { ConfirmAction } from "@/components/ui/confirm-action";
+import { PageHeader } from "@/components/ui/page-header";
 import { formatDay, toDateString } from "@/lib/dates";
 import { t, type TranslationKey } from "@/lib/i18n";
 import { formatDateTime, utcToZonedLocal } from "@/lib/time";
@@ -51,68 +52,76 @@ export default async function MeetingPage({ params, searchParams }: PageProps<"/
       )}
 
       <Card className="gap-3">
-        <div className="flex items-start justify-between gap-2">
-          <h1 className="flex items-center gap-2 text-xl font-medium">
-            {meeting.title}
-            {meeting.seriesId && (
-              <Repeat className="text-muted-foreground size-4" aria-label={t("meetings.weekly")} />
-            )}
-          </h1>
-          {canEdit && (
-            <div className="flex shrink-0 items-center gap-1">
-              <Button asChild variant="outline" size="icon" className="size-8">
-                <Link
-                  href={`/meetings/${meeting.id}/edit`}
-                  aria-label={t("meetings.edit")}
-                  title={t("meetings.edit")}
-                >
-                  <Pencil />
-                </Link>
-              </Button>
-              {/* Deleting is one step away, in «⋯», not under the agenda. */}
-              <details className="relative">
-                <summary
-                  className="hover:bg-accent flex size-8 cursor-pointer list-none items-center justify-center rounded-full border [&::-webkit-details-marker]:hidden"
-                  aria-label={t("meetings.more")}
-                  title={t("meetings.more")}
-                >
-                  <MoreHorizontal className="size-4" />
-                </summary>
-                <div className="bg-card absolute right-0 z-20 mt-1 flex w-64 flex-col items-start gap-1 rounded-xl border p-2 shadow-lg">
-                  <ConfirmAction
-                    label={t("meetings.delete")}
-                    title={t("meetings.confirmDelete")}
-                    hint={t(withNotes ? "meetings.deleteHintNotes" : "meetings.deleteHint")}
-                    confirm={t("meetings.confirmYes")}
-                    action={deleteMeetingAction}
-                    hidden={{ meetingId: meeting.id }}
-                    align="right"
-                  />
-                  {meeting.seriesId && (
+        <PageHeader
+          title={
+            <span className="flex items-center gap-2">
+              {meeting.title}
+              {meeting.seriesId && (
+                <Repeat
+                  className="text-muted-foreground size-4"
+                  aria-label={t("meetings.weekly")}
+                />
+              )}
+            </span>
+          }
+          actions={
+            canEdit && (
+              <div className="flex items-center gap-1">
+                <Button asChild variant="outline" size="icon" className="size-8">
+                  <Link
+                    href={`/meetings/${meeting.id}/edit`}
+                    aria-label={t("meetings.edit")}
+                    title={t("meetings.edit")}
+                  >
+                    <Pencil />
+                  </Link>
+                </Button>
+                {/* Deleting is one step away, in «⋯», not under the agenda. */}
+                <details className="relative">
+                  <summary
+                    className="hover:bg-accent flex size-8 cursor-pointer list-none items-center justify-center rounded-full border [&::-webkit-details-marker]:hidden"
+                    aria-label={t("meetings.more")}
+                    title={t("meetings.more")}
+                  >
+                    <MoreHorizontal className="size-4" />
+                  </summary>
+                  <div className="bg-card absolute right-0 z-20 mt-1 flex w-64 flex-col items-start gap-1 rounded-xl border p-2 shadow-lg">
                     <ConfirmAction
-                      label={t("meetings.deleteSeries")}
-                      title={t("meetings.confirmDeleteSeries", { n: followingCount })}
-                      hint={t("meetings.deleteSeriesHint")}
+                      label={t("meetings.delete")}
+                      title={t("meetings.confirmDelete")}
+                      hint={t(withNotes ? "meetings.deleteHintNotes" : "meetings.deleteHint")}
                       confirm={t("meetings.confirmYes")}
                       action={deleteMeetingAction}
-                      hidden={{ meetingId: meeting.id, following: "1" }}
+                      hidden={{ meetingId: meeting.id }}
                       align="right"
                     />
-                  )}
-                </div>
-              </details>
-            </div>
-          )}
-        </div>
-        <p className="text-muted-foreground text-sm first-letter:uppercase">
-          {past ? t("meetings.pastOn", { when }) : when}
-          {!past && (
-            <>
-              {" · "}
-              <MeetingStatus meeting={meeting} now={now} />
-            </>
-          )}
-        </p>
+                    {meeting.seriesId && (
+                      <ConfirmAction
+                        label={t("meetings.deleteSeries")}
+                        title={t("meetings.confirmDeleteSeries", { n: followingCount })}
+                        hint={t("meetings.deleteSeriesHint")}
+                        confirm={t("meetings.confirmYes")}
+                        action={deleteMeetingAction}
+                        hidden={{ meetingId: meeting.id, following: "1" }}
+                        align="right"
+                      />
+                    )}
+                  </div>
+                </details>
+              </div>
+            )
+          }
+        >
+          <p className="first-letter:uppercase">
+            {past ? t("meetings.pastOn", { when }) : when}
+            {!past && (
+              <>
+                {" · "}
+                <MeetingStatus meeting={meeting} now={now} />
+              </>
+            )}
+          </p>
+        </PageHeader>
         {/* A call that was days ago is no button to press. */}
         {meeting.link && !past && (
           <Button asChild size="sm" className="self-start">

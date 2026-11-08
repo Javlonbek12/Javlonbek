@@ -13,6 +13,7 @@ import { ConfirmAction } from "@/components/ui/confirm-action";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
+import { PageHeader } from "@/components/ui/page-header";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDay, toDateString } from "@/lib/dates";
 import { EmployeeNoteKind } from "@/lib/generated/prisma/enums";
@@ -176,67 +177,73 @@ export default async function EmployeePage({ params, searchParams }: PageProps<"
 
       <header className="flex items-start gap-3">
         <Avatar name={displayName(user)} muted={off} size="lg" />
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-[22px] font-medium md:text-2xl">{displayName(user)}</h1>
-            <Badge variant={user.role === "OWNER" ? "default" : "secondary"}>
-              {t(`roles.${user.role}`)}
-            </Badge>
-            {off && <Badge variant="outline">{t("team.deactivation.badge")}</Badge>}
-          </div>
-          <p className="text-muted-foreground text-sm">
-            {user.position ?? t("team.noPosition")}
-            {orgPath && orgPath.length > 0 && ` · ${orgPath.at(-1)}`}
-            {manager && (
+        <PageHeader
+          className="min-w-0 flex-1"
+          title={displayName(user)}
+          actions={
+            !off && (
               <>
-                {` · ${t("team.profile.manager").toLowerCase()}: `}
-                <Link href={`/team/${manager.id}`} className="underline">
-                  {personName(manager)}
-                </Link>
+                <Button asChild size="sm" variant="outline">
+                  <Link href={`/tasks/new?assignee=${encodeURIComponent(user.id)}`}>
+                    <Plus />
+                    {t("team.actions.task")}
+                  </Link>
+                </Button>
+                {user.telegramUsername && (
+                  <Button asChild size="sm" variant="outline">
+                    <a
+                      href={`https://t.me/${user.telegramUsername}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <MessageCircle />
+                      {t("team.actions.write")}
+                    </a>
+                  </Button>
+                )}
+                {user.phone && (
+                  <Button asChild size="sm" variant="outline">
+                    <a href={`tel:${user.phone.replace(/[^\d+]/g, "")}`}>
+                      <Phone />
+                      {t("team.actions.call")}
+                    </a>
+                  </Button>
+                )}
               </>
-            )}
-          </p>
-          <p className="text-muted-foreground text-xs">
-            {user.telegramUsername && `@${user.telegramUsername}`}
-            {user.telegramUsername && seesBot && " · "}
-            {seesBot &&
-              (user.botChatId ? (
-                t("team.botLinked")
-              ) : (
-                <span className="text-foreground font-medium">{t("team.botNotLinked")}</span>
-              ))}
-          </p>
-          {!off && (
-            <div className="flex flex-wrap gap-2 pt-1">
-              <Button asChild size="sm" variant="outline">
-                <Link href={`/tasks/new?assignee=${encodeURIComponent(user.id)}`}>
-                  <Plus />
-                  {t("team.actions.task")}
-                </Link>
-              </Button>
-              {user.telegramUsername && (
-                <Button asChild size="sm" variant="outline">
-                  <a
-                    href={`https://t.me/${user.telegramUsername}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    <MessageCircle />
-                    {t("team.actions.write")}
-                  </a>
-                </Button>
-              )}
-              {user.phone && (
-                <Button asChild size="sm" variant="outline">
-                  <a href={`tel:${user.phone.replace(/[^\d+]/g, "")}`}>
-                    <Phone />
-                    {t("team.actions.call")}
-                  </a>
-                </Button>
-              )}
-            </div>
-          )}
-        </div>
+            )
+          }
+        >
+          <div className="flex flex-col gap-1">
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <Badge variant={user.role === "OWNER" ? "default" : "secondary"}>
+                {t(`roles.${user.role}`)}
+              </Badge>
+              {off && <Badge variant="outline">{t("team.deactivation.badge")}</Badge>}
+              <span>
+                {user.position ?? t("team.noPosition")}
+                {orgPath && orgPath.length > 0 && ` · ${orgPath.at(-1)}`}
+                {manager && (
+                  <>
+                    {` · ${t("team.profile.manager").toLowerCase()}: `}
+                    <Link href={`/team/${manager.id}`} className="underline">
+                      {personName(manager)}
+                    </Link>
+                  </>
+                )}
+              </span>
+            </p>
+            <p className="text-xs">
+              {user.telegramUsername && `@${user.telegramUsername}`}
+              {user.telegramUsername && seesBot && " · "}
+              {seesBot &&
+                (user.botChatId ? (
+                  t("team.botLinked")
+                ) : (
+                  <span className="text-foreground font-medium">{t("team.botNotLinked")}</span>
+                ))}
+            </p>
+          </div>
+        </PageHeader>
       </header>
       {user.deactivatedAt && (
         <p className="bg-muted rounded-md p-3 text-sm">

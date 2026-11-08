@@ -5,8 +5,9 @@ import { ProjectForm } from "@/components/projects/project-form";
 import { ProjectRows } from "@/components/projects/project-rows";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
+import { Segmented } from "@/components/ui/segmented";
 import { t, type TranslationKey } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getSettings, getUserToday } from "@/modules/core/settings/service";
 import { listProjectCards } from "@/modules/projects/service";
@@ -34,33 +35,30 @@ export default async function ProjectsPage({ searchParams }: PageProps<"/project
 
   return (
     <div className="flex flex-col gap-4 [&>*]:min-w-0">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-[22px] font-medium md:text-2xl">{t("projects.title")}</h1>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="bg-secondary/70 inline-flex gap-0.5 rounded-full p-1 text-sm">
-            {[false, true].map((value) => (
-              <Link
-                key={String(value)}
-                href={value ? "/projects?show=finished" : "/projects"}
-                className={cn(
-                  "rounded-full px-3.5 py-1",
-                  value === finished ? "bg-card font-medium shadow-sm" : "text-muted-foreground",
-                )}
-              >
-                {t(value ? "projects.filterFinished" : "projects.filterActive")}
-              </Link>
-            ))}
-          </div>
-          {canCreate && (
-            <Button asChild size="sm">
-              <Link href={creating ? "/projects" : "/projects?create=1"} aria-expanded={creating}>
-                <Plus />
-                {t("projects.new")}
-              </Link>
-            </Button>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        title={t("projects.title")}
+        actions={
+          <>
+            <Segmented
+              label={t("projects.title")}
+              items={[false, true].map((value) => ({
+                key: String(value),
+                label: t(value ? "projects.filterFinished" : "projects.filterActive"),
+                href: value ? "/projects?show=finished" : "/projects",
+                active: value === finished,
+              }))}
+            />
+            {canCreate && (
+              <Button asChild size="sm">
+                <Link href={creating ? "/projects" : "/projects?create=1"} aria-expanded={creating}>
+                  <Plus />
+                  {t("projects.new")}
+                </Link>
+              </Button>
+            )}
+          </>
+        }
+      />
       {typeof error === "string" && (
         <p role="alert" className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
           {t(`projects.errors.${error}` as TranslationKey)}

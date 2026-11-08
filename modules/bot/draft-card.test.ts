@@ -12,6 +12,8 @@ const people = [
   { id: "u1", firstName: "Азиз", lastName: "Каримов" },
   { id: "u2", firstName: "Азиз", lastName: "Рахимов" },
 ];
+// This year's date: a date of another year would be shown with its year.
+const THIS_YEAR = new Date().getFullYear();
 const task = { saidName: null, unresolved: false, candidateIds: [], priority: null, project: null };
 
 describe("confirmation card", () => {
@@ -21,7 +23,7 @@ describe("confirmation card", () => {
         ...task,
         title: "Подготовить отчёт",
         assigneeId: "u1",
-        dueDate: "2026-10-09",
+        dueDate: `${THIS_YEAR}-10-09`,
         priority: "URGENT",
       },
       { ...task, title: "Позвонить дистрибьютору", assigneeId: null, dueDate: null },
