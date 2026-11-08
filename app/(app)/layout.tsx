@@ -4,7 +4,7 @@ import { AppNav, MobileHeader, TopBar } from "@/components/app-nav";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { countUnread } from "@/modules/core/notifications/service";
 import { displayName } from "@/modules/core/users/display-name";
-import { getRunningTimer } from "@/modules/tasks/running-timer";
+import { getRunningTimer } from "@/modules/tasks/time";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const user = await requireUser();

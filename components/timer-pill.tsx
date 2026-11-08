@@ -8,10 +8,10 @@ import { stopRunningTimerAction } from "@/app/(app)/timer-actions";
 import { useT } from "@/components/locale-provider";
 import { cn } from "@/lib/utils";
 import { clockText } from "@/modules/tasks/time-format";
-import type { RunningTimer } from "@/modules/tasks/running-timer";
+import type { RunningTimer } from "@/modules/tasks/time";
 
 // The running clock: ticks every second from the timer's start.
-export function useClock(startedAt: string) {
+export function useClock(startedAt: Date | string) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);

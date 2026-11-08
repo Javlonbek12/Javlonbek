@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/lib/db";
 import { getMyDay, getTeamToday } from "@/modules/home/today";
 import { getMyDashboard } from "@/modules/tasks/dashboard";
-import { getRunningTimer } from "@/modules/tasks/running-timer";
+import { getRunningTimer } from "@/modules/tasks/time";
 import { changeStatus, createTask } from "@/modules/tasks/service";
 import { startTimer } from "@/modules/tasks/time";
 import { createTestUser, resetDb } from "@/tests/helpers/db";

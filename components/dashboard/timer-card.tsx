@@ -6,7 +6,7 @@ import Link from "next/link";
 import { stopRunningTimerAction } from "@/app/(app)/timer-actions";
 import { useT } from "@/components/locale-provider";
 import { useClock } from "@/components/timer-pill";
-import type { RunningTimer } from "@/modules/tasks/running-timer";
+import type { RunningTimer } from "@/modules/tasks/time";
 
 // First thing on «Сегодня» while a timer runs: what the time is going to, and «Остановить».
 export function TimerCard({ timer }: { timer: RunningTimer }) {

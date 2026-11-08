@@ -40,7 +40,7 @@ import { listMeetingsBetween } from "@/modules/meetings/service";
 import { canOpenProjects, listProjectCards } from "@/modules/projects/service";
 import { getMyDashboard } from "@/modules/tasks/dashboard";
 import { quickTarget } from "@/modules/tasks/quick";
-import { getRunningTimer } from "@/modules/tasks/running-timer";
+import { getRunningTimer } from "@/modules/tasks/time";
 import { listDecisions, type TaskView } from "@/modules/tasks/service";
 
 import { decideFromHomeAction } from "./home-actions";

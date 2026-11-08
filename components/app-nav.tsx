@@ -23,7 +23,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { TimerPill } from "@/components/timer-pill";
 import { modulesForRole, PHONE_BAR } from "@/modules/core/registry";
-import type { RunningTimer } from "@/modules/tasks/running-timer";
+import type { RunningTimer } from "@/modules/tasks/time";
 
 function matches(pathname: string, href: string) {
   return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
