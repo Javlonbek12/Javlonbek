@@ -1,19 +1,9 @@
-import {
-  AlertCircle,
-  CalendarDays,
-  Folder,
-  ListChecks,
-  Lock,
-  Minus,
-  Repeat,
-  Timer,
-} from "lucide-react";
+import { AlertCircle, CalendarDays, Folder, ListChecks, Lock, Repeat, Timer } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { daysBetween, formatDay } from "@/lib/dates";
-import type { TaskPriority } from "@/lib/generated/prisma/enums";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { displayName } from "@/modules/core/users/display-name";
@@ -23,12 +13,9 @@ import { isLateWork } from "@/modules/tasks/today";
 
 import { StatusBadge } from "./task-badges";
 
-const PRIORITY_STYLE: Record<TaskPriority, string> = {
-  URGENT: "bg-red-50 text-red-600 dark:bg-red-950/50 dark:text-red-300",
-  HIGH: "bg-red-50 text-red-600 dark:bg-red-950/50 dark:text-red-300",
-  MEDIUM: "bg-amber-50 text-amber-600 dark:bg-amber-950/50 dark:text-amber-300",
-  LOW: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300",
-};
+// Only «Высокий» and «Срочно» are marked — as an icon in orange: red means overdue, and a mark on
+// almost every row («Средний») would only be noise.
+const isImportant = (task: TaskView) => task.priority === "HIGH" || task.priority === "URGENT";
 
 export const initials = (person: { firstName: string; lastName?: string | null }) =>
   `${person.firstName.charAt(0)}${person.lastName?.charAt(0) ?? ""}`.toUpperCase();
@@ -49,9 +36,11 @@ function dueNote(task: TaskView, today: string) {
 
 // One task in the list. On a phone, two or three lines: the title, then status · due · assignee
 // (empty values are left out, not drawn as «—»). On a wider screen, a table row: title with badges
-// and a line of the description, the due date, importance, project and the assignee.
+// and a line of the description, the due date, importance, project and the person.
 // The list opens the task in the panel next to it (`href`); the round button before the title
 // (`circle`) takes the next step towards closing it. `timerRunning`: the viewer's timer runs on it.
+// `person`: whom the last column names — the assignee, or in «Мои» who set the task (one's own
+// name in every row says nothing). `compact`: a shorter row (the team list, grouped by person).
 export function TaskTableRow({
   task,
   today,
@@ -59,6 +48,8 @@ export function TaskTableRow({
   circle,
   selected = false,
   timerRunning = false,
+  person = "assignee",
+  compact = false,
 }: {
   task: TaskView;
   today: string;
@@ -66,17 +57,24 @@ export function TaskTableRow({
   circle?: ReactNode;
   selected?: boolean;
   timerRunning?: boolean;
+  person?: "assignee" | "creator" | "none";
+  compact?: boolean;
 }) {
   const overdue = isLateWork(task, today);
   const note = dueNote(task, today);
-  const assignee = (
-    <>
-      {displayName(task.assignee)}
-      {task.coAssigneeIds.length > 0 && (
-        <span className="text-muted-foreground font-normal"> +{task.coAssigneeIds.length}</span>
-      )}
-    </>
-  );
+  const showCreator =
+    person === "creator" && !task.isPersonal && task.creatorId !== task.assigneeId;
+  const who =
+    person === "none" || (person === "creator" && !showCreator) ? null : showCreator ? (
+      t("tasks.filters.from", { name: displayName(task.creator) })
+    ) : (
+      <>
+        {displayName(task.assignee)}
+        {task.coAssigneeIds.length > 0 && (
+          <span className="text-muted-foreground font-normal"> +{task.coAssigneeIds.length}</span>
+        )}
+      </>
+    );
   const timer = timerRunning && (
     <span className="text-primary inline-flex items-center gap-1 text-xs font-medium">
       <Timer className="size-3.5" aria-hidden />
@@ -96,7 +94,10 @@ export function TaskTableRow({
         href={href ?? `/tasks/${task.id}`}
         scroll={false}
         aria-current={selected ? "true" : undefined}
-        className="grid min-w-0 flex-1 gap-x-5 gap-y-1 p-3 md:grid-cols-[minmax(0,1fr)_8.5rem_7.5rem_minmax(0,10rem)_minmax(0,11rem)] md:items-center md:gap-y-2.5 md:px-5 md:py-3.5"
+        className={cn(
+          "grid min-w-0 flex-1 gap-x-5 gap-y-1 p-3 md:grid-cols-[minmax(0,1fr)_8.5rem_7.5rem_minmax(0,10rem)_minmax(0,11rem)] md:items-center md:gap-y-2.5 md:px-5",
+          compact ? "md:py-2" : "md:py-3.5",
+        )}
       >
         <span className="flex min-w-0 flex-col gap-1">
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -141,7 +142,7 @@ export function TaskTableRow({
             )}
             <span className="hidden md:inline-flex">{timer}</span>
           </span>
-          {task.description && (
+          {task.description && !compact && (
             <span className="text-muted-foreground hidden text-xs md:line-clamp-1">
               {task.description}
             </span>
@@ -164,13 +165,13 @@ export function TaskTableRow({
             </span>
           )}
           {!task.dueDate && task.status === "IN_REVIEW" && note && <span>{note.text}</span>}
-          {(task.priority === "HIGH" || task.priority === "URGENT") && (
-            <span className="text-destructive inline-flex items-center gap-1">
+          {isImportant(task) && (
+            <span className="inline-flex items-center gap-1 text-orange-600 dark:text-orange-400">
               <AlertCircle className="size-3.5" aria-hidden />
               {t(`tasks.priority.${task.priority}`)}
             </span>
           )}
-          <span className="text-foreground truncate">{assignee}</span>
+          {who && <span className="text-foreground truncate">{who}</span>}
           {timer}
         </span>
 
@@ -205,19 +206,12 @@ export function TaskTableRow({
         </span>
 
         <span className="hidden md:block">
-          <span
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold",
-              PRIORITY_STYLE[task.priority],
-            )}
-          >
-            {task.priority === "LOW" ? (
-              <Minus className="size-3.5" />
-            ) : (
+          {isImportant(task) && (
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-orange-600 dark:text-orange-400">
               <AlertCircle className="size-3.5" />
-            )}
-            {t(`tasks.priority.${task.priority}`)}
-          </span>
+              {t(`tasks.priority.${task.priority}`)}
+            </span>
+          )}
         </span>
 
         <span className="text-muted-foreground hidden min-w-0 items-center gap-2 text-xs md:flex">
@@ -232,13 +226,26 @@ export function TaskTableRow({
         </span>
 
         <span className="hidden min-w-0 items-center gap-2.5 md:flex">
-          <span className="bg-secondary text-primary flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-bold">
-            {initials(task.assignee)}
-          </span>
-          <span className="flex min-w-0 flex-col">
-            <span className="truncate text-sm font-medium">{assignee}</span>
-            <span className="text-muted-foreground text-[11px]">{t("tasks.look.assignee")}</span>
-          </span>
+          {who && (
+            <>
+              <span
+                className={cn(
+                  "bg-secondary text-primary flex shrink-0 items-center justify-center rounded-full text-xs font-bold",
+                  compact ? "size-7" : "size-9",
+                )}
+              >
+                {initials(showCreator ? task.creator : task.assignee)}
+              </span>
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate text-sm font-medium">
+                  {showCreator ? displayName(task.creator) : who}
+                </span>
+                <span className="text-muted-foreground text-[11px]">
+                  {showCreator ? t("tasks.fields.creator") : t("tasks.look.assignee")}
+                </span>
+              </span>
+            </>
+          )}
         </span>
       </Link>
     </li>

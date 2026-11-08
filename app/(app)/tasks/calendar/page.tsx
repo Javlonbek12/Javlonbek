@@ -6,13 +6,14 @@ import {
   Folder,
   Lock,
   Repeat,
-  Users,
   Video,
 } from "lucide-react";
+import { cookies } from "next/headers";
 import Link from "next/link";
 
 import { Ring } from "@/components/dashboard/ring";
 import { MEETING_DOT, MEETING_TONE } from "@/components/meetings/meeting-line";
+import { ScopeSwitch } from "@/components/tasks/scope-filter";
 import { TaskTableRow } from "@/components/tasks/task-table-row";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,6 +37,7 @@ import {
   shiftCalendar,
 } from "@/modules/tasks/calendar";
 import { parseTaskFilters } from "@/modules/tasks/filters";
+import { rememberedScope, SCOPE_COOKIE } from "@/modules/tasks/scope-cookie";
 import {
   listPlannedRepeats,
   listTasksDueBetween,
@@ -177,19 +179,21 @@ export default async function CalendarPage({ searchParams }: PageProps<"/tasks/c
   const params = await searchParams;
   const today = await getUserToday(user.id);
   const { mode, date } = parseCalendarParams(params, today);
-  const { scope } = parseTaskFilters(params);
+  // «Чьи» as chosen last in any task view, when the address doesn't say.
+  const remembered = rememberedScope((await cookies()).get(SCOPE_COOKIE)?.value, user.id);
+  const { scope } = parseTaskFilters({ ...params, scope: params.scope ?? remembered });
   const { days, from, to } = calendarRange(mode, date);
   const { timezone } = await getSettings(user.id);
   const [tasks, planned, todayTasks, meetings] = await Promise.all([
     listTasksDueBetween(user, scope, from, to),
     listPlannedRepeats(user, scope, from, to),
     listTasksDueBetween(user, scope, today, addDays(today, 1)),
-    // Meetings: "mine" = I take part; "team" = every meeting I can see.
+    // Meetings: «Команда» = every meeting I can see; otherwise the ones I take part in.
     listMeetingsBetween(
       user,
       zonedLocalToUtc(`${from}T00:00`, timezone)!,
       zonedLocalToUtc(`${to}T00:00`, timezone)!,
-      scope === "mine",
+      scope !== "team",
     ),
   ]);
   const meetingsByDay = new Map<string, Meeting[]>();
@@ -303,23 +307,15 @@ export default async function CalendarPage({ searchParams }: PageProps<"/tasks/c
             {title}
           </h2>
           <div className="ml-auto flex flex-wrap gap-2">
-            <div className="bg-card shadow-card flex rounded-xl border p-1 text-sm">
-              {(["mine", "team"] as const).map((s) => (
-                <Link
-                  key={s}
-                  href={href({ scope: s })}
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-lg px-3 py-1.5",
-                    s === scope
-                      ? "bg-secondary text-primary font-semibold"
-                      : "text-muted-foreground",
-                  )}
-                >
-                  {s === "team" && <Users className="size-4" />}
-                  {s === "mine" ? t("tasks.filters.scopeMine") : t("tasks.filters.scopeTeam")}
-                </Link>
-              ))}
-            </div>
+            <ScopeSwitch
+              value={scope}
+              userId={user.id}
+              hrefs={{
+                mine: href({ scope: "mine" }),
+                created: href({ scope: "created" }),
+                team: href({ scope: "team" }),
+              }}
+            />
             <div className="bg-card shadow-card flex rounded-xl border p-1 text-sm">
               {CALENDAR_MODES.map((m) => (
                 <Link

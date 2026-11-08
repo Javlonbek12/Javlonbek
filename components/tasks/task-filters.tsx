@@ -6,27 +6,28 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { useT } from "@/components/locale-provider";
 import { cn } from "@/lib/utils";
-import { SCOPE_COOKIE } from "@/modules/tasks/scope-cookie";
 
 const SEARCH_DELAY_MS = 400;
 
-// The search and filters above the task list. Search works as you type (after a short pause), a
-// filter applies as soon as it is chosen — no «Показать» button. On a phone the dropdowns hide
-// behind «Фильтры · N» (N: how many are set). The chosen «Чьи» is remembered for next time
-// (a cookie per user, read by the page).
+// The filters above the task list, in one row: the search, «Чьи» and the employee (`main`), and
+// «Ещё фильтры · N» that opens the rarer ones (`children`: status, importance, project, label,
+// sorting). Search works as you type (after a short pause); a filter applies as soon as it is
+// chosen — no «Показать» button.
 export function TaskFilterForm({
   q,
   activeCount,
-  userId,
   hidden,
+  main,
   children,
 }: {
   q: string;
+  // How many of the rarer filters are set (on «Ещё фильтры»).
   activeCount: number;
-  userId: string;
-  // Values kept from outside the form (the quick filter chips).
+  // Values kept from outside the form (the quick filter chips, «Чьи»).
   hidden: Record<string, string>;
-  // The dropdowns.
+  // Next to the search: «Чьи» and the employee.
+  main: ReactNode;
+  // Behind «Ещё фильтры».
   children: ReactNode;
 }) {
   const t = useT();
@@ -44,8 +45,6 @@ export function TaskFilterForm({
   const onChange = (event: React.FormEvent<HTMLFormElement>) => {
     const target = event.target as HTMLInputElement | HTMLSelectElement;
     if (timer.current) clearTimeout(timer.current);
-    if (target.name === "scope")
-      document.cookie = `${SCOPE_COOKIE}=${encodeURIComponent(`${userId}:${target.value}`)}; path=/; max-age=31536000; samesite=lax`;
     if (target.name === "q") timer.current = setTimeout(submit, SEARCH_DELAY_MS);
     else submit();
   };
@@ -57,13 +56,13 @@ export function TaskFilterForm({
       replace
       scroll={false}
       onChange={onChange}
-      className="flex flex-col gap-3"
+      className="flex flex-col gap-2"
     >
       {Object.entries(hidden).map(([name, value]) => (
         <input key={name} type="hidden" name={name} value={value} />
       ))}
-      <div className="flex items-center gap-2">
-        <label className="bg-card shadow-card flex min-w-0 flex-1 items-center gap-2 rounded-2xl border px-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="bg-card shadow-card flex min-w-0 flex-[1_1_14rem] items-center gap-2 rounded-2xl border px-4">
           <Search className="text-muted-foreground size-[18px] shrink-0" aria-hidden />
           <input
             name="q"
@@ -75,17 +74,18 @@ export function TaskFilterForm({
             className="h-11 min-w-0 flex-1 bg-transparent text-sm outline-none"
           />
         </label>
+        {main}
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
           aria-expanded={open}
           className={cn(
-            "bg-card shadow-card flex h-11 shrink-0 items-center gap-1.5 rounded-2xl border px-3.5 text-sm font-medium md:hidden",
+            "bg-card shadow-card flex h-11 shrink-0 items-center gap-1.5 rounded-2xl border px-3.5 text-sm font-medium",
             open && "border-primary text-primary",
           )}
         >
           <SlidersHorizontal className="size-4" aria-hidden />
-          {t("tasks.filters.button")}
+          {t("tasks.filters.more")}
           {activeCount > 0 && (
             <span className="bg-primary text-primary-foreground rounded-full px-1.5 text-xs tabular-nums">
               {activeCount}
@@ -96,7 +96,7 @@ export function TaskFilterForm({
       <div
         className={cn(
           "grid-cols-1 gap-2 sm:grid-cols-2 md:flex md:flex-wrap md:items-center",
-          open ? "grid" : "hidden md:flex",
+          open ? "grid" : "hidden",
         )}
       >
         {children}
