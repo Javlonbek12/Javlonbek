@@ -88,6 +88,8 @@ export const en: Dictionary = {
       due: "Due: {date}",
       meetingsToday: "Meetings today",
     },
+    denied:
+      "The «{section}» section is not available to you. If you need it, ask the owner to turn it on in «Roles and access».",
     today: {
       timer: "A timer is running",
       stop: "Stop",

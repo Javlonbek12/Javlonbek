@@ -32,7 +32,10 @@ import { getEnv } from "@/lib/env";
 import { t } from "@/lib/i18n";
 import { zonedLocalToUtc } from "@/lib/time";
 import { cn } from "@/lib/utils";
+import { canUseModule } from "@/modules/core/access/actor";
+import { DENIED_PARAM } from "@/modules/core/access/guard";
 import { requireUser } from "@/modules/core/auth/current-user";
+import { MODULES } from "@/modules/core/registry";
 import { getSettings, getUserToday } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
 import { getMyDay, getTeamToday, type DayTask } from "@/modules/home/today";
@@ -189,20 +192,25 @@ function SimpleRow({ task, note }: { task: TaskView; note: string }) {
 // «Сегодня»: what to do right now, in this order — the running timer, decisions waiting for me,
 // my day, today's meetings, the next days; then my team (for whoever oversees one), the week in
 // numbers and projects.
-export default async function TodayPage() {
+export default async function TodayPage({ searchParams }: PageProps<"/">) {
   const user = await requireUser();
+  const denied = (await searchParams)[DENIED_PARAM];
+  const deniedModule = MODULES.find((m) => m.id === denied);
+  const showMeetings = canUseModule(user, "meetings");
   const today = await getUserToday(user.id);
   const { timezone } = await getSettings(user.id);
   const showProjects = await canOpenProjects(user);
   const [myDay, decisions, meetings, stats, team, timer, projects] = await Promise.all([
     getMyDay(user, today),
     listDecisions(user),
-    listMeetingsBetween(
-      user,
-      zonedLocalToUtc(`${today}T00:00`, timezone)!,
-      zonedLocalToUtc(`${addDays(today, 1)}T00:00`, timezone)!,
-      true,
-    ),
+    showMeetings
+      ? listMeetingsBetween(
+          user,
+          zonedLocalToUtc(`${today}T00:00`, timezone)!,
+          zonedLocalToUtc(`${addDays(today, 1)}T00:00`, timezone)!,
+          true,
+        )
+      : Promise.resolve([]),
     getMyDashboard(user, today, timezone),
     getTeamToday(user, today),
     getRunningTimer(user.id),
@@ -263,6 +271,12 @@ export default async function TodayPage() {
           </Link>
         </Button>
       </div>
+
+      {deniedModule && (
+        <p role="alert" className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
+          {t("home.denied", { section: t(deniedModule.titleKey) })}
+        </p>
+      )}
 
       {timer && <TimerCard timer={timer} />}
 
