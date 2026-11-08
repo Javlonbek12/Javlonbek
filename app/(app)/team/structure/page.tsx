@@ -1,3 +1,4 @@
+import { FileSpreadsheet } from "lucide-react";
 import Link from "next/link";
 
 import { ChartViewport } from "@/components/org/chart-viewport";
@@ -136,8 +137,21 @@ export default async function StructurePage({ searchParams }: PageProps<"/team/s
           <Button asChild size="sm" variant={view === "list" ? "default" : "outline"}>
             <Link href="/team/structure?view=list">{t("team.org.viewList")}</Link>
           </Button>
+          {editable && (
+            <Button asChild size="sm" variant="ghost">
+              <Link href="/team/structure/import">
+                <FileSpreadsheet />
+                {t("team.org.import.open")}
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
+      {params.imported && (
+        <p role="status" className="bg-secondary rounded-md p-3 text-sm">
+          {t("team.org.import.done")}
+        </p>
+      )}
       {typeof params.error === "string" && (
         <p role="alert" className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
           {t(`team.org.errors.${params.error}` as TranslationKey)}

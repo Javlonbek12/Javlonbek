@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { moveOrgNodeAction } from "@/app/(app)/team/structure/actions";
 import { initials } from "@/components/team/avatar";
+import { Button } from "@/components/ui/button";
 import { personTasksHref } from "@/components/team/stat-links";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -126,7 +127,7 @@ function NodeCard({ node, options }: { node: OrgTreeNode; options: ChartOptions 
 // Under a card in edit mode: move it among its siblings, change it, add someone under it.
 function EditTools({ node, first, last }: { node: OrgTreeNode; first: boolean; last: boolean }) {
   const tool =
-    "bg-card hover:bg-accent text-muted-foreground flex size-7 items-center justify-center rounded-full border disabled:opacity-30";
+    "bg-card hover:bg-accent text-muted-foreground flex size-7 items-center justify-center rounded-full border";
   return (
     <div className="mt-1.5 flex items-center gap-1">
       {(["left", "right"] as const).map((direction) => (
@@ -134,19 +135,18 @@ function EditTools({ node, first, last }: { node: OrgTreeNode; first: boolean; l
           <input type="hidden" name="nodeId" value={node.id} />
           <input type="hidden" name="direction" value={direction} />
           <input type="hidden" name="from" value="chart" />
-          <button
+          {/* The guarded Button: a double press moves the card once, not twice. */}
+          <Button
             type="submit"
-            className={tool}
+            size="icon"
+            variant="outline"
+            className="text-muted-foreground size-7 disabled:opacity-30"
             disabled={direction === "left" ? first : last}
             title={t(direction === "left" ? "team.org.moveLeft" : "team.org.moveRight")}
             aria-label={t(direction === "left" ? "team.org.moveLeft" : "team.org.moveRight")}
           >
-            {direction === "left" ? (
-              <ChevronLeft className="size-4" />
-            ) : (
-              <ChevronRight className="size-4" />
-            )}
-          </button>
+            {direction === "left" ? <ChevronLeft /> : <ChevronRight />}
+          </Button>
         </form>
       ))}
       <Link

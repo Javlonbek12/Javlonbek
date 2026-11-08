@@ -196,7 +196,8 @@ export const en: Dictionary = {
       title: "Org chart",
       open: "Org chart",
       empty: "The org chart hasn't been created yet.",
-      emptyOwner: "Add the first department or position.",
+      emptyOwner:
+        "Add the first department or position below — or load the whole chart from Excel (the button at the top).",
       vacancy: "Vacancy",
       invite: "Invite to this place",
       inviteHint:
@@ -265,6 +266,38 @@ export const en: Dictionary = {
       searchPerson: "Find a person",
       showChart: "Show as a chart",
       showList: "← As a list",
+      import: {
+        open: "Load from Excel",
+        title: "Load the org chart from Excel",
+        step1:
+          "Download the template and fill it in: one row is one place (a department or a person).",
+        step2:
+          "In “Reports to” give the number of the row the place is under; leave it empty at the top. An empty “Employee” is a vacancy.",
+        step3: "Upload the file and check what you get. Nothing is saved before “Load”.",
+        template: "Download the template",
+        file: "Excel file (.xlsx, up to 5 MB)",
+        check: "Check",
+        fix: "Fix this in the file and upload it again:",
+        preview: "What you get",
+        stats:
+          "Departments: {units}, places: {places} (vacancies: {vacancies}), found in the app: {linked}.",
+        inApp: "in the app: {name}",
+        apply: "Load",
+        replaces: "The current chart will be replaced.",
+        done: "The org chart is loaded.",
+        rowError: "Row {row}: {error}",
+        errors: {
+          file: "Couldn't read the file: an Excel file (.xlsx) up to 5 MB is needed.",
+          empty: "The file has no filled-in rows.",
+          tooMany: "More than 500 rows — split the file.",
+          number: "no number in “№”",
+          duplicate: "number {n} is already used above",
+          parent: "“Reports to” says {n}, but there is no such row",
+          kind: "write “Отдел” (department) or “Человек” (person) in “What it is”",
+          title: "no department name or job title",
+          cycle: "reporting goes round in a circle",
+        },
+      },
     },
     title: "Team",
     search: "Name, job title or area",
