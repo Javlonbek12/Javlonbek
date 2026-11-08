@@ -2,6 +2,7 @@ import { Plus } from "lucide-react";
 import Link from "next/link";
 
 import { PlanogramList } from "@/components/planograms/planogram-list";
+import { AutoSubmitForm } from "@/components/ui/auto-submit-form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -92,8 +93,11 @@ export default async function PlanogramsPage({ searchParams }: PageProps<"/plano
             </Link>
           </Button>
         )}
-        {/* Search by title; the filters stay. */}
-        <form action="/planograms" className="flex min-w-0 flex-1 basis-48 flex-wrap gap-2">
+        {/* Search by title as you type, the equipment at once; the other filters stay. */}
+        <AutoSubmitForm
+          action="/planograms"
+          className="flex min-w-0 flex-1 basis-48 flex-wrap gap-2"
+        >
           {filter !== "all" && <input type="hidden" name="status" value={filter} />}
           {project && <input type="hidden" name="project" value={project} />}
           <Input
@@ -119,10 +123,7 @@ export default async function PlanogramsPage({ searchParams }: PageProps<"/plano
               ))}
             </NativeSelect>
           )}
-          <Button type="submit" size="sm" variant="outline">
-            {t("planograms.list.showWaiting")}
-          </Button>
-        </form>
+        </AutoSubmitForm>
       </div>
       <nav className="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
         <ul className="flex w-max gap-1 text-sm">
