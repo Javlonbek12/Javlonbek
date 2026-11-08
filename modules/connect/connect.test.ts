@@ -17,7 +17,15 @@ import {
   type PaymentRecord,
   type VisitRecord,
 } from "./parse";
-import { parseConnectQuery, periodMonths } from "./report";
+import {
+  activePreset,
+  insightText,
+  parseConnectQuery,
+  partialMonth,
+  periodMonths,
+  presetMonths,
+  previousMonths,
+} from "./report";
 
 const base = (id: string, extra: Partial<OosRecord> = {}) => ({
   id,
@@ -277,5 +285,33 @@ describe("Connect exports", () => {
       "2026-05",
       "2026-06",
     ]);
+  });
+
+  it("period chips, the previous period, the partial last month and agreeing words", () => {
+    expect(presetMonths("month", "2026-11-08")).toEqual({ from: "2026-11", to: "2026-11" });
+    expect(presetMonths("lastMonth", "2026-01-08")).toEqual({ from: "2025-12", to: "2025-12" });
+    expect(presetMonths("quarter", "2026-11-08")).toEqual({ from: "2026-09", to: "2026-11" });
+    expect(activePreset({ from: "2026-10", to: "2026-10" }, "2026-11-08")).toBe("lastMonth");
+    expect(activePreset({}, "2026-11-08")).toBe("all");
+    expect(activePreset({ from: "2026-05", to: "2026-07" }, "2026-11-08")).toBeNull();
+    expect(previousMonths({ from: "2026-10", to: "2026-10" })).toEqual({
+      from: "2026-09",
+      to: "2026-09",
+      count: 1,
+    });
+    expect(previousMonths({ from: "2026-09", to: "2026-11" })).toMatchObject({
+      from: "2026-06",
+      to: "2026-08",
+    });
+    expect(previousMonths({ from: "2026-09" })).toBeNull();
+    // Data up to 7 Nov: November is partial; up to 30 Nov it is complete.
+    expect(partialMonth("2026-11-07")).toBe("2026-11");
+    expect(partialMonth("2026-11-30")).toBeNull();
+    expect(
+      insightText({ tone: "warn", key: "waiting", params: { count: 1, sum: 3_500_000 } }),
+    ).toBe("Ждут решения руководителей: 1 заявка на оплату на 3,5 млн сум.");
+    expect(insightText({ tone: "warn", key: "topSku", params: { sku: "Тест", count: 5 } })).toBe(
+      "Чаще всего не хватает «Тест» — 5 проверок.",
+    );
   });
 });

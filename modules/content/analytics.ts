@@ -32,10 +32,11 @@ export type AnalyticsPost = {
   status: string;
 };
 
-// The last `months` calendar months up to and including the current one.
+// The past: the last `months` calendar months up to today (the rest of this month is still ahead,
+// it is not a result yet).
 export function analyticsPeriod(today: string, months: PeriodMonths) {
   const from = addMonths(startOfMonth(today), -(months - 1));
-  const to = addDays(addMonths(startOfMonth(today), 1), -1);
+  const to = today;
   const weeks: string[] = [];
   for (let w = startOfWeek(from); w <= to; w = addDays(w, 7)) weeks.push(w);
   const monthStarts: string[] = [];
@@ -79,12 +80,14 @@ const count = <K extends string>(keys: readonly K[], values: (K | null)[]) =>
 // Every function takes `topics`: the ids of the sections to show, in their order.
 
 // 1. Storylines: for every topic, its posts by week. `today` limits the silence to weeks that have
-// begun: the rest of the current month is still ahead, not silence.
+// begun: the rest of the current month is still ahead, not silence. `upcoming`: posts planned
+// after the period, for «следующий: 20 нояб.» instead of an alarming silence.
 export function storylines(
   posts: AnalyticsPost[],
   weeks: string[],
   topics: readonly string[],
   today?: string,
+  upcoming: Pick<AnalyticsPost, "topic" | "publishDate">[] = [],
 ) {
   const begun = today ? weeks.filter((w) => w <= today) : weeks;
   return topics.map((topic) => {
@@ -92,6 +95,17 @@ export function storylines(
     return {
       topic,
       total: own.length,
+      // The latest post of the period and the next one planned after it.
+      last:
+        own
+          .map((p) => p.publishDate)
+          .sort()
+          .at(-1) ?? null,
+      next:
+        upcoming
+          .filter((p) => p.topic === topic && (!today || p.publishDate > today))
+          .map((p) => p.publishDate)
+          .sort()[0] ?? null,
       weeks: weeks.map((week) =>
         own.filter((p) => p.publishDate >= week && p.publishDate <= addDays(week, 6)),
       ),

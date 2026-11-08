@@ -14,6 +14,7 @@ import type {
 import { squarify } from "@/modules/content/analytics";
 import { CHANNELS } from "@/modules/content/service";
 import { BRANDS } from "@/modules/content/tagging";
+import { formatRange } from "@/modules/reports/format";
 
 import { BOT_COLOR } from "./bot-chip";
 
@@ -57,21 +58,44 @@ function TopicLabel({ topic, meta }: { topic: string; meta: SectionMeta }) {
   );
 }
 
-// 1. Storylines: topics as lanes, weeks as columns, posts as dots coloured by bot.
+type Line = ReturnType<typeof storylines>[number];
+
+// What a lane says at its end: the next planned post; a warning only when the topic really is
+// left behind (silent for weeks and nothing planned).
+function LineNote({ line, today }: { line: Line; today: string }) {
+  if (line.next)
+    return (
+      <span className="text-muted-foreground">
+        {t("content.analytics.storylines.next", { date: formatRange(line.next, line.next, today) })}
+      </span>
+    );
+  if (line.total === 0 || line.silentWeeks >= 3)
+    return (
+      <span className="font-medium text-amber-700">
+        {t("content.analytics.storylines.notPlanned")}
+      </span>
+    );
+  return null;
+}
+
+// 1. Storylines: topics as lanes, weeks as columns, posts as dots coloured by bot; a post not
+// sent (yet) is a hollow dot.
 export function Storylines({
   lines,
   weeks,
   meta,
+  today,
 }: {
-  lines: ReturnType<typeof storylines>;
+  lines: Line[];
   weeks: string[];
   meta: SectionMeta;
+  today: string;
 }) {
   const months = weeks
     .map((w, i) => ({ i, key: w.slice(0, 7), label: monthShort.format(fromDateString(w)) }))
     .filter((m, i, all) => i === 0 || m.key !== all[i - 1]!.key);
   const gridStyle = {
-    gridTemplateColumns: `11rem repeat(${weeks.length}, minmax(1.6rem, 1fr)) 6.5rem`,
+    gridTemplateColumns: `11rem repeat(${weeks.length}, minmax(1.6rem, 1fr)) 8.5rem`,
   };
   return (
     <div className="overflow-x-auto">
@@ -118,15 +142,21 @@ export function Storylines({
                 />
                 {posts.length > 0 && (
                   <span className="relative flex -space-x-1">
-                    {posts.slice(0, 3).map((p) => (
-                      <Link
-                        key={p.id}
-                        href={`/content/${p.id}`}
-                        className="ring-card size-3 rounded-full ring-2"
-                        style={{ background: BOT_COLOR[p.channels[0] ?? "PARTNER"] }}
-                        aria-label={p.title}
-                      />
-                    ))}
+                    {posts.slice(0, 3).map((p) => {
+                      const color = BOT_COLOR[p.channels[0] ?? "PARTNER"];
+                      return (
+                        <Link
+                          key={p.id}
+                          href={`/content/${p.id}`}
+                          className="ring-card size-3 rounded-full border-2 ring-2"
+                          style={{
+                            borderColor: color,
+                            background: p.status === "SENT" ? color : "var(--card)",
+                          }}
+                          aria-label={p.title}
+                        />
+                      );
+                    })}
                     {posts.length > 3 && (
                       <span className="bg-card ml-1 rounded-full px-1 text-[10px] font-semibold">
                         +{posts.length - 3}
@@ -137,20 +167,48 @@ export function Storylines({
               </div>
             ))}
             <div className="pl-2 text-[11px]">
-              {line.total === 0 ? (
-                <span className="text-muted-foreground">
-                  {t("content.analytics.storylines.none")}
-                </span>
-              ) : line.silentWeeks >= 3 ? (
-                <span className="font-medium text-amber-700">
-                  {t("content.analytics.storylines.silent", { count: line.silentWeeks })}
-                </span>
-              ) : null}
+              <LineNote line={line} today={today} />
             </div>
           </div>
         ))}
       </div>
     </div>
+  );
+}
+
+// Storylines on a phone: each topic in one row — when it last had a post and the next one.
+export function StorylineList({
+  lines,
+  meta,
+  today,
+}: {
+  lines: Line[];
+  meta: SectionMeta;
+  today: string;
+}) {
+  return (
+    <ul className="flex flex-col divide-y text-sm">
+      {lines.map((line) => (
+        <li key={line.topic} className="flex flex-col gap-0.5 py-2">
+          <span className="flex items-center justify-between gap-2">
+            <TopicLabel topic={line.topic} meta={meta} />
+            <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+              {line.total}
+            </span>
+          </span>
+          <span className="flex flex-wrap gap-x-3 pl-[18px] text-xs">
+            <span className="text-muted-foreground">
+              {line.last
+                ? t("content.analytics.storylines.last", {
+                    date: formatRange(line.last, line.last, today),
+                  })
+                : t("content.analytics.storylines.none")}
+            </span>
+            <LineNote line={line} today={today} />
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -292,17 +350,60 @@ export function TopicBotMatrix({
   );
 }
 
+// Topics × bots on a phone: a card per bot with its topics, biggest first.
+export function TopicBotCards({
+  rows,
+  meta,
+}: {
+  rows: ReturnType<typeof topicByBot>;
+  meta: SectionMeta;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      {CHANNELS.map((c) => {
+        const list = rows.filter((r) => r.bots[c] > 0).sort((a, b) => b.bots[c] - a.bots[c]);
+        return (
+          <div key={c} className="rounded-xl border p-3 text-sm">
+            <span className="flex items-center gap-1.5 font-medium">
+              <span className="size-2 rounded-full" style={{ background: BOT_COLOR[c] }} />
+              {t(`content.channels.${c}`)}
+            </span>
+            {list.length === 0 ? (
+              <p className="text-muted-foreground mt-1 text-xs">
+                {t("content.analytics.storylines.none")}
+              </p>
+            ) : (
+              <ul className="mt-1 flex flex-col gap-0.5 text-[13px]">
+                {list.map((r) => (
+                  <li key={r.topic} className="flex items-center justify-between gap-2">
+                    <TopicLabel topic={r.topic} meta={meta} />
+                    <span className="tabular-nums">{r.bots[c]}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Brands with a brand: «Общее» (no particular brand) is most of the plan, so it stays out of the
+// shares and is counted on its own line.
+const BRANDED = BRANDS.filter((b) => b !== "GENERAL");
+
 // 4. Brands: overall share and month by month.
 export function BrandsChart({ data }: { data: ReturnType<typeof brandsByMonth> }) {
-  const total = BRANDS.reduce((s, b) => s + data.totals[b], 0);
+  const total = BRANDED.reduce((s, b) => s + data.totals[b], 0);
   const monthMax = Math.max(
     1,
-    ...data.months.map((m) => BRANDS.reduce((s, b) => s + m.brands[b], 0)),
+    ...data.months.map((m) => BRANDED.reduce((s, b) => s + m.brands[b], 0)),
   );
   return (
     <div className="flex flex-col gap-4">
       <div className="flex h-4 overflow-hidden rounded-full">
-        {BRANDS.filter((b) => data.totals[b]).map((b) => (
+        {BRANDED.filter((b) => data.totals[b]).map((b) => (
           <div
             key={b}
             className="border-card h-full border-r-2 last:border-r-0"
@@ -315,7 +416,7 @@ export function BrandsChart({ data }: { data: ReturnType<typeof brandsByMonth> }
         ))}
       </div>
       <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
-        {BRANDS.map((b) => (
+        {BRANDED.map((b) => (
           <li key={b} className="flex items-center gap-1.5">
             <span className="size-2.5 rounded-sm" style={{ background: BRAND_COLOR[b] }} />
             {t(`content.brands.${b}`)}
@@ -326,10 +427,13 @@ export function BrandsChart({ data }: { data: ReturnType<typeof brandsByMonth> }
           </li>
         ))}
       </ul>
+      <p className="text-muted-foreground text-xs">
+        {t("content.analytics.brands.general", { count: data.totals.GENERAL })}
+      </p>
       {data.months.length > 1 && (
         <div className="flex h-40 items-end gap-2">
           {data.months.map((m) => {
-            const sum = BRANDS.reduce((s, b) => s + m.brands[b], 0);
+            const sum = BRANDED.reduce((s, b) => s + m.brands[b], 0);
             return (
               <div
                 key={m.month}
@@ -340,7 +444,7 @@ export function BrandsChart({ data }: { data: ReturnType<typeof brandsByMonth> }
                   className="flex w-full max-w-12 flex-col-reverse overflow-hidden rounded-t-[4px]"
                   style={{ height: `${(sum / monthMax) * 110}px` }}
                 >
-                  {BRANDS.filter((b) => m.brands[b]).map((b) => (
+                  {BRANDED.filter((b) => m.brands[b]).map((b) => (
                     <div
                       key={b}
                       className="border-card w-full border-t-2 first:border-t-0"

@@ -3,10 +3,61 @@ import Link from "next/link";
 import { t } from "@/lib/i18n";
 import type { managerView } from "@/modules/connect/analytics";
 import { formatMoney, formatNumber } from "@/modules/connect/report";
+import { plural } from "@/modules/reports/format";
 
 import { BarList, DataTable, PersonName, Section, STAGE_COLOR } from "./parts";
 
 const pct = (value: number | null) => (value === null ? "—" : `${value}%`);
+
+// Orders without an answer: fresh ones are worth a call; after a month they are history to
+// close in the bot.
+const FRESH_DAYS = 14;
+const OLD_DAYS = 30;
+type Stuck = ReturnType<typeof managerView>["stuckOrders"][number];
+
+function StuckOrders({ rows }: { rows: Stuck[] }) {
+  // The agent's answer is mostly empty in the exports: the column shows only when there is one.
+  const withAgent = rows.some((r) => r.agentAnswer);
+  return (
+    <DataTable
+      rows={rows}
+      rowKey={(r) => r.id}
+      limit={10}
+      columns={[
+        {
+          key: "store",
+          header: t("connect.col.store"),
+          cell: (r) => (
+            <span className="flex flex-col">
+              <span>{r.store}</span>
+              <span className="text-muted-foreground text-xs">
+                {r.id} · {r.city}
+              </span>
+            </span>
+          ),
+          className: "min-w-40",
+        },
+        { key: "status", header: t("connect.col.status"), cell: (r) => r.status ?? "—" },
+        ...(withAgent
+          ? [
+              {
+                key: "agent",
+                header: t("connect.col.agent"),
+                cell: (r: Stuck) => r.agentAnswer ?? "—",
+              },
+            ]
+          : []),
+        {
+          key: "sum",
+          header: t("connect.col.sum"),
+          numeric: true,
+          cell: (r) => formatNumber(r.sum),
+        },
+        { key: "days", header: t("connect.col.days"), numeric: true, cell: (r) => r.days },
+      ]}
+    />
+  );
+}
 
 // Managers: cities, people (with a link to each person's list), what is stuck, products × cities.
 export function ManagerView({
@@ -16,6 +67,11 @@ export function ManagerView({
   data: ReturnType<typeof managerView>;
   personHref: (person: string) => string;
 }) {
+  // Freshest first: those are the ones to call about.
+  const byAge = [...data.stuckOrders].sort((a, b) => a.days - b.days);
+  const fresh = byAge.filter((o) => o.days <= FRESH_DAYS);
+  const middle = byAge.filter((o) => o.days > FRESH_DAYS && o.days <= OLD_DAYS);
+  const old = byAge.filter((o) => o.days > OLD_DAYS);
   return (
     <div className="flex flex-col gap-4 [&>*]:min-w-0">
       <Section title={t("connect.manager.people")} hint={t("connect.manager.peopleHint")}>
@@ -28,7 +84,10 @@ export function ManagerView({
               key: "person",
               header: t("connect.col.person"),
               cell: (r) => (
-                <Link href={personHref(r.person)} className="hover:underline">
+                <Link
+                  href={personHref(r.person)}
+                  className="text-primary underline underline-offset-2"
+                >
                   <PersonName value={r.person} />
                 </Link>
               ),
@@ -193,6 +252,12 @@ export function ManagerView({
                 ),
               },
               {
+                key: "decider",
+                header: t("connect.col.decider"),
+                cell: (r) => <PersonName value={r.decider} />,
+                className: "min-w-36",
+              },
+              {
                 key: "sum",
                 header: t("connect.col.sum"),
                 numeric: true,
@@ -202,36 +267,32 @@ export function ManagerView({
             ]}
           />
         </Section>
-        <Section title={t("connect.manager.stuck")} hint={t("connect.manager.waitingHint")}>
-          <DataTable
-            rows={data.stuckOrders}
-            rowKey={(r) => r.id}
-            limit={10}
-            columns={[
-              {
-                key: "store",
-                header: t("connect.col.store"),
-                cell: (r) => (
-                  <span className="flex flex-col">
-                    <span>{r.store}</span>
-                    <span className="text-muted-foreground text-xs">
-                      {r.id} · {r.city}
-                    </span>
-                  </span>
-                ),
-                className: "min-w-40",
-              },
-              { key: "status", header: t("connect.col.status"), cell: (r) => r.status ?? "—" },
-              { key: "agent", header: t("connect.col.agent"), cell: (r) => r.agentAnswer ?? "—" },
-              {
-                key: "sum",
-                header: t("connect.col.sum"),
-                numeric: true,
-                cell: (r) => formatNumber(r.sum),
-              },
-              { key: "days", header: t("connect.col.days"), numeric: true, cell: (r) => r.days },
-            ]}
-          />
+        <Section title={t("connect.manager.stuck")} hint={t("connect.manager.stuckHint")}>
+          <h3 className="text-sm font-medium">
+            {t("connect.manager.stuckFresh", { days: FRESH_DAYS })}
+          </h3>
+          <StuckOrders rows={fresh} />
+          {middle.length > 0 && (
+            <>
+              <h3 className="text-sm font-medium">
+                {t("connect.manager.stuckMiddle", { from: FRESH_DAYS + 1, to: OLD_DAYS })}
+              </h3>
+              <StuckOrders rows={middle} />
+            </>
+          )}
+          {old.length > 0 && (
+            <details className="rounded-xl border p-3">
+              <summary className="cursor-pointer text-sm font-medium">
+                {t("connect.manager.stuckOld", {
+                  days: OLD_DAYS,
+                  orders: plural("connect.words.orders", old.length),
+                })}
+              </summary>
+              <div className="mt-3">
+                <StuckOrders rows={old} />
+              </div>
+            </details>
+          )}
         </Section>
       </div>
 

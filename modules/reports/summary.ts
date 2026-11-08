@@ -1,6 +1,7 @@
 import { t, dateFormat } from "@/lib/i18n";
 
 import type { Report } from "./data";
+import { formatDecimal } from "./format";
 
 // Signed change in percent, e.g. "+12%", "−5%"; null when there is nothing to compare with.
 export function changePercent(current: number, previous: number): string | null {
@@ -10,26 +11,32 @@ export function changePercent(current: number, previous: number): string | null 
   return `${change > 0 ? "+" : "−"}${Math.abs(change)}%`;
 }
 
+// Below this many tasks a percentage only alarms: «+125%» is 4 tasks against 9.
+export const SMALL = 10;
+
 // "▲ +12%", "▼ −3 п.п." ("pp" in English), "без изменений"; compared with the previous period
-// (explained once on the page).
+// (explained once on the page). On a few tasks, and for days, the number before says more than a
+// percentage: «▲ было 4», «▲ было 1,5 дн.».
 export function changeNote(
   current: number | null,
   previous: number | null,
-  points = false,
+  kind: "count" | "points" | "days" = "count",
 ): string {
   if (current === null || previous === null) return t("reports.kpi.noData");
-  if (points) {
-    const diff = current - previous;
-    return diff === 0
-      ? t("reports.kpi.noChange")
-      : `${diff > 0 ? "▲ +" : "▼ −"}${t("reports.kpi.points", { n: Math.abs(diff) })}`;
-  }
-  const change = changePercent(current, previous);
-  if (!change) return t("reports.kpi.noData");
-  return change === "0%"
-    ? t("reports.kpi.noChange")
-    : `${change.startsWith("+") ? "▲" : "▼"} ${change}`;
+  const diff = current - previous;
+  if (diff === 0) return t("reports.kpi.noChange");
+  const arrow = diff > 0 ? "▲" : "▼";
+  if (kind === "points")
+    return `${arrow} ${diff > 0 ? "+" : "−"}${t("reports.kpi.points", { n: Math.abs(diff) })}`;
+  if (kind === "days")
+    return `${arrow} ${t("reports.kpi.wasDays", { value: formatDecimal(previous) })}`;
+  if (Math.max(current, previous) < SMALL)
+    return `${arrow} ${t("reports.kpi.was", { value: previous })}`;
+  return `${arrow} ${changePercent(current, previous)}`;
 }
+
+// «7,3 дн.»: the average with a decimal comma.
+export const formatDays = (value: number) => t("reports.kpi.days", { value: formatDecimal(value) });
 
 const reportDate = {
   format: (date: Date) =>
@@ -50,9 +57,14 @@ export function highlights(report: Report): string[] {
   else {
     const change = changePercent(kpis.completed, previousKpis.completed);
     lines.push(
-      change
-        ? t("reports.highlights.completed", { count: kpis.completed, change })
-        : t("reports.highlights.completedNoPrev", { count: kpis.completed }),
+      Math.max(kpis.completed, previousKpis.completed) < SMALL
+        ? t("reports.highlights.completedWas", {
+            count: kpis.completed,
+            was: previousKpis.completed,
+          })
+        : change
+          ? t("reports.highlights.completed", { count: kpis.completed, change })
+          : t("reports.highlights.completedNoPrev", { count: kpis.completed }),
     );
   }
   if (kpis.onTimePercent !== null) {

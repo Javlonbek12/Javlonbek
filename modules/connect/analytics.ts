@@ -156,7 +156,8 @@ export type Insight = {
   params: Record<string, string | number>;
 };
 
-function kpisOf(d: Dataset) {
+// The headline numbers of a dataset (also of the previous period, for «к прошлому месяцу»).
+export function connectKpis(d: Dataset) {
   const stores = new Set(
     [...d.oos, ...d.orders, ...d.payments, ...d.visits].map((r) => r.storeCode),
   );
@@ -194,10 +195,10 @@ function kpisOf(d: Dataset) {
     visitScore: average(doneVisits.flatMap((v) => (v.percent === null ? [] : [v.percent]))),
   };
 }
-type Kpis = ReturnType<typeof kpisOf>;
+export type Kpis = ReturnType<typeof connectKpis>;
 
 export function executiveView(d: Dataset, months: string[]) {
-  const kpis = kpisOf(d);
+  const kpis = connectKpis(d);
   const orderStages = countBy(d.orders, orderStage);
   const paymentStages = countBy(d.payments, paymentStage);
   const stageSum = (stage: PaymentStage) =>
@@ -326,6 +327,8 @@ export function managerView(d: Dataset, today: string) {
       store: p.storeName,
       city: p.city,
       person: p.person,
+      // Who has to decide now: the BDM, then the BUM.
+      decider: paymentStage(p) === "waitingBdm" ? p.bdm : p.bum,
       stage: paymentStage(p),
       sum: payable(p),
       days: age(p.at),
