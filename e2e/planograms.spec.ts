@@ -10,7 +10,8 @@ test("a planogram from the list shows its picture; on a phone it fits the screen
   await page.getByRole("link", { name: "Display L POSI" }).click();
 
   await expect(page.getByRole("heading", { name: "Display L POSI" })).toBeVisible();
-  const picture = page.getByRole("main").getByRole("img");
+  // The picture, not an icon (the «Оборудование» tab carries a ↗ icon with its own label).
+  const picture = page.getByRole("main").getByRole("img").and(page.locator("svg:not(.lucide)"));
   await expect(picture).toBeVisible();
   expect(await picture.evaluate((el) => el.tagName)).toBe("svg");
   if (!isMobile) return;
