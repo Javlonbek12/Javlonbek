@@ -10,6 +10,7 @@ import { matchUser } from "@/modules/org/match";
 
 import {
   canPlanContent,
+  changeSendsBackToReview,
   CHANNELS,
   ContentError,
   contentRights,
@@ -135,7 +136,8 @@ export function parseBots(value: string): ContentChannel[] {
   );
 }
 
-export type ImportResult = { created: number; updated: number; errors: string[] };
+// returned: approved posts whose texts changed, so they went back to review.
+export type ImportResult = { created: number; updated: number; returned: number; errors: string[] };
 
 export async function importPlanXlsx(actor: Actor, data: Buffer): Promise<ImportResult> {
   if (!canPlanContent(actor)) throw new ContentError("forbidden");
@@ -159,7 +161,7 @@ export async function importPlanXlsx(actor: Actor, data: Buffer): Promise<Import
   const users = await db.user.findMany({
     select: { id: true, firstName: true, lastName: true, telegramUsername: true },
   });
-  const result: ImportResult = { created: 0, updated: 0, errors: [] };
+  const result: ImportResult = { created: 0, updated: 0, returned: 0, errors: [] };
   for (let r = 2; r <= ws.rowCount; r++) {
     const row = ws.getRow(r);
     const raw = (key: Key) => (index.has(key) ? row.getCell(index.get(key)!).value : null);
@@ -225,8 +227,10 @@ export async function importPlanXlsx(actor: Actor, data: Buffer): Promise<Import
         publishTime: time,
         authorId,
       });
-      if (textsChanged && contentRights(actor, post).editContent)
+      if (textsChanged && contentRights(actor, post).editContent) {
         await saveContent(actor, post.id, { textRu, textUz });
+        if (changeSendsBackToReview(post.status)) result.returned += 1;
+      }
       if (existing) result.updated += 1;
       else result.created += 1;
     } catch (error) {

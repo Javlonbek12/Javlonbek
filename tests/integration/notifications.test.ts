@@ -5,9 +5,11 @@ import { t } from "@/lib/i18n";
 import { ForbiddenError } from "@/modules/core/errors";
 import {
   countUnread,
+  listNotifications,
   markAllRead,
   markRead,
   notify,
+  openNotification,
   sendTestNotification,
 } from "@/modules/core/notifications/service";
 import { updateSettings } from "@/modules/core/settings/service";
@@ -80,11 +82,15 @@ describe("notify", () => {
     expect(notification?.sentToTelegramAt).toBeNull();
   });
 
-  it("skips types the user turned off, but test notifications always arrive", async () => {
+  it("a type turned off is not sent to Telegram but stays in the app; tests always arrive", async () => {
     const user = await createTestUser("MEMBER");
     await updateSettings(user.id, { ...baseSettings, disabledTypes: ["role_changed"] });
-    expect(await notify(user.id, event)).toBeNull();
-    expect(await notify(user.id, { type: "test", title: "Тест" })).not.toBeNull();
+    const kept = await notify(user.id, event);
+    expect(kept).not.toBeNull();
+    expect(kept!.sentToTelegramAt).toBeNull();
+    expect(telegramMock).not.toHaveBeenCalled();
+    await notify(user.id, { type: "test", title: "Тест" });
+    expect(telegramMock).toHaveBeenCalledTimes(1);
   });
 
   it("marks only own notifications as read", async () => {
@@ -103,6 +109,40 @@ describe("notify", () => {
     await notify(user.id, event);
     await markAllRead(user.id);
     expect(await countUnread(user.id)).toBe(0);
+  });
+
+  it("opening marks it read and follows only links inside the app", async () => {
+    const user = await createTestUser("MEMBER");
+    const other = await createTestUser("MEMBER");
+    const inside = await notify(user.id, event);
+    const outside = await notify(user.id, { ...event, link: "//evil.example/x" });
+    expect(await openNotification(other.id, inside!.id)).toBeNull();
+    expect(await openNotification(user.id, inside!.id)).toBe("/team");
+    expect(await openNotification(user.id, outside!.id)).toBe("/notifications");
+    expect(await countUnread(user.id)).toBe(0);
+  });
+
+  it("lists unread only and pages beyond the first 50", async () => {
+    const user = await createTestUser("MEMBER");
+    await db.notification.createMany({
+      data: Array.from({ length: 53 }, (_, i) => ({
+        userId: user.id,
+        type: "test",
+        title: `Тест ${i}`,
+        createdAt: new Date(Date.UTC(2026, 9, 1, 0, i)),
+        readAt: i % 2 ? new Date() : null,
+      })),
+    });
+    const first = await listNotifications(user.id);
+    expect(first.items).toHaveLength(50);
+    expect(first.items[0]!.title).toBe("Тест 52");
+    expect(first.more).toBe(true);
+    const second = await listNotifications(user.id, { page: 2 });
+    expect(second.items.map((n) => n.title)).toEqual(["Тест 2", "Тест 1", "Тест 0"]);
+    expect(second.more).toBe(false);
+    const unread = await listNotifications(user.id, { unreadOnly: true });
+    expect(unread.items).toHaveLength(27);
+    expect(unread.items.every((n) => n.readAt === null)).toBe(true);
   });
 });
 

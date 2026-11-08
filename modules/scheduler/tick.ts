@@ -212,7 +212,9 @@ async function meetingReminders(now: Date) {
   });
   for (const meeting of meetings) {
     for (const { userId } of meeting.participants) {
-      if (!(await claim(userId, "meeting_reminder", meeting.id))) continue;
+      // Keyed by the start time too: a meeting moved after its reminder gets a new one.
+      const key = `${meeting.id}:${meeting.startsAt.toISOString()}`;
+      if (!(await claim(userId, "meeting_reminder", key))) continue;
       const { timezone } = await getSettings(userId);
       await notify(userId, () => ({
         type: "meeting_reminder",

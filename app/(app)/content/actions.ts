@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import type { PlanFormState } from "@/components/content/plan-form";
 import type { ContentBrand, ContentChannel } from "@/lib/generated/prisma/enums";
 import { requireUser } from "@/modules/core/auth/current-user";
 import {
@@ -10,6 +11,7 @@ import {
   approvePost,
   cancelPost,
   legalApprove,
+  restorePost,
   movePost,
   withdrawPost,
   CHANNELS,
@@ -56,24 +58,39 @@ const planFields = (form: FormData) => ({
   authorId: str(form, "authorId"),
 });
 
-export async function createPlanItemAction(form: FormData) {
+// A refused plan item comes back to the form with what was typed.
+const planState = (code: string, form: FormData): PlanFormState => {
+  const fields = planFields(form);
+  return {
+    error: code,
+    values: { ...fields, brief: fields.brief, publishTime: fields.publishTime || null },
+  };
+};
+
+export async function createPlanItemAction(_: PlanFormState, form: FormData) {
   const actor = await requireUser();
-  let target = "/content/new";
+  let id: string;
   try {
-    const post = await savePlanItem(actor, null, planFields(form));
-    target = `/content/${post.id}`;
+    id = (await savePlanItem(actor, null, planFields(form))).id;
   } catch (error) {
     if (!(error instanceof ContentError)) throw error;
-    target += `?error=${error.code}&date=${encodeURIComponent(str(form, "publishDate"))}`;
+    return planState(error.code, form);
   }
   revalidatePath("/content", "layout");
-  redirect(target);
+  redirect(`/content/${id}`);
 }
 
-export async function updatePlanItemAction(form: FormData) {
+export async function updatePlanItemAction(_: PlanFormState, form: FormData) {
   const actor = await requireUser();
   const id = str(form, "postId");
-  await run(`/content/${id}`, () => savePlanItem(actor, id, planFields(form)));
+  try {
+    await savePlanItem(actor, id, planFields(form));
+  } catch (error) {
+    if (!(error instanceof ContentError)) throw error;
+    return planState(error.code, form);
+  }
+  revalidatePath("/content", "layout");
+  redirect(`/content/${id}`);
 }
 
 export async function saveContentAction(form: FormData) {
@@ -164,6 +181,12 @@ export async function cancelContentAction(form: FormData) {
   await run(`/content/${id}`, () => cancelPost(actor, id));
 }
 
+export async function restoreContentAction(form: FormData) {
+  const actor = await requireUser();
+  const id = str(form, "postId");
+  await run(`/content/${id}`, () => restorePost(actor, id));
+}
+
 export async function commentContentAction(form: FormData) {
   const actor = await requireUser();
   const id = str(form, "postId");
@@ -180,7 +203,7 @@ export async function importPlanAction(form: FormData) {
       throw new ContentError("invalid");
     const result = await importPlanXlsx(actor, Buffer.from(await file.arrayBuffer()));
     const query = new URLSearchParams({
-      imported: `${result.created}-${result.updated}`,
+      imported: `${result.created}-${result.updated}-${result.returned}`,
       ...(result.errors.length ? { importErrors: result.errors.slice(0, 10).join("\n") } : {}),
     });
     target = `${back}${back.includes("?") ? "&" : "?"}${query}`;

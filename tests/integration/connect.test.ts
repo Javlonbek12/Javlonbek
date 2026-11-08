@@ -66,7 +66,14 @@ const PAYMENT_HEADERS = [
 ];
 const PERSON = "TSM_TEST_1 - Тестовый сотрудник 1";
 
-const oosRow = (id: number, store: string, code: number, missing: number, status = "В наличии") => [
+const oosRow = (
+  id: number,
+  store: string,
+  code: number,
+  missing: number,
+  status = "В наличии",
+  at = "05.10.2026 10:00",
+) => [
   id,
   store,
   code,
@@ -74,7 +81,7 @@ const oosRow = (id: number, store: string, code: number, missing: number, status
   "Тестоград",
   "Retail",
   null,
-  "05.10.2026 10:00",
+  at,
   "2026-10",
   PERSON,
   missing,
@@ -125,17 +132,35 @@ describe("Connect analytics: upload and downloads", () => {
       { name: "oos.xlsx", buffer: oos },
       { name: "ism.xlsx", buffer: payments },
     ]);
+    const sheet = { updated: 0, skipped: 0, kept: 0, newer: null };
     expect(result).toEqual([
-      { name: "oos.xlsx", sheets: [{ kind: "OOS", created: 3, updated: 0, skipped: 0 }] },
-      { name: "ism.xlsx", sheets: [{ kind: "PAYMENT", created: 1, updated: 0, skipped: 0 }] },
+      { name: "oos.xlsx", sheets: [{ ...sheet, kind: "OOS", created: 3 }] },
+      { name: "ism.xlsx", sheets: [{ ...sheet, kind: "PAYMENT", created: 1 }] },
     ]);
 
     // Uploading a newer export updates the row with the same ID.
     const newer = await workbook(OOS_HEADERS, [oosRow(2, "Тестовый магазин 2", 102, 3)]);
     expect(await importConnectFiles(owner, [{ name: "oos2.xlsx", buffer: newer }])).toEqual([
-      { name: "oos2.xlsx", sheets: [{ kind: "OOS", created: 0, updated: 1, skipped: 0 }] },
+      { name: "oos2.xlsx", sheets: [{ ...sheet, kind: "OOS", created: 0, updated: 1 }] },
     ]);
     expect(await db.connectRecord.count()).toBe(4);
+
+    // An older export (its latest row is earlier) doesn't overwrite the newer statuses: it says
+    // so, and only adds rows that weren't there.
+    const older = await workbook(OOS_HEADERS, [
+      oosRow(2, "Тестовый магазин 2", 102, 0, "В наличии", "01.10.2026 09:00"),
+      oosRow(4, "Тестовый магазин 4", 104, 0, "В наличии", "01.10.2026 09:30"),
+    ]);
+    expect(await importConnectFiles(owner, [{ name: "old.xlsx", buffer: older }])).toEqual([
+      {
+        name: "old.xlsx",
+        sheets: [{ ...sheet, kind: "OOS", created: 1, kept: 1, newer: "2026-10-05T10:00" }],
+      },
+    ]);
+    expect(
+      (await db.connectImport.findFirstOrThrow({ where: { fileName: "old.xlsx" } })).kept,
+    ).toBe(1);
+    await db.connectRecord.deleteMany({ where: { externalId: "4" } });
 
     const data = await loadDataset({ from: "2026-10", to: "2026-10" });
     expect(data.oos.map((c) => [c.id, c.missing])).toEqual([

@@ -863,6 +863,8 @@ model Project {
   // The written plan (e.g. the Launching Plan): { sectionKey: text }.
   planSections Json?
   archived     Boolean   @default(false)
+  // «Завершить проект»: off the home screen and the portfolio, under «Завершённые».
+  finishedAt   DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
@@ -1056,6 +1058,9 @@ model ConnectRecord {
   // The parsed row (typed per kind, see modules/connect/parse.ts).
   data       Json
   importId   String
+  // How fresh the file that last wrote the row was: its latest record time (YYYY-MM-DDTHH:mm).
+  // A file older than that doesn't overwrite the row (a later export has the newer statuses).
+  asOf       String?
   updatedAt  DateTime    @updatedAt
 
   @@unique([kind, externalId])
@@ -1070,6 +1075,8 @@ model ConnectImport {
   created   Int
   updated   Int
   skipped   Int
+  // Rows left as they were because the file is older than what was loaded.
+  kept      Int      @default(0)
   createdAt DateTime @default(now())
 }
 

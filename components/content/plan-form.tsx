@@ -1,14 +1,18 @@
+"use client";
+
+import { useActionState, useState } from "react";
+
+import { useT } from "@/components/locale-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import type { ContentChannel } from "@/lib/generated/prisma/enums";
-import { t } from "@/lib/i18n";
-import { CHANNELS } from "@/modules/content/service";
+import type { TranslationKey } from "@/lib/i18n";
 
 import { BOT_COLOR } from "./bot-chip";
 
-type Values = {
+export type PlanValues = {
   title: string;
   brief: string | null;
   channels: ContentChannel[];
@@ -17,7 +21,13 @@ type Values = {
   authorId: string | null;
 };
 
-// Topic, date, bots and author of a plan item.
+// A refused save comes back with what was typed, so nothing is lost.
+export type PlanFormState = { error: string | null; values: Partial<PlanValues> };
+
+const CHANNELS = Object.keys(BOT_COLOR) as ContentChannel[];
+
+// Topic, date, bots and author of a plan item. At least one bot is required: checked here, before
+// sending, because a browser can't require "one of these checkboxes".
 export function PlanForm({
   action,
   values,
@@ -26,22 +36,42 @@ export function PlanForm({
   submit,
   showAuthor = true,
 }: {
-  action: (form: FormData) => Promise<void>;
-  values: Partial<Values>;
+  action: (state: PlanFormState, form: FormData) => Promise<PlanFormState>;
+  values: Partial<PlanValues>;
   users: { id: string; name: string }[];
   postId?: string;
   submit: string;
   // Employees add posts for themselves: no author to choose.
   showAuthor?: boolean;
 }) {
+  const t = useT();
+  const [state, dispatch, pending] = useActionState(action, { error: null, values });
+  const current = state.values;
+  const [channels, setChannels] = useState<ContentChannel[]>(current.channels ?? []);
+  const [noBot, setNoBot] = useState(false);
+
   return (
-    <form action={action} className="flex flex-col gap-3 text-sm">
+    <form
+      action={dispatch}
+      onSubmit={(e) => {
+        if (channels.length === 0) {
+          e.preventDefault();
+          setNoBot(true);
+        }
+      }}
+      className="flex flex-col gap-3 text-sm"
+    >
       {postId && <input type="hidden" name="postId" value={postId} />}
+      {state.error && (
+        <p role="alert" className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
+          {t(`content.errors.${state.error}` as TranslationKey)}
+        </p>
+      )}
       <label className="flex flex-col gap-1">
         {t("content.fields.title")}
-        <Input name="title" required maxLength={200} defaultValue={values.title} />
+        <Input name="title" required maxLength={200} defaultValue={current.title} />
       </label>
-      <fieldset className="flex flex-col gap-1.5">
+      <fieldset className="flex flex-col gap-1.5" aria-invalid={noBot}>
         <legend className="mb-1">{t("content.fields.channels")}</legend>
         <div className="flex flex-wrap gap-2">
           {CHANNELS.map((channel) => (
@@ -53,27 +83,38 @@ export function PlanForm({
                 type="checkbox"
                 name="channels"
                 value={channel}
-                defaultChecked={values.channels?.includes(channel)}
+                checked={channels.includes(channel)}
+                onChange={(e) => {
+                  setNoBot(false);
+                  setChannels((list) =>
+                    e.target.checked ? [...list, channel] : list.filter((c) => c !== channel),
+                  );
+                }}
               />
               <span className="size-2 rounded-full" style={{ background: BOT_COLOR[channel] }} />
               {t(`content.channels.${channel}`)}
             </label>
           ))}
         </div>
+        {noBot && (
+          <span role="alert" className="text-destructive text-xs">
+            {t("content.errors.noChannel")}
+          </span>
+        )}
       </fieldset>
       <div className="grid gap-3 sm:grid-cols-3">
         <label className="flex flex-col gap-1">
           {t("content.fields.date")}
-          <Input type="date" name="publishDate" required defaultValue={values.publishDate} />
+          <Input type="date" name="publishDate" required defaultValue={current.publishDate} />
         </label>
         <label className="flex flex-col gap-1">
           {t("content.fields.time")}
-          <Input type="time" name="publishTime" defaultValue={values.publishTime ?? ""} />
+          <Input type="time" name="publishTime" defaultValue={current.publishTime ?? ""} />
         </label>
         {showAuthor && (
           <label className="flex flex-col gap-1">
             {t("content.fields.author")}
-            <NativeSelect name="authorId" defaultValue={values.authorId ?? ""}>
+            <NativeSelect name="authorId" defaultValue={current.authorId ?? ""}>
               <option value="">{t("content.fields.noAuthor")}</option>
               {users.map((user) => (
                 <option key={user.id} value={user.id}>
@@ -86,10 +127,12 @@ export function PlanForm({
       </div>
       <label className="flex flex-col gap-1">
         {t("content.fields.brief")}
-        <Textarea name="brief" rows={3} maxLength={4000} defaultValue={values.brief ?? ""} />
+        <Textarea name="brief" rows={3} maxLength={4000} defaultValue={current.brief ?? ""} />
       </label>
       <div>
-        <Button type="submit">{submit}</Button>
+        <Button type="submit" disabled={pending}>
+          {pending ? "…" : submit}
+        </Button>
       </div>
     </form>
   );

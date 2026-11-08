@@ -86,6 +86,10 @@ describe("content analytics", () => {
     expect(prices.weeks.map((w) => w.length)).toEqual([1, 1, 0]);
     expect(prices.silentWeeks).toBe(1);
     expect(lines.find((l) => l.topic === "PROMO")!.silentWeeks).toBe(3);
+    // Weeks still ahead are not silence: on 2026-10-07 only two weeks have begun.
+    const midway = storylines(posts, weeks, topics, "2026-10-07");
+    expect(midway.find((l) => l.topic === "PRICES")!.silentWeeks).toBe(0);
+    expect(midway.find((l) => l.topic === "PROMO")!.silentWeeks).toBe(2);
 
     expect(topicShares(posts, topics).slice(0, 2)).toEqual([
       { topic: "PRICES", count: 2, percent: 67 },

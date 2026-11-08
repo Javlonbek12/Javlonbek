@@ -191,7 +191,7 @@ function kpisOf(d: Dataset) {
     roiPositive: percent(roiKnown.filter((p) => p.roi === "positive").length, roiKnown.length),
     visits: d.visits.length,
     visitsDone: doneVisits.length,
-    visitScore: average(doneVisits.flatMap((v) => (v.percent ? [v.percent] : []))),
+    visitScore: average(doneVisits.flatMap((v) => (v.percent === null ? [] : [v.percent]))),
   };
 }
 type Kpis = ReturnType<typeof kpisOf>;
@@ -306,7 +306,7 @@ export function managerView(d: Dataset, today: string) {
         contractSum: sum(payments.map((p) => p.contractSum)),
         waiting: payments.filter((p) => /^waiting/.test(paymentStage(p))).length,
         checklist: average(payments.flatMap((p) => (p.checklist === null ? [] : [p.checklist]))),
-        visitScore: average(visits.flatMap((v) => (v.percent ? [v.percent] : []))),
+        visitScore: average(visits.flatMap((v) => (v.percent === null ? [] : [v.percent]))),
       };
     })
     .sort(
@@ -465,7 +465,7 @@ export function executorView(d: Dataset, person: string, today: string) {
     paid: payments.filter((p) => paymentStage(p) === "paid").length,
     checklist: average(payments.flatMap((p) => (p.checklist === null ? [] : [p.checklist]))),
     visits: visits.length,
-    visitScore: average(doneVisits.flatMap((v) => (v.percent ? [v.percent] : []))),
+    visitScore: average(doneVisits.flatMap((v) => (v.percent === null ? [] : [v.percent]))),
   };
   return {
     kpis,

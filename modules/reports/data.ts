@@ -220,7 +220,9 @@ export async function buildReport(
     overdueTasks,
     upcoming,
     meetings: {
-      held: meetingRows.filter((m) => inPeriod(local(m.startsAt), period)).length,
+      // Held: in the period and already started (later ones in the period are still ahead).
+      held: meetingRows.filter((m) => m.startsAt <= now && inPeriod(local(m.startsAt), period))
+        .length,
       tasksFromMeetings: meetingTasks.filter((m) => inPeriod(local(m.createdAt), period)).length,
     },
     planograms: {

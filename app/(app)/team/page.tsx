@@ -1,25 +1,18 @@
 import Link from "next/link";
 
+import { InviteSection } from "@/components/team/invite-section";
 import { LoadChart } from "@/components/team/load-chart";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { NativeSelect } from "@/components/ui/native-select";
-import { CopyButton } from "@/components/copy-button";
-import { getEnv } from "@/lib/env";
 import { t } from "@/lib/i18n";
-import { formatDate } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { requireModule } from "@/modules/core/access/guard";
 import { canUseModule } from "@/modules/core/access/actor";
-import { INVITE_TTL_DAYS, listActiveInvites } from "@/modules/core/invites/service";
 import { invitableRoles } from "@/modules/core/permissions";
 import { getSettings } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
 import { listTeamCards, TEAM_FILTERS, type TeamFilter } from "@/modules/team/service";
-
-import { createInviteAction, revokeInviteAction } from "../actions";
 
 const FILTER_LABELS = {
   all: "team.filterAll",
@@ -32,14 +25,11 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
   const params = await searchParams;
   const filter = TEAM_FILTERS.find((f) => f === params.filter) ?? "all";
   const search = typeof params.q === "string" ? params.q.slice(0, 100) : "";
-  const [cards, invites, settings] = await Promise.all([
+  const [cards, settings] = await Promise.all([
     listTeamCards(user, filter as TeamFilter, search),
-    listActiveInvites(user),
     getSettings(user.id),
   ]);
-  const { APP_URL, TELEGRAM_BOT_USERNAME } = getEnv();
-  const tz = settings.timezone;
-  const roles = invitableRoles(user.role);
+  const canInvite = invitableRoles(user.role).length > 0;
   const filterHref = (f: string) =>
     `/team?${new URLSearchParams({ filter: f, ...(search ? { q: search } : {}) })}`;
 
@@ -47,12 +37,26 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-[22px] font-medium md:text-2xl">{t("team.title")}</h1>
-        {canUseModule(user, "structure") && (
-          <Button asChild size="sm" variant="outline">
-            <Link href="/team/structure">{t("team.org.open")}</Link>
-          </Button>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {canUseModule(user, "structure") && (
+            <Button asChild size="sm" variant="outline">
+              <Link href="/team/structure">{t("team.org.open")}</Link>
+            </Button>
+          )}
+        </div>
       </div>
+
+      {/* Inviting comes first: it is what a manager most often comes here for. */}
+      {canInvite && (
+        <details className="group">
+          <summary className="bg-primary text-primary-foreground inline-flex h-9 cursor-pointer list-none items-center rounded-full px-4 text-sm font-medium [&::-webkit-details-marker]:hidden">
+            {t("team.invite")}
+          </summary>
+          <div className="pt-3">
+            <InviteSection user={user} timezone={settings.timezone} />
+          </div>
+        </details>
+      )}
 
       <section className="flex flex-col gap-3">
         <form className="flex gap-2">
@@ -120,61 +124,6 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
           ))}
         </div>
       </section>
-
-      {roles.length > 0 && (
-        <section className="flex flex-col gap-3">
-          <h2 className="text-lg font-medium">{t("team.invites")}</h2>
-          <Card className="gap-3">
-            <CardTitle>{t("team.newInvite")}</CardTitle>
-            <CardDescription>{t("team.inviteHint", { days: INVITE_TTL_DAYS })}</CardDescription>
-            <form action={createInviteAction} className="flex flex-wrap items-center gap-2">
-              <NativeSelect name="role" defaultValue="MEMBER" aria-label={t("team.inviteRole")}>
-                {roles.map((role) => (
-                  <option key={role} value={role}>
-                    {t(`roles.${role}`)}
-                  </option>
-                ))}
-              </NativeSelect>
-              <Button type="submit">{t("team.createInvite")}</Button>
-            </form>
-          </Card>
-          {invites.length === 0 && (
-            <p className="text-muted-foreground text-sm">{t("team.noInvites")}</p>
-          )}
-          {invites.map((invite) => {
-            const link = `${APP_URL}/invite/${invite.code}`;
-            return (
-              <Card key={invite.id} className="gap-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="secondary">{t(`roles.${invite.role}`)}</Badge>
-                  <span className="text-muted-foreground text-xs">
-                    {t("team.inviteExpires", { date: formatDate(invite.expiresAt, tz) })} ·{" "}
-                    {displayName(invite.createdBy)}
-                  </span>
-                </div>
-                <p className="text-sm break-all">
-                  {t("team.inviteLink")}: {link}
-                </p>
-                {TELEGRAM_BOT_USERNAME && (
-                  <p className="text-sm break-all">
-                    {t("team.inviteBotLink")}: https://t.me/{TELEGRAM_BOT_USERNAME}?start=
-                    {invite.code}
-                  </p>
-                )}
-                <div className="flex flex-wrap gap-2">
-                  <CopyButton value={link} />
-                  <form action={revokeInviteAction}>
-                    <input type="hidden" name="inviteId" value={invite.id} />
-                    <Button type="submit" variant="ghost" size="sm">
-                      {t("team.revoke")}
-                    </Button>
-                  </form>
-                </div>
-              </Card>
-            );
-          })}
-        </section>
-      )}
     </div>
   );
 }
