@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { PlanogramErrorNote, SavedNote } from "@/components/planograms/error-note";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
+import { ConfirmAction } from "@/components/ui/confirm-action";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -18,15 +19,18 @@ export default async function MassPage({ searchParams }: PageProps<"/planograms/
   if (!canManagePlanograms(user.role)) redirect("/planograms");
   const query = await searchParams;
   const [skus, equipment, pending] = await Promise.all([
-    db.sku.findMany({ where: { archived: false }, orderBy: [{ brand: "asc" }, { name: "asc" }] }),
+    // Archived SKUs too: a delisted SKU is exactly what gets replaced.
+    db.sku.findMany({ orderBy: [{ archived: "asc" }, { brand: "asc" }, { name: "asc" }] }),
     db.equipment.findMany({ orderBy: { name: "asc" } }),
     db.planogram.count({ where: { status: "PENDING_APPROVAL", isTemplate: false } }),
   ]);
-  const skuOptions = skus.map((s) => (
+  const option = (s: (typeof skus)[number]) => (
     <option key={s.id} value={s.id}>
-      {s.brand} {s.name} ({s.code})
+      {s.brand} {s.name} ({s.code}){s.archived ? ` · ${t("planograms.library.skus.archived")}` : ""}
     </option>
-  ));
+  );
+  const fromOptions = skus.map(option);
+  const skuOptions = skus.filter((s) => !s.archived).map(option);
 
   return (
     <div className="flex flex-col gap-4">
@@ -38,6 +42,11 @@ export default async function MassPage({ searchParams }: PageProps<"/planograms/
       {Number(query.skipped) > 0 && (
         <p className="text-sm text-amber-700">
           {t("planograms.library.mass.skipped", { count: String(query.skipped) })}
+        </p>
+      )}
+      {typeof query.pushed === "string" && (
+        <p className="text-sm text-amber-700 dark:text-amber-300">
+          {t("planograms.library.mass.pushed", { list: query.pushed })}
         </p>
       )}
       <SavedNote
@@ -56,7 +65,7 @@ export default async function MassPage({ searchParams }: PageProps<"/planograms/
           <Label className="flex-col items-start">
             {t("planograms.library.mass.from")}
             <NativeSelect name="fromSkuId" className="w-full md:w-64">
-              {skuOptions}
+              {fromOptions}
             </NativeSelect>
           </Label>
           <Label className="flex-col items-start">
@@ -120,11 +129,16 @@ export default async function MassPage({ searchParams }: PageProps<"/planograms/
           <p className="text-sm">
             {t("planograms.library.mass.pending", { count: String(pending) })}
           </p>
-          <form action={approveAllPendingAction}>
-            <Button type="submit" size="sm" disabled={pending === 0}>
-              {t("planograms.library.mass.approveAll")}
-            </Button>
-          </form>
+          {pending > 0 && (
+            <ConfirmAction
+              label={t("planograms.library.mass.approveAll")}
+              title={t("planograms.library.mass.approveAllTitle", { count: String(pending) })}
+              hint={t("planograms.library.mass.approveAllHint")}
+              confirm={t("planograms.library.mass.approveAllConfirm")}
+              action={approveAllPendingAction}
+              tone="default"
+            />
+          )}
         </Card>
       )}
     </div>

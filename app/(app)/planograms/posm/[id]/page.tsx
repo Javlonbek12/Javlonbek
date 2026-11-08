@@ -7,6 +7,7 @@ import { Thumb } from "@/components/planograms/thumb";
 import { db } from "@/lib/db";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { canManagePlanograms } from "@/modules/planograms/access";
+import { posmInUse } from "@/modules/planograms/library";
 
 export default async function PosmEditPage({
   params,
@@ -25,7 +26,7 @@ export default async function PosmEditPage({
       </div>
       <PlanogramErrorNote error={error} />
       <SavedNote show={saved} />
-      <PosmForm posm={posm} />
+      <PosmForm posm={posm} inUse={await posmInUse(posm.id)} />
       {canManagePlanograms(user.role) && <ImageUpload kind="posm" id={posm.id} />}
     </div>
   );

@@ -5,7 +5,7 @@ import { PlanogramErrorNote, SavedNote } from "@/components/planograms/error-not
 import { db } from "@/lib/db";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { parseGeometry } from "@/modules/planograms/geometry";
-import { distTypeOptions } from "@/modules/planograms/library";
+import { distTypeOptions, mandatorySkuOptions } from "@/modules/planograms/library";
 
 export default async function EquipmentEditPage({
   params,
@@ -33,6 +33,8 @@ export default async function EquipmentEditPage({
         locked={item._count.planograms > 0}
         distTypes={item.distTypes}
         typeOptions={await distTypeOptions()}
+        mandatorySkuIds={item.mandatorySkuIds}
+        skus={await mandatorySkuOptions(item.mandatorySkuIds)}
       />
     </div>
   );

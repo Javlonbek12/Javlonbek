@@ -1057,6 +1057,14 @@ export const en: Dictionary = {
     empty: "No planograms yet.",
     filterActive: "Current",
     filterAll: "All",
+    list: {
+      search: "Search by title",
+      hasDraft: "draft v{version}",
+      hasPending: "awaiting approval v{version}",
+    },
+    notify: {
+      backToDraft: "The planogram was changed — it is back in draft and no longer awaits approval",
+    },
     version: "version {version}",
     fields: {
       title: "Title",
@@ -1074,6 +1082,8 @@ export const en: Dictionary = {
       header: "Header",
       noHeader: "No header",
       none: "—",
+      noPriceList: "No price list",
+      noTemplates: "No templates for this equipment.",
     },
     create: "Create",
     actions: {
@@ -1097,6 +1107,14 @@ export const en: Dictionary = {
       adapt: "Make for other equipment",
       rules: "Check rules",
       saveRules: "Save rules",
+      submittedTo: "Sent for approval. Notified: {names}.",
+      submittedNobody: "Sent for approval. No approvers in the app — tell them yourself.",
+      archiveTitle: "Archive it?",
+      archiveHint: "This version goes to the archive. It can only come back as a new version.",
+      archiveInForce:
+        "This is the version in force. After archiving, the planogram has none: merchandisers with the link will see it no longer applies.",
+      archiveConfirm: "Yes, archive",
+      sendsInForce: "Telegram gets the version in force, not this one.",
     },
     editor: {
       palette: "SKU and POSM",
@@ -1122,6 +1140,14 @@ export const en: Dictionary = {
       unsaved: "There are unsaved changes",
       dragHint:
         "Drag an SKU or POSM onto a cell, or select one and click the cells. Shift+click selects several.",
+      blocked:
+        "That won't work: something would go off the equipment or onto a place taken by another item (e.g. under a POSM over several shelves). Those cells are red. Move or remove the POSM first.",
+      problems:
+        "The layout can't be saved: the red cells go off the equipment or stand under another POSM. Move or remove them.",
+      leave: "There are unsaved changes. Leave without saving?",
+      pendingWarning:
+        "The planogram awaits approval. Saving returns it to draft — send it for approval again afterwards.",
+      dropped: "Didn't fit on the new equipment and were not carried over: {names}.",
     },
     validation: {
       title: "Rule check",
@@ -1237,6 +1263,8 @@ export const en: Dictionary = {
       actual: "Actual size",
     },
     public: {
+      notInForce:
+        "This planogram no longer applies (archived). Don't set up the shelf by it — ask your manager for the current one.",
       title: "Planogram",
       notApproved: "The link is not valid.",
       approved: "Approved {date}",
@@ -1271,6 +1299,10 @@ export const en: Dictionary = {
         types: "Types in the BW file",
         installed: "in outlets: {installed} · in warehouses: {stock}",
         noTypes: "Not linked to the equipment file",
+        mandatory: "Mandatory SKUs on this model",
+        mandatoryHint:
+          "Tick the SKUs that must stand on this equipment. With none ticked, the general «Mandatory SKU» marks on the SKUs apply (★). Archived SKUs are never mandatory.",
+        mandatoryGlobal: "The general marks apply now: {count} mandatory SKUs.",
         more: "Equipment →",
       },
       skus: {
@@ -1312,6 +1344,8 @@ export const en: Dictionary = {
         span: "How many slots it takes",
         shelfSpan: "How many shelves it takes (downwards)",
         shelfSpanHint: "E.g. the Combo Box on Display L MW/DG takes 2 shelves.",
+        sizeLocked:
+          "The size can't change: this POSM stands on approved planograms or ones awaiting approval ({count}); their shelves would shift. Need another size — add a new POSM.",
         color: "Colour",
         save: "Save POSM",
       },
@@ -1366,6 +1400,16 @@ export const en: Dictionary = {
           "Drafts and versions waiting for approval on old prices: {count}. Applying the list moves them to it; their status stays.",
         unknown: "Unknown codes (skipped): {codes}",
         rows: "prices: {count}",
+        unreadRows:
+          "Some rows could not be read (row — what's wrong): {rows}. Check them in the file.",
+        unreadProblem: {
+          code: "no code",
+          price: "price unreadable",
+        },
+        applyTitle: "Apply the price list?",
+        applyHint:
+          "Approved planograms getting a new version: {versions}. Drafts and versions awaiting approval on older prices moving to this list: {drafts}. This can't be undone.",
+        applyConfirm: "Yes, apply",
       },
       mass: {
         title: "Bulk actions",
@@ -1384,6 +1428,11 @@ export const en: Dictionary = {
         pending: "Pending approval: {count}",
         approved: "Approved: {count}",
         left: "Not approved: {count} — critical violations or not made from the version in force. Open them one by one.",
+        pushed: "Packs pushed off the shelf end and removed (planogram — pack): {list}.",
+        approveAllTitle: "Approve all waiting ({count})?",
+        approveAllHint:
+          "The approved ones replace the versions in force. Versions with critical violations or not made from the version in force stay waiting.",
+        approveAllConfirm: "Yes, approve",
       },
       open: "Open",
       noImage: "no picture",
@@ -1409,6 +1458,10 @@ export const en: Dictionary = {
         "This price list has already been applied to planograms. Change prices in the «Current prices» table: a new price list is saved.",
       stale:
         "This version was not made from the one in force: approving it replaces the version in force. Read the warning on the card and confirm.",
+      posmInUse:
+        "This POSM's size can't change: it stands on approved planograms or ones awaiting approval.",
+      unreadable:
+        "No price could be read from the file. Check the «Code» and «Price» columns (formulas must be saved with their values).",
     },
   },
   reports: {
@@ -2398,6 +2451,10 @@ export const en: Dictionary = {
       tables: "Tables",
     },
     empty: "No equipment yet — upload the equipment file.",
+    groups: {
+      installed: "Installed",
+      reference: "Reference",
+    },
     upload: "Upload the equipment file →",
     kpi: {
       installed: "Installed, units",
@@ -2440,6 +2497,9 @@ export const en: Dictionary = {
       },
     },
     purchases: {
+      deleteTitle: "Delete the purchase record?",
+      deleteHint: "The type's purchased total goes down and the control equation is recalculated.",
+      deleteConfirm: "Yes, delete",
       title: "Purchase journal",
       hint: "How much equipment of each type was bought. Entered by hand or by uploading a POSM launch template (“Data”); the equipment file and the outlet base never change it. The sum per type is the ceiling of the control equation. A correction is a separate line with a minus.",
       quantity: "Quantity",
@@ -2623,6 +2683,13 @@ export const en: Dictionary = {
     },
     base: { UNITS: "By equipment", SLOTS: "By slots", PLANOGRAM: "By planogram" },
     waybill: {
+      viaTsm: "Sent to TSMs",
+      viaTsmHint:
+        "Part of the region's share already went straight to its TSMs — «To send» is reduced by it so nothing goes twice.",
+      shipTitle: "Record the shipment: {destination}?",
+      shipHint:
+        "The whole remainder will be recorded as shipped — {count} pcs. If part was shipped meanwhile, only what is still left is recorded.",
+      shipConfirm: "Yes, shipped",
       title: "Waybill: {destination}",
       units: "Equipment in the base: {count}",
       posm: "POSM",
@@ -2639,6 +2706,9 @@ export const en: Dictionary = {
       nothing: "Everything planned has been shipped.",
     },
     stock: {
+      deleteTitle: "Delete the shipment record?",
+      deleteHint: "What was shipped counts as at the central warehouse again.",
+      deleteConfirm: "Yes, delete",
       title: "Stock",
       hint: "Available = in stock + ordered. In stock now = available − shipped.",
       posm: "POSM",
@@ -2665,6 +2735,9 @@ export const en: Dictionary = {
       fact: "Actual",
     },
     posm: {
+      deleteTitle: "Delete «{name}»?",
+      deleteHint: "The item leaves the campaign's list with its settings.",
+      deleteConfirm: "Yes, delete",
       title: "Item settings",
       edit: "Settings",
       inStock: "In stock, pcs",
@@ -2685,6 +2758,9 @@ export const en: Dictionary = {
       delete: "Remove the item from the order",
     },
     import: {
+      dropTitle: "Don't save this file?",
+      dropHint: "The file with a minus in the control is dropped; the data stays as it was.",
+      dropConfirm: "Yes, don't save",
       title: "Upload data",
       link: "Upload data",
       equipmentTitle: "Equipment file",
@@ -2767,6 +2843,10 @@ export const en: Dictionary = {
       file: "POSM order",
     },
     sizes: {
+      inUse: "Can't delete: the element is in campaigns —",
+      deleteTitle: "Delete the element «{name}»?",
+      deleteHint: "Its sizes, prices and quote history on every equipment type are deleted.",
+      deleteConfirm: "Yes, delete",
       fileMissing: "POSM sizes — to fill in",
       fileAll: "POSM sizes",
       imported: "Sizes uploaded: {sizes}, equipment sizes: {types}.",
@@ -2811,6 +2891,9 @@ export const en: Dictionary = {
     },
     help: { open: "Open" },
     eas: {
+      unpriced:
+        "No price: {count} ({names}). They count as 0 in the requested amount — set the prices before sending the EAS.",
+      unpricedLink: "Set prices →",
       title: "EAS document",
       open: "Make the EAS",
       budget: "Budget",
@@ -2853,6 +2936,18 @@ export const en: Dictionary = {
       },
     },
     campaign: {
+      stepper: {
+        title: "Campaign steps",
+        composition: "Composition",
+        order: "Order",
+        split: "Distribution",
+        shipments: "Shipments",
+      },
+      frozen:
+        "The distribution plan was fixed at the order ({date}): new equipment files and outlet bases don't change it.",
+      removeFileTitle: "Delete the file?",
+      removeFileHint: "The file is removed from the campaign for good.",
+      removeFileConfirm: "Yes, delete",
       back: "← Campaigns",
       closedHint: "The campaign is closed — view only.",
       steps: {
@@ -2949,6 +3044,10 @@ export const en: Dictionary = {
       noFiles: "No files.",
     },
     orders: {
+      deleteTitle: "Delete the campaign «{name}»?",
+      deleteHint:
+        "Its POSM list, files and replacement marks are deleted. Nothing was shipped from it.",
+      deleteConfirm: "Yes, delete",
       title: "POSM campaigns",
       hint: "Every campaign goes from the concept to the replacement in the shops, with its own POSM list, plan and shipments. Old campaigns stay in the history.",
       empty: "No campaigns yet.",
@@ -2988,6 +3087,8 @@ export const en: Dictionary = {
       posmDeleted: "Item removed from the campaign.",
     },
     errors: {
+      elementInUse:
+        "The element is in campaigns' composition or lists — it can't be deleted. Remove it from those campaigns first.",
       forbidden: "You can't do this.",
       badFile: "Couldn't read the file. An .xlsx file is needed.",
       noEquipment:

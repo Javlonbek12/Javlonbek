@@ -4,6 +4,7 @@ import { Section } from "@/components/connect/parts";
 import { fmt } from "@/components/distribution/parts";
 import { ControlTable } from "@/components/equipment/control-table";
 import { Button } from "@/components/ui/button";
+import { ConfirmAction } from "@/components/ui/confirm-action";
 import { Input } from "@/components/ui/input";
 import { dateFormat, t, type TranslationKey } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
@@ -62,15 +63,23 @@ export default async function EquipmentUploadsPage({
               {t("dist.import.minus", { rows: fmt(pending.rows) })}
             </p>
             <ControlTable rows={pending.control} />
-            <form action={resolveImportAction} className="flex flex-wrap gap-2">
-              <input type="hidden" name="id" value={pending.id} />
-              <Button type="submit" name="save" value="1" variant="destructive">
-                {t("dist.import.saveAnyway")}
-              </Button>
-              <Button type="submit" name="save" value="0" variant="outline">
-                {t("dist.import.drop")}
-              </Button>
-            </form>
+            <div className="flex flex-wrap gap-2">
+              <form action={resolveImportAction}>
+                <input type="hidden" name="id" value={pending.id} />
+                <Button type="submit" name="save" value="1" variant="destructive">
+                  {t("dist.import.saveAnyway")}
+                </Button>
+              </form>
+              <ConfirmAction
+                label={t("dist.import.drop")}
+                title={t("dist.import.dropTitle")}
+                hint={t("dist.import.dropHint")}
+                confirm={t("dist.import.dropConfirm")}
+                action={resolveImportAction}
+                hidden={{ id: pending.id, save: "0" }}
+                size="default"
+              />
+            </div>
           </div>
         )}
         <p className="text-muted-foreground text-xs">

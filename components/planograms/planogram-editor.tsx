@@ -23,6 +23,8 @@ import { slotKey, widthInSlots, type Geometry } from "@/modules/planograms/geome
 import {
   coveredBelow,
   coveredSlots,
+  layoutProblems,
+  posmArea,
   talkerRuns,
   tallPosmSlots,
   type Layout,
@@ -57,6 +59,8 @@ type Props = {
   rules: Rule[];
   prices: Record<string, number>;
   previous: { layout: Layout; geometry: Geometry; prices: Record<string, number> } | null;
+  // The version waits for approval: saving sends it back to draft (said before saving).
+  pendingApproval?: boolean;
   save: (
     planogramId: string,
     layout: string,
@@ -66,6 +70,21 @@ type Props = {
 };
 
 const BADGES = ["YANGI", "1mg", "2mg"];
+
+// What one undo step holds: the layout, the header and the shelftalkers.
+type Snapshot = { layout: Layout; headerId: string | null; talkers: Record<number, string> };
+
+// The cells a layout problem is about ("overlap:2:3" → "2:3"), and for a cell under a POSM the
+// POSM itself (the cell under it isn't drawn).
+function problemCells(problems: string[], layout: Layout) {
+  const cells = problems.map((p) => p.slice(p.indexOf(":") + 1));
+  const owners = Object.entries(layout).flatMap(([key, c]) =>
+    c.kind === "POSM" && posmArea(key, c.span, c.rows).some((k) => k !== key && cells.includes(k))
+      ? [key]
+      : [],
+  );
+  return [...cells, ...owners];
+}
 
 function PaletteItem({
   id,
@@ -150,20 +169,48 @@ export function PlanogramEditor(props: Props) {
   const section = geometry.shelves.find((s) => s.group > 0)?.group ?? 0;
   const sectionGaps = (column: number) =>
     section > 0 ? Math.floor(column / section) * SECTION_GAP : 0;
-  const [state, setState] = useState({
-    layout: props.initialLayout,
-    past: [] as Layout[],
-    future: [] as Layout[],
-  });
-  const [headerId, setHeaderId] = useState(props.initialHeaderId);
-  const [talkers, setTalkers] = useState(props.initialShelftalkers);
+  // Only shelves that hold a shelftalker keep one (as saved).
+  const keptTalkers = useCallback(
+    (talkers: Record<number, string>) =>
+      Object.fromEntries(
+        Object.entries(talkers).filter(
+          ([shelf, id]) => id && geometry.shelves[Number(shelf)]?.talker,
+        ),
+      ),
+    [geometry],
+  );
+  // A snapshot in a form that compares: the same content gives the same text.
+  const snapshotKey = useCallback(
+    (s: Snapshot) =>
+      JSON.stringify([
+        Object.entries(s.layout).sort(([a], [b]) => a.localeCompare(b)),
+        s.headerId,
+        Object.entries(keptTalkers(s.talkers)).sort(([a], [b]) => a.localeCompare(b)),
+      ]),
+    [keptTalkers],
+  );
+  const [state, setState] = useState(() => ({
+    current: {
+      layout: props.initialLayout,
+      headerId: props.initialHeaderId,
+      talkers: props.initialShelftalkers,
+    } as Snapshot,
+    past: [] as Snapshot[],
+    future: [] as Snapshot[],
+  }));
+  const { headerId, talkers } = state.current;
+  // «Unsaved» = differs from what was saved last (undoing back to it is not a change).
+  const [savedKey, setSavedKey] = useState(() => snapshotKey(state.current));
+  const dirty = snapshotKey(state.current) !== savedKey;
+  const [stillPending, setStillPending] = useState(Boolean(props.pendingApproval));
   // The same id on the server and in the browser (dnd-kit's own counter differs between them).
   const dndId = useId();
   const [selection, setSelection] = useState<string[]>([]);
   const [brush, setBrush] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [dirty, setDirty] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  // A move refused because the layout would not fit: the reason and the cells to show.
+  const [blocked, setBlocked] = useState<{ text: string; cells: string[] } | null>(null);
   const [pending, startTransition] = useTransition();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
@@ -184,8 +231,11 @@ export function PlanogramEditor(props: Props) {
     2 +
     4 +
     (geometry.shelves[shelf + rows - 1]?.talker ? TALKER_H : 4);
-  const layout = state.layout;
+  const layout = state.current.layout;
   const covered = coveredSlots(layout);
+  // Cells that don't fit now (e.g. a layout saved before a POSM got taller): shown in red.
+  const problems = layoutProblems(layout, geometry);
+  const problemSet = new Set([...problemCells(problems, layout), ...(blocked?.cells ?? [])]);
   // Behind such a POSM the shelf has no shelftalker (it is printed shorter there).
   const tall = tallPosmSlots(layout);
   // Where a place starts in its row: the slots before it and the room between module sections.
@@ -194,29 +244,63 @@ export function PlanogramEditor(props: Props) {
   // Under a POSM hanging from the shelf above: an empty place, the block is drawn over it.
   const below = coveredBelow(layout);
 
-  const apply = useCallback((next: Layout | null) => {
-    if (!next) return;
-    setState((s) => ({ layout: next, past: [...s.past.slice(-99), s.layout], future: [] }));
-    setDirty(true);
+  const commit = useCallback((patch: Partial<Snapshot>) => {
+    setBlocked(null);
+    setState((s) => ({
+      current: { ...s.current, ...patch },
+      past: [...s.past.slice(-99), s.current],
+      future: [],
+    }));
   }, []);
-  const undo = useCallback(
-    () =>
-      setState((s) =>
-        s.past.length
-          ? { layout: s.past.at(-1)!, past: s.past.slice(0, -1), future: [s.layout, ...s.future] }
-          : s,
-      ),
-    [],
-  );
-  const redo = useCallback(
-    () =>
-      setState((s) =>
-        s.future.length
-          ? { layout: s.future[0], past: [...s.past, s.layout], future: s.future.slice(1) }
-          : s,
-      ),
-    [],
-  );
+  // A change that would leave something outside the equipment or on top of something else (a
+  // shelf moved under a POSM over several shelves) is refused with the reason, not saved broken.
+  const apply = (next: Layout | null) => {
+    if (!next) return;
+    const before = new Set(problems);
+    const added = layoutProblems(next, geometry).filter((p) => !before.has(p));
+    if (added.length > 0) {
+      setBlocked({ text: t("planograms.editor.blocked"), cells: problemCells(added, next) });
+      return;
+    }
+    commit({ layout: next });
+  };
+  const undo = useCallback(() => {
+    setBlocked(null);
+    setState((s) =>
+      s.past.length
+        ? { current: s.past.at(-1)!, past: s.past.slice(0, -1), future: [s.current, ...s.future] }
+        : s,
+    );
+  }, []);
+  const redo = useCallback(() => {
+    setBlocked(null);
+    setState((s) =>
+      s.future.length
+        ? { current: s.future[0]!, past: [...s.past, s.current], future: s.future.slice(1) }
+        : s,
+    );
+  }, []);
+  // Leaving with unsaved changes asks first: closing the tab, and links inside the app.
+  useEffect(() => {
+    if (!dirty) return;
+    const onUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    const onClick = (e: MouseEvent) => {
+      const link = (e.target as HTMLElement | null)?.closest?.("a[href]");
+      if (!link || link.getAttribute("target") === "_blank" || e.defaultPrevented) return;
+      if (window.confirm(t("planograms.editor.leave"))) return;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    window.addEventListener("beforeunload", onUnload);
+    document.addEventListener("click", onClick, true);
+    return () => {
+      window.removeEventListener("beforeunload", onUnload);
+      document.removeEventListener("click", onClick, true);
+    };
+  }, [dirty, t]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || (e.target as HTMLElement).tagName === "INPUT") return;
@@ -274,7 +358,7 @@ export function PlanogramEditor(props: Props) {
     () => validatePlanogram(layout, geometry, skuInfos, rules),
     [layout, geometry, skuInfos, rules],
   );
-  const badCells = new Set(violations.flatMap((v) => v.cells));
+  const badCells = new Set([...violations.flatMap((v) => v.cells), ...problemSet]);
   const changes = useMemo(() => {
     if (!props.previous) return [];
     const names = new Map<string, string>([
@@ -296,27 +380,31 @@ export function PlanogramEditor(props: Props) {
   );
   const selectedSkus = selection.filter((k) => layout[k]?.kind === "SKU");
 
-  const onSave = () =>
+  const onSave = () => {
+    // A layout that doesn't fit is not sent: the cells are red and the reason is said here.
+    if (problems.length > 0) {
+      setBlocked({ text: t("planograms.editor.problems"), cells: problemCells(problems, layout) });
+      return;
+    }
+    const snapshot = state.current;
     startTransition(async () => {
-      // Only shelves that hold a shelftalker keep one.
-      const kept = Object.fromEntries(
-        Object.entries(talkers).filter(
-          ([shelf, id]) => id && geometry.shelves[Number(shelf)]?.talker,
-        ),
-      );
       const result = await props.save(
         props.planogramId,
-        JSON.stringify(layout),
-        headerId,
-        JSON.stringify(kept),
+        JSON.stringify(snapshot.layout),
+        snapshot.headerId,
+        JSON.stringify(keptTalkers(snapshot.talkers)),
       );
       setMessage(
         result.ok
           ? t("planograms.actions.saved")
           : t(`planograms.errors.${result.error ?? "invalid"}` as never),
       );
-      if (result.ok) setDirty(false);
+      if (result.ok) {
+        setSavedKey(snapshotKey(snapshot));
+        setStillPending(false);
+      }
     });
+  };
 
   return (
     <DndContext id={dndId} sensors={sensors} onDragEnd={onDragEnd}>
@@ -381,7 +469,7 @@ export function PlanogramEditor(props: Props) {
             {geometry.header && (
               <NativeSelect
                 value={headerId ?? ""}
-                onChange={(e) => (setHeaderId(e.target.value || null), setDirty(true))}
+                onChange={(e) => commit({ headerId: e.target.value || null })}
                 aria-label={t("planograms.fields.header")}
               >
                 <option value="">{t("planograms.fields.noHeader")}</option>
@@ -400,6 +488,16 @@ export function PlanogramEditor(props: Props) {
             )}
             {message && !dirty && <span className="text-muted-foreground text-xs">{message}</span>}
           </div>
+          {stillPending && (
+            <p className="text-sm text-amber-700 dark:text-amber-300">
+              {t("planograms.editor.pendingWarning")}
+            </p>
+          )}
+          {blocked && (
+            <p role="alert" className="bg-destructive/10 text-destructive rounded-md p-2 text-sm">
+              {blocked.text}
+            </p>
+          )}
           <p className="text-muted-foreground text-xs">
             {brush
               ? t("planograms.editor.brush", {
@@ -531,10 +629,9 @@ export function PlanogramEditor(props: Props) {
                   {shelf.talker && (
                     <select
                       value={talkers[shelfIndex] ?? ""}
-                      onChange={(e) => (
-                        setTalkers((s) => ({ ...s, [shelfIndex]: e.target.value })),
-                        setDirty(true)
-                      )}
+                      onChange={(e) =>
+                        commit({ talkers: { ...talkers, [shelfIndex]: e.target.value } })
+                      }
                       title={t("planograms.editor.shelftalker")}
                       aria-label={`${t("planograms.editor.shelf", { n: shelfIndex + 1 })} · ${t("planograms.editor.shelftalker")}`}
                       className="w-16 truncate rounded border bg-white text-[10px]"

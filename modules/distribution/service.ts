@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 
 import { db } from "@/lib/db";
-import type { Prisma } from "@/lib/generated/prisma/client";
+import { Prisma } from "@/lib/generated/prisma/client";
 import { fromDateString, isDateString } from "@/lib/dates";
 import { canUseModule } from "@/modules/core/access/actor";
 import { logActivity } from "@/modules/core/activity/service";
@@ -15,11 +15,13 @@ import {
   planItem,
   priceTagNeed,
   regionBase,
+  remainder,
   stock,
   totalUnits,
   tsmBase,
   type Count,
   type Item,
+  type ItemPlan,
   type TypeFacts,
 } from "./compute";
 import { controlRows, hasMinus, purchaseEntries, stockByType, type ControlRow } from "./control";
@@ -59,7 +61,8 @@ export class DistributionError extends Error {
       | "noSizes"
       | "noLines"
       | "ordered"
-      | "noReplacement",
+      | "noReplacement"
+      | "elementInUse",
   ) {
     super(code);
     this.name = "DistributionError";
@@ -163,9 +166,11 @@ export const ORDER_COOKIE = "dist-order";
 export async function listOrders() {
   const orders = await db.distOrder.findMany({
     orderBy: [{ orderedOn: "desc" }, { createdAt: "desc" }],
+    // The frozen split is big and only the order on screen needs it (loadDistribution).
+    omit: { frozenBase: true },
     include: {
       createdBy: { select: { firstName: true, lastName: true } },
-      _count: { select: { posm: true } },
+      _count: { select: { posm: true, elements: true } },
     },
   });
   const shipped = await db.distShipment.groupBy({
@@ -240,19 +245,99 @@ async function equipmentCounts(): Promise<Count[]> {
   return [...byRegion.values(), ...out];
 }
 
+// ——— The split's base, frozen when a campaign is ordered ———
+
+// What the regional split is computed from: equipment counts by region and TSM, whether the
+// warehouses count, and the planograms' facts (slots, facings by price).
+export type SplitBase = {
+  counts: Count[];
+  includeStock: boolean;
+  facts: TypeFacts;
+  links: PlanogramLink[];
+};
+export type FrozenBase = SplitBase & { at: string };
+
+export function parseFrozen(value: unknown): FrozenBase | null {
+  if (!value || typeof value !== "object") return null;
+  const v = value as Partial<FrozenBase>;
+  return Array.isArray(v.counts) && v.facts && typeof v.at === "string"
+    ? {
+        counts: v.counts,
+        includeStock: v.includeStock ?? true,
+        facts: v.facts,
+        links: v.links ?? [],
+        at: v.at,
+      }
+    : null;
+}
+
+// A campaign made from a composition counts the warehouses as it chose; an order loaded from a
+// POSM list file follows the common setting.
+async function stockChoice(order: { withStock: boolean; _count?: { elements: number } } | null) {
+  if (order && (order._count?.elements ?? 0) > 0) return order.withStock;
+  return getIncludeStock();
+}
+
+async function liveBase(
+  order: { withStock: boolean; _count?: { elements: number } } | null,
+): Promise<SplitBase> {
+  const [counts, includeStock, planogram] = await Promise.all([
+    equipmentCounts(),
+    stockChoice(order),
+    planogramFacts(),
+  ]);
+  return { counts, includeStock, ...planogram };
+}
+
+// Fixes the split of an ordered campaign: from now on a new equipment file, outlet base or
+// planogram doesn't move its plan (the POSM is printed for these numbers).
+export async function freezeOrder(id: string) {
+  const order = await db.distOrder.findUnique({
+    where: { id },
+    include: { _count: { select: { elements: true } } },
+  });
+  if (!order) return;
+  const base: FrozenBase = { ...(await liveBase(order)), at: new Date().toISOString() };
+  await db.distOrder.update({
+    where: { id },
+    data: { frozenBase: base as unknown as Prisma.InputJsonValue },
+  });
+}
+
+// Ordered campaigns not frozen yet (ordered before freezing existed) get their split fixed as it
+// is now: called before new equipment data replaces the old.
+export async function freezeOrdered() {
+  const open = await db.distOrder.findMany({
+    where: { orderedOn: { not: null }, frozenBase: { equals: Prisma.DbNull } },
+    select: { id: true },
+  });
+  for (const o of open) await freezeOrder(o.id);
+}
+
 // Everything the pages need for one order, computed once per request.
 export async function loadDistribution(orderId?: string) {
   const orders = await listOrders();
   const order = orderId
     ? (orders.find((o) => o.id === orderId) ?? null)
     : await currentOrder(orders);
+  // An ordered campaign keeps the split it was ordered with; one ordered before freezing existed
+  // is frozen now, as it stands.
+  const storedBase = async (id: string) =>
+    parseFrozen(
+      (await db.distOrder.findUnique({ where: { id }, select: { frozenBase: true } }))?.frozenBase,
+    );
+  let frozen = order ? await storedBase(order.id) : null;
+  if (order?.orderedOn && !frozen) {
+    await freezeOrder(order.id);
+    frozen = await storedBase(order.id);
+  }
   const posmIds = order
     ? (await db.distPosm.findMany({ where: { orderId: order.id }, select: { id: true } })).map(
         (p) => p.id,
       )
     : [];
-  const [counts, rows, shipments, includeStock, planogram, sources] = await Promise.all([
-    equipmentCounts(),
+  const [base, rows, shipments, sources] = await Promise.all([
+    frozen ?? liveBase(order),
     order
       ? db.distPosm.findMany({ where: { orderId: order.id }, orderBy: { position: "asc" } })
       : Promise.resolve([]),
@@ -264,15 +349,13 @@ export async function loadDistribution(orderId?: string) {
         createdBy: { select: { firstName: true, lastName: true } },
       },
     }),
-    getIncludeStock(),
-    planogramFacts(),
     dataSources(),
   ]);
+  const { counts, includeStock, facts, links } = base;
   const items: Item[] = rows.map((r) => ({ ...r }));
   const regions = regionBase(counts, includeStock);
   const tsms = tsmBase(counts);
   const total = totalUnits(regions);
-  const { facts, links } = planogram;
   const plans = items.map((item) => planItem(item, regions, tsms, facts));
   const controls = items.map((item) => controlItem(item, total));
   const tags = priceTagNeed(items, total, facts);
@@ -305,6 +388,8 @@ export async function loadDistribution(orderId?: string) {
     }),
     sources,
     importedAt: sources.equipment?.at ?? null,
+    // When the split was fixed (the campaign was ordered); null = computed from the data now.
+    frozenAt: frozen ? new Date(frozen.at) : null,
     destinations: [
       ...sortRegions(regions.keys()),
       ...[...tsms].flatMap(([region, people]) =>
@@ -426,6 +511,8 @@ export async function resolvePendingImport(actor: Actor & Viewer, id: string, sa
 }
 
 async function saveEquipment(actor: Actor & Viewer, file: ParsedEquipment, confirmed = false) {
+  // Ordered campaigns keep the split they were ordered with.
+  await freezeOrdered();
   const seen = [...new Map(file.units.filter((u) => u.outletId).map((u) => [u.outletId, u]))].map(
     ([outletId, u]) => ({ outletId, posName: u.posName, tin: u.tin }),
   );
@@ -476,6 +563,7 @@ async function saveEquipment(actor: Actor & Viewer, file: ParsedEquipment, confi
 export async function importOutletBase(actor: Actor & Viewer, buffer: Buffer) {
   if (!canManageDistribution(actor)) throw new DistributionError("forbidden");
   const outlets = await parsed(buffer, parseOutletBase);
+  await freezeOrdered();
   const unique = [...new Map(outlets.map((o) => [o.outletId, o])).values()];
   await db.$transaction(
     async (tx) => {
@@ -557,6 +645,8 @@ export async function createOrder(
     },
   });
   await savePosm(order.id, list ?? copied);
+  // An order loaded from a file is ordered already: its split is fixed now.
+  await freezeOrder(order.id);
   await logActivity({
     actorId: actor.id,
     action: "distribution.order",
@@ -727,17 +817,61 @@ export async function addShipment(
   return created;
 }
 
-// A whole waybill at once: every item of a destination with its planned quantity.
+// A whole waybill at once: every item of a destination with what is left to send. The quantities
+// are capped to that remainder inside one transaction, with the items locked, so a second click
+// (or someone else shipping meanwhile) can't record the same POSM twice.
 export async function shipWaybill(
   actor: Actor & Viewer,
   destination: string,
   lines: { posmId: string; quantity: number }[],
   shippedOn: string,
-  destinations: string[],
+  plan: { plans: ItemPlan[]; destinations: string[] },
 ) {
-  const created = [];
-  for (const line of lines.filter((l) => l.quantity > 0))
-    created.push(await addShipment(actor, { ...line, destination, shippedOn }, destinations));
+  if (!canSeeDistribution(actor)) throw new DistributionError("forbidden");
+  if (!isDateString(shippedOn) || !plan.destinations.includes(destination))
+    throw new DistributionError("invalid");
+  const wanted = lines.filter((l) => Number.isInteger(l.quantity) && l.quantity > 0);
+  const ids = [...new Set(wanted.map((l) => l.posmId))];
+  if (ids.length === 0) return 0;
+  const created = await db.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "DistPosm" WHERE "id" = ANY(${ids}) FOR UPDATE`;
+    const items = await tx.distPosm.findMany({
+      where: { id: { in: ids } },
+      include: { order: { select: { closed: true } } },
+    });
+    if (items.some((i) => i.order.closed)) throw new DistributionError("closed");
+    const shipments = await tx.distShipment.findMany({
+      where: { posmId: { in: ids } },
+      select: { posmId: true, destination: true, quantity: true },
+    });
+    const out: { id: string; quantity: number }[] = [];
+    for (const line of wanted) {
+      const p = plan.plans.find((x) => x.item.id === line.posmId);
+      if (!p || !items.some((i) => i.id === line.posmId)) continue;
+      const quantity = Math.min(line.quantity, remainder(p, destination, shipments).toSend);
+      if (quantity <= 0) continue;
+      const row = await tx.distShipment.create({
+        data: {
+          posmId: line.posmId,
+          destination,
+          quantity,
+          shippedOn: fromDateString(shippedOn),
+          createdById: actor.id,
+        },
+      });
+      shipments.push({ posmId: line.posmId, destination, quantity });
+      out.push({ id: row.id, quantity });
+    }
+    return out;
+  });
+  for (const row of created)
+    await logActivity({
+      actorId: actor.id,
+      action: "distribution.shipped",
+      entityType: "DistShipment",
+      entityId: row.id,
+      details: { destination, quantity: row.quantity },
+    });
   return created.length;
 }
 

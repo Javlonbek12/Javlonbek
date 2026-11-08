@@ -164,9 +164,18 @@ describe("planogram lifecycle (stage 7 «done» scenario)", () => {
     await approvePlanogram(owner, a.id);
     await approvePlanogram(owner, b.id);
 
+    // A list older than the one the planograms are on offers nothing: applying it would roll the
+    // prices back.
+    const { list: older } = await createPriceList(
+      owner,
+      { name: "Старый (тест)", effectiveFrom: "2020-01-01" },
+      [{ code: "SKU-TEST-001", price: 20000 }],
+    );
+    expect(await previewPriceList(older.id)).toEqual([]);
+
     const { list, unknown } = await createPriceList(
       owner,
-      { name: "Повышение (тест)", effectiveFrom: "2026-11-01" },
+      { name: "Повышение (тест)", effectiveFrom: "2030-11-01" },
       [
         { code: "SKU-TEST-001", price: 33000 },
         { code: "NO-SUCH", price: 1 },

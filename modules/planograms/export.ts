@@ -303,17 +303,18 @@ export async function exportPdf(ids: string[]): Promise<Buffer> {
   return Buffer.from(await pdf.save());
 }
 
+// The project's file for the shops: the version in force of each planogram, once (drafts and
+// versions waiting for approval are not what the shops should set up).
 export async function planogramIdsForProject(project: string) {
   const rows = await db.planogram.findMany({
-    where: {
-      project,
-      isTemplate: false,
-      status: { in: ["APPROVED", "PENDING_APPROVAL", "DRAFT"] },
-    },
-    select: { id: true },
-    orderBy: { title: "asc" },
+    where: { project, isTemplate: false, status: "APPROVED" },
+    select: { id: true, rootId: true },
+    orderBy: [{ title: "asc" }, { version: "desc" }],
   });
-  return rows.map((r) => r.id);
+  const seen = new Set<string>();
+  return rows
+    .filter((r) => !seen.has(r.rootId ?? r.id) && seen.add(r.rootId ?? r.id))
+    .map((r) => r.id);
 }
 
 export async function comparisonSvgs(beforeId: string, afterId: string) {

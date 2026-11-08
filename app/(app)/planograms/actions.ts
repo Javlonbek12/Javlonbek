@@ -31,6 +31,7 @@ import {
   archivePlanogram,
   copyPlanogram,
   createPlanogram,
+  inForceVersion,
   returnToDraft,
   saveLayout,
   submitForApproval,
@@ -77,14 +78,30 @@ const meta = (formData: FormData) => ({
   notes: str(formData, "notes"),
 });
 
+// On an error the form comes back with what was typed (the fields go back in the link).
 export async function createPlanogramAction(formData: FormData) {
   const user = await actor();
-  await run("/planograms/new", async () => {
+  const typed = new URLSearchParams();
+  for (const key of [
+    "equipmentId",
+    "title",
+    "channel",
+    "project",
+    "priceListId",
+    "validFrom",
+    "validTo",
+    "templateId",
+    "fill",
+  ])
+    typed.set(key, str(formData, key).slice(0, 200));
+  await run(`/planograms/new?${typed}`, async () => {
     const created = await createPlanogram(user, {
       ...meta(formData),
       equipmentId: str(formData, "equipmentId"),
       templateId: str(formData, "templateId") || null,
       fill: str(formData, "fill") === "auto" ? "auto" : "empty",
+      // The list is chosen in the form (it starts on the prices in force): empty = none on purpose.
+      defaultPriceList: false,
     });
     return `/planograms/${created.id}/edit`;
   });
@@ -123,8 +140,10 @@ export async function workflowAction(formData: FormData) {
   const id = idSchema.parse(str(formData, "planogramId"));
   const step = str(formData, "step");
   await run(`/planograms/${id}`, async () => {
-    if (step === "submit") await submitForApproval(user, id);
-    else if (step === "approve")
+    if (step === "submit") {
+      const told = await submitForApproval(user, id);
+      return `/planograms/${id}?${new URLSearchParams({ submitted: told.join(", ") || "-" })}`;
+    } else if (step === "approve")
       await approvePlanogram(user, id, { force: str(formData, "force") === "1" });
     else if (step === "draft") await returnToDraft(user, id);
     else if (step === "archive") await archivePlanogram(user, id);
@@ -132,12 +151,15 @@ export async function workflowAction(formData: FormData) {
     else if (step === "template")
       return `/planograms/${(await copyPlanogram(user, id, { asNew: true, isTemplate: true, title: `${str(formData, "title")} (шаблон)` })).id}`;
     else if (step === "adapt") {
-      const { planogram } = await adaptPlanogram(
+      const { planogram, droppedNames } = await adaptPlanogram(
         user,
         id,
         idSchema.parse(str(formData, "equipmentId")),
       );
-      return `/planograms/${planogram.id}/edit`;
+      const query = droppedNames.length
+        ? `?${new URLSearchParams({ dropped: droppedNames.join(", ").slice(0, 1500) })}`
+        : "";
+      return `/planograms/${planogram.id}/edit${query}`;
     }
   });
 }
@@ -192,7 +214,9 @@ export async function sendToTelegramAction(formData: FormData) {
   const userIds = formData.getAll("userIds").filter((v): v is string => typeof v === "string");
   await run(`/planograms/${id}`, async () => {
     if (user.role !== "OWNER" && user.role !== "MANAGER") throw new PlanogramError("forbidden");
-    const loaded = await loadPlanogram(id);
+    // Always the version in force, whichever version the page was opened on.
+    const current = await inForceVersion(id);
+    const loaded = current ? await loadPlanogram(current.id) : null;
     if (!loaded || !loaded.record.shareToken) throw new PlanogramError("notFound");
     const png = await planogramPng(loaded);
     const caption = `${slideTitle(loaded)}\n${slideSubtitle(loaded)}\n${getEnv().APP_URL}/p/${loaded.record.shareToken}`;
@@ -218,6 +242,7 @@ export async function saveEquipmentAction(formData: FormData) {
       channel: str(formData, "channel"),
       geometry,
       distTypes: formData.getAll("distTypes").map(String),
+      mandatorySkuIds: formData.getAll("mandatorySkuIds").map(String),
     });
     return `/equipment/models/${saved.id}?saved=1`;
   });
@@ -294,7 +319,28 @@ export async function massInsertAction(formData: FormData) {
       Number(str(formData, "shelf")) - 1,
       Number(str(formData, "position")) - 1,
     );
-    return `/planograms/mass?done=${result.created.length}&skipped=${result.skipped.length}`;
+    // Which pack each new version pushed off the shelf end: «Title — SKU».
+    const names = new Map(
+      (
+        await db.sku.findMany({
+          where: { id: { in: result.pushedOff.map((p) => p.skuId) } },
+          select: { id: true, name: true },
+        })
+      ).map((s) => [s.id, s.name]),
+    );
+    const query = new URLSearchParams({
+      done: String(result.created.length),
+      skipped: String(result.skipped.length),
+    });
+    if (result.pushedOff.length)
+      query.set(
+        "pushed",
+        result.pushedOff
+          .map((p) => `${p.title} — ${names.get(p.skuId) ?? p.skuId}`)
+          .join("; ")
+          .slice(0, 1500),
+      );
+    return `/planograms/mass?${query}`;
   });
 }
 

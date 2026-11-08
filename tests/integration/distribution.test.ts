@@ -107,7 +107,7 @@ describe("POSM distribution", () => {
         "Test Town",
         [{ posmId: shelf.item.id, quantity: 6 }],
         "2026-10-26",
-        d.destinations,
+        d,
       ),
     ).toBe(1);
     await addShipment(

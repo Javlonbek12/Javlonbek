@@ -8,6 +8,7 @@ import { CompositionPicker } from "@/components/distribution/composition-picker"
 import { fmt, Matrix, N, pct } from "@/components/distribution/parts";
 import { rowsOf, SKETCH_COLORS, sketchKind } from "@/components/distribution/sketch";
 import { Button } from "@/components/ui/button";
+import { ConfirmAction } from "@/components/ui/confirm-action";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
@@ -92,6 +93,7 @@ export default async function DistributionCampaignPage({
         {order.closed && (
           <p className="text-muted-foreground text-sm">{t("dist.campaign.closedHint")}</p>
         )}
+        <Stepper c={c} />
         <ol className="flex flex-wrap gap-1.5">
           {STEPS.map(([key, anchor], i) => (
             <li key={key}>
@@ -197,7 +199,7 @@ export default async function DistributionCampaignPage({
               <div
                 key={f.id}
                 className={cn(
-                  "flex flex-col overflow-hidden rounded-xl border",
+                  "flex flex-col rounded-xl border",
                   f.final && "border-emerald-400 ring-2 ring-emerald-400/40",
                 )}
               >
@@ -206,10 +208,10 @@ export default async function DistributionCampaignPage({
                   <img
                     src={`/api/distribution/files/${f.id}`}
                     alt={f.name}
-                    className="bg-muted aspect-[4/3] w-full object-contain"
+                    className="bg-muted aspect-[4/3] w-full rounded-t-xl object-contain"
                   />
                 ) : (
-                  <div className="bg-muted text-muted-foreground flex aspect-[4/3] items-center justify-center">
+                  <div className="bg-muted text-muted-foreground flex aspect-[4/3] items-center justify-center rounded-t-xl">
                     <FileText className="size-8" />
                   </div>
                 )}
@@ -635,6 +637,11 @@ export default async function DistributionCampaignPage({
               note={c.toRegions ? pct(c.shipped / c.toRegions) : undefined}
             />
           </div>
+          {c.frozenAt && (
+            <p className="text-muted-foreground text-xs">
+              {t("dist.campaign.frozen", { date: day.format(c.frozenAt) })}
+            </p>
+          )}
           <form action={openDistributionAction} className="flex flex-wrap gap-2">
             <input type="hidden" name="id" value={order.id} />
             <Button type="submit" name="to" value="plan" disabled={c.items.length === 0}>
@@ -760,6 +767,65 @@ export default async function DistributionCampaignPage({
   );
 }
 
+// The campaign in four steps, the current one highlighted; each opens its existing section.
+function Stepper({ c }: { c: NonNullable<Awaited<ReturnType<typeof loadCampaign>>> }) {
+  const steps = [
+    { key: "composition", done: c.steps.list, href: "#composition" },
+    { key: "order", done: c.steps.ordered, href: "#order" },
+    { key: "split", done: c.shipped > 0, to: "plan" },
+    { key: "shipments", done: c.steps.distribution, to: "stock" },
+  ] as const;
+  const current = steps.findIndex((s) => !s.done);
+  const chip = (i: number) =>
+    cn(
+      "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm",
+      i === current
+        ? "border-primary bg-primary text-primary-foreground font-semibold"
+        : steps[i]!.done
+          ? "border-emerald-300 text-emerald-800 dark:border-emerald-800 dark:text-emerald-300"
+          : "text-muted-foreground hover:bg-accent/50",
+    );
+  return (
+    <ol className="flex flex-wrap items-center gap-1" aria-label={t("dist.campaign.stepper.title")}>
+      {steps.map((s, i) => {
+        const label = (
+          <>
+            {s.done && i !== current ? <Check className="size-3.5" /> : <span>{i + 1}.</span>}
+            {t(`dist.campaign.stepper.${s.key}`)}
+          </>
+        );
+        return (
+          <li key={s.key} className="flex items-center gap-1">
+            {i > 0 && <span className="text-muted-foreground">→</span>}
+            {"href" in s || c.items.length === 0 ? (
+              <a
+                href={"href" in s ? s.href : "#distribution"}
+                aria-current={i === current ? "step" : undefined}
+                className={chip(i)}
+              >
+                {label}
+              </a>
+            ) : (
+              <form action={openDistributionAction}>
+                <input type="hidden" name="id" value={c.order.id} />
+                <button
+                  type="submit"
+                  name="to"
+                  value={s.to}
+                  aria-current={i === current ? "step" : undefined}
+                  className={chip(i)}
+                >
+                  {label}
+                </button>
+              </form>
+            )}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 function Anchor({ id, children }: { id: string; children: ReactNode }) {
   return (
     <div id={id} className="scroll-mt-24">
@@ -792,20 +858,16 @@ function RemoveFile({
   anchor: string;
 }) {
   return (
-    <form action={removeCampaignFileAction}>
-      <input type="hidden" name="id" value={orderId} />
-      <input type="hidden" name="fileId" value={fileId} />
-      <input type="hidden" name="anchor" value={anchor} />
-      <Button
-        type="submit"
-        size="sm"
-        variant="ghost"
-        className="h-7 px-2"
-        aria-label={t("dist.campaign.removeFile")}
-      >
-        <Trash2 className="size-3.5" />
-      </Button>
-    </form>
+    <ConfirmAction
+      label={<span className="sr-only">{t("dist.campaign.removeFile")}</span>}
+      icon={<Trash2 className="size-3.5" />}
+      title={t("dist.campaign.removeFileTitle")}
+      hint={t("dist.campaign.removeFileHint")}
+      confirm={t("dist.campaign.removeFileConfirm")}
+      action={removeCampaignFileAction}
+      hidden={{ id: orderId, fileId, anchor }}
+      align="right"
+    />
   );
 }
 

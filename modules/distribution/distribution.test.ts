@@ -21,6 +21,7 @@ import {
   totalUnits,
   tsmBase,
   tsmBreakdown,
+  typedShare,
   type Count,
   type Item,
   type TypeFacts,
@@ -464,5 +465,15 @@ describe("the files", () => {
     await expect(parseEquipmentFile(Buffer.from("not excel"))).rejects.toMatchObject({
       code: "badFile",
     });
+  });
+});
+
+describe("a share typed in percent", () => {
+  it("keeps the stored value when the field comes back as shown", () => {
+    // 1/11 is shown as 9.1 %: saving other fields must not turn it into 0.091.
+    expect(typedShare("9.1", "9.1", String(1 / 11))).toBe(1 / 11);
+    expect(typedShare("9,1", "9.1", String(1 / 11))).toBe(1 / 11);
+    expect(typedShare("12", "9.1", String(1 / 11))).toBe(0.12);
+    expect(typedShare("", "0", "")).toBe(0);
   });
 });

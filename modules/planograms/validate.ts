@@ -48,6 +48,16 @@ const numbers = (value: unknown): number[] | null =>
 
 type Context = { layout: Layout; geometry: Geometry; skus: Map<string, SkuInfo> };
 
+// Which SKUs must stand on a model: its own list when it has one (they differ by equipment), else
+// the SKUs marked mandatory. A delisted (archived) SKU never is: it can't block an approval.
+export function withMandatory<T extends SkuInfo>(skus: T[], modelList: string[] = []): T[] {
+  const own = modelList.length > 0 ? new Set(modelList) : null;
+  return skus.map((s) => ({
+    ...s,
+    isMandatory: !s.archived && (own ? own.has(s.id) : s.isMandatory),
+  }));
+}
+
 function checkMandatory(rule: Rule, { layout, geometry, skus }: Context): Violation[] {
   const shelves = numbers(rule.params.shelves);
   const present = new Set(
@@ -55,7 +65,7 @@ function checkMandatory(rule: Rule, { layout, geometry, skus }: Context): Violat
       .filter((f) => !shelves || shelves.includes(f.shelf))
       .map((f) => f.content.skuId),
   );
-  const mandatory = [...skus.values()].filter((s) => s.isMandatory);
+  const mandatory = [...skus.values()].filter((s) => s.isMandatory && !s.archived);
   const missing = mandatory.filter((s) => !present.has(s.id));
   if (missing.length === 0) return [];
   return [
