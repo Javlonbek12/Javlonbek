@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { GET } from "@/app/api/search/route";
 import { db } from "@/lib/db";
 import { withAccess } from "@/modules/core/access/actor";
+import { DEFAULT_ROLE_CONFIG, saveRoleConfig } from "@/modules/core/access/config";
 import { createSessionToken, SESSION_COOKIE } from "@/modules/core/auth/session";
 import { search } from "@/modules/search/service";
 import type { SearchGroup } from "@/modules/search/types";
@@ -79,10 +80,17 @@ describe("global search", () => {
     const card = asOwner.find((g) => g.key === "people")!.hits.find((h) => h.title.startsWith("С"));
     expect(card).toMatchObject({ href: `/team/${member.id}`, subtitle: "Мерчендайзер" });
 
-    // By default an employee has neither the team list nor invitations.
+    // By default an employee has the team list but can't invite.
     const asMember = await search(await withAccess(member), "сотрудник", TZ);
-    expect(titles(asMember, "people")).toEqual([]);
+    expect(titles(asMember, "people")).toEqual(["Другой сотрудник (тест)", "Сотрудник (тест)"]);
     expect(titles(asMember, "navigation")).toEqual([]);
+    // With «Команда» turned off for employees, people aren't found.
+    await saveRoleConfig(owner, {
+      ...DEFAULT_ROLE_CONFIG,
+      MEMBER: { ...DEFAULT_ROLE_CONFIG.MEMBER, modules: ["meetings", "planograms", "content"] },
+    });
+    const withoutTeam = await search(await withAccess(member), "сотрудник", TZ);
+    expect(titles(withoutTeam, "people")).toEqual([]);
 
     const sections = await search(await withAccess(member), "задач", TZ);
     expect(titles(sections, "navigation")).toEqual(["Задачи", "Новая задача"]);
