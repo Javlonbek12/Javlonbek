@@ -16,7 +16,7 @@ import { displayName } from "@/modules/core/users/display-name";
 import { visibleTasksWhere } from "@/modules/tasks/access";
 
 import { canEditMeeting, canViewMeeting, visibleMeetingsWhere } from "./access";
-import { weeklyOccurrences } from "./recurrence";
+import { REPEAT_EVERY, repeatOccurrences } from "./recurrence";
 import { meetingPhase } from "./status";
 
 export class MeetingError extends Error {
@@ -49,12 +49,14 @@ export const meetingInputSchema = z.object({
     .nullable()
     .refine((v) => v === null || v === "" || isDateString(v))
     .transform((v) => v || null),
+  // How often a new series repeats (with repeatUntil).
+  repeatEvery: z.enum(REPEAT_EVERY).default("week"),
 });
 
 export type MeetingInput = z.input<typeof meetingInputSchema>;
 
 const person = {
-  select: { id: true, firstName: true, lastName: true, deactivatedAt: true },
+  select: { id: true, firstName: true, lastName: true, deactivatedAt: true, position: true },
 } as const;
 
 const include = {
@@ -84,12 +86,13 @@ async function validParticipants(ids: string[], creatorId: string, keep: string[
   return [...new Set([creatorId, ...users.map((u) => u.id)])];
 }
 
-// Creates a meeting (or a weekly series of separate occurrences) and invites participants.
+// Creates a meeting (or a series of separate occurrences: every week, two weeks or month) and
+// invites participants.
 export async function createMeeting(actor: Actor, input: MeetingInput) {
   const data = parse(input);
   const { timezone } = await getSettings(actor.id);
-  const starts = weeklyOccurrences(data.startsLocal, data.repeatUntil).map((local) =>
-    zonedLocalToUtc(local, timezone),
+  const starts = repeatOccurrences(data.startsLocal, data.repeatUntil, data.repeatEvery).map(
+    (local) => zonedLocalToUtc(local, timezone),
   );
   if (starts.some((s) => s === null)) throw new MeetingError("invalid");
   const participantIds = await validParticipants(data.participantIds, actor.id);

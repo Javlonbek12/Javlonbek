@@ -1,20 +1,39 @@
 import { TaskForm } from "@/components/tasks/task-form";
+import { db } from "@/lib/db";
+import { isDateString } from "@/lib/dates";
 import { t } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getUserToday } from "@/modules/core/settings/service";
+import { canViewMeeting } from "@/modules/meetings/access";
 import { getTaskFormOptions } from "@/modules/tasks/form-options";
 import { routeHints } from "@/modules/tasks/route-hints";
 
 import { createTaskAction } from "../actions";
 
+// ?due=YYYY-MM-DD fills the due date (the calendar); ?meeting=<id> makes it a task for that
+// meeting (its page's «+ Добавить задачу»).
 export default async function NewTaskPage({ searchParams }: PageProps<"/tasks/new">) {
   const user = await requireUser();
-  const { due } = await searchParams;
-  const [options, routes, today] = await Promise.all([
+  const { due, meeting: meetingId } = await searchParams;
+  const [options, routes, today, found] = await Promise.all([
     getTaskFormOptions(user),
     routeHints(user.id),
     getUserToday(user.id),
+    typeof meetingId === "string"
+      ? db.meeting.findUnique({
+          where: { id: meetingId },
+          include: { participants: { select: { userId: true } } },
+        })
+      : null,
   ]);
+  const meeting =
+    found &&
+    canViewMeeting(user, {
+      createdById: found.createdById,
+      participantIds: found.participants.map((p) => p.userId),
+    })
+      ? { id: found.id, title: found.title }
+      : undefined;
 
   return (
     <div className="flex flex-col gap-3">
@@ -25,10 +44,12 @@ export default async function NewTaskPage({ searchParams }: PageProps<"/tasks/ne
         isNew
         routes={routes}
         today={today}
+        canAskApproval={user.role !== "OWNER"}
+        meeting={meeting}
         initial={{
           assigneeId: user.id,
           priority: "MEDIUM",
-          dueDate: typeof due === "string" ? due : "",
+          dueDate: typeof due === "string" && isDateString(due) ? due : "",
         }}
         {...options}
       />

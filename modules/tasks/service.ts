@@ -72,8 +72,10 @@ export const taskInputSchema = z
       .nullable()
       .transform((value) => value || null),
     estimateHours: z.number().min(0).max(10_000).nullable(),
-    // Only set when creating tasks from meeting minutes.
+    // Set when creating tasks for a meeting (from its outcome, or «+ Добавить задачу»).
     meetingId: z.string().max(64).nullable().optional(),
+    // A phase of the chosen project; undefined leaves it as it is.
+    phaseId: z.string().max(64).nullable().optional(),
   })
   .refine((v) => !v.startDate || !v.dueDate || v.startDate <= v.dueDate, "start after due");
 
@@ -111,6 +113,16 @@ const taskData = (data: z.output<typeof taskInputSchema>) => ({
   dueDate: data.dueDate ? fromDateString(data.dueDate) : null,
   estimateMinutes: data.estimateHours === null ? null : Math.round(data.estimateHours * 60),
 });
+
+// The phase only if it belongs to the task's project (by name); otherwise none.
+async function phaseOf(project: string | null, phaseId: string | null | undefined) {
+  if (!project || !phaseId) return null;
+  const phase = await db.projectPhase.findFirst({
+    where: { id: phaseId, project: { name: project } },
+    select: { id: true },
+  });
+  return phase?.id ?? null;
+}
 
 export async function createTask(
   actor: Actor,
@@ -174,6 +186,7 @@ export async function createTask(
   const task = await db.task.create({
     data: {
       ...taskData(data),
+      ...(data.phaseId !== undefined ? { phaseId: await phaseOf(data.project, data.phaseId) } : {}),
       ...options.extra,
       isPersonal: data.isPersonal,
       creatorId: actor.id,
@@ -212,6 +225,7 @@ const TRACKED_FIELDS = [
   "project",
   "planId",
   "estimateMinutes",
+  "phaseId",
 ] as const;
 
 function comparable(value: unknown) {
@@ -243,6 +257,8 @@ export async function updateTask(
 
   const next = {
     ...taskData(data),
+    // A project changed without saying the phase: the old phase stays only if it still fits.
+    phaseId: await phaseOf(data.project, data.phaseId === undefined ? task.phaseId : data.phaseId),
     assigneeId,
     // The new assignee is no co-assignee any more.
     ...(assigneeId !== task.assigneeId && task.coAssigneeIds.includes(assigneeId)

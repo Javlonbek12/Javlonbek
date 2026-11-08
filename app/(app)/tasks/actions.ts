@@ -26,7 +26,7 @@ import {
   type PanelField,
 } from "@/modules/tasks/quick-actions";
 import type { RepeatInput } from "@/modules/tasks/repeat";
-import { setTaskLabels } from "@/modules/tasks/labels";
+import { parseLabels, setTaskLabels } from "@/modules/tasks/labels";
 import {
   addTime,
   correctTimeEntry,
@@ -91,6 +91,8 @@ function taskInputFromForm(formData: FormData): TaskInput {
     project: str(formData, "project"),
     planId: str(formData, "planId") || null,
     estimateHours: estimate ? Number(estimate) : null,
+    phaseId: str(formData, "phaseId") || null,
+    meetingId: str(formData, "meetingId") || null,
   };
 }
 
@@ -136,6 +138,7 @@ export async function createTaskAction(
         repeat: repeatFromForm(formData),
         needsApproval: formData.get("needsApproval") === "on",
         startOwn: true,
+        extra: { labels: parseLabels(str(formData, "labels")) },
       },
     );
     taskId = task.id;

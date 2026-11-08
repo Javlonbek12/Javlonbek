@@ -493,6 +493,12 @@ export const en: Dictionary = {
       tomorrow: "Tomorrow",
       friday: "Friday",
       noDueHint: "Without a due date the task gets no reminders.",
+      noProject: "— no project —",
+      phase: "Project phase",
+      noPhase: "— no phase —",
+      forMeeting: "A task for the meeting “{title}”.",
+      more: "More: start, priority, estimate, project, plan, labels, repeat",
+      less: "Hide the extra fields",
     },
     look: {
       total: "Total tasks",
