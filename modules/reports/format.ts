@@ -1,13 +1,15 @@
 import { fromDateString } from "@/lib/dates";
+import { formatNumber } from "@/lib/format";
 import { currentLocale, intlLocale, t, type Locale, type TranslationKey } from "@/lib/i18n";
 
 // Numbers and periods in words for reports, Connect and the content plan: a decimal comma in
 // Russian, plurals that agree («1 пост», «3 поста», «5 постов») and date ranges with the year
-// only when it isn't this one.
+// only when it isn't this one. Numbers go through lib/format; the word-only plural forms here
+// («пост|поста|постов», without «{n}») suit phrases where the number stands apart from the word.
 
 // A number with up to `digits` decimals: «7,3» in Russian, «7.3» in English.
 export const formatDecimal = (value: number, digits = 1, locale: Locale = currentLocale()) =>
-  new Intl.NumberFormat(intlLocale(locale), { maximumFractionDigits: digits }).format(value);
+  formatNumber(value, digits, locale);
 
 // The number and the word that agrees with it: «1 пост», «3 поста», «5 постов», «1,5 дня».
 // The dictionary keeps the word's forms separated by «|»: Russian «one|few|many»
