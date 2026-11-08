@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { createTestUser, resetDb } from "@/tests/helpers/db";
 
 import { extractTasks } from "./prompts";
-import { AiError, runStructured, type ModelCall } from "./run";
+import { AiError, runStructured, systemBlocks, type ModelCall } from "./run";
 
 const schema = z.object({ answer: z.string() });
 const ctx = {
@@ -110,6 +110,26 @@ describe("runStructured", () => {
     ).rejects.toBeInstanceOf(AiError);
   });
 
+  it("hands a stable context block to the model call", async () => {
+    const user = await createTestUser("OWNER");
+    const call = vi.fn<ModelCall>().mockResolvedValue({
+      output: { answer: "ok" },
+      inputTokens: 1,
+      outputTokens: 1,
+    });
+    await runStructured({
+      userId: user.id,
+      fn: "t",
+      system: "s",
+      context: "guide",
+      prompt: "p",
+      schema,
+      today: "2026-10-01",
+      call,
+    });
+    expect(call).toHaveBeenCalledWith(expect.objectContaining({ system: "s", context: "guide" }));
+  });
+
   it("says AI is not configured when there is no API key", async () => {
     const user = await createTestUser("OWNER");
     await expect(
@@ -124,6 +144,19 @@ describe("runStructured", () => {
     ).rejects.toMatchObject({
       code: "not_configured",
     });
+  });
+});
+
+describe("systemBlocks", () => {
+  it("keeps a plain system prompt without a context", () => {
+    expect(systemBlocks("s")).toBe("s");
+  });
+
+  it("puts the context after the system prompt and marks it for the prompt cache", () => {
+    expect(systemBlocks("s", "guide")).toEqual([
+      { type: "text", text: "s" },
+      { type: "text", text: "guide", cache_control: { type: "ephemeral" } },
+    ]);
   });
 });
 
