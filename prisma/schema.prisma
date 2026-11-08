@@ -45,6 +45,8 @@ model User {
   // Deactivated by the owner (employee card): can't sign in and gets nothing; history stays.
   deactivatedAt    DateTime?
   deactivatedById  String?
+  // The sections in the phone's bottom bar, chosen in «Ещё» (registry ids); empty: the default.
+  phoneBar         String[]  @default([])
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
