@@ -21,13 +21,19 @@ import { requireUser } from "@/modules/core/auth/current-user";
 import { getSettings } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
 import { MAX_FILE_MB, MAX_FILES_PER_LANG } from "@/modules/content/files";
-import { getPost, hasLawyer, listContentAuthors } from "@/modules/content/service";
+import {
+  changeSendsBackToReview,
+  getPost,
+  hasLawyer,
+  listContentAuthors,
+} from "@/modules/content/service";
 import { listSections } from "@/modules/content/sections";
 import { BRANDS } from "@/modules/content/tagging";
 
 import {
   approveContentAction,
   cancelContentAction,
+  restoreContentAction,
   commentContentAction,
   copyFilesAction,
   legalApproveAction,
@@ -63,6 +69,12 @@ export default async function ContentPostPage({
   const lawyerStep = rights.review || rights.planner ? await hasLawyer() : false;
   const date = toDateString(post.publishDate);
   const hidden = <input type="hidden" name="postId" value={post.id} />;
+  // Said before saving: a change of text or files of an approved post sends it back to review.
+  const recheck = changeSendsBackToReview(post.status) && (
+    <p className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+      {t(post.status === "APPROVED" ? "content.recheck.approved" : "content.recheck.legal")}
+    </p>
+  );
 
   return (
     <div className="flex flex-col gap-4 [&>*]:min-w-0">
@@ -327,9 +339,22 @@ export default async function ContentPostPage({
             </Card>
           )}
 
+          {rights.restore && (
+            <Card className="gap-2">
+              <CardDescription>{t("content.restoreHint")}</CardDescription>
+              <form action={restoreContentAction}>
+                {hidden}
+                <Button type="submit" variant="outline" size="sm">
+                  {t("content.actions.restore")}
+                </Button>
+              </form>
+            </Card>
+          )}
+
           {rights.editContent && (
             <Card className="gap-3">
               <CardTitle>{t("content.materials")}</CardTitle>
+              {recheck}
               <div id="files" className="flex scroll-mt-20 flex-col gap-3 text-sm">
                 <span className="text-muted-foreground text-xs">
                   {t("content.fields.filesHint", { mb: MAX_FILE_MB, max: MAX_FILES_PER_LANG })}
@@ -517,7 +542,14 @@ export default async function ContentPostPage({
             <PlanForm
               action={updatePlanItemAction}
               postId={post.id}
-              values={{ ...post, publishDate: date }}
+              values={{
+                title: post.title,
+                brief: post.brief,
+                channels: post.channels,
+                publishDate: date,
+                publishTime: post.publishTime,
+                authorId: post.authorId,
+              }}
               users={users.map((u) => ({ id: u.id, name: displayName(u) }))}
               submit={t("content.actions.save")}
               showAuthor={rights.planner}

@@ -78,8 +78,15 @@ const count = <K extends string>(keys: readonly K[], values: (K | null)[]) =>
 
 // Every function takes `topics`: the ids of the sections to show, in their order.
 
-// 1. Storylines: for every topic, its posts by week.
-export function storylines(posts: AnalyticsPost[], weeks: string[], topics: readonly string[]) {
+// 1. Storylines: for every topic, its posts by week. `today` limits the silence to weeks that have
+// begun: the rest of the current month is still ahead, not silence.
+export function storylines(
+  posts: AnalyticsPost[],
+  weeks: string[],
+  topics: readonly string[],
+  today?: string,
+) {
+  const begun = today ? weeks.filter((w) => w <= today) : weeks;
   return topics.map((topic) => {
     const own = posts.filter((p) => p.topic === topic);
     return {
@@ -88,15 +95,15 @@ export function storylines(posts: AnalyticsPost[], weeks: string[], topics: read
       weeks: weeks.map((week) =>
         own.filter((p) => p.publishDate >= week && p.publishDate <= addDays(week, 6)),
       ),
-      // Weeks in a row without a post at the end of the period (a topic left behind).
+      // Weeks in a row without a post up to the current week (a topic left behind).
       silentWeeks: (() => {
         let n = 0;
-        for (let i = weeks.length - 1; i >= 0; i--) {
-          const w = weeks[i]!;
+        for (let i = begun.length - 1; i >= 0; i--) {
+          const w = begun[i]!;
           if (own.some((p) => p.publishDate >= w && p.publishDate <= addDays(w, 6))) break;
           n += 1;
         }
-        return own.length ? n : weeks.length;
+        return n;
       })(),
     };
   });

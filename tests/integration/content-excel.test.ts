@@ -41,7 +41,12 @@ describe("content plan in Excel", () => {
 
     const file = await exportPlanXlsx(owner, "2026-10-01", "2026-10-31", "https://test.example");
     // Uploading it back unchanged changes nothing.
-    expect(await importPlanXlsx(owner, file)).toEqual({ created: 0, updated: 0, errors: [] });
+    expect(await importPlanXlsx(owner, file)).toEqual({
+      created: 0,
+      updated: 0,
+      returned: 0,
+      errors: [],
+    });
     const book = new ExcelJS.Workbook();
     await book.xlsx.load(file as unknown as ArrayBuffer);
     const ws = book.worksheets[0]!;

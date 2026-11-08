@@ -133,7 +133,7 @@ export default async function ContentAnalyticsPage({
             <CardTitle>{t("content.analytics.storylines.title")}</CardTitle>
             <CardDescription>{t("content.analytics.storylines.hint")}</CardDescription>
             <Storylines
-              lines={storylines(posts, period.weeks, topics)}
+              lines={storylines(posts, period.weeks, topics, today)}
               weeks={period.weeks}
               meta={meta}
             />

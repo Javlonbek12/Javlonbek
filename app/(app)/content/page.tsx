@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Download, Plus, Send, Upload } from "lucide-react";
+import { BarChart3, ChevronLeft, ChevronRight, Download, Plus, Send, Upload } from "lucide-react";
 import Link from "next/link";
 
 import { BOT_COLOR } from "@/components/content/bot-chip";
@@ -155,25 +155,32 @@ export default async function ContentPage({ searchParams }: PageProps<"/content"
           <h1 className="text-[22px] font-medium md:text-2xl">{t("content.title")}</h1>
           <p className="text-muted-foreground text-sm">{t("content.flow")}</p>
         </div>
-        {canAdd && (
-          <div className="flex flex-wrap gap-2">
-            {planner && (
-              <form action={deliverTodayAction}>
-                <input type="hidden" name="back" value={href({})} />
-                <Button type="submit" variant="outline" title={t("content.telegram.hint")}>
-                  <Send />
-                  {t("content.telegram.today")}
-                </Button>
-              </form>
-            )}
+        <div className="flex flex-wrap gap-2">
+          {/* The analytics is in the menu only on wide screens; here it is reachable on a phone. */}
+          <Button asChild variant="outline">
+            <Link href="/content-analytics">
+              <BarChart3 />
+              {t("content.analyticsLink")}
+            </Link>
+          </Button>
+          {canAdd && planner && (
+            <form action={deliverTodayAction}>
+              <input type="hidden" name="back" value={href({})} />
+              <Button type="submit" variant="outline" title={t("content.telegram.hint")}>
+                <Send />
+                {t("content.telegram.today")}
+              </Button>
+            </form>
+          )}
+          {canAdd && (
             <Button asChild>
               <Link href={`/content/new?date=${today}`}>
                 <Plus />
                 {t("content.add")}
               </Link>
             </Button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       <div
@@ -216,6 +223,9 @@ export default async function ContentPage({ searchParams }: PageProps<"/content"
       {imported && (
         <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm">
           <p>{t("content.excel.done", { created: imported[0] ?? 0, updated: imported[1] ?? 0 })}</p>
+          {Number(imported[2]) > 0 && (
+            <p>{t("content.excel.returned", { count: imported[2] ?? 0 })}</p>
+          )}
           {typeof params.importErrors === "string" && (
             <>
               <p className="mt-1 font-medium">{t("content.excel.problems")}</p>
@@ -401,9 +411,13 @@ export default async function ContentPage({ searchParams }: PageProps<"/content"
                           </DraggablePost>
                         ))}
                         {list.length > 4 && (
-                          <span className="text-muted-foreground px-1 text-[11px]">
+                          // The week of that day shows every post of it.
+                          <Link
+                            href={href({ view: "week", week: dayValue })}
+                            className="text-muted-foreground hover:text-foreground px-1 text-[11px] hover:underline"
+                          >
                             {t("content.month.more", { count: list.length - 4 })}
-                          </span>
+                          </Link>
                         )}
                       </DropDay>
                     );

@@ -321,6 +321,8 @@ export const en: Dictionary = {
       contentFeedbackTitle: "The post needs changes",
       contentFeedbackBody: "“{title}”: {feedback}",
       contentApprovedTitle: "Post approved",
+      contentChangedTitle: "An approved post was changed — review again",
+      contentChangedBody: "{name} changed “{title}” ({date}). Please check it again.",
       contentLegalTitle: "Post for the legal check",
       contentLegalBody: "“{title}” ({date}) was approved by marketing and waits for your check.",
       contentLegalApprovedTitle: "The lawyer approved the post — it can be sent",
@@ -1643,6 +1645,16 @@ export const en: Dictionary = {
       down: "Down",
       copyRu: "Copy RU",
       copyUz: "Copy UZ",
+      restore: "Back to the plan",
+    },
+    restoreHint:
+      "The post is cancelled. You can put it back into the plan as a draft or a planned post.",
+    analyticsLink: "Content analytics",
+    recheck: {
+      approved:
+        "The post is already approved. If you change its text or files, it goes back to review and the reviewer is notified.",
+      legal:
+        "The post is with the lawyer. If you change its text or files, it goes back to the manager's review and then to the lawyer again.",
     },
     sent: "sent",
     notSent: "not sent",
@@ -1674,6 +1686,7 @@ export const en: Dictionary = {
       state: "This can't be done with the post right now.",
       noBot: "Connect the Assistant Telegram bot first: open it and press /start.",
       nothingToday: "No approved posts for today.",
+      noChannel: "Choose at least one bot.",
       move: "Couldn't move the post.",
       import:
         "Couldn't read the file. An Excel (.xlsx) with the columns «Дата», «Тема», «Боты» is needed — download the template.",
@@ -1816,10 +1829,11 @@ export const en: Dictionary = {
       template: "Excel template",
       upload: "Upload from Excel",
       uploadHint:
-        "Rows with an ID update posts, rows without an ID are added to the plan. Files are uploaded on the site.",
+        "Rows with an ID update posts, rows without an ID are added to the plan. Files are uploaded on the site. An approved post with a changed text goes back to review.",
       choose: ".xlsx file",
       submit: "Upload",
       done: "Uploaded: {created} added, {updated} updated.",
+      returned: "Back to review (the text of an approved post changed): {count}.",
       problems: "Rows not uploaded:",
     },
     list: {
