@@ -122,8 +122,12 @@ export default async function DistributionStockPage({
             {t("dist.stock.note")}
             <Input name="note" maxLength={200} />
           </label>
-          <div className="xl:col-span-6">
+          <div className="flex flex-wrap items-center gap-4 xl:col-span-6">
             <Button type="submit">{t("dist.stock.save")}</Button>
+            <label className="text-muted-foreground flex items-center gap-2 text-sm">
+              <input type="checkbox" name="overPlan" className="size-4" />
+              {t("dist.stock.overPlan")}
+            </label>
           </div>
         </form>
       </Section>

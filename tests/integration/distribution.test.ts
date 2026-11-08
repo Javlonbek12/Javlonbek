@@ -118,13 +118,13 @@ describe("POSM distribution", () => {
         quantity: 5,
         shippedOn: "2026-10-26",
       },
-      d.destinations,
+      d,
     );
     await expect(
       addShipment(
         owner,
         { posmId: shelf.item.id, destination: "Nowhere", quantity: 5, shippedOn: "2026-10-26" },
-        d.destinations,
+        d,
       ),
     ).rejects.toMatchObject({ code: "invalid" });
     d = await loadDistribution(order.id);
@@ -155,7 +155,7 @@ describe("POSM distribution", () => {
     await addShipment(
       owner,
       { posmId: shelf.id, destination: "Test Town", quantity: 6, shippedOn: "2026-10-02" },
-      d.destinations,
+      d,
     );
 
     // The next order copies the items; what is left of the old one becomes its stock.
@@ -182,7 +182,7 @@ describe("POSM distribution", () => {
       addShipment(
         owner,
         { posmId: shelf.id, destination: "Test Town", quantity: 1, shippedOn: "2026-10-21" },
-        old.destinations,
+        old,
       ),
     ).rejects.toMatchObject({ code: "closed" });
     await expect(importPosmList(owner, order.id, await posmWorkbook())).rejects.toMatchObject({
@@ -238,11 +238,11 @@ describe("POSM distribution", () => {
     const shipment = await addShipment(
       member,
       { posmId: item.id, destination: "Test Town", quantity: 2, shippedOn: "2026-10-26" },
-      d.destinations,
+      d,
     );
     // Someone else's record: only its author or a manager deletes it.
-    await expect(deleteShipment(other, shipment.id)).rejects.toMatchObject({ code: "forbidden" });
-    await deleteShipment(member, shipment.id);
+    await expect(deleteShipment(other, shipment!.id)).rejects.toMatchObject({ code: "forbidden" });
+    await deleteShipment(member, shipment!.id);
 
     await updatePosmSettings(owner, item.id, {
       inStock: 1,

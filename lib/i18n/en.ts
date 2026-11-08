@@ -2897,6 +2897,7 @@ export const en: Dictionary = {
       quantity: "Quantity, pcs",
       date: "Date",
       note: "Comment",
+      overPlan: "Over the plan (more than the plan leaves)",
       save: "Record",
       history: "Shipment log",
       who: "By",
@@ -3260,6 +3261,8 @@ export const en: Dictionary = {
       posmDeleted: "Item removed from the campaign.",
     },
     errors: {
+      overPlan:
+        "That is more than the plan leaves for this destination. Check the quantity or tick «Over the plan».",
       elementInUse:
         "The element is in campaigns' composition or lists — it can't be deleted. Remove it from those campaigns first.",
       forbidden: "You can't do this.",

@@ -78,7 +78,7 @@ describe("distribution fixes", () => {
     await addShipment(
       owner,
       { posmId: posi.item.id, destination: tsm, quantity: tsmPlan, shippedOn: "2026-11-03" },
-      d.destinations,
+      d,
     );
     d = await loadDistribution(campaign.id);
     const plan = d.plans.find((p) => p.item.id === posi.item.id)!;
@@ -106,6 +106,28 @@ describe("distribution fixes", () => {
         d.shipments,
       ).toSend,
     ).toBe(0);
+  }, 60_000);
+
+  it("a shipment over the plan needs «Сверх плана»; a double submit records once", async () => {
+    const { owner, campaign } = await setUp();
+    await setOrdered(owner, campaign.id, "2026-11-02");
+    const d = await loadDistribution(campaign.id);
+    const posi = d.plans.find((p) => p.item.types.includes("POSI_L"))!;
+    const tsm = "Tashkent · TSM_TEST_1";
+    const tsmPlan = posi.byTsm.get(tsm)!;
+    const line = { posmId: posi.item.id, destination: tsm, shippedOn: "2026-11-03" };
+
+    await expect(addShipment(owner, { ...line, quantity: tsmPlan + 1 }, d)).rejects.toMatchObject({
+      code: "overPlan",
+    });
+    expect(await db.distShipment.count()).toBe(0);
+    const over = await addShipment(owner, { ...line, quantity: tsmPlan + 1, overPlan: true }, d);
+    expect(over?.quantity).toBe(tsmPlan + 1);
+    // The same form sent twice in a row (a double tap, a retry): one record.
+    expect(
+      await addShipment(owner, { ...line, quantity: tsmPlan + 1, overPlan: true }, d),
+    ).toBeNull();
+    expect(await db.distShipment.count()).toBe(1);
   }, 60_000);
 
   it("the split follows the campaign's own «with stock» choice", async () => {
