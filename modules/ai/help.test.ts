@@ -31,7 +31,9 @@ describe("buildHelpPrompt", () => {
     const prompt = buildHelpPrompt(member, input, "ru");
     expect(prompt).toContain("Role: Сотрудник (MEMBER)");
     expect(prompt).toMatch(/Menu sections they have: .*«Задачи».*«Встречи»/);
-    expect(prompt).toMatch(/Menu sections they do NOT have: .*«Отчёты».*«Команда»/);
+    // «Команда» is on by default for everyone; reports and the org chart are not.
+    expect(prompt).toMatch(/Menu sections they have: .*«Команда»/);
+    expect(prompt).toMatch(/Menu sections they do NOT have: .*«Отчёты».*«Оргструктура»/);
     expect(prompt).toContain("Team tasks they see and decide on: only their own tasks");
     expect(prompt).toContain("They can invite: nobody");
   });

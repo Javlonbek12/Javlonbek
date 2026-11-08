@@ -5,6 +5,9 @@ import { withAccess } from "@/modules/core/access/actor";
 import { getEnv } from "@/lib/env";
 import type { User } from "@/lib/generated/prisma/client";
 import { t, isLocale } from "@/lib/i18n";
+import { isAiConfigured } from "@/modules/ai/client";
+import { answerHelpQuestion } from "@/modules/ai/help";
+import { AiError } from "@/modules/ai/run";
 import { createRateLimiter } from "@/lib/rate-limit";
 import { MAX_FILE_MB, MAX_FILES_PER_LANG } from "@/modules/content/files";
 import { ContentError } from "@/modules/content/service";
@@ -149,7 +152,11 @@ export function createBot(
     await send(ctx, reply);
   });
 
-  bot.command("help", (ctx) => ctx.reply(t("bot.help")));
+  // «/help вопрос» goes to the AI help (it needs a known user, below); plain /help is the reference.
+  bot.command("help", async (ctx, next) => {
+    if (ctx.match.trim() && isAiConfigured()) return next();
+    await ctx.reply(t("bot.help"));
+  });
 
   // Everything below needs a known user.
   bot.use(async (ctx, next) => {
@@ -161,6 +168,24 @@ export function createBot(
     }
     ctx.user = user;
     await next();
+  });
+
+  // The AI help answers how to do something in the app, from the user guide, for this person's role.
+  bot.command("help", async (ctx) => {
+    await ctx.replyWithChatAction("typing");
+    try {
+      const { answer, links } = await answerHelpQuestion(ctx.user!, {
+        question: ctx.match.trim(),
+        history: [],
+        path: "/",
+      });
+      const { APP_URL } = getEnv();
+      const lines = links.map((link) => `${link.label}: ${APP_URL}${link.href}`);
+      await send(ctx, { text: [answer, ...lines].join("\n\n") });
+    } catch (error) {
+      if (!(error instanceof AiError)) throw error;
+      await ctx.reply(t(`ai.errors.${error.code}`));
+    }
   });
 
   bot.command("notes", async (ctx) => send(ctx, await showMeetingsForNotes(ctx.user!, deps.now)));
