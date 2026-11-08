@@ -47,6 +47,20 @@ describe("GET /api/auth/telegram", () => {
     expect(sessionUserId(response)).toBe(user.id);
   });
 
+  it("returns to the page the person came for, only inside the app", async () => {
+    const back = (next: string) => {
+      const request = widgetRequest("2000001", "Тестовый владелец");
+      const url = new URL(request.url);
+      url.searchParams.set("next", next);
+      return telegramCallback(new Request(url, { headers: request.headers }));
+    };
+    expect((await back("/meetings/abc?x=1")).headers.get("location")).toBe(
+      "http://localhost:3000/meetings/abc?x=1",
+    );
+    for (const evil of ["//evil.example/x", "https://evil.example", "/\\evil.example"])
+      expect((await back(evil)).headers.get("location")).toBe("http://localhost:3000/");
+  });
+
   it("rejects data with a wrong signature", async () => {
     const response = await telegramCallback(widgetRequest("2000001", "Взломщик", undefined, true));
     expect(response.headers.get("location")).toBe(

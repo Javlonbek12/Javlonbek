@@ -22,12 +22,13 @@ export async function POST(request: Request) {
   const form = Object.fromEntries(await request.formData());
   const parsed = schema.safeParse(form);
   const inviteCode = typeof form.invite === "string" && form.invite ? form.invite : undefined;
-  if (isLoginRateLimited(request)) return loginErrorRedirect("too_many_requests", inviteCode);
-  if (!parsed.success) return loginErrorRedirect("invalid_signature", inviteCode);
+  const next = form.next;
+  if (isLoginRateLimited(request)) return loginErrorRedirect("too_many_requests", inviteCode, next);
+  if (!parsed.success) return loginErrorRedirect("invalid_signature", inviteCode, next);
 
   const result = await loginWithTelegram(
     { telegramId: BigInt(parsed.data.telegramId), firstName: parsed.data.firstName },
     inviteCode,
   );
-  return loginResultResponse(result, inviteCode);
+  return loginResultResponse(result, inviteCode, next);
 }
