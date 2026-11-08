@@ -105,6 +105,7 @@
 | `npm run dev` | Запуск в режиме разработки (http://localhost:3000) |
 | `npm run build` / `npm start` | Сборка и запуск «боевой» версии |
 | `npm test` | Все тесты (нужна запущенная база; тесты используют отдельную базу `assistant_test`) |
+| `npm run test:e2e` | Проверки в браузере (Playwright): вход, задачи, таймер, меню на телефоне, планограммы. Сначала `npm run build`; один раз — `npx playwright install chromium` и база `assistant_e2e_test` (`docker compose exec postgres createdb -U assistant assistant_e2e_test`, другая — через `E2E_DATABASE_URL`). Эту базу тесты очищают и заполняют сами |
 | `npm run lint` | Проверка кода и форматирования |
 | `npm run format` | Автоматически исправить форматирование |
 | `npm run typecheck` | Проверка типов TypeScript |
