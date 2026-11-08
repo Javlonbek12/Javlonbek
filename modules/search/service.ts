@@ -12,7 +12,7 @@ import { canAddContent } from "@/modules/content/service";
 import { visibleMeetingsWhere } from "@/modules/meetings/access";
 import { canManagePlanograms } from "@/modules/planograms/access";
 import { planogramCards } from "@/modules/planograms/service";
-import { canOpenProjects } from "@/modules/projects/service";
+import { visibleProjectsWhere } from "@/modules/projects/service";
 import { visibleTasksWhere } from "@/modules/tasks/access";
 
 import { MAX_QUERY, MIN_QUERY, SEARCH_GROUPS, type SearchGroup, type SearchHit } from "./types";
@@ -158,32 +158,16 @@ async function meetings(actor: Searcher, query: string, timezone: string): Promi
 // Projects the person can open — the rule of modules/projects/service.ts: the owner all; others
 // the ones they lead, and, with the section, the ones they see tasks in.
 async function projects(actor: Searcher, query: string): Promise<SearchHit[]> {
-  if (!(await canOpenProjects(actor))) return [];
-  const named = await db.project.findMany({
-    where: { archived: false, name: insensitive(query) },
-    select: {
-      id: true,
-      name: true,
-      leadId: true,
-      lead: { select: { firstName: true, lastName: true } },
+  // The projects page's own rule: the owner sees all; others their own and those they have tasks in.
+  const visible = await db.project.findMany({
+    where: {
+      AND: [await visibleProjectsWhere(actor), { archived: false, name: insensitive(query) }],
     },
+    select: { id: true, name: true, lead: { select: { firstName: true, lastName: true } } },
     orderBy: { name: "asc" },
+    take: LIMIT,
   });
-  let visible = named;
-  if (actor.role !== "OWNER") {
-    const withTasks = canUseModule(actor, "projects")
-      ? await db.task.findMany({
-          where: {
-            AND: [visibleTasksWhere(actor), { project: { in: named.map((p) => p.name) } }],
-          },
-          select: { project: true },
-          distinct: ["project"],
-        })
-      : [];
-    const seen = new Set(withTasks.map((row) => row.project));
-    visible = named.filter((p) => p.leadId === actor.id || seen.has(p.name));
-  }
-  return visible.slice(0, LIMIT).map((project) => ({
+  return visible.map((project) => ({
     id: `project:${project.id}`,
     title: project.name,
     subtitle: project.lead ? displayName(project.lead) : null,
