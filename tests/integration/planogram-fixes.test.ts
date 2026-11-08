@@ -297,7 +297,9 @@ describe("library and mass operations", () => {
     const input = { name: sticker.name, type: sticker.type, color: sticker.color };
     // A draft doesn't lock it.
     await savePosm(owner, sticker.id, { ...input, slotSpan: 2, shelfSpan: 1 });
-    await submitForApproval(owner, pog.id);
+    // Waiting for approval (as a mass operation leaves it: the sticker pushed out a mandatory SKU,
+    // so it can't be sent by hand).
+    await db.planogram.update({ where: { id: pog.id }, data: { status: "PENDING_APPROVAL" } });
     expect(await posmInUse(sticker.id)).toBe(1);
     await expect(
       savePosm(owner, sticker.id, { ...input, slotSpan: 3, shelfSpan: 1 }),

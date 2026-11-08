@@ -182,7 +182,7 @@ export async function workflowAction(formData: FormData) {
       return `/planograms/${id}?${new URLSearchParams({ submitted: told.join(", ") || "-" })}`;
     } else if (step === "approve")
       await approvePlanogram(user, id, { force: str(formData, "force") === "1" });
-    else if (step === "draft") await returnToDraft(user, id);
+    else if (step === "draft") await returnToDraft(user, id, str(formData, "reason"));
     else if (step === "archive") await archivePlanogram(user, id);
     else if (step === "version") return `/planograms/${(await copyPlanogram(user, id)).id}/edit`;
     else if (step === "template")

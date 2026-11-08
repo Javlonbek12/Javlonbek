@@ -1161,6 +1161,7 @@ export const en: Dictionary = {
       posm: "POSM",
       prices: "Price lists",
       mass: "Bulk actions",
+      equipmentHint: "Opens the «Equipment → Reference» section",
     },
     status: {
       DRAFT: "Draft",
@@ -1176,9 +1177,24 @@ export const en: Dictionary = {
       search: "Search by title",
       hasDraft: "draft v{version}",
       hasPending: "awaiting approval v{version}",
+      waiting: "Awaiting approval: {count}",
+      showWaiting: "Show",
+      filters: {
+        all: "All",
+        draft: "Drafts",
+        pending: "Awaiting approval",
+        approved: "Approved",
+        archived: "Archive",
+      },
+      allProjects: "All projects",
+      allEquipment: "All equipment",
+      noTemplates:
+        "No templates yet. A template is made from any planogram: open it and press «Save as template».",
+      none: "No planograms match these filters.",
     },
     notify: {
       backToDraft: "The planogram was changed — it is back in draft and no longer awaits approval",
+      returned: "«{title}»: {name} returned it to draft. Reason: {reason}",
     },
     version: "version {version}",
     fields: {
@@ -1230,6 +1246,16 @@ export const en: Dictionary = {
         "This is the version in force. After archiving, the planogram has none: merchandisers with the link will see it no longer applies.",
       archiveConfirm: "Yes, archive",
       sendsInForce: "Telegram gets the version in force, not this one.",
+      withdraw: "Withdraw",
+      returnBack: "Return",
+      returnTitle: "Return to draft?",
+      returnReason: "Reason — the author gets it",
+      submitBlocked:
+        "It can't be sent for approval: there are critical violations. Fix them — see the «Rule check».",
+      copyLink: "Copy the link",
+      copied: "Copied",
+      shareTelegram: "Share in Telegram",
+      sendPeople: "Or send it to colleagues who have the bot connected:",
     },
     editor: {
       palette: "SKU and POSM",
@@ -1405,6 +1431,12 @@ export const en: Dictionary = {
       title: "Planogram",
       notApproved: "The link is not valid.",
       approved: "Approved {date}",
+      shelves: "Shelf by shelf, left to right",
+      shelf: "Shelf {n}",
+      empty: "empty",
+      notFilled: "not filled",
+      posm: "POSM",
+      noPrice: "no price",
     },
     library: {
       equipment: {
@@ -1616,6 +1648,20 @@ export const en: Dictionary = {
         "This POSM's size can't change: it stands on approved planograms or ones awaiting approval.",
       unreadable:
         "No price could be read from the file. Check the «Code» and «Price» columns (formulas must be saved with their values).",
+      reason: "Write the reason so the author knows what to fix.",
+    },
+    decision: {
+      title: "Awaiting a decision",
+      sent: "Sent by {name}, {date}",
+      rulesOk: "Rule check: no violations",
+      rulesCritical: "Critical violations: {count} — it can't be approved",
+      rulesWarnings: "Warnings: {count}",
+      changes: "Changes from the previous version: {count}",
+      changesNone: "First version, or the layout didn't change",
+      prices: "Prices: «{name}» — {status}",
+      noPrices: "No price list chosen",
+      details: "Details — under the picture",
+      compare: "Compare with the previous one",
     },
   },
   reports: {

@@ -311,7 +311,13 @@ async function approverFor(senderId: string) {
     .map((p) => p.id);
 }
 
-async function notifyPlanogram(userIds: string[], actor: Actor, id: string, title: () => string) {
+async function notifyPlanogram(
+  userIds: string[],
+  actor: Actor,
+  id: string,
+  title: () => string,
+  body?: (name: string, title: string) => string,
+) {
   const [planogram, author] = await Promise.all([
     db.planogram.findUniqueOrThrow({ where: { id }, select: { title: true } }),
     db.user.findUniqueOrThrow({ where: { id: actor.id } }),
@@ -321,18 +327,22 @@ async function notifyPlanogram(userIds: string[], actor: Actor, id: string, titl
     await notify(userId, () => ({
       type: "planogram",
       title: title(),
-      body: t("notifications.events.taskBody", {
-        title: planogram.title,
-        name: displayName(author),
-      }),
+      body: body
+        ? body(displayName(author), planogram.title)
+        : t("notifications.events.taskBody", {
+            title: planogram.title,
+            name: displayName(author),
+          }),
       link: `/planograms/${id}`,
     }));
   }
 }
 
+// A version with critical violations isn't sent: the approver could only send it back.
 export async function submitForApproval(actor: Actor, id: string) {
   const loaded = await loadDraft(actor, id);
   if (loaded.record.isTemplate) throw new PlanogramError("invalid");
+  if (hasCritical(await validateStored(loaded))) throw new PlanogramError("critical");
   await db.planogram.update({ where: { id }, data: { status: "PENDING_APPROVAL" } });
   await logActivity({
     actorId: actor.id,
@@ -439,13 +449,91 @@ export async function approvePlanogram(
   );
 }
 
-export async function returnToDraft(actor: Actor, id: string) {
+// A version waiting for approval goes back to draft: its author takes it back («Отозвать»), or an
+// approver returns someone else's with the reason, which the author gets (as with tasks).
+export async function returnToDraft(actor: Actor, id: string, reason = "") {
   const loaded = await loadDraft(actor, id);
+  const own = loaded.record.createdById === actor.id;
+  const why = reason.trim().slice(0, 1000);
+  if (loaded.record.status === "PENDING_APPROVAL" && !own) {
+    requireApprover(actor);
+    if (!why) throw new PlanogramError("reason");
+  }
   await db.planogram.update({ where: { id: loaded.record.id }, data: { status: "DRAFT" } });
-  if (loaded.record.status === "PENDING_APPROVAL")
-    await notifyPlanogram([loaded.record.createdById], actor, id, () =>
-      t("notifications.events.planogramReturnedTitle"),
+  if (loaded.record.status !== "PENDING_APPROVAL") return;
+  await logActivity({
+    actorId: actor.id,
+    action: own ? "planogram.withdrawn" : "planogram.returned",
+    entityType: "Planogram",
+    entityId: id,
+    ...(why ? { details: { reason: why } } : {}),
+  });
+  if (!own)
+    await notifyPlanogram(
+      [loaded.record.createdById],
+      actor,
+      id,
+      () => t("notifications.events.planogramReturnedTitle"),
+      (name, title) => t("planograms.notify.returned", { name, title, reason: why }),
     );
+}
+
+// Who sent each version for approval and when: the last «sent» in the log, else (a version a
+// mass operation or a price list made waiting) its author when it was made.
+export async function submissions(
+  versions: { id: string; createdAt: Date; createdById: string }[],
+) {
+  const [logs, authors] = await Promise.all([
+    db.activityLog.findMany({
+      where: {
+        action: "planogram.submitted",
+        entityType: "Planogram",
+        entityId: { in: versions.map((v) => v.id) },
+      },
+      orderBy: { createdAt: "desc" },
+      include: { actor: true },
+    }),
+    db.user.findMany({ where: { id: { in: versions.map((v) => v.createdById) } } }),
+  ]);
+  return new Map(
+    versions.map((v) => {
+      const log = logs.find((l) => l.entityId === v.id);
+      const person = log?.actor ?? authors.find((a) => a.id === v.createdById);
+      return [
+        v.id,
+        { name: person ? displayName(person) : "—", at: log?.createdAt ?? v.createdAt },
+      ] as const;
+    }),
+  );
+}
+
+// Planograms waiting for a decision, the oldest first, with who sent them and when. Only those
+// who approve planograms decide, so for anyone else the list is empty. Read by «Сегодня» and the
+// planograms list.
+export async function planogramsAwaitingApproval(actor: Actor) {
+  if (!canApprovePlanograms(actor.role)) return [];
+  const versions = await db.planogram.findMany({
+    where: { status: "PENDING_APPROVAL", isTemplate: false },
+    select: {
+      id: true,
+      title: true,
+      version: true,
+      createdAt: true,
+      createdById: true,
+      updatedAt: true,
+      equipment: { select: { name: true } },
+    },
+    orderBy: { updatedAt: "asc" },
+  });
+  const sent = await submissions(versions);
+  return versions.map((v) => ({
+    id: v.id,
+    title: v.title,
+    version: v.version,
+    equipment: v.equipment.name,
+    submittedBy: sent.get(v.id)!.name,
+    submittedAt: sent.get(v.id)!.at,
+  }));
 }
 
 export async function archivePlanogram(actor: Actor, id: string) {
@@ -592,7 +680,7 @@ export type PlanogramCard = {
   project: string | null;
   channel: string;
   updatedAt: Date;
-  equipment: { name: string };
+  equipment: { id: string; name: string };
   // Newer versions in the works besides the one shown: «есть черновик vN», «на утверждении vN».
   working: { id: string; version: number; status: "DRAFT" | "PENDING_APPROVAL" }[];
 };
@@ -613,7 +701,7 @@ export async function planogramCards(
       project: true,
       channel: true,
       updatedAt: true,
-      equipment: { select: { name: true } },
+      equipment: { select: { id: true, name: true } },
     },
     orderBy: { version: "desc" },
   });

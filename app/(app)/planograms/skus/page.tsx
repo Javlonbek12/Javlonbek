@@ -15,6 +15,7 @@ import { canManagePlanograms } from "@/modules/planograms/access";
 import { priceListDate } from "@/modules/planograms/price-status";
 import { currentPrices } from "@/modules/planograms/price-table";
 import { formatPrice } from "@/modules/planograms/prices";
+import { skuLabel } from "@/modules/planograms/shelf-list";
 
 export default async function SkusPage({ searchParams }: PageProps<"/planograms/skus">) {
   const user = await requireUser();
@@ -84,9 +85,7 @@ export default async function SkusPage({ searchParams }: PageProps<"/planograms/
             >
               <Thumb kind="sku" id={s.id} imagePath={s.imagePath} color={s.color} />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">
-                  {s.brand} {s.name}
-                </p>
+                <p className="truncate text-sm font-medium">{skuLabel(s)}</p>
                 <p className="text-muted-foreground text-xs">
                   {s.code}
                   {s.format && ` · ${s.format}`}
