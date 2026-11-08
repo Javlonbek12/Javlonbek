@@ -11,9 +11,11 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
+import { cookies } from "next/headers";
 import Link from "next/link";
 
 import { initials } from "@/components/tasks/task-table-row";
+import { ScopeSwitch } from "@/components/tasks/scope-filter";
 import { Button } from "@/components/ui/button";
 import { addDays, formatDay, formatMonth, fromDateString } from "@/lib/dates";
 import { t } from "@/lib/i18n";
@@ -21,9 +23,10 @@ import { cn } from "@/lib/utils";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getUserToday } from "@/modules/core/settings/service";
 import { parseTaskFilters } from "@/modules/tasks/filters";
+import { rememberedScope, SCOPE_COOKIE } from "@/modules/tasks/scope-cookie";
 import { listTimeline, TIMELINE_LIMIT, type TaskView } from "@/modules/tasks/service";
 import { layoutBars, TIMELINE_DAYS, timelineStart } from "@/modules/tasks/timeline";
-import { isLateWork } from "@/modules/tasks/today";
+import { taskState, type TaskState } from "@/modules/tasks/today";
 
 const MIN_COL = 40; // px per day at least; wider screens stretch the days to the full width
 const ROW = 46; // px per task row
@@ -53,19 +56,24 @@ const PILL: Record<State, string> = {
   overdue: "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300",
 };
 
-function stateOf(task: TaskView, today: string): State {
-  if (task.status === "DONE") return "done";
-  if (isLateWork(task, today)) return "overdue";
-  if (task.status === "IN_PROGRESS") return "inProgress";
-  if (task.status === "IN_REVIEW") return "review";
-  return "notStarted";
-}
+// By the shared dictionary (modules/tasks/today.ts), so the words match the other screens.
+const FROM_SHARED: Record<TaskState, State> = {
+  done: "done",
+  cancelled: "notStarted",
+  late: "overdue",
+  inReview: "review",
+  inWork: "inProgress",
+  notStarted: "notStarted",
+};
+const stateOf = (task: TaskView, today: string): State => FROM_SHARED[taskState(task, today)];
 
 export default async function TimelinePage({ searchParams }: PageProps<"/tasks/timeline">) {
   const user = await requireUser();
   const params = await searchParams;
   const today = await getUserToday(user.id);
-  const { scope } = parseTaskFilters(params);
+  // «Чьи» as chosen last in any task view, when the address doesn't say.
+  const remembered = rememberedScope((await cookies()).get(SCOPE_COOKIE)?.value, user.id);
+  const { scope } = parseTaskFilters({ ...params, scope: params.scope ?? remembered });
   const from = timelineStart(params, today);
   const to = addDays(from, TIMELINE_DAYS);
   const { tasks, edges } = await listTimeline(user, scope, from, to);
@@ -112,7 +120,7 @@ export default async function TimelinePage({ searchParams }: PageProps<"/tasks/t
     {
       icon: Clock3,
       tone: "bg-orange-100 text-orange-600 dark:bg-orange-900/50 dark:text-orange-300",
-      value: count("inProgress") + count("review"),
+      value: count("inProgress"),
       label: t("tasks.look.inProgress"),
       note: "text-orange-600",
     },
@@ -164,21 +172,16 @@ export default async function TimelinePage({ searchParams }: PageProps<"/tasks/t
         <Button asChild variant="outline" className="bg-card h-9 rounded-xl">
           <Link href={href({ from: addDays(today, -7) })}>{t("tasks.calendar.today")}</Link>
         </Button>
-        <div className="bg-card shadow-card ml-auto flex rounded-xl border p-1 text-sm">
-          {(["mine", "team"] as const).map((s) => (
-            <Link
-              key={s}
-              href={href({ scope: s })}
-              className={cn(
-                "flex items-center gap-1.5 rounded-lg px-3 py-1.5",
-                s === scope ? "bg-secondary text-primary font-semibold" : "text-muted-foreground",
-              )}
-            >
-              {s === "team" && <Users className="size-4" />}
-              {s === "mine" ? t("tasks.filters.scopeMine") : t("tasks.filters.scopeTeam")}
-            </Link>
-          ))}
-        </div>
+        <ScopeSwitch
+          value={scope}
+          userId={user.id}
+          hrefs={{
+            mine: href({ scope: "mine" }),
+            created: href({ scope: "created" }),
+            team: href({ scope: "team" }),
+          }}
+          className="ml-auto"
+        />
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">

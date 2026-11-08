@@ -8,12 +8,13 @@ import {
   Flag,
   Folder,
   ListChecks,
+  MoreHorizontal,
   RotateCcw,
   Star,
   Tag,
   Trash2,
-  User,
   Users,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { cookies } from "next/headers";
@@ -21,6 +22,7 @@ import Link from "next/link";
 
 import { QuickCircle } from "@/components/tasks/quick-circle";
 import { QuickUndo } from "@/components/tasks/quick-undo";
+import { ScopeSwitch } from "@/components/tasks/scope-filter";
 import { TaskFilterForm } from "@/components/tasks/task-filters";
 import { TaskPanel } from "@/components/tasks/task-panel";
 import { TaskTableRow } from "@/components/tasks/task-table-row";
@@ -42,6 +44,7 @@ import {
 } from "@/modules/tasks/service";
 import { displayName } from "@/modules/core/users/display-name";
 import { knownLabels } from "@/modules/tasks/labels";
+import { distinctNames } from "@/modules/tasks/names";
 import { rememberedScope, SCOPE_COOKIE } from "@/modules/tasks/scope-cookie";
 import { bucketOf, BUCKETS } from "@/modules/tasks/sort";
 import { withParams } from "@/modules/tasks/back";
@@ -58,12 +61,14 @@ const CHIPS = [
   { key: "noDue", due: "none", priority: "any", icon: CircleSlash, tone: "grey" },
 ] as const;
 
+// Quiet chips; red only for overdue (red means overdue everywhere).
+const NEUTRAL = "bg-card border text-foreground";
 const TONE: Record<(typeof CHIPS)[number]["tone"], string> = {
-  blue: "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300",
+  blue: NEUTRAL,
   red: "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300",
-  orange: "bg-orange-50 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300",
-  amber: "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
-  grey: "bg-muted text-muted-foreground",
+  orange: NEUTRAL,
+  amber: NEUTRAL,
+  grey: NEUTRAL,
 };
 
 // A dropdown with an icon on the left (the filters panel). Full width on a phone, so the option
@@ -97,17 +102,35 @@ function hrefWith(filters: TaskFilters, change: Partial<TaskFilters>, defaults: 
   return text ? `/tasks?${text}` : "/tasks";
 }
 
-// Filters set in the panel behind «Фильтры» (the number on the button).
-function activeFilters(filters: TaskFilters) {
+// The rarer filters set behind «Ещё фильтры»: each shows as a chip with ✕ under the row.
+function moreFilters(filters: TaskFilters) {
   return [
-    filters.scope !== "mine" && !filters.person,
-    filters.person,
-    filters.status !== "active",
-    filters.priority !== "any",
-    filters.project,
-    filters.label,
-    filters.sort !== "smart",
-  ].filter(Boolean).length;
+    filters.status !== "active" && {
+      key: "status",
+      text:
+        filters.status === "all"
+          ? t("tasks.filters.statusAll")
+          : t(`tasks.status.${filters.status}`),
+      reset: { status: "active" },
+    },
+    filters.priority !== "any" &&
+      filters.priority !== "important" && {
+        key: "priority",
+        text: t(`tasks.priority.${filters.priority}`),
+        reset: { priority: "any" },
+      },
+    filters.project && { key: "project", text: filters.project, reset: { project: "" } },
+    filters.label && { key: "label", text: filters.label, reset: { label: "" } },
+    filters.sort !== "smart" && {
+      key: "sort",
+      text: t(`tasks.filters.sorts.${filters.sort}`),
+      reset: { sort: "smart" },
+    },
+  ].filter((chip) => chip !== false && chip !== "") as {
+    key: string;
+    text: string;
+    reset: Partial<TaskFilters>;
+  }[];
 }
 
 export default async function TaskListPage({ searchParams }: PageProps<"/tasks">) {
@@ -127,13 +150,33 @@ export default async function TaskListPage({ searchParams }: PageProps<"/tasks">
     getRunningTimer(user.id),
   ]);
   const activeChip = CHIPS.find((c) => c.due === filters.due && c.priority === filters.priority);
-  const groups =
-    filters.sort === "smart" && tasks.length > 0
+  // «Команда»: by person, in short rows; otherwise by urgency (the smart order).
+  const byPerson = filters.scope === "team" && !filters.person && tasks.length > 0;
+  const groups: { key: string; title: string | null; late: boolean; tasks: TaskView[] }[] = byPerson
+    ? [...new Map(tasks.map((task) => [task.assigneeId, task.assignee])).entries()]
+        .map(([id, person]) => ({
+          key: id,
+          title: displayName(person),
+          late: false,
+          tasks: tasks.filter((task) => task.assigneeId === id),
+        }))
+        .sort((a, b) => a.title.localeCompare(b.title))
+    : filters.sort === "smart" && tasks.length > 0
       ? BUCKETS.map((bucket) => ({
-          bucket,
+          key: bucket,
+          title: t(`tasks.buckets.${bucket}`),
+          late: bucket === "overdue",
           tasks: tasks.filter((task) => bucketOf(task, today) === bucket),
         })).filter((g) => g.tasks.length)
-      : null;
+      : [{ key: "all", title: null, late: false, tasks }];
+  const person: "none" | "creator" | "assignee" = byPerson
+    ? "none"
+    : filters.scope === "mine" && !filters.person
+      ? "creator"
+      : "assignee";
+  const chosen = moreFilters(filters);
+  // Two people with one name get their position after it.
+  const names = distinctNames(people);
 
   // The task opened next to the list (?task=…): the list stays, the panel shows the card.
   const link = (change: Partial<TaskFilters>) => hrefWith(filters, change, defaults);
@@ -147,6 +190,8 @@ export default async function TaskListPage({ searchParams }: PageProps<"/tasks">
       href: withParams(listHref, { task: task.id }),
       selected: task.id === openId,
       timerRunning: timer?.taskId === task.id,
+      person,
+      compact: byPerson,
       circle: (
         <QuickCircle
           taskId={task.id}
@@ -155,6 +200,7 @@ export default async function TaskListPage({ searchParams }: PageProps<"/tasks">
           accepts={target === "DONE" && !task.isPersonal && !isDoer(user, task)}
           blocked={target === "DONE" && task.openBlockers > 0}
           back={here}
+          openHref={withParams(listHref, { task: task.id })}
         />
       ),
     };
@@ -179,38 +225,39 @@ export default async function TaskListPage({ searchParams }: PageProps<"/tasks">
       {/* Filters live in the address: the form navigates, the list is drawn on the server. */}
       <TaskFilterForm
         q={filters.q}
-        activeCount={activeFilters(filters)}
-        userId={user.id}
-        hidden={{ due: filters.due }}
+        activeCount={chosen.length}
+        hidden={{ due: filters.due, ...(filters.person ? {} : { scope: filters.scope }) }}
+        main={
+          <>
+            {/* «Чьи» or a chosen employee: the employee replaces «Чьи». */}
+            <ScopeSwitch
+              value={filters.person ? null : filters.scope}
+              userId={user.id}
+              hrefs={{
+                mine: link({ scope: "mine", person: "" }),
+                created: link({ scope: "created", person: "" }),
+                team: link({ scope: "team", person: "" }),
+              }}
+              className="h-11 items-center"
+            />
+            {people.length > 1 && (
+              <IconSelect
+                icon={Users}
+                name="person"
+                defaultValue={filters.person}
+                aria-label={t("tasks.filters.person")}
+              >
+                <option value="">{t("tasks.filters.personAny")}</option>
+                {people.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.id === user.id ? `${names.get(p.id)} (${t("common.you")})` : names.get(p.id)}
+                  </option>
+                ))}
+              </IconSelect>
+            )}
+          </>
+        }
       >
-        {/* "Whose" or a chosen employee: the employee replaces "whose". */}
-        {!filters.person && (
-          <IconSelect
-            icon={User}
-            name="scope"
-            defaultValue={filters.scope}
-            aria-label={t("tasks.filters.scope")}
-          >
-            <option value="mine">{t("tasks.filters.scopeMine")}</option>
-            <option value="created">{t("tasks.filters.scopeCreated")}</option>
-            <option value="team">{t("tasks.filters.scopeTeam")}</option>
-          </IconSelect>
-        )}
-        {people.length > 1 && (
-          <IconSelect
-            icon={Users}
-            name="person"
-            defaultValue={filters.person}
-            aria-label={t("tasks.filters.person")}
-          >
-            <option value="">{t("tasks.filters.personAny")}</option>
-            {people.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.id === user.id ? `${displayName(p)} (${t("common.you")})` : displayName(p)}
-              </option>
-            ))}
-          </IconSelect>
-        )}
         <IconSelect
           icon={Activity}
           name="status"
@@ -288,37 +335,78 @@ export default async function TaskListPage({ searchParams }: PageProps<"/tasks">
         </Link>
       </TaskFilterForm>
 
-      <nav className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:flex-wrap md:px-0">
-        {CHIPS.map((chip) => {
-          const active = chip === activeChip;
-          const count = counts[chip.key];
-          const Icon = chip.icon;
-          return (
-            <Link
-              key={chip.key}
-              href={link({ due: chip.due, priority: chip.priority })}
-              aria-current={active ? "true" : undefined}
-              className={cn(
-                "flex shrink-0 items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium whitespace-nowrap transition-colors",
-                active
-                  ? "bg-primary text-primary-foreground shadow-[0_8px_18px_-8px_var(--primary)]"
-                  : cn(TONE[chip.tone], "hover:brightness-95"),
-              )}
-            >
-              {chip.key !== "all" && <Icon className="size-4" />}
-              {t(`tasks.filters.chips.${chip.key}`)}
-              <span
+      {chosen.length > 0 && (
+        <ul className="flex flex-wrap gap-2">
+          {chosen.map((chip) => (
+            <li key={chip.key}>
+              <Link
+                href={link(chip.reset)}
+                scroll={false}
+                aria-label={t("tasks.filters.remove", { name: chip.text })}
+                className="bg-secondary text-primary hover:bg-secondary/70 flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium"
+              >
+                {chip.text}
+                <X className="size-3.5" aria-hidden />
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="flex items-start gap-2">
+        <nav className="-mx-4 flex min-w-0 flex-1 gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:flex-wrap md:px-0">
+          {CHIPS.map((chip) => {
+            const active = chip === activeChip;
+            const count = counts[chip.key];
+            const Icon = chip.icon;
+            return (
+              <Link
+                key={chip.key}
+                href={link({ due: chip.due, priority: chip.priority })}
+                aria-current={active ? "true" : undefined}
                 className={cn(
-                  "rounded-md px-1.5 text-xs font-semibold tabular-nums",
-                  active ? "bg-white/20" : "bg-card/70",
+                  "flex shrink-0 items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium whitespace-nowrap transition-colors",
+                  active
+                    ? "bg-primary text-primary-foreground shadow-[0_8px_18px_-8px_var(--primary)]"
+                    : cn(TONE[chip.tone], "hover:brightness-95"),
                 )}
               >
-                {count}
-              </span>
-            </Link>
-          );
-        })}
-      </nav>
+                {chip.key !== "all" && <Icon className="size-4" />}
+                {t(`tasks.filters.chips.${chip.key}`)}
+                <span
+                  className={cn(
+                    "rounded-md px-1.5 text-xs font-semibold tabular-nums",
+                    active ? "bg-white/20" : "bg-card/70",
+                  )}
+                >
+                  {count}
+                </span>
+              </Link>
+            );
+          })}
+        </nav>
+        {user.role === "OWNER" && (
+          // Rare things, out of the way: the bin.
+          <details className="relative shrink-0">
+            <summary
+              className="bg-card hover:bg-accent flex size-9 cursor-pointer list-none items-center justify-center rounded-xl border [&::-webkit-details-marker]:hidden"
+              aria-label={t("tasks.filters.menu")}
+              title={t("tasks.filters.menu")}
+            >
+              <MoreHorizontal className="size-4" />
+            </summary>
+            <div className="bg-card absolute right-0 z-20 mt-1 w-44 rounded-xl border p-1 shadow-lg">
+              <Link
+                href="/tasks/trash"
+                className="hover:bg-accent flex items-center gap-2 rounded-lg px-3 py-2 text-sm"
+              >
+                <Trash2 className="size-4" />
+                {t("tasks.trash.title")}
+              </Link>
+            </div>
+          </details>
+        )}
+      </div>
 
       {tasks.length >= LIST_LIMIT && (
         <p className="rounded-md bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
@@ -326,39 +414,31 @@ export default async function TaskListPage({ searchParams }: PageProps<"/tasks">
         </p>
       )}
 
-      {(groups ?? [{ bucket: null, tasks }]).map((group) => (
-        <section key={group.bucket ?? "all"} className="flex flex-col gap-2.5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            {group.bucket && (
-              <h2
+      {groups.map((group) => (
+        <section key={group.key} className="flex flex-col gap-2.5">
+          {group.title && (
+            <h2
+              className={cn(
+                "flex items-center gap-2 text-sm font-semibold",
+                group.late ? "text-destructive" : "text-foreground",
+              )}
+            >
+              <span
                 className={cn(
-                  "flex items-center gap-2 text-sm font-semibold",
-                  group.bucket === "overdue" ? "text-destructive" : "text-foreground",
+                  "size-2 rounded-full",
+                  group.late ? "bg-destructive" : "bg-primary/40",
                 )}
-              >
-                <span
-                  className={cn(
-                    "size-2 rounded-full",
-                    group.bucket === "overdue" ? "bg-destructive" : "bg-primary/40",
-                  )}
-                />
-                {t(`tasks.buckets.${group.bucket}`)}
-                <span className="text-muted-foreground font-normal">· {group.tasks.length}</span>
-              </h2>
-            )}
-            {group === (groups ?? [])[0] && (
-              <span className="text-muted-foreground hidden items-center gap-1.5 text-xs md:flex">
-                <ArrowUpDown className="size-3.5" />
-                {t("tasks.look.sortLabel", { sort: t(`tasks.filters.sorts.${filters.sort}`) })}
-              </span>
-            )}
-          </div>
+              />
+              {group.title}
+              <span className="text-muted-foreground font-normal">· {group.tasks.length}</span>
+            </h2>
+          )}
           {group.tasks.length === 0 ? (
             <p className="text-muted-foreground bg-card rounded-2xl border p-6 text-center text-sm">
               {t("tasks.empty")}
             </p>
           ) : (
-            <ul className="flex flex-col gap-2">
+            <ul className={cn("flex flex-col", byPerson ? "gap-1.5" : "gap-2")}>
               {group.tasks.map((task) => (
                 <TaskTableRow key={task.id} task={task} today={today} {...rowProps(task)} />
               ))}
@@ -366,15 +446,6 @@ export default async function TaskListPage({ searchParams }: PageProps<"/tasks">
           )}
         </section>
       ))}
-      {user.role === "OWNER" && (
-        <Link
-          href="/tasks/trash"
-          className="text-muted-foreground hover:text-foreground flex items-center gap-1.5 self-start text-sm"
-        >
-          <Trash2 className="size-4" />
-          {t("tasks.trash.title")}
-        </Link>
-      )}
     </div>
   );
   if (!openId) return list;

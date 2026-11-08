@@ -32,24 +32,38 @@ describe("«Сегодня»", () => {
     expect(handedIn).toBe(1);
   });
 
-  it("my team: busiest with overdue first, idle people counted apart", () => {
-    const at = (day: string) => new Date(`${day}T00:00:00Z`);
+  it("my team: due today, overdue, handed in to me and not started; overdue first", () => {
+    const today = "2026-11-09";
+    const row = (assigneeId: string, status: TaskView["status"], dueDate: string | null) => ({
+      assigneeId,
+      status,
+      dueDate,
+      toMe: true,
+    });
     const team = summarizeTeam(
       [
-        { id: "a", name: "Анна" },
-        { id: "b", name: "Борис" },
-        { id: "c", name: "Вера" },
+        { id: "a", name: "Тест А" },
+        { id: "b", name: "Тест Б" },
+        { id: "c", name: "Тест В" },
+        { id: "d", name: "Тест Г" },
       ],
       [
-        { assigneeId: "a", status: "IN_PROGRESS", dueDate: at("2026-11-12") },
-        { assigneeId: "b", status: "IN_PROGRESS", dueDate: at("2026-11-02") },
-        { assigneeId: "b", status: "IN_REVIEW", dueDate: at("2026-11-01") },
+        // A: due today and three not started — no longer «0 в работе · 0 просрочено».
+        row("a", "APPROVED", today),
+        row("a", "APPROVED", "2026-11-20"),
+        row("a", "APPROVED", null),
+        row("a", "APPROVED", "2026-11-12"),
+        row("b", "IN_PROGRESS", "2026-11-02"),
+        row("b", "IN_REVIEW", "2026-11-01"),
+        { ...row("b", "IN_REVIEW", null), toMe: false },
+        row("c", "IN_PROGRESS", "2026-11-12"),
       ],
-      "2026-11-09",
+      today,
     );
     expect(team.rows).toEqual([
-      { id: "b", name: "Борис", open: 2, inProgress: 1, overdue: 1, inReview: 1 },
-      { id: "a", name: "Анна", open: 1, inProgress: 1, overdue: 0, inReview: 0 },
+      { id: "b", name: "Тест Б", open: 3, dueToday: 0, overdue: 1, handedIn: 1, notStarted: 0 },
+      { id: "a", name: "Тест А", open: 4, dueToday: 1, overdue: 0, handedIn: 0, notStarted: 4 },
+      { id: "c", name: "Тест В", open: 1, dueToday: 0, overdue: 0, handedIn: 0, notStarted: 0 },
     ]);
     expect(team).toMatchObject({ idle: 1, more: 0, overdue: 1 });
   });

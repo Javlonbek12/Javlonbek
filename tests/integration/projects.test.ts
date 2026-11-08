@@ -152,14 +152,17 @@ describe("projects", () => {
     expect(await getProject(await withAccess(outsider), id, TZ)).toBeNull();
     expect(await canOpenProjects(await withAccess(outsider))).toBe(false);
 
-    // A task of the project for the outsider: visible once "Projects" is on for employees.
+    // A task of the project for the outsider: they may look at the project (read only), even with
+    // «Проекты» off for their role (owner's decision, usability audit 2026-11-08).
     await db.task.updateMany({ where: { code: "T04" }, data: { assigneeId: outsider.id } });
-    expect(await getProject(await withAccess(outsider), id, TZ)).toBeNull();
+    const looking = await getProject(await withAccess(outsider), id, TZ);
+    expect(looking).not.toBeNull();
+    expect(looking!.canManage).toBe(false);
+    expect(await canOpenProjects(await withAccess(outsider))).toBe(true);
     await saveRoleConfig(owner, {
       MANAGER: { modules: ["projects"], taskScope: "team" },
       MEMBER: { modules: ["projects"], taskScope: "own" },
     });
-    expect(await getProject(await withAccess(outsider), id, TZ)).not.toBeNull();
     expect(await listProjectCards(await withAccess(outsider), TODAY, TZ)).toHaveLength(1);
   });
 

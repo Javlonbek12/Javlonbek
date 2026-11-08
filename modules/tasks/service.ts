@@ -36,6 +36,7 @@ import { occurrencesBetween, copyDay } from "./repeat";
 import { copyMode, createDueCopies, ruleOf, setRepeat, startSeries } from "./repeat-service";
 import { copySteps, stepProgress } from "./step-rules";
 import { dropCoAssigneeRequests, listCoAssigneeDecisions } from "./co-assignees";
+import { dueChangeDeciders } from "./due-change";
 import { stopTimersOnTask } from "./time-rules";
 import { withAccess } from "@/modules/core/access/actor";
 import { notify } from "@/modules/core/notifications/service";
@@ -72,8 +73,10 @@ export const taskInputSchema = z
       .nullable()
       .transform((value) => value || null),
     estimateHours: z.number().min(0).max(10_000).nullable(),
-    // Only set when creating tasks from meeting minutes.
+    // Set when creating tasks for a meeting (from its outcome, or «+ Добавить задачу»).
     meetingId: z.string().max(64).nullable().optional(),
+    // A phase of the chosen project; undefined leaves it as it is.
+    phaseId: z.string().max(64).nullable().optional(),
   })
   .refine((v) => !v.startDate || !v.dueDate || v.startDate <= v.dueDate, "start after due");
 
@@ -111,6 +114,16 @@ const taskData = (data: z.output<typeof taskInputSchema>) => ({
   dueDate: data.dueDate ? fromDateString(data.dueDate) : null,
   estimateMinutes: data.estimateHours === null ? null : Math.round(data.estimateHours * 60),
 });
+
+// The phase only if it belongs to the task's project (by name); otherwise none.
+async function phaseOf(project: string | null, phaseId: string | null | undefined) {
+  if (!project || !phaseId) return null;
+  const phase = await db.projectPhase.findFirst({
+    where: { id: phaseId, project: { name: project } },
+    select: { id: true },
+  });
+  return phase?.id ?? null;
+}
 
 export async function createTask(
   actor: Actor,
@@ -174,6 +187,7 @@ export async function createTask(
   const task = await db.task.create({
     data: {
       ...taskData(data),
+      ...(data.phaseId !== undefined ? { phaseId: await phaseOf(data.project, data.phaseId) } : {}),
       ...options.extra,
       isPersonal: data.isPersonal,
       creatorId: actor.id,
@@ -212,6 +226,7 @@ const TRACKED_FIELDS = [
   "project",
   "planId",
   "estimateMinutes",
+  "phaseId",
 ] as const;
 
 function comparable(value: unknown) {
@@ -243,6 +258,8 @@ export async function updateTask(
 
   const next = {
     ...taskData(data),
+    // A project changed without saying the phase: the old phase stays only if it still fits.
+    phaseId: await phaseOf(data.project, data.phaseId === undefined ? task.phaseId : data.phaseId),
     assigneeId,
     // The new assignee is no co-assignee any more.
     ...(assigneeId !== task.assigneeId && task.coAssigneeIds.includes(assigneeId)
@@ -869,10 +886,10 @@ export async function listWaitingDecisions(actor: Actor) {
 }
 
 // Everything that waits for the actor's decision: tasks to approve, work to accept, requests to
-// delete tasks they control and to add co-assignees. The one source for «Ждут решения» wherever
+// delete tasks they control, to move a due date and to add co-assignees. The one source for «Ждут решения» wherever
 // it shows: the tab and its badge, the home screen, the morning digest and the bot's /pending.
 export async function listDecisions(actor: Actor) {
-  const [waiting, removals] = await Promise.all([
+  const [waiting, removals, dueChanges] = await Promise.all([
     listWaitingDecisions(actor),
     db.task.findMany({
       where: {
@@ -888,11 +905,25 @@ export async function listDecisions(actor: Actor) {
       include: listInclude,
       orderBy: { deleteRequestedAt: "asc" },
     }),
+    db.task.findMany({
+      where: {
+        AND: [
+          visibleTasksWhere(actor),
+          { isPersonal: false, dueChangeAt: { not: null }, NOT: { dueChangeById: actor.id } },
+        ],
+      },
+      include: listInclude,
+      orderBy: { dueChangeAt: "asc" },
+    }),
   ]);
   return {
     approve: waiting.filter((task) => task.status === "PENDING_APPROVAL"),
     accept: waiting.filter((task) => task.status === "IN_REVIEW"),
     remove: removals.filter((task) => canControl(actor, task)).map(toTaskView),
+    // Asked of the author (or whoever accepts the work): not of everyone who could decide.
+    dueChange: dueChanges
+      .filter((task) => dueChangeDeciders(task).includes(actor.id))
+      .map(toTaskView),
     coAssignees: await listCoAssigneeDecisions(actor),
   };
 }
@@ -900,8 +931,8 @@ export async function listDecisions(actor: Actor) {
 export type Decisions = Awaited<ReturnType<typeof listDecisions>>;
 
 // How many decisions wait, counted the same way everywhere.
-export function decisionCount({ approve, accept, remove, coAssignees }: Decisions) {
-  return approve.length + accept.length + remove.length + coAssignees.length;
+export function decisionCount({ approve, accept, remove, dueChange, coAssignees }: Decisions) {
+  return approve.length + accept.length + remove.length + dueChange.length + coAssignees.length;
 }
 
 export async function countDecisions(actor: Actor) {
@@ -966,7 +997,7 @@ export async function listOverdueAtDoers(actor: Actor, today: string) {
 // yet), plus anyone else whose tasks they can see.
 export async function listTaskPeople(actor: Actor) {
   const scope = oversight(actor);
-  const select = { id: true, firstName: true, lastName: true } as const;
+  const select = { id: true, firstName: true, lastName: true, position: true } as const;
   const [overseen, withTasks] = await Promise.all([
     scope === "none"
       ? []
@@ -992,7 +1023,7 @@ export async function listTaskPeople(actor: Actor) {
 export async function listAssignableUsers(keep: (string | null)[] = []) {
   return db.user.findMany({
     where: activeOr(keep),
-    select: { id: true, firstName: true, lastName: true, deactivatedAt: true },
+    select: { id: true, firstName: true, lastName: true, deactivatedAt: true, position: true },
     orderBy: { firstName: "asc" },
   });
 }

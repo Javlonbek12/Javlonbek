@@ -3,8 +3,9 @@
 import {
   ArrowLeft,
   CalendarDays,
-  ClipboardCheck,
   ChartNoAxesGantt,
+  ChevronDown,
+  ClipboardCheck,
   Columns3,
   ListChecks,
   NotebookTabs,
@@ -13,20 +14,38 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useT } from "@/components/locale-provider";
 import type { TranslationKey } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
-const TABS = [
+// Two kinds of tabs: the work («Задачи», «Ждут решения», «Планы», «Время») and, inside «Задачи»,
+// the way to look at the same tasks («Вид: Список / Доска / Календарь / Таймлайн»). Every view
+// opens with the «Чьи задачи» chosen last (remembered per person).
+const WORK = [
+  { href: "/tasks", key: "tasks.views.tasks", short: "tasks.views.tasks", icon: ListChecks },
+  {
+    href: "/tasks/decide",
+    key: "tasks.views.decide",
+    short: "tasks.views.decideShort",
+    icon: ClipboardCheck,
+  },
+  {
+    href: "/tasks/plans",
+    key: "tasks.views.plans",
+    short: "tasks.views.plans",
+    icon: NotebookTabs,
+  },
+  { href: "/tasks/time", key: "tasks.views.time", short: "tasks.views.time", icon: Timer },
+] as const;
+
+const VIEWS = [
   { href: "/tasks", key: "tasks.views.list", icon: ListChecks },
   { href: "/tasks/board", key: "tasks.views.kanban", icon: Columns3 },
   { href: "/tasks/calendar", key: "tasks.views.calendar", icon: CalendarDays },
   { href: "/tasks/timeline", key: "tasks.views.timeline", icon: ChartNoAxesGantt },
-  { href: "/tasks/plans", key: "tasks.views.plans", icon: NotebookTabs },
-  { href: "/tasks/decide", key: "tasks.views.decide", icon: ClipboardCheck },
-  { href: "/tasks/time", key: "tasks.views.time", icon: Timer },
 ] as const;
 
 // Sections of /tasks that are not one task.
@@ -46,10 +65,11 @@ export function TaskTabs({ decisions }: { decisions: number }) {
   const t = useT();
   const pathname = usePathname();
   const router = useRouter();
-  const active = (href: string) =>
-    // "/tasks/time" must not light up on "/tasks/timeline".
+  const [viewsOpen, setViewsOpen] = useState(false);
+  const view = VIEWS.find((v) => v.href === pathname);
+  const workActive = (href: string) =>
     href === "/tasks"
-      ? pathname === "/tasks"
+      ? Boolean(view) || pathname === "/tasks/trash"
       : pathname === href || pathname.startsWith(`${href}/`);
   const single = singleTaskTitle(pathname);
   // Back where the user came from (a list, a notification…); straight in — to the list.
@@ -81,34 +101,101 @@ export function TaskTabs({ decisions }: { decisions: number }) {
           </Link>
         </Button>
       </div>
-      <nav
-        className={cn("-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0", single && "hidden md:block")}
+      <div
+        className={cn(
+          "flex flex-col gap-2 md:flex-row md:items-center md:justify-between",
+          single && "hidden md:flex",
+        )}
       >
-        <ul className="bg-card shadow-card inline-flex gap-1 rounded-2xl border p-1">
-          {TABS.map(({ href, key, icon: Icon }) => (
-            <li key={href}>
-              <Link
-                href={href}
-                aria-current={active(href) ? "page" : undefined}
-                className={cn(
-                  "flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm whitespace-nowrap transition-colors",
-                  active(href)
-                    ? "bg-secondary text-primary font-semibold"
-                    : "text-muted-foreground hover:text-foreground hover:bg-accent/60",
-                )}
+        <nav aria-label={t("tasks.title")}>
+          {/* Four short tabs: all in sight on a phone. */}
+          <ul className="bg-card shadow-card grid grid-cols-4 gap-1 rounded-2xl border p-1 md:inline-flex">
+            {WORK.map(({ href, key, short, icon: Icon }) => (
+              <li key={href} className="min-w-0">
+                <Link
+                  href={href}
+                  aria-current={workActive(href) ? "page" : undefined}
+                  className={cn(
+                    "flex items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-sm whitespace-nowrap transition-colors md:px-3.5",
+                    workActive(href)
+                      ? "bg-secondary text-primary font-semibold"
+                      : "text-muted-foreground hover:text-foreground hover:bg-accent/60",
+                  )}
+                >
+                  <Icon className="hidden size-4 sm:block" />
+                  <span className="truncate md:hidden">{t(short)}</span>
+                  <span className="hidden md:inline">{t(key)}</span>
+                  {href === "/tasks/decide" && decisions > 0 && (
+                    <span className="rounded-full bg-amber-500 px-1.5 text-xs font-semibold text-white">
+                      {decisions}
+                    </span>
+                  )}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
+        {view && (
+          <>
+            {/* A phone: «Вид: Список ▾» opens the four ways to look. */}
+            <div className="relative md:hidden">
+              <button
+                type="button"
+                onClick={() => setViewsOpen((open) => !open)}
+                aria-expanded={viewsOpen}
+                className="bg-card shadow-card flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm"
               >
-                <Icon className="size-4" />
-                {t(key)}
-                {href === "/tasks/decide" && decisions > 0 && (
-                  <span className="rounded-full bg-amber-500 px-1.5 text-xs font-semibold text-white">
-                    {decisions}
-                  </span>
-                )}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </nav>
+                <span className="text-muted-foreground">{t("tasks.views.view")}:</span>
+                <span className="font-medium">{t(view.key)}</span>
+                <ChevronDown className="size-4" />
+              </button>
+              {viewsOpen && (
+                <ul className="bg-card absolute z-30 mt-1 flex w-48 flex-col rounded-xl border p-1 shadow-lg">
+                  {VIEWS.map(({ href, key, icon: Icon }) => (
+                    <li key={href}>
+                      <Link
+                        href={href}
+                        onClick={() => setViewsOpen(false)}
+                        aria-current={href === view.href ? "page" : undefined}
+                        className={cn(
+                          "flex items-center gap-2 rounded-lg px-3 py-2 text-sm",
+                          href === view.href ? "bg-secondary text-primary font-semibold" : "",
+                        )}
+                      >
+                        <Icon className="size-4" />
+                        {t(key)}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="hidden items-center gap-2 md:flex">
+              <span className="text-muted-foreground text-sm">{t("tasks.views.view")}:</span>
+              <ul className="bg-card shadow-card inline-flex gap-1 rounded-2xl border p-1">
+                {VIEWS.map(({ href, key, icon: Icon }) => (
+                  <li key={href}>
+                    <Link
+                      href={href}
+                      aria-current={href === view.href ? "page" : undefined}
+                      title={t(key)}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm whitespace-nowrap",
+                        href === view.href
+                          ? "bg-secondary text-primary font-semibold"
+                          : "text-muted-foreground hover:text-foreground hover:bg-accent/60",
+                      )}
+                    >
+                      <Icon className="size-4" />
+                      <span className="hidden lg:inline">{t(key)}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

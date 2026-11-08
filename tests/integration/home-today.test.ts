@@ -41,7 +41,7 @@ describe("«Сегодня»", () => {
     // The manager sees the worker in «Моя команда сегодня».
     const team = await getTeamToday(manager, today);
     expect(team?.rows).toEqual([
-      expect.objectContaining({ id: worker.id, open: 1, inReview: 1, overdue: 0 }),
+      expect.objectContaining({ id: worker.id, open: 1, handedIn: 1, overdue: 0 }),
     ]);
     // A member oversees nobody.
     expect(await getTeamToday(worker, today)).toBeNull();

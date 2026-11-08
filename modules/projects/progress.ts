@@ -1,8 +1,10 @@
 import { addDays, daysBetween, startOfWeek } from "@/lib/dates";
 import type { TaskPriority, TaskStatus } from "@/lib/generated/prisma/client";
-import { isOverdue } from "@/modules/tasks/today";
+import { countTaskStates, isLateWork, taskState } from "@/modules/tasks/today";
 
 // How a project is going, computed from its tasks. Pure functions: dates are "YYYY-MM-DD".
+// «Просрочено», «в работе», «не начато» are the shared words of modules/tasks/today.ts: work
+// handed in and waiting for acceptance is never overdue.
 
 export type ProjectTask = {
   id: string;
@@ -16,6 +18,7 @@ export type ProjectTask = {
   completedOn: string | null;
   phaseId: string | null;
   responsible: string | null;
+  assigneeId: string;
   assigneeName: string;
   isMilestone: boolean;
   atRisk: boolean;
@@ -32,34 +35,33 @@ const percent = (part: number, total: number) => (total ? Math.round((part / tot
 
 export function projectStats(all: ProjectTask[], today: string) {
   const tasks = counted(all);
-  const done = tasks.filter(isDone).length;
-  const overdue = tasks.filter((task) => isOverdue(task, today)).length;
+  const counts = countTaskStates(tasks, today);
   const atRisk = tasks.filter((task) => task.atRisk && !isDone(task)).length;
-  const inProgress = tasks.filter(
-    (t) => t.status === "IN_PROGRESS" || t.status === "IN_REVIEW",
-  ).length;
   // What should already be finished by the plan: everything due before today.
   const plannedDone = tasks.filter((task) => task.dueDate !== null && task.dueDate < today).length;
   const health: Health =
     tasks.length === 0
       ? "empty"
-      : done === tasks.length
+      : counts.done === tasks.length
         ? "done"
-        : overdue > 0
+        : counts.late > 0
           ? "late"
           : atRisk > 0
             ? "risk"
             : "onTrack";
   return {
-    total: tasks.length,
-    done,
-    inProgress,
-    notStarted: tasks.length - done - inProgress,
-    overdue,
+    total: counts.total,
+    done: counts.done,
+    inProgress: counts.inWork,
+    inReview: counts.inReview,
+    notStarted: counts.notStarted,
+    overdue: counts.late,
     atRisk,
-    percent: percent(done, tasks.length),
+    percent: percent(counts.done, counts.total),
     plannedDone,
-    plannedPercent: percent(plannedDone, tasks.length),
+    plannedPercent: percent(plannedDone, counts.total),
+    // Done tasks short of the plan («отстаёт на 2 задачи»); 0 when on or ahead of it.
+    behind: Math.max(0, plannedDone - counts.done),
     health,
   };
 }
@@ -87,7 +89,7 @@ export function phaseProgress(phases: PhaseInfo[], all: ProjectTask[], today: st
     const own = tasks.filter((task) => task.phaseId === phase.id);
     const range = projectRange(own);
     const done = own.filter(isDone).length;
-    const overdue = own.filter((task) => isOverdue(task, today)).length;
+    const overdue = own.filter((task) => isLateWork(task, today)).length;
     const state: PhaseState =
       own.length === 0
         ? "empty"
@@ -144,7 +146,7 @@ export function milestones(tasks: ProjectTask[], today: string) {
       title: task.title,
       date: task.dueDate!,
       done: isDone(task),
-      overdue: isOverdue(task, today),
+      overdue: isLateWork(task, today),
     }));
   const next = list.find((m) => !m.done);
   return {
@@ -167,7 +169,7 @@ export function attention(all: ProjectTask[], today: string) {
     return list;
   };
   return {
-    overdue: take((task) => isOverdue(task, today)),
+    overdue: take((task) => isLateWork(task, today)),
     atRisk: take((task) => task.atRisk),
     blocked: take(
       (task) =>
@@ -179,18 +181,44 @@ export function attention(all: ProjectTask[], today: string) {
   };
 }
 
-// Who carries the plan: by the responsible from the plan (or the assignee).
-export function byResponsible(all: ProjectTask[], today: string) {
-  const groups = new Map<string, { name: string; total: number; done: number; overdue: number }>();
+// «Кто что делает»: the people doing the project's tasks (the assignees, not the roles written in
+// the template), with how many tasks are done, in work and overdue, and the nearest due date still
+// ahead.
+// Those with overdue work come first.
+export function byPerson(all: ProjectTask[], today: string) {
+  type Row = {
+    id: string;
+    name: string;
+    total: number;
+    done: number;
+    inWork: number;
+    overdue: number;
+    nextDue: string | null;
+  };
+  const groups = new Map<string, Row>();
   for (const task of counted(all)) {
-    const name = task.responsible ?? task.assigneeName;
-    const group = groups.get(name) ?? { name, total: 0, done: 0, overdue: 0 };
-    group.total += 1;
-    if (isDone(task)) group.done += 1;
-    if (isOverdue(task, today)) group.overdue += 1;
-    groups.set(name, group);
+    const row = groups.get(task.assigneeId) ?? {
+      id: task.assigneeId,
+      name: task.assigneeName,
+      total: 0,
+      done: 0,
+      inWork: 0,
+      overdue: 0,
+      nextDue: null,
+    };
+    const state = taskState(task, today);
+    row.total += 1;
+    if (state === "done") row.done += 1;
+    if (state === "inWork") row.inWork += 1;
+    if (state === "late") row.overdue += 1;
+    const ahead = state === "inWork" || state === "notStarted";
+    if (ahead && task.dueDate && (!row.nextDue || task.dueDate < row.nextDue))
+      row.nextDue = task.dueDate;
+    groups.set(task.assigneeId, row);
   }
-  return [...groups.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+  return [...groups.values()].sort(
+    (a, b) => b.overdue - a.overdue || b.total - a.total || a.name.localeCompare(b.name),
+  );
 }
 
 // Gantt: where a bar starts and how long it is, in days from the chart's first day.
@@ -208,7 +236,7 @@ export const PRIORITY_ORDER: TaskPriority[] = ["URGENT", "HIGH", "MEDIUM", "LOW"
 // Problems (open tasks that are overdue or at risk) by priority, most important first.
 export function problemsByPriority(all: ProjectTask[], today: string) {
   const problems = counted(all).filter(
-    (task) => !isDone(task) && (isOverdue(task, today) || task.atRisk),
+    (task) => !isDone(task) && (isLateWork(task, today) || task.atRisk),
   );
   return PRIORITY_ORDER.map((priority) => ({
     priority,

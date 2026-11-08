@@ -248,6 +248,12 @@ model Task {
   deleteRequestedById String?
   deleteRequestedAt   DateTime?
   deleteReason        String?
+  // The assignee asks to move the due date («Попросить перенести срок»): the new date and why.
+  // The task's author decides.
+  dueChangeById       String?
+  dueChangeAt         DateTime?
+  dueChangeTo         DateTime?    @db.Date
+  dueChangeReason     String?
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
 

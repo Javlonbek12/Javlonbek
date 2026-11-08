@@ -50,7 +50,8 @@ function meetingInput(formData: FormData): MeetingInput {
     participantIds: formData
       .getAll("participantIds")
       .filter((v): v is string => typeof v === "string"),
-    repeatUntil: str(formData, "repeatUntil") || null,
+    repeatUntil: (str(formData, "repeatEvery") && str(formData, "repeatUntil")) || null,
+    repeatEvery: (str(formData, "repeatEvery") || "week") as MeetingInput["repeatEvery"],
   };
 }
 
@@ -62,6 +63,7 @@ export type MeetingFormValues = {
   agenda: string;
   link: string;
   repeatUntil: string;
+  repeatEvery: string;
   participantIds: string[];
   following: string;
 };
@@ -75,7 +77,8 @@ function formValues(formData: FormData): MeetingFormValues {
     durationMinutes: str(formData, "durationMinutes"),
     agenda: input.agenda,
     link: input.link,
-    repeatUntil: input.repeatUntil ?? "",
+    repeatUntil: str(formData, "repeatUntil"),
+    repeatEvery: str(formData, "repeatEvery"),
     participantIds: input.participantIds,
     following: str(formData, "following"),
   };
@@ -229,8 +232,9 @@ async function proposeFromMinutes(formData: FormData): Promise<ProposalState> {
       })),
     };
   } catch (error) {
+    // No key, the day's limit, a failure: in plain words, with the way that always works.
     if (error instanceof AiError)
-      return { error: `ai.errors.${error.code}`, tasks: null, people, self };
+      return { error: "meetings.errors.aiUnavailable", tasks: null, people, self };
     if (error instanceof MeetingError)
       return { error: `meetings.errors.${error.code}`, tasks: null, people, self };
     throw error;

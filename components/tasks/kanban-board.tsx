@@ -236,7 +236,9 @@ export function KanbanBoard({
 
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-muted-foreground text-xs">{t("tasks.kanban.hint")}</p>
+      {/* Dragging with a finger on a narrow screen is awkward: there the card's buttons do it. */}
+      <p className="text-muted-foreground hidden text-xs md:block">{t("tasks.kanban.hint")}</p>
+      <p className="text-muted-foreground text-xs md:hidden">{t("tasks.kanban.hintPhone")}</p>
       {message && (
         <p role="alert" className="bg-destructive/10 text-destructive rounded-md p-2 text-sm">
           {message}

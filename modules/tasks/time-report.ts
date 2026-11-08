@@ -117,3 +117,23 @@ export async function getTimeReport(actor: Actor, period: Period, timezone: stri
 }
 
 export type TimeReport = Awaited<ReturnType<typeof getTimeReport>>;
+
+// Timers running now on tasks the actor sees: «идёт сейчас» above the report (their time joins
+// the report once they are stopped).
+export async function listRunningTimers(actor: Actor, now = new Date()) {
+  const entries = await db.taskTimeEntry.findMany({
+    where: { endedAt: null, task: visibleTasksWhere(actor) },
+    include: {
+      user: { select: { firstName: true, lastName: true } },
+      task: { select: { id: true, title: true } },
+    },
+    orderBy: { startedAt: "asc" },
+  });
+  return entries.map((e) => ({
+    id: e.id,
+    name: displayName(e.user),
+    taskId: e.task.id,
+    title: e.task.title,
+    minutes: Math.max(0, Math.round((now.getTime() - e.startedAt.getTime()) / 60_000)),
+  }));
+}

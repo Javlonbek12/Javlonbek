@@ -1,16 +1,19 @@
 import {
+  AlertCircle,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
   Folder,
   Lock,
   Repeat,
-  Users,
   Video,
 } from "lucide-react";
+import { cookies } from "next/headers";
 import Link from "next/link";
 
 import { Ring } from "@/components/dashboard/ring";
+import { MEETING_DOT, MEETING_TONE } from "@/components/meetings/meeting-line";
+import { ScopeSwitch } from "@/components/tasks/scope-filter";
 import { TaskTableRow } from "@/components/tasks/task-table-row";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,56 +37,57 @@ import {
   shiftCalendar,
 } from "@/modules/tasks/calendar";
 import { parseTaskFilters } from "@/modules/tasks/filters";
+import { rememberedScope, SCOPE_COOKIE } from "@/modules/tasks/scope-cookie";
 import {
   listPlannedRepeats,
   listTasksDueBetween,
   type PlannedRepeat,
   type TaskView,
 } from "@/modules/tasks/service";
-import { isLateWork } from "@/modules/tasks/today";
+import { countTaskStates, isLateWork } from "@/modules/tasks/today";
 
 type Meeting = Awaited<ReturnType<typeof listMeetingsBetween>>[number];
 
-// Colours of calendar items (the legend on the right lists them).
+// Colours of calendar items (the legend on the right lists them). Red means overdue only;
+// importance is an icon; meetings are violet, as everywhere.
 const KIND = {
-  high: { dot: "bg-red-500", box: "bg-red-50 text-red-800 dark:bg-red-950/40 dark:text-red-200" },
-  medium: {
-    dot: "bg-amber-500",
-    box: "bg-amber-50 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200",
+  overdue: {
+    dot: "bg-red-500",
+    box: "bg-red-50 text-red-800 dark:bg-red-950/40 dark:text-red-200",
   },
-  low: {
-    dot: "bg-emerald-500",
-    box: "bg-emerald-50 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200",
-  },
-  meeting: {
-    dot: "bg-blue-500",
-    box: "bg-blue-50 text-blue-900 dark:bg-blue-950/40 dark:text-blue-200",
-  },
+  task: { dot: "bg-sky-500", box: "bg-sky-50 text-sky-900 dark:bg-sky-950/40 dark:text-sky-100" },
   personal: {
-    dot: "bg-violet-500",
-    box: "bg-violet-50 text-violet-900 dark:bg-violet-950/40 dark:text-violet-200",
+    dot: "bg-slate-400",
+    box: "bg-slate-100 text-slate-800 dark:bg-slate-800/50 dark:text-slate-200",
   },
+  meeting: { dot: MEETING_DOT, box: MEETING_TONE },
 } as const;
 const LEGEND = [
-  ["high", "colorUrgent"],
-  ["medium", "colorMedium"],
-  ["low", "colorLow"],
-  ["meeting", "colorMeeting"],
+  ["task", "colorTask"],
   ["personal", "colorPersonal"],
+  ["meeting", "colorMeeting"],
+  ["overdue", "colorOverdue"],
 ] as const;
 
-function kindOf(task: TaskView): keyof typeof KIND {
-  if (task.isPersonal) return "personal";
-  if (task.priority === "URGENT" || task.priority === "HIGH") return "high";
-  return task.priority === "LOW" ? "low" : "medium";
+function kindOf(task: TaskView, today: string): keyof typeof KIND {
+  if (isLateWork(task, today)) return "overdue";
+  return task.isPersonal ? "personal" : "task";
 }
 
 function TaskItem({ task, today, compact }: { task: TaskView; today: string; compact?: boolean }) {
-  const kind = isLateWork(task, today) ? KIND.high : KIND[kindOf(task)];
+  const kind = KIND[kindOf(task, today)];
+  const important = task.priority === "HIGH" || task.priority === "URGENT";
   const body = (
     <>
       <span className="flex items-center gap-1.5 font-medium">
-        <span className={cn("size-1.5 shrink-0 rounded-full", kind.dot)} />
+        {important ? (
+          <AlertCircle
+            className="size-3 shrink-0 text-orange-500"
+            aria-label={t(`tasks.priority.${task.priority}`)}
+          />
+        ) : (
+          <span className={cn("size-1.5 shrink-0 rounded-full", kind.dot)} />
+        )}
         <span className="truncate">{task.title}</span>
       </span>
       {(task.project || task.isPersonal) && (
@@ -175,19 +179,21 @@ export default async function CalendarPage({ searchParams }: PageProps<"/tasks/c
   const params = await searchParams;
   const today = await getUserToday(user.id);
   const { mode, date } = parseCalendarParams(params, today);
-  const { scope } = parseTaskFilters(params);
+  // «Чьи» as chosen last in any task view, when the address doesn't say.
+  const remembered = rememberedScope((await cookies()).get(SCOPE_COOKIE)?.value, user.id);
+  const { scope } = parseTaskFilters({ ...params, scope: params.scope ?? remembered });
   const { days, from, to } = calendarRange(mode, date);
   const { timezone } = await getSettings(user.id);
   const [tasks, planned, todayTasks, meetings] = await Promise.all([
     listTasksDueBetween(user, scope, from, to),
     listPlannedRepeats(user, scope, from, to),
     listTasksDueBetween(user, scope, today, addDays(today, 1)),
-    // Meetings: "mine" = I take part; "team" = every meeting I can see.
+    // Meetings: «Команда» = every meeting I can see; otherwise the ones I take part in.
     listMeetingsBetween(
       user,
       zonedLocalToUtc(`${from}T00:00`, timezone)!,
       zonedLocalToUtc(`${to}T00:00`, timezone)!,
-      scope === "mine",
+      scope !== "team",
     ),
   ]);
   const meetingsByDay = new Map<string, Meeting[]>();
@@ -211,23 +217,29 @@ export default async function CalendarPage({ searchParams }: PageProps<"/tasks/c
         : formatDayLong(date);
   const weekdays = t("tasks.calendar.weekdays").split(",");
 
-  // The numbers of the shown period.
-  const done = tasks.filter((x) => x.status === "DONE").length;
-  const working = tasks.filter(
-    (x) => x.status === "IN_PROGRESS" || x.status === "IN_REVIEW",
-  ).length;
-  const late = tasks.filter((x) => isLateWork(x, today)).length;
-  const share = (n: number) => (tasks.length ? Math.round((n / tasks.length) * 100) : 0);
+  // The numbers of the shown period, by the same words as everywhere (modules/tasks/today.ts).
+  const counts = countTaskStates(tasks, today);
+  const share = (n: number) => (counts.total ? Math.round((n / counts.total) * 100) : 0);
   const stats = [
-    { label: t("tasks.look.total"), value: tasks.length, percent: 100, color: "var(--series-1)" },
-    { label: t("tasks.look.done"), value: done, percent: share(done), color: "var(--series-3)" },
+    { label: t("tasks.look.total"), value: counts.total, percent: 100, color: "var(--series-1)" },
+    {
+      label: t("tasks.look.done"),
+      value: counts.done,
+      percent: share(counts.done),
+      color: "var(--series-3)",
+    },
     {
       label: t("tasks.look.inProgress"),
-      value: working,
-      percent: share(working),
+      value: counts.inWork,
+      percent: share(counts.inWork),
       color: "var(--series-4)",
     },
-    { label: t("tasks.look.overdue"), value: late, percent: share(late), color: "var(--series-8)" },
+    {
+      label: t("tasks.look.overdue"),
+      value: counts.late,
+      percent: share(counts.late),
+      color: "var(--series-8)",
+    },
   ];
 
   // The small month on the right: the month of the chosen date.
@@ -295,23 +307,15 @@ export default async function CalendarPage({ searchParams }: PageProps<"/tasks/c
             {title}
           </h2>
           <div className="ml-auto flex flex-wrap gap-2">
-            <div className="bg-card shadow-card flex rounded-xl border p-1 text-sm">
-              {(["mine", "team"] as const).map((s) => (
-                <Link
-                  key={s}
-                  href={href({ scope: s })}
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-lg px-3 py-1.5",
-                    s === scope
-                      ? "bg-secondary text-primary font-semibold"
-                      : "text-muted-foreground",
-                  )}
-                >
-                  {s === "team" && <Users className="size-4" />}
-                  {s === "mine" ? t("tasks.filters.scopeMine") : t("tasks.filters.scopeTeam")}
-                </Link>
-              ))}
-            </div>
+            <ScopeSwitch
+              value={scope}
+              userId={user.id}
+              hrefs={{
+                mine: href({ scope: "mine" }),
+                created: href({ scope: "created" }),
+                team: href({ scope: "team" }),
+              }}
+            />
             <div className="bg-card shadow-card flex rounded-xl border p-1 text-sm">
               {CALENDAR_MODES.map((m) => (
                 <Link
@@ -558,6 +562,10 @@ export default async function CalendarPage({ searchParams }: PageProps<"/tasks/c
               {t(`tasks.look.${label}`)}
             </span>
           ))}
+          <span className="flex items-center gap-2.5 text-sm">
+            <AlertCircle className="size-3 text-orange-500" />
+            {t("tasks.look.colorImportant")}
+          </span>
           <span className="flex items-center gap-2.5 text-sm">
             <span className="border-muted-foreground/60 size-3 rounded-full border border-dashed" />
             {t("tasks.calendar.plannedHint")}
