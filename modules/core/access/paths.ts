@@ -1,5 +1,17 @@
-import { canUseModule } from "./actor";
+import type { Role } from "@/lib/generated/prisma/enums";
+
+import type { Access } from "./actor";
 import type { ConfigurableModule } from "./config";
+
+// Whether the person has a role-settings section. No database here: the help panel (a client
+// component) checks links with it too.
+export const canUseModule = (
+  actor: {
+    role: Role;
+    access?: Pick<Access, "taskScope" | "teamIds"> & { modules: readonly string[] };
+  },
+  module: ConfigurableModule,
+) => actor.role === "OWNER" || (actor.access?.modules.includes(module) ?? true);
 
 // Which role-settings sections a page belongs to (any of them opens it), by its path. Used to show
 // a link only to someone who can open it, instead of a link that bounces back to «Сегодня».
