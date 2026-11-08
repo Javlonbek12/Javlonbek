@@ -6,6 +6,7 @@ import { ConnectUploadForm } from "@/components/connect/upload-form";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { ConfirmAction } from "@/components/ui/confirm-action";
+import { PageHeader } from "@/components/ui/page-header";
 import type { ConnectKind } from "@/lib/generated/prisma/enums";
 import { dateFormat, t } from "@/lib/i18n";
 import { canLeadConnect, connectFacets, lastImports } from "@/modules/connect/service";
@@ -48,7 +49,7 @@ export default async function ConnectImportPage({ searchParams }: PageProps<"/co
         <ArrowLeft className="size-4" />
         {t("connect.import.back")}
       </Link>
-      <h1 className="text-[22px] font-medium md:text-2xl">{t("connect.import.title")}</h1>
+      <PageHeader title={t("connect.import.title")} />
 
       {error && (
         <p role="alert" className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">

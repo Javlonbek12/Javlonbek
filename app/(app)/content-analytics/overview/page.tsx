@@ -5,6 +5,7 @@ import { AnalyticsTabs } from "@/components/content/analytics-tabs";
 import { BOT_COLOR } from "@/components/content/bot-chip";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { InfoHint } from "@/components/ui/info-hint";
+import { PageHeader } from "@/components/ui/page-header";
 import { PeriodPicker } from "@/components/ui/period-picker";
 import { formatDay, formatMonth } from "@/lib/dates";
 import { t } from "@/lib/i18n";
@@ -45,9 +46,7 @@ export default async function ContentOverviewPage({
 
   return (
     <div className="flex flex-col gap-5 [&>*]:min-w-0">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-[22px] font-medium md:text-2xl">{t("content.analytics.title")}</h1>
-      </div>
+      <PageHeader title={t("content.analytics.title")} />
       <AnalyticsTabs active="overview" />
 
       <div className="flex flex-col gap-2">

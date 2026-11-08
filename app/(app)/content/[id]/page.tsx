@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { NativeSelect } from "@/components/ui/native-select";
+import { PageHeader } from "@/components/ui/page-header";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDayLong, toDateString } from "@/lib/dates";
 import type { ContentStatus } from "@/lib/generated/prisma/enums";
@@ -97,25 +98,29 @@ export default async function ContentPostPage({
         <Link href={back} className="text-muted-foreground text-sm hover:underline">
           ← {t("content.title")}
         </Link>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <h1 className="min-w-0 text-[22px] font-medium break-words md:text-2xl">{post.title}</h1>
-          {/* Both rare and final actions together, each behind a confirmation. */}
-          <div className="flex shrink-0 flex-wrap gap-1 sm:justify-end">
-            {rights.editPlan && (
-              <ConfirmAction
-                label={t("content.actions.cancel")}
-                icon={<Ban className="size-4" />}
-                title={t("content.cancelConfirm.title")}
-                hint={t("content.cancelConfirm.hint")}
-                confirm={t("content.cancelConfirm.yes")}
-                action={cancelContentAction}
-                hidden={{ postId: post.id }}
-                align="right"
-              />
-            )}
-            {rights.remove && <DeleteButton postId={post.id} back={back} />}
-          </div>
-        </div>
+        <PageHeader
+          title={post.title}
+          actions={
+            // Both rare and final actions together, each behind a confirmation.
+            (rights.editPlan || rights.remove) && (
+              <>
+                {rights.editPlan && (
+                  <ConfirmAction
+                    label={t("content.actions.cancel")}
+                    icon={<Ban className="size-4" />}
+                    title={t("content.cancelConfirm.title")}
+                    hint={t("content.cancelConfirm.hint")}
+                    confirm={t("content.cancelConfirm.yes")}
+                    action={cancelContentAction}
+                    hidden={{ postId: post.id }}
+                    align="right"
+                  />
+                )}
+                {rights.remove && <DeleteButton postId={post.id} back={back} />}
+              </>
+            )
+          }
+        />
         {remark && (
           <div className="flex flex-col gap-1.5 rounded-xl border border-orange-500/40 bg-orange-500/10 p-3 text-sm">
             <span className="text-xs font-medium text-orange-800">

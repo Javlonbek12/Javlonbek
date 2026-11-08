@@ -8,6 +8,7 @@ import { RememberPeriod } from "@/components/reports/remember-period";
 import { WeeklyChart } from "@/components/reports/weekly-chart";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { PeriodPicker } from "@/components/ui/period-picker";
 import { formatDay, todayInTimezone } from "@/lib/dates";
 import { t } from "@/lib/i18n";
@@ -107,31 +108,32 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
   return (
     <div className="flex flex-col gap-5 [&>*]:min-w-0">
       <RememberPeriod name={PERIOD_COOKIE} value={periodCookieValue(user.id, period)} />
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-[22px] font-medium md:text-2xl">{t("reports.title")}</h1>
-          {/* On screen the period picker below shows the dates; the printed page needs them here. */}
-          <p className="text-muted-foreground hidden text-sm print:block">
-            {t("reports.subtitle", {
-              from: formatReportDate(period.from),
-              to: formatReportDate(period.to),
-            })}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Button asChild>
-            <a href={`/api/reports/pdf?${query}`}>
-              <Download className="size-4" /> {t("reports.pdf")}
-            </a>
-          </Button>
-          <MoreMenu label={t("reports.more")}>
-            <a href={`/api/reports/xlsx?${query}`} className={menuItem}>
-              <FileSpreadsheet />
-              {t("reports.excel")}
-            </a>
-          </MoreMenu>
-        </div>
-      </div>
+      <PageHeader
+        title={t("reports.title")}
+        actions={
+          <>
+            <Button asChild>
+              <a href={`/api/reports/pdf?${query}`}>
+                <Download className="size-4" /> {t("reports.pdf")}
+              </a>
+            </Button>
+            <MoreMenu label={t("reports.more")}>
+              <a href={`/api/reports/xlsx?${query}`} className={menuItem}>
+                <FileSpreadsheet />
+                {t("reports.excel")}
+              </a>
+            </MoreMenu>
+          </>
+        }
+      >
+        {/* On screen the period picker below shows the dates; the printed page needs them here. */}
+        <p className="hidden print:block">
+          {t("reports.subtitle", {
+            from: formatReportDate(period.from),
+            to: formatReportDate(period.to),
+          })}
+        </p>
+      </PageHeader>
 
       <PeriodPicker
         chips={PRESETS.map((preset) => {

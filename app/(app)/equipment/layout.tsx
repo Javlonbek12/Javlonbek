@@ -1,5 +1,5 @@
 import { EquipmentTabs } from "@/components/equipment/tabs";
-import { InfoHint } from "@/components/ui/info-hint";
+import { PageHeader } from "@/components/ui/page-header";
 import { t } from "@/lib/i18n";
 import { requireModule } from "@/modules/core/access/guard";
 import { outletReview, reviewCount } from "@/modules/distribution/control";
@@ -12,10 +12,12 @@ export default async function EquipmentLayout({ children }: LayoutProps<"/equipm
   const toCheck = reviewCount(await outletReview());
   return (
     <div className="flex flex-col gap-5 [&>*]:min-w-0">
-      <div className="flex flex-wrap items-center gap-x-1 print:hidden">
-        <h1 className="text-[22px] font-medium md:text-2xl">{t("equip.title")}</h1>
-        <InfoHint className="max-w-3xl">{t("equip.intro")}</InfoHint>
-      </div>
+      <PageHeader
+        title={t("equip.title")}
+        hint={t("equip.intro")}
+        hintClassName="max-w-3xl"
+        className="print:hidden"
+      />
       <EquipmentTabs manage={canManageDistribution(user)} toCheck={toCheck} />
       {children}
     </div>

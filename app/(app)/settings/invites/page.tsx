@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { InviteSection } from "@/components/team/invite-section";
+import { PageHeader } from "@/components/ui/page-header";
 import { t } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { invitableRoles } from "@/modules/core/permissions";
@@ -19,7 +20,7 @@ export default async function InvitesPage({ searchParams }: PageProps<"/settings
       <Link href="/settings" className="text-muted-foreground w-fit text-sm hover:underline">
         ← {t("settings.title")}
       </Link>
-      <h1 className="text-[22px] font-medium md:text-2xl">{t("team.invites")}</h1>
+      <PageHeader title={t("team.invites")} />
       <InviteSection
         user={user}
         timezone={timezone}

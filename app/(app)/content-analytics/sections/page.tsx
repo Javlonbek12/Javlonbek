@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { InfoHint } from "@/components/ui/info-hint";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/page-header";
 import { Textarea } from "@/components/ui/textarea";
 import { addMonths } from "@/lib/dates";
 import { t } from "@/lib/i18n";
@@ -41,7 +42,7 @@ export default async function ContentSectionsPage({
 
   return (
     <div className="flex flex-col gap-5 [&>*]:min-w-0">
-      <h1 className="text-[22px] font-medium md:text-2xl">{t("content.analytics.title")}</h1>
+      <PageHeader title={t("content.analytics.title")} />
       <AnalyticsTabs active="sections" />
       <Card id="sections" className="scroll-mt-20 gap-3">
         <div className="flex flex-wrap items-center gap-x-1">

@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 import {
   BrandsChart,
   FocusMap,
@@ -17,11 +15,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { InfoHint } from "@/components/ui/info-hint";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/page-header";
 import { PeriodPicker } from "@/components/ui/period-picker";
+import { Segmented } from "@/components/ui/segmented";
 import { addDays, addMonths } from "@/lib/dates";
 import type { ContentChannel } from "@/lib/generated/prisma/enums";
 import { t } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getSettings, getUserToday } from "@/modules/core/settings/service";
 import {
@@ -76,18 +75,14 @@ export default async function ContentAnalyticsPage({
   };
   const planner = canPlanContent(user);
   const lines = storylines(posts, period.weeks, topics, today, upcoming);
-  const pill = (on: boolean) =>
-    cn(
-      "rounded-full px-3 py-1 whitespace-nowrap",
-      on ? "bg-card font-medium shadow-sm" : "text-muted-foreground",
-    );
 
   return (
     <div className="flex flex-col gap-5 [&>*]:min-w-0">
-      <div className="flex flex-wrap items-center gap-x-1">
-        <h1 className="text-[22px] font-medium md:text-2xl">{t("content.analytics.title")}</h1>
-        <InfoHint className="max-w-3xl">{t("content.analytics.intro")}</InfoHint>
-      </div>
+      <PageHeader
+        title={t("content.analytics.title")}
+        hint={t("content.analytics.intro")}
+        hintClassName="max-w-3xl"
+      />
       <AnalyticsTabs active="analytics" />
 
       <div className="flex flex-col gap-2">
@@ -104,18 +99,23 @@ export default async function ContentAnalyticsPage({
         />
         {/* Bots: one row that scrolls inside itself on a phone, never the page. */}
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <div className="bg-secondary/70 inline-flex max-w-full gap-0.5 overflow-x-auto rounded-full p-1">
-            {[null, ...CHANNELS].map((c) => (
-              <Link
-                key={c ?? "all"}
-                href={href({ bot: c })}
-                className={cn(pill((bot ?? null) === c), "flex items-center gap-1.5")}
-              >
-                {c && <span className="size-2 rounded-full" style={{ background: BOT_COLOR[c] }} />}
-                {c ? t(`content.channels.${c}`) : t("content.allBots")}
-              </Link>
-            ))}
-          </div>
+          <Segmented
+            label={t("content.channels.label")}
+            className="overflow-x-auto"
+            items={[null, ...CHANNELS].map((c) => ({
+              key: c ?? "all",
+              label: (
+                <span className="inline-flex items-center gap-1.5">
+                  {c && (
+                    <span className="size-2 rounded-full" style={{ background: BOT_COLOR[c] }} />
+                  )}
+                  {c ? t(`content.channels.${c}`) : t("content.allBots")}
+                </span>
+              ),
+              href: href({ bot: c }),
+              active: (bot ?? null) === c,
+            }))}
+          />
         </div>
       </div>
 
@@ -124,14 +124,23 @@ export default async function ContentAnalyticsPage({
       <div className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-display text-lg font-medium">{t("content.analytics.contents")}</h2>
-          <div className="bg-secondary/70 inline-flex gap-0.5 rounded-full p-1 text-sm">
-            <Link href={href({ sent: true })} className={pill(sentOnly)}>
-              {t("content.analytics.sentOnly")}
-            </Link>
-            <Link href={href({ sent: false })} className={pill(!sentOnly)}>
-              {t("content.analytics.all")}
-            </Link>
-          </div>
+          <Segmented
+            label={t("content.analytics.contents")}
+            items={[
+              {
+                key: "sent",
+                label: t("content.analytics.sentOnly"),
+                href: href({ sent: true }),
+                active: sentOnly,
+              },
+              {
+                key: "all",
+                label: t("content.analytics.all"),
+                href: href({ sent: false }),
+                active: !sentOnly,
+              },
+            ]}
+          />
         </div>
         <p className="text-muted-foreground text-xs">
           {plural("content.analytics.postsCount", posts.length)}
