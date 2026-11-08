@@ -8,7 +8,7 @@
 - Правила работы: `SPEC.md` (раздел 1), `AGENTS.md`; все решения по ходу работы, с датами, — `docs/DECISIONS.md`.
 - Сайт: https://5-182-33-60.sslip.io. Сервер обслуживается через GitHub → Actions → **Server** (`.github/workflows/server.yml`):
   `status`, `logs`, `setup`, `deploy` — выложить код (миграции базы применяются сами; после слияния в `main` — само),
-  `restart`, `backup` — резервная копия, `backup-export` — скачать её к себе архивом с паролем, `team-check` /
+  `restart`, `backup` — резервная копия, `backup-export` — скачать её к себе архивом с паролем, `backup-cloud` — копия в облако (каждую ночь сама), `restore` — восстановить копию, `team-check` /
   `team-fix` — люди, роли, места в оргструктуре, удаление человека, приглашения на место (`modules/team/admin.ts`),
   `usage` — кто реально работает в приложении и какие разделы живы (цифры за 30 дней, `modules/ops/usage.ts`;
   другой период — `{"days": 60}` в поле data), `org-import` / `org-replace`, `project-import`, `project-create`,

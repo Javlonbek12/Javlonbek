@@ -9,6 +9,13 @@ name: Server
 #   backup  - make a backup now
 #   backup-export - the latest backup (database + files) as a password-protected 7z file of the
 #     run (kept 1 day), to download to one's own computer. The password is the BACKUP_PASSWORD secret.
+#   backup-cloud - the latest backup, locked with BACKUP_PASSWORD, into S3-compatible cloud storage
+#     (BACKUP_S3_* secrets); also runs by itself every night after the server's 03:00 backup. The
+#     storage keeps every day for 30 days, then the 1st of each month (scripts/server/cloud.sh).
+#   restore - put a backup back. Empty "data": lists the backups on the server and in the cloud.
+#     {"backup": "2026-11-08_0300", "confirm": "ВОССТАНОВИТЬ"} restores that server copy;
+#     add "from": "cloud" to take it from the cloud. A fresh backup of the current data is made
+#     first, so a wrong restore can be undone the same way.
 #   restart - restart all services
 #   demo-add / demo-remove - add or remove test tasks and test employees (after deploy)
 #   org-import / org-replace - load the org chart from the JSON in "data" (replace = drop the current one)
@@ -22,7 +29,9 @@ name: Server
 #     (deploy/data/X.enc with AES-256, its key in X.enc.key encrypted with that public key), so only
 #     the server can read it. "data" is {"file": "deploy/data/X.enc"}.
 # Secrets: VPS_HOST, VPS_USER (root), VPS_SSH_KEY; for setup also TELEGRAM_BOT_TOKEN,
-# TELEGRAM_BOT_USERNAME, ANTHROPIC_API_KEY; for backup-export BACKUP_PASSWORD. Variable (optional):
+# TELEGRAM_BOT_USERNAME, ANTHROPIC_API_KEY; for backup-export BACKUP_PASSWORD; for the cloud
+# copy also BACKUP_S3_BUCKET, BACKUP_S3_KEY_ID, BACKUP_S3_SECRET, BACKUP_S3_ENDPOINT (empty for
+# AWS) and BACKUP_S3_REGION (optional). Variable (optional):
 # DOMAIN. See docs/SETUP-SERVER.md.
 on:
   workflow_dispatch:
@@ -38,6 +47,8 @@ on:
             logs,
             backup,
             backup-export,
+            backup-cloud,
+            restore,
             restart,
             demo-add,
             demo-remove,
@@ -64,16 +75,20 @@ on:
     workflows: [CI]
     types: [completed]
     branches: [main]
+  # The nightly cloud copy, after the server's own backup at 03:00 (server time, UTC).
+  schedule:
+    - cron: "40 3 * * *"
 
 concurrency: server
 
 jobs:
   server:
-    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      ACTION: ${{ github.event_name == 'workflow_run' && 'deploy' || inputs.action }}
+      ACTION: ${{ github.event_name == 'schedule' && 'backup-cloud' || github.event_name == 'workflow_run' && 'deploy' || inputs.action }}
+      SCHEDULED: ${{ github.event_name == 'schedule' }}
       SERVICE: ${{ inputs.service }}
       VPS_HOST: ${{ secrets.VPS_HOST }}
       VPS_USER: ${{ secrets.VPS_USER }}
@@ -118,6 +133,11 @@ jobs:
           DOMAIN: ${{ vars.DOMAIN }}
           ORG_DATA: ${{ inputs.data }}
           BACKUP_PASSWORD: ${{ secrets.BACKUP_PASSWORD }}
+          BACKUP_S3_BUCKET: ${{ secrets.BACKUP_S3_BUCKET }}
+          BACKUP_S3_KEY_ID: ${{ secrets.BACKUP_S3_KEY_ID }}
+          BACKUP_S3_SECRET: ${{ secrets.BACKUP_S3_SECRET }}
+          BACKUP_S3_ENDPOINT: ${{ secrets.BACKUP_S3_ENDPOINT }}
+          BACKUP_S3_REGION: ${{ secrets.BACKUP_S3_REGION }}
         run: |
           case "$ACTION" in
             status)
@@ -195,6 +215,48 @@ jobs:
               (cd /tmp/backup && 7z a -t7z -mhe=on -p"$BACKUP_PASSWORD" "$GITHUB_WORKSPACE/export/backup-$stamp.7z" . > /dev/null)
               rm -rf /tmp/backup
               ls -l export ;;
+            backup-cloud)
+              if ! scripts/server/cloud.sh configured; then
+                echo "Cloud storage is not set up: add the BACKUP_S3_* secrets (docs/SETUP-SERVER.md, section 10)."
+                # The nightly run stays green until then; a manual run says what is missing.
+                [ "$SCHEDULED" = "true" ] && exit 0 || exit 1
+              fi
+              scripts/server/cloud.sh upload ;;
+            restore)
+              data="${ORG_DATA:-}"
+              [ -n "$data" ] || data='{}'
+              backup="$(printf '%s' "$data" | jq -r '.backup // empty')"
+              from="$(printf '%s' "$data" | jq -r '.from // "server"')"
+              confirm="$(printf '%s' "$data" | jq -r '.confirm // empty')"
+              if [ -z "$backup" ]; then
+                echo "Backups on the server:"
+                ssh vps 'ls -t ~/assistant-backups/db-*.sql.gz 2> /dev/null | sed "s#.*/db-##; s#\.sql\.gz##"' || true
+                if scripts/server/cloud.sh configured; then
+                  echo "Backups in the cloud:"; scripts/server/cloud.sh list
+                fi
+                echo 'To restore: data = {"backup": "<name from the list>", "confirm": "ВОССТАНОВИТЬ"} (add "from": "cloud" for a cloud copy).'
+                exit 0
+              fi
+              if ! [[ "$backup" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{4}$ ]]; then echo "Bad backup name: $backup"; exit 1; fi
+              if [ "$confirm" != "ВОССТАНОВИТЬ" ] && [ "$confirm" != "RESTORE" ]; then
+                echo 'Nothing changed: add "confirm": "ВОССТАНОВИТЬ" to really replace all current data.'; exit 1
+              fi
+              if [ "$from" = "cloud" ]; then
+                scripts/server/cloud.sh configured || { echo "Cloud storage is not set up."; exit 1; }
+                scripts/server/cloud.sh download "$backup" /tmp/restore
+                ssh vps "mkdir -p ~/assistant-restore && rm -f ~/assistant-restore/*"
+                scp -q /tmp/restore/* vps:assistant-restore/
+                rm -rf /tmp/restore
+                dir='~/assistant-restore'
+              else
+                dir='~/assistant-backups'
+              fi
+              ssh vps "test -f $dir/db-$backup.sql.gz" || { echo "No such backup: $backup"; exit 1; }
+              echo "Saving the current data first (to undo this restore if needed):"
+              ssh vps '~/assistant/scripts/backup.sh'
+              uploads="$(ssh vps "ls $dir/uploads-$backup.tar.gz 2> /dev/null" || true)"
+              ssh vps "cd ~/assistant && RESTORE_YES=yes ./scripts/restore.sh $dir/db-$backup.sql.gz $uploads"
+              ssh vps 'cd ~/assistant && docker compose -f docker-compose.prod.yml ps' ;;
             restart)
               ssh vps 'cd ~/assistant && docker compose -f docker-compose.prod.yml restart && docker compose -f docker-compose.prod.yml ps' ;;
             *)

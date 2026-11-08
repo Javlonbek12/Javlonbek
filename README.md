@@ -143,7 +143,7 @@ tests/        интеграционные тесты (с настоящей б�
 
 Пошаговая инструкция — [`docs/SETUP-SERVER.md`](docs/SETUP-SERVER.md): Ubuntu 24.04, Docker, домен с HTTPS,
 бот, ежедневные бэкапы, мониторинг. После настройки секретов `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`
-каждый push в `main` с зелёными проверками сам обновляет сервер. Остальное — кнопкой Actions → Server (`.github/workflows/server.yml`): установка, состояние, журналы, перезапуск, бэкап и `backup-export` (скачать архив к себе), `usage` (кто работает в приложении), `team-check` / `team-fix` (люди, роли, места, удаление сотрудника), `org-import` / `org-replace`, `project-import` / `project-create`, `data-key` / `data-load` (загрузка данных), `demo-add` / `demo-remove`. Описание действий — в `docs/SETUP-SERVER.md`.
+каждый push в `main` с зелёными проверками сам обновляет сервер. Остальное — кнопкой Actions → Server (`.github/workflows/server.yml`): установка, состояние, журналы, перезапуск, бэкап, `backup-export` (скачать архив к себе), `backup-cloud` (копия в облако, сама каждую ночь), `restore` (восстановить копию с сервера или из облака), `usage` (кто работает в приложении), `team-check` / `team-fix` (люди, роли, места, удаление сотрудника), `org-import` / `org-replace`, `project-import` / `project-create`, `data-key` / `data-load` (загрузка данных), `demo-add` / `demo-remove`. Описание действий — в `docs/SETUP-SERVER.md`.
 
 Руководство для сотрудников — [`docs/USER-GUIDE.md`](docs/USER-GUIDE.md).
 
