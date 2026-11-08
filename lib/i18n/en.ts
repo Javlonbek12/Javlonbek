@@ -1268,14 +1268,23 @@ export const en: Dictionary = {
         title: "Describe how to lay out the products",
         placeholder:
           "E.g. ESSE on the top two shelves with 2 facings each, new items at eye level, Simple at the bottom",
-        hint: "AI places the SKUs into the free places; POSM stays where it is. The result appears as an unsaved change: check it and save, or undo.",
+        hint: "The result appears as an unsaved change: the places the AI changed are outlined in purple. Check it and save, or undo ↶. Ctrl+Enter sends.",
         submit: "Suggest",
         thinking: "AI is thinking…",
         close: "Close",
-        done: "AI layout applied, not saved. Check the rules on the right and press «Save», or undo ↶.",
+        done: "AI layout applied but not saved. Places changed: {count} — they are outlined. Check the «Rule check» and press «Save», or undo ↶.",
         unknown: "Not in the catalog, skipped: {codes}.",
         overflow: "Did not fit: {names}.",
+        mode: "What the AI may change",
+        modeFree: "Only the free places",
+        modeFreeHint:
+          "— packs already placed, «empty» marks and POSM stay; the AI fills the places nobody filled.",
+        modeAll: "Rearrange everything",
+        modeAllHint: "— the AI places every pack again, those placed by hand too; POSM stays.",
+        unfilled:
+          "Places not filled: {count} ({shelves}). The AI doesn't mark places «empty» itself: fill them or mark them «empty».",
       },
+      showCells: "Select these cells",
     },
     validation: {
       title: "Rule check",
