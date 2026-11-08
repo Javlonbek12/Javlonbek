@@ -2,7 +2,7 @@ import { EquipmentForm } from "@/components/planograms/equipment-form";
 import { PlanogramErrorNote } from "@/components/planograms/error-note";
 import { t } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
-import { distTypeOptions } from "@/modules/planograms/library";
+import { distTypeOptions, mandatorySkuOptions } from "@/modules/planograms/library";
 
 export default async function NewEquipmentPage({
   searchParams,
@@ -22,6 +22,8 @@ export default async function NewEquipmentPage({
         locked={false}
         distTypes={[]}
         typeOptions={await distTypeOptions()}
+        mandatorySkuIds={[]}
+        skus={await mandatorySkuOptions([])}
       />
     </div>
   );

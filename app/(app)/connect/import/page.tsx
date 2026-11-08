@@ -2,15 +2,16 @@ import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { Button } from "@/components/ui/button";
+import { ConnectUploadForm } from "@/components/connect/upload-form";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { ConfirmAction } from "@/components/ui/confirm-action";
 import type { ConnectKind } from "@/lib/generated/prisma/enums";
 import { dateFormat, t } from "@/lib/i18n";
 import { canLeadConnect, connectFacets, lastImports } from "@/modules/connect/service";
 import { requireUser } from "@/modules/core/auth/current-user";
+import { getSettings } from "@/modules/core/settings/service";
 
-import { clearConnectAction, importConnectAction } from "../actions";
+import { clearConnectAction, importConnectFileAction } from "../actions";
 
 const ERRORS = ["forbidden", "empty", "unknown", "tooBig"] as const;
 const KINDS = ["OOS", "ORDER", "PAYMENT", "VISIT"] as const satisfies ConnectKind[];
@@ -22,7 +23,15 @@ export default async function ConnectImportPage({ searchParams }: PageProps<"/co
   const params = await searchParams;
   const error = ERRORS.find((e) => e === params.error);
   const done = typeof params.done === "string" ? params.done.split("\n").filter(Boolean) : [];
-  const [imports, facets] = await Promise.all([lastImports(), connectFacets()]);
+  const [imports, facets, { timezone }] = await Promise.all([
+    lastImports(),
+    connectFacets(),
+    getSettings(user.id),
+  ]);
+  // Times in the viewer's time zone, not the server's.
+  const when = dateFormat({ dateStyle: "medium", timeStyle: "short", timeZone: timezone });
+  // The bot's own times are Tashkent time (UTC+5, no summer time).
+  const stamp = (value: string) => when.format(new Date(`${value}:00+05:00`));
   const kindName = (kind: string) =>
     KINDS.includes(kind as ConnectKind) ? t(`connect.kinds.${kind as ConnectKind}`) : kind;
 
@@ -47,12 +56,24 @@ export default async function ConnectImportPage({ searchParams }: PageProps<"/co
           <p className="font-medium">{t("connect.import.done")}</p>
           <ul className="mt-1 flex flex-col gap-0.5">
             {done.map((line) => {
-              const [file = "", kind = "", created = "0", updated = "0", skipped = "0"] =
-                line.split("|");
+              const [
+                file = "",
+                kind = "",
+                created = "0",
+                updated = "0",
+                skipped = "0",
+                kept = "0",
+                newer = "",
+              ] = line.split("|");
               return (
                 <li key={line}>
                   {t("connect.import.result", { file, kind: kindName(kind), created, updated })}
                   {skipped !== "0" && `; ${t("connect.import.skipped", { count: skipped })}`}
+                  {newer && (
+                    <span className="mt-0.5 block font-medium text-amber-700 dark:text-amber-300">
+                      {t("connect.import.older", { date: stamp(newer), count: kept })}
+                    </span>
+                  )}
                 </li>
               );
             })}
@@ -72,20 +93,7 @@ export default async function ConnectImportPage({ searchParams }: PageProps<"/co
             <li key={kind}>{t(`connect.kinds.${kind}`)}</li>
           ))}
         </ul>
-        <form action={importConnectAction} className="flex flex-col gap-3">
-          <Input
-            type="file"
-            name="files"
-            multiple
-            required
-            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            aria-label={t("connect.import.files")}
-            className="h-auto py-1.5"
-          />
-          <div>
-            <Button type="submit">{t("connect.import.submit")}</Button>
-          </div>
-        </form>
+        <ConnectUploadForm action={importConnectFileAction} />
       </Card>
 
       <Card className="gap-3">
@@ -99,9 +107,9 @@ export default async function ConnectImportPage({ searchParams }: PageProps<"/co
               <li key={i.id} className="flex flex-col gap-0.5 py-2">
                 <span className="break-all">{i.fileName}</span>
                 <span className="text-muted-foreground text-xs">
-                  {dateFormat({ dateStyle: "medium", timeStyle: "short" }).format(i.createdAt)} ·{" "}
-                  {i.kinds.split(",").map(kindName).join(", ")} ·{" "}
+                  {when.format(i.createdAt)} · {i.kinds.split(",").map(kindName).join(", ")} ·{" "}
                   {t("connect.import.historyRow", { created: i.created, updated: i.updated })}
+                  {i.kept > 0 && ` · ${t("connect.import.historyKept", { count: i.kept })}`}
                 </span>
               </li>
             ))}
@@ -113,11 +121,13 @@ export default async function ConnectImportPage({ searchParams }: PageProps<"/co
         <Card className="gap-3">
           <CardTitle>{t("connect.import.clear")}</CardTitle>
           <CardDescription>{t("connect.import.clearHint")}</CardDescription>
-          <form action={clearConnectAction}>
-            <Button type="submit" variant="destructive" size="sm">
-              {t("connect.import.clearConfirm")}
-            </Button>
-          </form>
+          <ConfirmAction
+            label={t("connect.import.clearConfirm")}
+            title={t("connect.import.clearQuestion", { count: facets.total })}
+            hint={t("connect.import.clearHint")}
+            confirm={t("connect.import.clearYes")}
+            action={clearConnectAction}
+          />
         </Card>
       )}
     </div>

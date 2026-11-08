@@ -2,8 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { PlanogramErrorNote, SavedNote } from "@/components/planograms/error-note";
-import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
+import { ConfirmAction } from "@/components/ui/confirm-action";
 import { db } from "@/lib/db";
 import { formatDay, toDateString } from "@/lib/dates";
 import { t } from "@/lib/i18n";
@@ -70,6 +70,11 @@ export default async function PriceListPage({
           {t("planograms.library.prices.unknown", { codes: query.unknown })}
         </p>
       )}
+      {typeof query.unread === "string" && (
+        <p className="text-sm text-amber-700">
+          {t("planograms.library.prices.unreadRows", { rows: query.unread })}
+        </p>
+      )}
       {list.appliedAt && (
         <p className="text-muted-foreground text-sm">
           {t("planograms.library.prices.applied", {
@@ -126,10 +131,19 @@ export default async function PriceListPage({
         </div>
       )}
       {canApprovePlanograms(user.role) && (preview.length > 0 || waiting.length > 0) && (
-        <form action={applyPriceListAction}>
-          <input type="hidden" name="priceListId" value={list.id} />
-          <Button type="submit">{t("planograms.library.prices.apply")}</Button>
-        </form>
+        <ConfirmAction
+          label={t("planograms.library.prices.apply")}
+          title={t("planograms.library.prices.applyTitle")}
+          hint={t("planograms.library.prices.applyHint", {
+            versions: String(preview.length),
+            drafts: String(waiting.length),
+          })}
+          confirm={t("planograms.library.prices.applyConfirm")}
+          action={applyPriceListAction}
+          hidden={{ priceListId: list.id }}
+          tone="default"
+          size="default"
+        />
       )}
 
       <Card className="gap-3">

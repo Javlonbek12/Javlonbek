@@ -9,6 +9,7 @@ import {
   getProject,
   listProjectCards,
   ProjectError,
+  setProjectFinished,
   setTaskRisk,
   updateProject,
 } from "@/modules/projects/service";
@@ -160,6 +161,28 @@ describe("projects", () => {
     });
     expect(await getProject(await withAccess(outsider), id, TZ)).not.toBeNull();
     expect(await listProjectCards(await withAccess(outsider), TODAY, TZ)).toHaveLength(1);
+  });
+
+  it("a finished project leaves the portfolio (and «Сегодня») and stays under «Завершённые»", async () => {
+    const owner = await withAccess(await createTestUser("OWNER"));
+    const lead = await withAccess(
+      await createTestUser("MANAGER", { firstName: "Тестовый руководитель" }),
+    );
+    const outsider = await withAccess(await createTestUser("MEMBER"));
+    await importProject(plan());
+    const id = (await db.project.findFirstOrThrow()).id;
+
+    await expect(setProjectFinished(outsider, id, true)).rejects.toBeInstanceOf(ProjectError);
+    await setProjectFinished(lead, id, true);
+    expect(await listProjectCards(owner, TODAY, TZ)).toHaveLength(0);
+    const finished = await listProjectCards(owner, TODAY, TZ, { finished: true });
+    expect(finished.map((p) => p.id)).toEqual([id]);
+    expect(finished[0]!.finishedAt).not.toBeNull();
+    // The lead still opens it.
+    expect(await getProject(lead, id, TZ)).not.toBeNull();
+
+    await setProjectFinished(owner, id, false);
+    expect(await listProjectCards(owner, TODAY, TZ)).toHaveLength(1);
   });
 
   it("renames with its tasks, hands open tasks to a new lead, marks risk by rights", async () => {

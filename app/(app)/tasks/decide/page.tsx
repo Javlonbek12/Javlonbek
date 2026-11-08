@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { decideCoAssigneeAction } from "@/app/(app)/tasks/actions";
 import { QuickCircle } from "@/components/tasks/quick-circle";
+import { QuickUndo } from "@/components/tasks/quick-undo";
 import { TaskPanel } from "@/components/tasks/task-panel";
 import { TaskTableRow } from "@/components/tasks/task-table-row";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,7 @@ import { getUserToday } from "@/modules/core/settings/service";
 import { isDoer } from "@/modules/tasks/access";
 import { withParams } from "@/modules/tasks/back";
 import { quickTarget } from "@/modules/tasks/quick";
-import { listDecisions, type TaskView } from "@/modules/tasks/service";
+import { decisionCount, listDecisions, type TaskView } from "@/modules/tasks/service";
 
 const BASE = "/tasks/decide";
 const GROUPS = ["approve", "accept", "remove"] as const;
@@ -27,8 +28,7 @@ export default async function TaskDecisionsPage({ searchParams }: PageProps<"/ta
   const [today, decisions] = await Promise.all([getUserToday(user.id), listDecisions(user)]);
   const openId = typeof params.task === "string" ? params.task : null;
   const here = openId ? withParams(BASE, { task: openId }) : BASE;
-  const total =
-    GROUPS.reduce((sum, group) => sum + decisions[group].length, 0) + decisions.coAssignees.length;
+  const total = decisionCount(decisions);
   const rowProps = (task: TaskView) => {
     const target = quickTarget(user, task);
     return {
@@ -67,6 +67,11 @@ export default async function TaskDecisionsPage({ searchParams }: PageProps<"/ta
             {t("tasks.decide.back")}
           </Link>
         </div>
+        <QuickUndo
+          user={user}
+          taskId={typeof params.done === "string" ? params.done : null}
+          back={here}
+        />
         {total === 0 && (
           <p className="text-muted-foreground bg-card rounded-2xl border p-6 text-center text-sm">
             {t("tasks.decide.empty")}

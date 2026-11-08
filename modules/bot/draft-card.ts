@@ -82,26 +82,46 @@ export function renderCardButtons(
   return rows;
 }
 
+// People shown at once when choosing an assignee; the rest are a page away («Ещё ▶»).
+export const PEOPLE_PER_PAGE = 10;
+
+// Who does the task: the people the name matched, or everyone page by page (`page`, from 0),
+// two to a row, then «Я» / «Я (личная)».
 export function assigneeButtons(
   draftId: string,
   index: number,
   task: DraftTask,
   people: Person[],
   showAll = false,
+  page = 0,
 ): TelegramButton[][] {
-  const offered =
-    !showAll && task.candidateIds.length > 0
-      ? people.filter((p) => task.candidateIds.includes(p.id))
-      : people.slice(0, 20);
-  const rows = offered.map((p) => [
-    { text: `👤 ${name(p)}`, data: `d:${draftId}:av:${index}:${p.id}` },
-  ]);
+  const candidates = !showAll && task.candidateIds.length > 0;
+  const pages = Math.max(1, Math.ceil(people.length / PEOPLE_PER_PAGE));
+  const current = Math.min(Math.max(0, page), pages - 1);
+  const offered = candidates
+    ? people.filter((p) => task.candidateIds.includes(p.id))
+    : people.slice(current * PEOPLE_PER_PAGE, (current + 1) * PEOPLE_PER_PAGE);
+  const buttons = offered.map((p) => ({
+    text: `👤 ${name(p)}`,
+    data: `d:${draftId}:av:${index}:${p.id}`,
+  }));
+  const rows: TelegramButton[][] = [];
+  for (let i = 0; i < buttons.length; i += 2) rows.push(buttons.slice(i, i + 2));
+  if (!candidates && pages > 1) {
+    const nav: TelegramButton[] = [];
+    if (current > 0)
+      nav.push({ text: t("bot.card.prevPage"), data: `d:${draftId}:as:${index}:${current - 1}` });
+    nav.push({ text: `${current + 1}/${pages}`, data: `d:${draftId}:as:${index}:${current}` });
+    if (current < pages - 1)
+      nav.push({ text: t("bot.card.nextPage"), data: `d:${draftId}:as:${index}:${current + 1}` });
+    rows.push(nav);
+  }
   rows.push([
     { text: t("bot.edit.me"), data: `d:${draftId}:av:${index}:me` },
     { text: t("bot.edit.mePersonal"), data: `d:${draftId}:av:${index}:mine` },
   ]);
-  if (!showAll && task.candidateIds.length > 0) {
-    rows.push([{ text: t("bot.card.someoneElse"), data: `d:${draftId}:as:${index}` }]);
+  if (candidates) {
+    rows.push([{ text: t("bot.card.someoneElse"), data: `d:${draftId}:as:${index}:0` }]);
   }
   return rows;
 }

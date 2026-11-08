@@ -6,6 +6,7 @@ import ExcelJS from "exceljs";
 
 import { db } from "@/lib/db";
 import { fromDateString, isDateString } from "@/lib/dates";
+import { Prisma } from "@/lib/generated/prisma/client";
 import { getEnv } from "@/lib/env";
 import type { DistFileKind } from "@/lib/generated/prisma/enums";
 import { t } from "@/lib/i18n";
@@ -16,7 +17,14 @@ import { safeFileName } from "@/modules/tasks/attachment-service";
 
 import { buildOrder, mm, perUnitKey, reserveLabel, typeLabel, type BuilderLine } from "./builder";
 import { equipmentUnits, loadCatalog } from "./catalog";
-import { canManageDistribution, canSeeDistribution, DistributionError } from "./service";
+import { regionBase, totalUnits } from "./compute";
+import {
+  canManageDistribution,
+  canSeeDistribution,
+  DistributionError,
+  freezeOrder,
+  parseFrozen,
+} from "./service";
 import { byTsmName, NO_TSM, sortRegions, TYPE_CODES } from "./types";
 
 // A POSM campaign, step by step: concept → key visual → what to order on which equipment (+ the
@@ -383,10 +391,15 @@ export async function setOrdered(actor: Actor & Viewer, id: string, orderedOn: s
     if (!(await db.distPosm.count({ where: { orderId: id } })))
       throw new DistributionError("noLines");
   }
+  // Ordered: the split by region and TSM is fixed from now on (the POSM is printed for it).
   await db.distOrder.update({
     where: { id },
-    data: { orderedOn: orderedOn === null ? null : fromDateString(orderedOn) },
+    data: {
+      orderedOn: orderedOn === null ? null : fromDateString(orderedOn),
+      ...(orderedOn === null ? { frozenBase: Prisma.DbNull } : {}),
+    },
   });
+  if (orderedOn !== null) await freezeOrder(id);
   await logActivity({
     actorId: actor.id,
     action: orderedOn ? "distribution.ordered" : "distribution.unordered",
@@ -568,6 +581,11 @@ export async function loadCampaign(id: string) {
   );
   const replacement = replacementStats(outlets);
   const priced = items.filter((i) => i.priceConfirmedAt).length;
+  // Equipment units by type the campaign is for: as fixed at the order, else as loaded now.
+  const frozen = parseFrozen(order.frozenBase);
+  const unitsByType = frozen
+    ? totalUnits(regionBase(frozen.counts, frozen.includeStock))
+    : lines.units;
   const steps = {
     concept: order.conceptApprovedAt !== null,
     kv: order.kvFinalAt !== null,
@@ -588,6 +606,10 @@ export async function loadCampaign(id: string) {
     toRegions,
     priced,
     total: items.reduce((s, i) => s + (i.price ?? 0) * i.ordered, 0),
+    // Items without a price: they count as 0 in the sums (the pages say so).
+    unpriced: items.filter((i) => i.price === null),
+    unitsByType,
+    frozenAt: frozen ? new Date(frozen.at) : null,
     steps,
   };
 }

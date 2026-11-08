@@ -68,7 +68,15 @@ export async function lastImports(take = 8) {
 
 export type ImportResult = {
   name: string;
-  sheets: { kind: ConnectKind; created: number; updated: number; skipped: number }[];
+  sheets: {
+    kind: ConnectKind;
+    created: number;
+    updated: number;
+    skipped: number;
+    // Rows kept as they were: the file is older than what was loaded (`newer` = up to when).
+    kept: number;
+    newer: string | null;
+  }[];
 };
 
 const MAX_FILE = 20 * 1024 * 1024;
@@ -110,6 +118,7 @@ export async function importConnectFiles(
         created: sheets.reduce((a, s) => a + s.created, 0),
         updated: sheets.reduce((a, s) => a + s.updated, 0),
         skipped: sheets.reduce((a, s) => a + s.skipped, 0),
+        kept: sheets.reduce((a, s) => a + s.kept, 0),
       },
     });
     results.push({ name: file.name, sheets });
@@ -154,22 +163,47 @@ export async function importConnectRows(userId: string | null, name: string, row
     data: {
       created: sheets.reduce((a, s) => a + s.created, 0),
       updated: sheets.reduce((a, s) => a + s.updated, 0),
+      kept: sheets.reduce((a, s) => a + s.kept, 0),
     },
   });
-  return sheets;
+  // The script reports what changed; rows kept as newer are in the upload history.
+  return sheets.map(({ kind, created, updated, skipped }) => ({ kind, created, updated, skipped }));
+}
+
+const STAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+
+// How fresh an export is: its latest event — a record made, or an answer, delivery or decision
+// on one (every "YYYY-MM-DDTHH:mm" in the rows). An export made later has later events, even
+// when it covers fewer months.
+export function exportTime(rows: ParsedRow[]): string | null {
+  let max: string | null = null;
+  for (const { record } of rows)
+    for (const value of Object.values(record))
+      if (typeof value === "string" && STAMP.test(value) && (max === null || value > max))
+        max = value;
+  return max;
 }
 
 async function saveRows(kind: ConnectKind, rows: ParsedRow[], importId: string) {
   // The last row wins when an export repeats an ID.
   const byId = new Map(rows.map((r) => [r.record.id, r.record]));
-  const existing = new Set(
+  const asOf = exportTime(rows);
+  const stored = new Map(
     (
       await db.connectRecord.findMany({
         where: { kind, externalId: { in: [...byId.keys()] } },
-        select: { externalId: true },
+        select: { externalId: true, asOf: true },
       })
-    ).map((r) => r.externalId),
+    ).map((r) => [r.externalId, r.asOf]),
   );
+  // A row written from a newer export keeps its (newer) status.
+  const isNewer = (id: string) => {
+    const was = stored.get(id);
+    return Boolean(was && asOf && was > asOf);
+  };
+  const newestLoaded = await db.connectRecord.aggregate({ where: { kind }, _max: { asOf: true } });
+  const newer =
+    asOf && newestLoaded._max.asOf && newestLoaded._max.asOf > asOf ? newestLoaded._max.asOf : null;
   const fields = (record: ParsedRow["record"]) => ({
     storeCode: record.storeCode,
     storeName: record.storeName,
@@ -180,9 +214,11 @@ async function saveRows(kind: ConnectKind, rows: ParsedRow[], importId: string) 
     person: record.person,
     data: record as unknown as Prisma.InputJsonValue,
     importId,
+    asOf,
   });
-  const fresh = [...byId.values()].filter((r) => !existing.has(r.id));
-  const known = [...byId.values()].filter((r) => existing.has(r.id));
+  const fresh = [...byId.values()].filter((r) => !stored.has(r.id));
+  const known = [...byId.values()].filter((r) => stored.has(r.id) && !isNewer(r.id));
+  const kept = [...byId.values()].filter((r) => isNewer(r.id)).length;
   await db.connectRecord.createMany({
     data: fresh.map((r) => ({ kind, externalId: r.id, ...fields(r) })),
   });
@@ -195,7 +231,7 @@ async function saveRows(kind: ConnectKind, rows: ParsedRow[], importId: string) 
         }),
       ),
     );
-  return { created: fresh.length, updated: known.length };
+  return { created: fresh.length, updated: known.length, kept, newer };
 }
 
 // Removes everything uploaded (to start over with fresh exports).

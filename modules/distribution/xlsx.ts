@@ -2,7 +2,7 @@ import ExcelJS from "exceljs";
 
 import { t, type TranslationKey } from "@/lib/i18n";
 
-import { plannedFor, tsmBreakdown } from "./compute";
+import { remainder, tsmBreakdown } from "./compute";
 import type { Distribution } from "./service";
 import { DIST_TYPES, tsmDestination } from "./types";
 
@@ -152,18 +152,14 @@ export async function distributionXlsx(d: Distribution): Promise<Buffer> {
       ],
       d.plans
         .map((p) => {
-          const planned = plannedFor(p, region);
-          const shipped = sum(
-            d.shipments
-              .filter((s) => s.posmId === p.item.id && s.destination === region)
-              .map((s) => s.quantity),
-          );
+          // Shipped: to the region and straight to its TSMs (both come out of its share).
+          const r = remainder(p, region, d.shipments);
           return [
             p.item.name,
             p.item.category,
-            planned,
-            shipped,
-            Math.max(0, planned - shipped),
+            r.planned,
+            r.shipped + r.viaTsm,
+            r.toSend,
             ...people.map((tsm) => p.byTsm.get(tsmDestination(region, tsm)) ?? 0),
             ...(people.length ? [p.tsmRest.get(region) ?? 0] : []),
             null,

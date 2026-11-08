@@ -196,7 +196,9 @@ export function buildEas(c: Campaign, data: EasData) {
     pct: s.total === null || !lowest ? null : (s.total - lowest) / lowest,
   }));
   const chosen = suppliers.find((s) => s.name === data.recommended);
-  const units = c.items.reduce((s, i) => s + i.orderedFor, 0);
+  // Each equipment unit once, however many elements go on it (not once per element).
+  const types = new Set(c.items.flatMap((i) => i.types));
+  const units = Math.round([...types].reduce((s, t) => s + (c.unitsByType[t] ?? 0), 0));
   const pieces = c.items.reduce((s, i) => s + i.ordered, 0);
   const coverage =
     data.coverage ||

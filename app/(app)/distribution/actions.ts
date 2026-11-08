@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { requireUser } from "@/modules/core/auth/current-user";
+import { typedShare } from "@/modules/distribution/compute";
 import {
   addCampaignFile,
   createCampaign,
@@ -254,10 +255,18 @@ export async function updatePosmAction(form: FormData) {
     await updatePosmSettings(user, id, {
       inStock: int(form, "inStock"),
       ordered: int(form, "ordered"),
-      reservePct: Number(str(form, "reserve") || 0) / 100,
+      reservePct: typedShare(
+        str(form, "reserve"),
+        str(form, "reserveShown"),
+        str(form, "reserveStored"),
+      ),
       base: base === "SLOTS" || base === "PLANOGRAM" ? base : "UNITS",
       norm: norm === "" ? null : Number(norm.replace(",", ".")),
-      normReserve: Number(str(form, "normReserve") || 0) / 100,
+      normReserve: typedShare(
+        str(form, "normReserve"),
+        str(form, "normReserveShown"),
+        str(form, "normReserveStored"),
+      ),
       types: form.getAll("types").map(String),
     });
     return `${back}?saved=1`;
@@ -288,7 +297,8 @@ export async function shipWaybillAction(form: FormData) {
   const destination = str(form, "destination");
   const back = `/distribution/plan/${encodeURIComponent(destination)}`;
   await run(back, async () => {
-    const { destinations } = await loadDistribution();
+    // The plan of the order the waybill was opened for (the page sends it).
+    const d = await loadDistribution(str(form, "orderId") || undefined);
     const ids = form.getAll("posmId").map(String);
     const quantities = form.getAll("quantity").map((q) => Number(q));
     const count = await shipWaybill(
@@ -296,7 +306,7 @@ export async function shipWaybillAction(form: FormData) {
       destination,
       ids.map((posmId, i) => ({ posmId, quantity: quantities[i] ?? 0 })),
       str(form, "shippedOn"),
-      destinations,
+      d,
     );
     return `${back}?done=${count}`;
   });
@@ -488,7 +498,8 @@ export async function saveCompositionAction(form: FormData) {
 export async function savePricesAction(form: FormData) {
   const user = await requireUser();
   const id = str(form, "id");
-  await run(campaignPath(id, "#list"), async () => {
+  // Back to the prices section, where the message is.
+  await run(campaignPath(id, "#prices"), async () => {
     const count = await savePrices(user, id, {
       prices: form.getAll("posmId").map((value) => ({
         posmId: String(value),
@@ -499,7 +510,7 @@ export async function savePricesAction(form: FormData) {
       quoteNo: str(form, "quoteNo"),
       quotedOn: str(form, "quotedOn"),
     });
-    return campaignPath(id, `?prices=${count}#list`);
+    return campaignPath(id, `?prices=${count}#prices`);
   });
 }
 

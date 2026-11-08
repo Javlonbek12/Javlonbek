@@ -43,7 +43,10 @@ export async function createProposedTasks(actor: Actor, tasks: ProposedTask[], m
           estimateHours: null,
           meetingId: meetingId ?? null,
         },
-        personal ? "draft" : "create",
+        // A personal task starts in work, as from the web form; so does one's own team task
+        // that the route starts right away.
+        personal ? "start" : "create",
+        { startOwn: true },
       );
       saved += 1;
       if (created.status === "PENDING_APPROVAL") pending += 1;

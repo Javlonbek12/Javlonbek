@@ -14,7 +14,13 @@ import {
 import { coveredSlots, layoutProblems, type Layout } from "./layout";
 import { formatPrice, mergePriceLists, priceChanges } from "./prices";
 import { adaptLayout, insertSku, replaceSku } from "./transform";
-import { DEFAULT_RULES, hasCritical, validatePlanogram, type Rule } from "./validate";
+import {
+  DEFAULT_RULES,
+  hasCritical,
+  validatePlanogram,
+  withMandatory,
+  type Rule,
+} from "./validate";
 
 const geo = (code: string) => EQUIPMENT_FIXTURES.find((e) => e.code === code)!.geometry;
 const skus = SKU_FIXTURES;
@@ -341,5 +347,54 @@ describe("mass operations", () => {
         rule("ALL_SLOTS_DECIDED"),
       ]),
     ).toEqual([]);
+  });
+
+  it("adapting keeps shelves, places and POSM where they fit, and reports what found no place", () => {
+    const from = geo("MODULE_9x2");
+    const layout: Layout = { "0:0": { kind: "POSM", posmId: "wobbler", span: 2, rows: 1 } };
+    for (let p = 2; p < 9; p++) put(layout, 0, p, `sku-${p}`, p === 2 ? ["YANGI"] : []);
+    for (let p = 0; p < 9; p++) put(layout, 1, p, `sku-${10 + p}`);
+    // Same shelves, same places: nothing moves, nothing is re-sorted.
+    const same = adaptLayout(layout, from, from, skus);
+    expect(same.layout).toEqual(layout);
+    expect(same.dropped).toEqual([]);
+
+    // A 3-slot top row: what it cuts off goes on in reading order to the free places below.
+    const lego = adaptLayout(layout, from, geo("LEGO_21"), skus);
+    expect(lego.layout["0:0"]).toMatchObject({ kind: "POSM", posmId: "wobbler" });
+    expect(lego.layout["0:2"]).toEqual({ kind: "SKU", skuId: "sku-2", badges: ["YANGI"] });
+    expect(lego.layout["1:0"]).toMatchObject({ skuId: "sku-10" });
+    expect(lego.layout["2:0"]).toMatchObject({ skuId: "sku-3" });
+    expect(lego.dropped).toEqual([]);
+
+    // Fewer places than SKUs: a mandatory SKU takes a place first, the rest is reported.
+    const tiny = { header: null, shelves: [{ slots: 2, offset: 0, group: 0 }] };
+    const two: Layout = {};
+    put(two, 0, 0, "sku-3");
+    put(two, 0, 1, "sku-3");
+    put(two, 1, 0, "sku-1");
+    put(two, 1, 1, "sku-5");
+    const cut = adaptLayout(two, from, tiny, skus);
+    expect(cut.layout["0:1"]).toMatchObject({ skuId: "sku-1" });
+    expect(cut.dropped).toEqual(["sku-5"]);
+  });
+});
+
+describe("mandatory SKUs", () => {
+  it("an archived SKU is never mandatory; a model's own list replaces the global marks", () => {
+    const archived = skus.map((s) => (s.id === "sku-1" ? { ...s, archived: true } : s));
+    const global = withMandatory(archived);
+    expect(global.find((s) => s.id === "sku-1")?.isMandatory).toBe(false);
+    expect(global.filter((s) => s.isMandatory)).toHaveLength(8);
+
+    const own = withMandatory(skus, ["sku-3"]);
+    expect(own.filter((s) => s.isMandatory).map((s) => s.id)).toEqual(["sku-3"]);
+    const layout: Layout = {};
+    put(layout, 0, 0, "sku-1");
+    expect(
+      validatePlanogram(layout, geo("POG_MINI"), own, [rule("MANDATORY_SKUS")])[0]?.params,
+    ).toMatchObject({ count: 1, total: 1 });
+    put(layout, 0, 1, "sku-3");
+    expect(validatePlanogram(layout, geo("POG_MINI"), own, [rule("MANDATORY_SKUS")])).toEqual([]);
   });
 });

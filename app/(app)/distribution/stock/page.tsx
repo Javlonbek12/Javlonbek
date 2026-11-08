@@ -3,6 +3,7 @@ import { Trash2 } from "lucide-react";
 import { Section } from "@/components/connect/parts";
 import { fmt, Matrix, N, pct } from "@/components/distribution/parts";
 import { Button } from "@/components/ui/button";
+import { ConfirmAction } from "@/components/ui/confirm-action";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { formatDay, toDateString } from "@/lib/dates";
@@ -189,17 +190,17 @@ export default async function DistributionStockPage({
                   {displayName(s.createdBy)}
                 </span>,
                 manage || s.createdById === user.id ? (
-                  <form key="d" action={deleteShipmentAction}>
-                    <input type="hidden" name="id" value={s.id} />
-                    <Button
-                      type="submit"
-                      variant="ghost"
-                      size="sm"
-                      aria-label={t("dist.stock.delete")}
-                    >
-                      <Trash2 />
-                    </Button>
-                  </form>
+                  <ConfirmAction
+                    key="d"
+                    label={<span className="sr-only">{t("dist.stock.delete")}</span>}
+                    icon={<Trash2 className="size-4" />}
+                    title={t("dist.stock.deleteTitle")}
+                    hint={t("dist.stock.deleteHint")}
+                    confirm={t("dist.stock.deleteConfirm")}
+                    action={deleteShipmentAction}
+                    hidden={{ id: s.id }}
+                    align="right"
+                  />
                 ) : (
                   ""
                 ),

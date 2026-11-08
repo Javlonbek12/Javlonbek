@@ -16,3 +16,8 @@ export function classifyByDueDate<T extends DatedTask>(tasks: T[], today: string
 export function isOverdue(task: DatedTask, today: string): boolean {
   return !isClosed(task.status) && task.dueDate !== null && task.dueDate < today;
 }
+
+// Task lists: work handed in waits for acceptance — it shows as «ждёт приёмки», not as overdue.
+export function isLateWork(task: DatedTask, today: string): boolean {
+  return task.status !== "IN_REVIEW" && isOverdue(task, today);
+}

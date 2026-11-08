@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 
 import { formatPrice } from "./prices";
 import { loadPlanogram, type LoadedPlanogram } from "./repository";
+import { withMandatory } from "./validate";
 
 // Light copies sized for the editor's cells (a pack is 84 px high; ×2 for sharp screens).
 const imageUrl = (kind: "sku" | "posm", id: string, path: string | null) =>
@@ -30,6 +31,12 @@ export async function editorData(loaded: LoadedPlanogram) {
   const previous = loaded.record.previousVersionId
     ? await loadPlanogram(loaded.record.previousVersionId)
     : null;
+  // Mandatory on this model: its own list, else the SKUs marked so (never an archived one).
+  const mandatory = new Set(
+    withMandatory(skus, loaded.record.equipment.mandatorySkuIds)
+      .filter((s) => s.isMandatory)
+      .map((s) => s.id),
+  );
   return {
     skus: skus.map((s) => ({
       id: s.id,
@@ -40,7 +47,7 @@ export async function editorData(loaded: LoadedPlanogram) {
       imageUrl: imageUrl("sku", s.id, s.imagePath),
       price: loaded.prices.has(s.id) ? formatPrice(loaded.prices.get(s.id)!, s.priceStyle) : null,
       isNew: s.isNew,
-      isMandatory: s.isMandatory,
+      isMandatory: mandatory.has(s.id),
       defaultBadges: s.defaultBadges,
     })),
     posms: posms.filter((p) => p.type !== "HEADER" && p.type !== "SHELFTALKER").map(toPosm),

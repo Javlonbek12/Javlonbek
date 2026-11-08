@@ -11,7 +11,7 @@ import {
   todayInTimezone,
 } from "@/lib/dates";
 import { getEnv } from "@/lib/env";
-import { Prisma, type TaskStatus, type User } from "@/lib/generated/prisma/client";
+import { Prisma, type User } from "@/lib/generated/prisma/client";
 import { t } from "@/lib/i18n";
 import { parseUserDate } from "@/lib/parse-date";
 import {
@@ -27,23 +27,14 @@ import { displayName } from "@/modules/core/users/display-name";
 import { createProposedTasks } from "@/modules/tasks/batch";
 import { TaskError } from "@/modules/tasks/errors";
 import { parseTaskFilters } from "@/modules/tasks/filters";
-import {
-  deleteButtons,
-  listDeleteRequests,
-  resolveTaskDeletion,
-} from "@/modules/tasks/delete-service";
-import { STATUS_CODES, statusButton } from "@/modules/tasks/notifications";
-import { availableTransitions } from "@/modules/tasks/status";
 import { shortRouteHints } from "@/modules/tasks/route-hints";
 import { completeTask, findTasksByQuery, setDueDate } from "@/modules/tasks/quick-actions";
-import {
-  changeStatus,
-  getTodayOverview,
-  listProjects,
-  listTasks,
-  type TaskView,
-} from "@/modules/tasks/service";
+import { getTodayOverview, listProjects, listTasks, type TaskView } from "@/modules/tasks/service";
+import { isLateWork } from "@/modules/tasks/today";
 import type { AudioInput, SpeechToText } from "@/modules/stt";
+
+import { applyReason, handleDecisionCallback, showPending } from "./decisions";
+import { whyNotComplete, whyNotReschedule } from "./why";
 
 export { resolveTasks };
 
@@ -61,9 +52,9 @@ import { formatDateTime } from "@/lib/time";
 import { proposeActionItems, type ActionItemExtractor } from "@/modules/meetings/minutes";
 import {
   MeetingError,
+  appendNotes,
   getMeetingDetail,
   recentMeetingsForNotes,
-  saveNotes,
 } from "@/modules/meetings/service";
 import type { TelegramButton } from "./keyboard";
 
@@ -74,6 +65,8 @@ export type BotReply = {
   edit?: boolean;
   // Set when the reply is a confirmation card, so its message id can be remembered.
   draftId?: string;
+  // The reply asks for a reason: its message id is remembered, a reply to it is the reason.
+  reasonPrompt?: boolean;
 };
 
 // AI functions are injectable for tests.
@@ -248,9 +241,10 @@ async function handleDraftCallback(user: User, parts: string[], now?: Date): Pro
       return cardReply(draftId, payload, true);
     }
     case "as":
+      // arg: the page of people (everyone, ten at a time).
       return {
         text: t("bot.card.chooseAssignee", { title: task.title }),
-        buttons: assigneeButtons(draftId, index, task, people, true),
+        buttons: assigneeButtons(draftId, index, task, people, true, Number(arg) || 0),
         edit: true,
       };
     case "av": {
@@ -279,7 +273,8 @@ async function handleDraftCallback(user: User, parts: string[], now?: Date): Pro
   return cardReply(draftId, payload, true);
 }
 
-// Minutes sent after /notes: save them, then propose tasks from them.
+// Minutes sent after /notes: add them below the meeting's minutes, then propose tasks from what
+// was just sent (tasks from the earlier minutes were proposed back then).
 async function applyMeetingNotes(
   user: User,
   chatId: bigint,
@@ -292,7 +287,7 @@ async function applyMeetingNotes(
   await db.botDraft.delete({ where: { id: draftId } });
   let meeting;
   try {
-    meeting = await saveNotes(user, meetingId, text);
+    meeting = await appendNotes(user, meetingId, text, deps.now);
   } catch (error) {
     if (!(error instanceof MeetingError)) throw error;
     return { text: t(`meetings.errors.${error.code}`) };
@@ -301,7 +296,7 @@ async function applyMeetingNotes(
     .filter(Boolean)
     .join("\n\n");
   try {
-    const tasks = await proposeActionItems(user, meetingId, deps.extractActionItems);
+    const tasks = await proposeActionItems(user, meetingId, deps.extractActionItems, text);
     if (tasks.length === 0) return { text: `${saved}\n${t("meetings.actions.none")}` };
     return startDraft(user, chatId, tasks, saved, meetingId);
   } catch (error) {
@@ -354,9 +349,9 @@ async function findAwaitingDraft(user: User) {
 
 // ---------- task lists ----------
 
-function taskLine(task: Pick<TaskView, "title" | "dueDate">, today: string) {
+function taskLine(task: Pick<TaskView, "title" | "dueDate" | "status">, today: string) {
   const due = task.dueDate
-    ? ` — ${formatDay(task.dueDate)}${task.dueDate < today ? " 🔥" : ""}`
+    ? ` — ${formatDay(task.dueDate)}${isLateWork(task, today) ? " 🔥" : ""}`
     : "";
   return `• ${task.title}${due}`;
 }
@@ -396,126 +391,10 @@ export async function showList(
       ].join("\n\n"),
     };
   }
-  const [{ waiting }, deletions] = await Promise.all([
-    getTodayOverview(user, today),
-    listDeleteRequests(user),
-  ]);
-  // One row per task: the decision, the way back (with a reason, asked next), cancel if allowed.
-  const buttons = waiting.slice(0, 8).map((task) => {
-    const label = (text: string) => `${text} · ${task.title}`.slice(0, 60);
-    const canCancel = availableTransitions(user, task).includes("CANCELLED");
-    const row =
-      task.status === "PENDING_APPROVAL"
-        ? [
-            statusButton(
-              label(
-                task.assigneeId === user.id ? t("bot.actions.takeOn") : t("bot.actions.approve"),
-              ),
-              task.id,
-              "A",
-            ),
-            statusButton(t("bot.actions.decline"), task.id, "D"),
-          ]
-        : [
-            statusButton(label(t("bot.actions.accept")), task.id, "F"),
-            statusButton(t("bot.actions.rework"), task.id, "W"),
-          ];
-    return canCancel ? [...row, statusButton("✖️", task.id, "C")] : row;
-  });
-  const deleteRows = deletions.slice(0, 5).map((task) => {
-    const [yes, no] = deleteButtons(task.id);
-    return [{ ...yes!, text: `${yes!.text} · ${task.title}`.slice(0, 60) }, no!];
-  });
-  const deleteBlock = deletions.length
-    ? [
-        t("bot.lists.deleteRequests"),
-        ...deletions.slice(0, 5).map((task) => `• ${task.title}`),
-      ].join("\n")
-    : null;
-  return {
-    text: [listBlock(t("bot.lists.pending"), waiting, today), deleteBlock, footer]
-      .filter(Boolean)
-      .join("\n\n"),
-    buttons: [...buttons, ...deleteRows],
-  };
+  return showPending(user, today);
 }
 
-// ---------- status buttons and quick actions ----------
-
-// A status change that needs a reason (declining, sending back) waits for the next text message.
-const REASON_KEY = (userId: string) => `bot.reason:${userId}`;
-const REASON_TTL_MS = 30 * 60_000;
-
-async function setStatus(
-  user: User,
-  taskId: string,
-  to: TaskStatus,
-  reason: string | null = null,
-): Promise<BotReply> {
-  try {
-    const task = await changeStatus(user, taskId, to, { reason });
-    return {
-      text: t("bot.actions.result", {
-        status: t(`tasks.status.${to}`),
-        title: task.title,
-        name: displayName(user),
-      }),
-      edit: reason === null,
-    };
-  } catch (error) {
-    if (!(error instanceof TaskError)) throw error;
-    if (error.code === "reason") {
-      const task = await db.task.findUniqueOrThrow({ where: { id: taskId } });
-      const value = JSON.stringify({ taskId, to, at: Date.now() });
-      await db.systemState.upsert({
-        where: { key: REASON_KEY(user.id) },
-        create: { key: REASON_KEY(user.id), value },
-        update: { value },
-      });
-      return { text: t("bot.actions.askReason", { title: task.title }) };
-    }
-    if (error.code === "cancelledDependency") return { text: t("bot.actions.cancelledDependency") };
-    return {
-      text: error.code === "blocked" ? t("bot.actions.blocked") : t("bot.actions.noRights"),
-    };
-  }
-}
-
-async function handleStatusCallback(user: User, taskId: string, code: string): Promise<BotReply> {
-  const to = STATUS_CODES[code as keyof typeof STATUS_CODES] as TaskStatus | undefined;
-  if (!to) return { text: t("bot.actions.noRights") };
-  return setStatus(user, taskId, to);
-}
-
-// The reason the bot asked for: the text completes the waiting status change (once, while fresh).
-async function applyReason(user: User, text: string): Promise<BotReply | null> {
-  const row = await db.systemState.findUnique({ where: { key: REASON_KEY(user.id) } });
-  if (!row) return null;
-  await db.systemState.delete({ where: { key: REASON_KEY(user.id) } });
-  let waiting: { taskId: string; to: TaskStatus; at: number };
-  try {
-    waiting = JSON.parse(row.value);
-  } catch {
-    return null;
-  }
-  if (Date.now() - waiting.at > REASON_TTL_MS) return null;
-  return setStatus(user, waiting.taskId, waiting.to, text.trim().slice(0, 1000));
-}
-
-async function resolveDeletion(user: User, taskId: string, approve: boolean): Promise<BotReply> {
-  try {
-    const task = await db.task.findUniqueOrThrow({ where: { id: taskId } });
-    await resolveTaskDeletion(user, taskId, approve);
-    return {
-      text: t(approve ? "bot.actions.deleted" : "bot.actions.kept", { title: task.title }),
-      edit: true,
-    };
-  } catch (error) {
-    if (!(error instanceof TaskError) && !(error instanceof Prisma.PrismaClientKnownRequestError))
-      throw error;
-    return { text: t("bot.actions.noRights") };
-  }
-}
+// ---------- quick actions («перенеси …», «закрой …») ----------
 
 async function reschedule(user: User, taskId: string, date: string): Promise<BotReply> {
   try {
@@ -523,7 +402,7 @@ async function reschedule(user: User, taskId: string, date: string): Promise<Bot
     return { text: t("bot.actions.rescheduled", { title: task.title, date: formatDay(date) }) };
   } catch (error) {
     if (!(error instanceof TaskError)) throw error;
-    return { text: t("bot.actions.noRights") };
+    return { text: await whyNotReschedule(user, taskId, error.code) };
   }
 }
 
@@ -536,9 +415,7 @@ async function complete(user: User, taskId: string): Promise<BotReply> {
     };
   } catch (error) {
     if (!(error instanceof TaskError)) throw error;
-    return {
-      text: error.code === "blocked" ? t("bot.actions.blocked") : t("bot.actions.noRights"),
-    };
+    return { text: await whyNotComplete(user, taskId, error.code) };
   }
 }
 
@@ -573,14 +450,13 @@ export async function handleCallback(
 ): Promise<BotReply> {
   const parts = data.split(":");
   if (parts[0] === "d") return handleDraftCallback(user, parts, deps.now);
-  if (parts[0] === "t" && parts[1]) return handleStatusCallback(user, parts[1], parts[2]);
+  const decision = await handleDecisionCallback(user, parts, deps.now);
+  if (decision) return decision;
   if (parts[0] === "r" && parts[1] && /^\d{8}$/.test(parts[2] ?? "")) {
     const d = parts[2];
     return reschedule(user, parts[1], `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`);
   }
   if (parts[0] === "k" && parts[1]) return complete(user, parts[1]);
-  if (parts[0] === "x" && parts[1] && (parts[2] === "y" || parts[2] === "n"))
-    return resolveDeletion(user, parts[1], parts[2] === "y");
   if (parts[0] === "m" && parts[1]) return waitForNotes(user, parts[1], chatId);
   if (parts[0] === "cs" && parts[1] && parts[2]) {
     try {
@@ -601,8 +477,10 @@ export async function handleText(
   text: string,
   deps: ConversationDeps = defaultDeps,
   prefix?: string,
+  // The message the text replies to (Telegram's «reply»), if any.
+  replyTo?: number | null,
 ): Promise<BotReply> {
-  const reason = await applyReason(user, text);
+  const reason = await applyReason(user, text, replyTo);
   if (reason) return reason;
   const awaiting = await findAwaitingDraft(user);
   if (awaiting) {

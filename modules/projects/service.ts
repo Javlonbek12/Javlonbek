@@ -74,9 +74,20 @@ async function loadTasks(names: string[], timeZone: string): Promise<Map<string,
   return result;
 }
 
-export async function listProjectCards(actor: Actor, today: string, timeZone: string) {
+// Projects in work by default (the portfolio and «Сегодня»); `finished` — the finished ones.
+export async function listProjectCards(
+  actor: Actor,
+  today: string,
+  timeZone: string,
+  options: { finished?: boolean } = {},
+) {
   const projects = await db.project.findMany({
-    where: { AND: [await visibleProjectsWhere(actor), { archived: false }] },
+    where: {
+      AND: [
+        await visibleProjectsWhere(actor),
+        { archived: false, finishedAt: options.finished ? { not: null } : null },
+      ],
+    },
     include: { lead: { select: { id: true, firstName: true, lastName: true } } },
     orderBy: { name: "asc" },
   });
@@ -91,6 +102,7 @@ export async function listProjectCards(actor: Actor, today: string, timeZone: st
       name: project.name,
       team: project.team,
       color: project.color,
+      finishedAt: project.finishedAt,
       lead: project.lead ? displayName(project.lead) : null,
       range: projectRange(own),
       stats: projectStats(own, today),
@@ -291,6 +303,26 @@ export async function setTaskRisk(actor: Actor, taskId: string, atRisk: boolean)
     action: atRisk ? "task.risk_marked" : "task.risk_cleared",
     entityType: "Task",
     entityId: taskId,
+  });
+}
+
+// «Завершить проект» / «Вернуть в работу»: the owner or the project lead.
+export async function setProjectFinished(
+  actor: Actor,
+  id: string,
+  finished: boolean,
+  now = new Date(),
+) {
+  const project = await db.project.findUnique({ where: { id } });
+  if (!project) throw new ProjectError("notFound");
+  if (!canManageProject(actor, project)) throw new ProjectError("forbidden");
+  if ((project.finishedAt !== null) === finished) return;
+  await db.project.update({ where: { id }, data: { finishedAt: finished ? now : null } });
+  await logActivity({
+    actorId: actor.id,
+    action: finished ? "project.finished" : "project.reopened",
+    entityType: "Project",
+    entityId: id,
   });
 }
 

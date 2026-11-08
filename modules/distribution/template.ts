@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { db } from "@/lib/db";
 import { fromDateString, isDateString } from "@/lib/dates";
 import { logActivity } from "@/modules/core/activity/service";
@@ -10,8 +12,9 @@ type Viewer = Parameters<typeof canManageDistribution>[0];
 
 // A POSM launch template («POSM_ESSE_Change_1_28-06.xlsx»), uploaded on purpose:
 // - «Parameters» → the purchase journal: each equipment line (Display L = DG L + Metawerk L, …)
-//   is one entry for its group, document = the file name; uploading the same file again replaces
-//   its entries, nothing else in the journal changes;
+//   is one entry for its group, document = the file name. The template is known by its launch
+//   name (else by its content), not by the file name: uploading it again — renamed or corrected —
+//   replaces its entries instead of adding them twice; nothing else in the journal changes;
 // - «BOM Matrix» → the size catalog: each element's print size and pieces per unit on each type
 //   (shelftalkers by shelf: «Shelftalker №1», «№2»…); new element names become new elements.
 export async function importLaunchTemplate(
@@ -24,11 +27,24 @@ export async function importLaunchTemplate(
   if (!document || !isDateString(input.date)) throw new DistributionError("invalid");
   const file = await parsed(buffer, parseLaunchTemplate);
   const date = fromDateString(input.date);
+  const source = file.launch
+    ? `launch:${file.launch.trim().toLowerCase()}`
+    : `file:${createHash("sha256").update(buffer).digest("hex")}`;
 
   let created = 0;
   await db.$transaction(async (tx) => {
     if (file.equipment.length) {
-      await tx.distPurchase.deleteMany({ where: { document } });
+      // Entries of this template from before; for those loaded before the source was kept: the
+      // same file name, or the same launch in the note («<launch> · <equipment>»).
+      await tx.distPurchase.deleteMany({
+        where: {
+          OR: [
+            { source },
+            { source: null, document, note: { not: null } },
+            ...(file.launch ? [{ source: null, note: { startsWith: `${file.launch} · ` } }] : []),
+          ],
+        },
+      });
       await tx.distPurchase.createMany({
         data: file.equipment
           .filter((e) => e.count !== 0)
@@ -37,6 +53,7 @@ export async function importLaunchTemplate(
             quantity: e.count,
             date,
             document,
+            source,
             note: [file.launch, e.label].filter(Boolean).join(" · ") || null,
             createdById: actor.id,
           })),

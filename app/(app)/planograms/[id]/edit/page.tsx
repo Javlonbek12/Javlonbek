@@ -10,9 +10,13 @@ import { loadPlanogram } from "@/modules/planograms/repository";
 
 import { saveLayoutAction } from "../../actions";
 
-export default async function EditPlanogramPage({ params }: PageProps<"/planograms/[id]/edit">) {
+export default async function EditPlanogramPage({
+  params,
+  searchParams,
+}: PageProps<"/planograms/[id]/edit">) {
   const user = await requireUser();
   const { id } = await params;
+  const { dropped } = await searchParams;
   const loaded = await loadPlanogram(id);
   if (!loaded) notFound();
   const editable =
@@ -31,6 +35,11 @@ export default async function EditPlanogramPage({ params }: PageProps<"/planogra
           ← {loaded.record.title}
         </Link>
       </div>
+      {typeof dropped === "string" && (
+        <p role="status" className="rounded-md bg-amber-500/10 p-3 text-sm">
+          {t("planograms.editor.dropped", { names: dropped })}
+        </p>
+      )}
       <p className="text-muted-foreground text-sm md:hidden">{t("planograms.editor.readOnly")}</p>
       <div className="hidden md:block">
         <PlanogramEditor
@@ -40,6 +49,7 @@ export default async function EditPlanogramPage({ params }: PageProps<"/planogra
           initialHeaderId={loaded.record.headerPosmId}
           initialShelftalkers={loaded.shelftalkers}
           rules={loaded.rules}
+          pendingApproval={loaded.record.status === "PENDING_APPROVAL"}
           save={saveLayoutAction}
           {...data}
         />

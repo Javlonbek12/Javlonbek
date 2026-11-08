@@ -17,6 +17,8 @@ export type SkuInfo = {
   isNew: boolean;
   isMandatory: boolean;
   defaultBadges: string[];
+  // Delisted: never mandatory, not offered for new places.
+  archived?: boolean;
 };
 
 // The slots a POSM item at `key` covers, its own first slot included.

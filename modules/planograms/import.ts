@@ -27,35 +27,61 @@ export type ImportedRow = {
   isNew?: boolean;
 };
 
+// A row that could not be read: its line in the file, its code (if any) and what is wrong.
+export type UnreadRow = { line: number; code: string; problem: "code" | "price" };
+
+// A cell's text; null = there is something in it we can't read (a formula without a saved
+// result, an error value).
+type CellText = string | null;
+type Line = { line: number; cells: CellText[] };
+
 const yes = (value: string) =>
   ["1", "да", "yes", "true", "+", "x", "ha"].includes(value.trim().toLowerCase());
 
-function toRows(table: string[][]): ImportedRow[] {
+function toRows(table: Line[]): { rows: ImportedRow[]; unread: UnreadRow[] } {
   const [header, ...rest] = table;
-  if (!header) return [];
+  if (!header) return { rows: [], unread: [] };
   const index: Record<string, number> = {};
-  header.forEach((cell, i) => {
-    const name = cell.trim().toLowerCase();
+  header.cells.forEach((cell, i) => {
+    const name = (cell ?? "").trim().toLowerCase();
     for (const [key, aliases] of Object.entries(COLUMNS))
       if (aliases.includes(name)) index[key] = i;
   });
   if (index.code === undefined) throw new PlanogramError("badFile");
-  return rest
-    .map((cells) => {
-      const get = (key: string) =>
-        index[key] === undefined ? "" : (cells[index[key]] ?? "").trim();
-      const price = Number(get("price").replace(/[\s ]/g, "").replace(",", "."));
-      return {
-        code: get("code"),
-        brand: get("brand") || undefined,
-        name: get("name") || undefined,
-        format: get("format") || undefined,
-        price: Number.isFinite(price) && price > 0 ? price : undefined,
-        mandatory: index.mandatory === undefined ? undefined : yes(get("mandatory")),
-        isNew: index.isNew === undefined ? undefined : yes(get("isNew")),
-      };
-    })
-    .filter((row) => row.code.length > 0);
+  const rows: ImportedRow[] = [];
+  const unread: UnreadRow[] = [];
+  for (const { line, cells } of rest) {
+    const raw = (key: string): CellText => {
+      if (index[key] === undefined) return "";
+      const cell = cells[index[key]];
+      return cell === null ? null : (cell ?? "").trim();
+    };
+    const get = (key: string) => raw(key) ?? "";
+    const code = raw("code");
+    const priceText = raw("price");
+    const price = Number((priceText ?? "").replace(/[\s  ]/g, "").replace(",", "."));
+    const priceOk = Number.isFinite(price) && price > 0;
+    // A price that is there but isn't a number is reported, never dropped silently; an empty one
+    // just means «no change».
+    const badPrice =
+      index.price !== undefined && (priceText === null || (priceText !== "" && !priceOk));
+    if (code === null || (code === "" && (priceOk || badPrice))) {
+      unread.push({ line, code: "", problem: "code" });
+      continue;
+    }
+    if (!code) continue;
+    if (badPrice) unread.push({ line, code, problem: "price" });
+    rows.push({
+      code,
+      brand: get("brand") || undefined,
+      name: get("name") || undefined,
+      format: get("format") || undefined,
+      price: priceOk ? price : undefined,
+      mandatory: index.mandatory === undefined ? undefined : yes(get("mandatory")),
+      isNew: index.isNew === undefined ? undefined : yes(get("isNew")),
+    });
+  }
+  return { rows, unread };
 }
 
 // CSV with ";" or "," separators, quotes allowed.
@@ -94,32 +120,60 @@ export function parseCsv(text: string): string[][] {
   return rows.filter((r) => r.some((c) => c.trim()));
 }
 
-async function parseXlsx(buffer: ArrayBuffer): Promise<string[][]> {
+// What a cell shows: a formula's saved result, rich text joined, a link's text. Never
+// "[object Object]".
+export function cellText(value: unknown): CellText {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  if (typeof value === "object") {
+    const o = value as {
+      result?: unknown;
+      formula?: unknown;
+      sharedFormula?: unknown;
+      richText?: { text: string }[];
+      text?: unknown;
+      error?: unknown;
+    };
+    if ("result" in o || "formula" in o || "sharedFormula" in o)
+      return o.result === undefined || (typeof o.result === "object" && o.result !== null)
+        ? null
+        : cellText(o.result);
+    if (Array.isArray(o.richText)) return o.richText.map((r) => r.text).join("");
+    if ("text" in o) return cellText(o.text);
+    return null;
+  }
+  return null;
+}
+
+async function parseXlsx(buffer: ArrayBuffer): Promise<Line[]> {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer);
   const sheet = workbook.worksheets[0];
   if (!sheet) return [];
-  const rows: string[][] = [];
-  sheet.eachRow((r) => {
-    const values = (r.values as unknown[]).slice(1);
-    rows.push(
-      values.map((v) =>
-        v === null || v === undefined
-          ? ""
-          : typeof v === "object" && "text" in (v as object)
-            ? String((v as { text: unknown }).text)
-            : String(v),
-      ),
-    );
+  const rows: Line[] = [];
+  sheet.eachRow((r, line) => {
+    const cells: CellText[] = [];
+    r.eachCell({ includeEmpty: true }, (cell, column) => {
+      cells[column - 1] = cellText(cell.value);
+    });
+    rows.push({ line, cells: Array.from(cells, (c) => (c === undefined ? "" : c)) });
   });
   return rows;
 }
 
-export async function parseSpreadsheet(file: File): Promise<ImportedRow[]> {
+// The rows of a file, and those that could not be read (to report, not to drop silently).
+export async function readSpreadsheet(file: File) {
   const name = file.name.toLowerCase();
   if (name.endsWith(".xlsx")) return toRows(await parseXlsx(await file.arrayBuffer()));
-  if (name.endsWith(".csv") || name.endsWith(".txt")) return toRows(parseCsv(await file.text()));
+  if (name.endsWith(".csv") || name.endsWith(".txt"))
+    return toRows(parseCsv(await file.text()).map((cells, i) => ({ line: i + 1, cells })));
   throw new PlanogramError("badFile");
+}
+
+export async function parseSpreadsheet(file: File): Promise<ImportedRow[]> {
+  return (await readSpreadsheet(file)).rows;
 }
 
 // Creates or updates SKUs from imported rows (brand and name are required for new ones).

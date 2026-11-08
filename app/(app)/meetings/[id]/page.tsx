@@ -3,10 +3,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ActionItems } from "@/components/meetings/action-items";
+import { NotesForm } from "@/components/meetings/notes-form";
 import { StatusBadge } from "@/components/tasks/task-badges";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
+import { ConfirmAction } from "@/components/ui/confirm-action";
 import { formatDay, toDateString } from "@/lib/dates";
 import { t, type TranslationKey } from "@/lib/i18n";
 import { formatDateTime } from "@/lib/time";
@@ -15,12 +16,7 @@ import { getSettings } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
 import { getMeetingDetail } from "@/modules/meetings/service";
 
-import {
-  createActionItemsAction,
-  deleteMeetingAction,
-  proposeActionItemsAction,
-  saveNotesAction,
-} from "../actions";
+import { actionItemsAction, deleteMeetingAction, saveNotesAction } from "../actions";
 
 export default async function MeetingPage({ params, searchParams }: PageProps<"/meetings/[id]">) {
   const user = await requireUser();
@@ -28,25 +24,15 @@ export default async function MeetingPage({ params, searchParams }: PageProps<"/
   const query = await searchParams;
   const detail = await getMeetingDetail(user, id);
   if (!detail) notFound();
-  const { meeting, tasks, canEdit } = detail;
+  const { meeting, tasks, canEdit, followingCount } = detail;
   const { timezone } = await getSettings(user.id);
-  const hidden = <input type="hidden" name="meetingId" value={meeting.id} />;
+  const withNotes = meeting.notes !== null;
 
   return (
     <div className="flex flex-col gap-4">
       {typeof query.error === "string" && (
         <p role="alert" className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
           {t(`meetings.errors.${query.error}` as TranslationKey)}
-        </p>
-      )}
-      {query.notes === "saved" && (
-        <p role="status" className="bg-secondary rounded-md p-3 text-sm">
-          {t("meetings.notes.saved")}
-        </p>
-      )}
-      {typeof query.created === "string" && (
-        <p role="status" className="bg-secondary rounded-md p-3 text-sm">
-          {t("meetings.actions.created", { count: query.created })}
         </p>
       )}
 
@@ -85,20 +71,23 @@ export default async function MeetingPage({ params, searchParams }: PageProps<"/
         {meeting.agenda && <p className="text-sm whitespace-pre-wrap">{meeting.agenda}</p>}
         {canEdit && (
           <div className="flex flex-wrap gap-2 border-t pt-3">
-            <form action={deleteMeetingAction}>
-              {hidden}
-              <Button type="submit" variant="ghost" size="sm">
-                {t("meetings.delete")}
-              </Button>
-            </form>
+            <ConfirmAction
+              label={t("meetings.delete")}
+              title={t("meetings.confirmDelete")}
+              hint={t(withNotes ? "meetings.deleteHintNotes" : "meetings.deleteHint")}
+              confirm={t("meetings.confirmYes")}
+              action={deleteMeetingAction}
+              hidden={{ meetingId: meeting.id }}
+            />
             {meeting.seriesId && (
-              <form action={deleteMeetingAction}>
-                {hidden}
-                <input type="hidden" name="following" value="1" />
-                <Button type="submit" variant="ghost" size="sm">
-                  {t("meetings.deleteSeries")}
-                </Button>
-              </form>
+              <ConfirmAction
+                label={t("meetings.deleteSeries")}
+                title={t("meetings.confirmDeleteSeries", { n: followingCount })}
+                hint={t("meetings.deleteSeriesHint")}
+                confirm={t("meetings.confirmYes")}
+                action={deleteMeetingAction}
+                hidden={{ meetingId: meeting.id, following: "1" }}
+              />
             )}
           </div>
         )}
@@ -112,31 +101,19 @@ export default async function MeetingPage({ params, searchParams }: PageProps<"/
             {formatDateTime(meeting.notes.updatedAt, timezone)}
           </p>
         )}
-        <form action={saveNotesAction} className="flex flex-col gap-2">
-          {hidden}
-          <Textarea
-            name="text"
-            required
-            rows={8}
-            maxLength={20000}
-            defaultValue={meeting.notes?.text ?? ""}
-            placeholder={t("meetings.notes.placeholder")}
-          />
-          <Button type="submit" size="sm" className="self-start">
-            {t("meetings.notes.save")}
-          </Button>
-        </form>
+        <NotesForm
+          meetingId={meeting.id}
+          text={meeting.notes?.text ?? ""}
+          version={meeting.notes?.updatedAt.toISOString() ?? ""}
+          action={saveNotesAction}
+        />
         <p className="text-muted-foreground text-xs">{t("meetings.notes.byBot")}</p>
       </Card>
 
       {meeting.notes && (
         <Card className="gap-3">
           <CardTitle>{t("meetings.actions.title")}</CardTitle>
-          <ActionItems
-            meetingId={meeting.id}
-            propose={proposeActionItemsAction}
-            create={createActionItemsAction}
-          />
+          <ActionItems meetingId={meeting.id} action={actionItemsAction} />
         </Card>
       )}
 

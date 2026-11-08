@@ -35,7 +35,8 @@ export function formatTelegramText(event: NotificationEvent, appUrl: string): st
 
 // Single entry point for notifications: saves it for the UI and sends it to Telegram
 // when the user linked the bot, has Telegram enabled, didn't turn this type off
-// and is not in quiet hours. Returns null when the user turned this type off.
+// and is not in quiet hours. A type turned off in Settings still shows in the app: the switch is
+// for Telegram only (owner's decision, 2026-11-08). Returns null only for an unknown user.
 // `event` is best given as a function: it is then made in the recipient's language.
 export async function notify(
   userId: string,
@@ -51,12 +52,11 @@ export async function notify(
       ? await withLocale(isLocale(settings.locale) ? settings.locale : "ru", eventOrBuild)
       : eventOrBuild;
 
-  const optional = OPTIONAL_NOTIFICATION_TYPES.includes(event.type);
-  if (optional && settings.disabledTypes.includes(event.type)) return null;
-
   const notification = await db.notification.create({
     data: { userId, type: event.type, title: event.title, body: event.body, link: event.link },
   });
+  const optional = OPTIONAL_NOTIFICATION_TYPES.includes(event.type);
+  if (optional && settings.disabledTypes.includes(event.type)) return notification;
 
   const quiet = isInQuietHours(
     now,
@@ -98,12 +98,33 @@ export async function sendTestNotification(actor: Actor, targetUserId: string) {
   }));
 }
 
-export async function listNotifications(userId: string, limit = 50) {
-  return db.notification.findMany({
-    where: { userId },
-    orderBy: { createdAt: "desc" },
-    take: limit,
+export const NOTIFICATIONS_PAGE = 50;
+
+// One page of the list, newest first; `more` = there is an older page.
+export async function listNotifications(
+  userId: string,
+  options: { unreadOnly?: boolean; page?: number } = {},
+) {
+  const page = Math.max(1, Math.floor(options.page ?? 1));
+  const rows = await db.notification.findMany({
+    where: { userId, ...(options.unreadOnly ? { readAt: null } : {}) },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    skip: (page - 1) * NOTIFICATIONS_PAGE,
+    take: NOTIFICATIONS_PAGE + 1,
   });
+  return { items: rows.slice(0, NOTIFICATIONS_PAGE), more: rows.length > NOTIFICATIONS_PAGE };
+}
+
+// «Открыть»: the notification becomes read and its link is where to go. Only a path inside the
+// app is followed (a stored link is never sent anywhere else).
+export async function openNotification(userId: string, notificationId: string, now = new Date()) {
+  const notification = await db.notification.findFirst({ where: { id: notificationId, userId } });
+  if (!notification) return null;
+  await markRead(userId, notificationId, now);
+  const link = notification.link ?? "";
+  return link.startsWith("/") && !link.startsWith("//") && !link.startsWith("/\\")
+    ? link
+    : "/notifications";
 }
 
 export async function countUnread(userId: string) {

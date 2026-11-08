@@ -53,6 +53,10 @@ export const canPlanContent = (actor: Actor) => canAddContent(actor);
 const EDITABLE_BY_AUTHOR: ContentStatus[] = ["PLANNED", "DRAFT", "CHANGES"];
 // Waiting for a check (planner or lawyer): the author may take the post back.
 const IN_CHECK: ContentStatus[] = ["REVIEW", "LEGAL_REVIEW"];
+// Approved, or approved by marketing and with the lawyer: a change of text or files makes the
+// approval stale, so the post goes back to review (owner's decision, 2026-11-08).
+const RECHECK: ContentStatus[] = ["APPROVED", "LEGAL_REVIEW"];
+export const changeSendsBackToReview = (status: ContentStatus) => RECHECK.includes(status);
 
 type PostRow = { authorId: string | null; createdById: string; status: ContentStatus };
 
@@ -78,6 +82,8 @@ export function contentRights(actor: Actor, post: PostRow) {
     editPlan: (planner && !closed) || (creator && EDITABLE_BY_AUTHOR.includes(post.status)),
     // Planners any post; whoever added it, until it goes for review.
     remove: planner || (creator && EDITABLE_BY_AUTHOR.includes(post.status)),
+    // A cancelled post can be put back into the plan.
+    restore: (planner || creator) && post.status === "CANCELLED",
   };
 }
 
@@ -247,18 +253,56 @@ const contentSchema = z.object({
     .transform((v) => v || null),
 });
 
-// The texts. A planned post becomes a draft once something is written (files: see files.ts).
+// The texts. A planned post becomes a draft once something is written (files: see files.ts); an
+// approved one goes back to review when the text really changed.
 export async function saveContent(actor: Actor, id: string, input: z.input<typeof contentSchema>) {
   const { post, rights } = await load(actor, id);
   if (!rights.editContent) throw new ContentError("forbidden");
   const parsed = contentSchema.safeParse(input);
   if (!parsed.success) throw new ContentError("invalid");
+  const changed = parsed.data.textRu !== post.textRu || parsed.data.textUz !== post.textUz;
+  if (!changed && post.status !== "PLANNED") return;
   const status: ContentStatus = post.status === "PLANNED" ? "DRAFT" : post.status;
   await db.contentPost.update({
     where: { id },
     data: { ...parsed.data, status, tagPending: true },
   });
   await log(actor, "content.uploaded", id);
+  await sendBackToReview(actor, post);
+}
+
+// After a change of text or files of an approved post (or one with the lawyer): back to review,
+// and the reviewers hear that the post they approved changed. Returns whether it went back.
+export async function sendBackToReview(
+  actor: Actor,
+  post: {
+    id: string;
+    title: string;
+    status: ContentStatus;
+    publishDate: Date;
+    createdById: string;
+  },
+) {
+  if (!changeSendsBackToReview(post.status)) return false;
+  await db.contentPost.update({
+    where: { id: post.id },
+    data: { status: "REVIEW", approvedAt: null },
+  });
+  await log(actor, "content.back_to_review", post.id, { from: post.status });
+  const actorRow = await db.user.findUnique({ where: { id: actor.id } });
+  for (const reviewer of await reviewersOf(post, actor)) {
+    await notify(reviewer, () => ({
+      type: "content_review",
+      title: t("notifications.events.contentChangedTitle"),
+      body: t("notifications.events.contentChangedBody", {
+        name: actorRow ? displayName(actorRow) : "",
+        title: post.title,
+        date: day(post.publishDate),
+      }),
+      link: `/content/${post.id}`,
+    }));
+  }
+  return true;
 }
 
 const isEmpty = async (post: { id: string; textRu: string | null; textUz: string | null }) =>
@@ -448,6 +492,15 @@ export async function cancelPost(actor: Actor, id: string) {
   if (!rights.editPlan) throw new ContentError("forbidden");
   await db.contentPost.update({ where: { id }, data: { status: "CANCELLED" } });
   await log(actor, "content.cancelled", id);
+}
+
+// Puts a cancelled post back into the plan: a draft if something was already prepared.
+export async function restorePost(actor: Actor, id: string) {
+  const { post, rights } = await load(actor, id);
+  if (!rights.restore) throw new ContentError("state");
+  const status: ContentStatus = (await isEmpty(post)) ? "PLANNED" : "DRAFT";
+  await db.contentPost.update({ where: { id }, data: { status, approvedAt: null } });
+  await log(actor, "content.restored", id);
 }
 
 const tagsSchema = z.object({ topic: z.string().min(1), brand: z.enum(BRANDS) });

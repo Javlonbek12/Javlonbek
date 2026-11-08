@@ -70,12 +70,29 @@ describe("routing v2", () => {
 
   it("an own task is accepted by the nearest manager; the owner's closes on hand-in", async () => {
     const { owner, manager, a1 } = await company();
-    const own = await createTask(a1, taskInput({ assigneeId: a1.id }), "create");
-    expect(own).toMatchObject({ status: "APPROVED", reviewerId: manager.id });
-    await changeStatus(a1, own.id, "IN_PROGRESS");
+    // «Создать» on one's own task: straight into work (no «Взять в работу» click).
+    const own = await createTask(a1, taskInput({ assigneeId: a1.id }), "create", {
+      startOwn: true,
+    });
+    expect(own).toMatchObject({ status: "IN_PROGRESS", reviewerId: manager.id });
+    expect(own.approvedAt).not.toBeNull();
     await changeStatus(a1, own.id, "IN_REVIEW");
     await expect(changeStatus(a1, own.id, "DONE")).rejects.toMatchObject({ code: "forbidden" });
     await expect(changeStatus(manager, own.id, "DONE")).resolves.toMatchObject({ status: "DONE" });
+
+    // One that starts later waits as «Утверждена»; with «Требует утверждения» it waits too.
+    const later = await createTask(
+      a1,
+      taskInput({ assigneeId: a1.id, startDate: "2099-01-01", dueDate: "2099-01-02" }),
+      "create",
+      { startOwn: true },
+    );
+    expect(later.status).toBe("APPROVED");
+    const flagged = await createTask(a1, taskInput({ assigneeId: a1.id }), "create", {
+      needsApproval: true,
+      startOwn: true,
+    });
+    expect(flagged.status).toBe("PENDING_APPROVAL");
 
     const owners = await createTask(owner, taskInput({ assigneeId: owner.id }), "create");
     expect(owners.reviewerId).toBeNull();
@@ -184,7 +201,21 @@ describe("routing v2", () => {
     // A colleague who can't see the task isn't told about it.
     expect(await count(a2.id, "task_comment")).toBe(0);
     expect(await count(loose.id, "task_comment")).toBe(0);
-    expect(await count(manager.id, "task_comment")).toBe(0);
+    // The manager accepts the result of a1's own task: they hear every comment.
+    expect(await count(manager.id, "task_comment")).toBe(1);
+  });
+
+  it("while a task waits, whoever decides hears its comments", async () => {
+    const { owner, a1, loose } = await company();
+    // To another team: waits for the owner.
+    const waiting = await createTask(a1, taskInput({ assigneeId: loose.id }), "create");
+    expect(waiting.deciderIds).toEqual([owner.id]);
+    await addComment(a1, waiting.id, "Уточнение по срокам");
+    expect(await count(owner.id, "task_comment")).toBe(1);
+    // Decided: the decider is no longer part of the conversation.
+    await changeStatus(owner, waiting.id, "APPROVED");
+    await addComment(a1, waiting.id, "Спасибо");
+    expect(await count(owner.id, "task_comment")).toBe(1);
   });
 
   it("the rollout re-routes waiting tasks once and tells who it concerns", async () => {

@@ -190,8 +190,8 @@ export async function createDueCopies(now: Date, createCopy: CreateCopy) {
   return made;
 }
 
-// How a copy enters the workflow: a personal task as a draft (to do); a team task along its route,
-// worked out on the day of the copy by the reporting lines of that day (routing v2).
-export function copyMode(copy: { isPersonal: boolean }): "draft" | "create" {
-  return copy.isPersonal ? "draft" : "create";
+// How a copy enters the workflow: a personal task in work, as from the web form; a team task along
+// its route, worked out on the day of the copy by the reporting lines of that day (routing v2).
+export function copyMode(copy: { isPersonal: boolean }): "start" | "create" {
+  return copy.isPersonal ? "start" : "create";
 }

@@ -23,6 +23,7 @@ import {
   type BotReply,
   type ConversationDeps,
 } from "./conversation";
+import { rememberReasonMessage } from "./decisions";
 import { inlineKeyboard } from "./keyboard";
 import { handleStart } from "./start";
 import { withLocale } from "@/lib/i18n/server";
@@ -53,6 +54,7 @@ async function send(ctx: Context, reply: BotReply) {
   }
   const message = await ctx.reply(text, options);
   if (reply.draftId) await rememberCardMessage(reply.draftId, message.message_id);
+  if (reply.reasonPrompt && ctx.user) await rememberReasonMessage(ctx.user.id, message.message_id);
 }
 
 async function downloadFile(ctx: Context, token: string) {
@@ -158,7 +160,17 @@ export function createBot(
   bot.on("message:text", async (ctx) => {
     if (ctx.message.text.startsWith("/")) return ctx.reply(t("bot.help"));
     await ctx.replyWithChatAction("typing");
-    await send(ctx, await handleText(ctx.user!, BigInt(ctx.chat.id), ctx.message.text, deps));
+    await send(
+      ctx,
+      await handleText(
+        ctx.user!,
+        BigInt(ctx.chat.id),
+        ctx.message.text,
+        deps,
+        undefined,
+        ctx.message.reply_to_message?.message_id,
+      ),
+    );
   });
 
   bot.on(["message:voice", "message:audio"], async (ctx) => {

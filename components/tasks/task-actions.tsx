@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { ConfirmAction } from "@/components/ui/confirm-action";
 import { Textarea } from "@/components/ui/textarea";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -37,6 +38,19 @@ export function TaskActions({
   return buttons.filter(only ?? (() => true)).map((button) => {
     const blocked = button.to === "DONE" && openBlockers > 0;
     const despite = button.to === "DONE" && cancelledBlockers > 0;
+    // Cancelling without a reason (a personal task) still asks first.
+    if (button.to === "CANCELLED" && !button.reason)
+      return (
+        <ConfirmAction
+          key={button.to + button.label}
+          label={t(button.label)}
+          title={t("tasks.cancelConfirm.title")}
+          hint={t("tasks.cancelConfirm.hint")}
+          confirm={t("tasks.cancelConfirm.yes")}
+          action={action}
+          hidden={{ taskId, ...(back ? { back } : {}), to: button.to }}
+        />
+      );
     if (!button.reason && !despite)
       return (
         <form key={button.to + button.label} action={action}>

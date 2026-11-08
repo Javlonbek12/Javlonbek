@@ -3,7 +3,8 @@ import { randomBytes } from "node:crypto";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
-import { fromDateString, isDateString } from "@/lib/dates";
+import { fromDateString, isDateString, todayInTimezone } from "@/lib/dates";
+import { getEnv } from "@/lib/env";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { t } from "@/lib/i18n";
 import { logActivity } from "@/modules/core/activity/service";
@@ -25,7 +26,13 @@ import {
   type LoadedPlanogram,
   type Shelftalkers,
 } from "./repository";
-import { DEFAULT_RULES, hasCritical, validatePlanogram, type Rule } from "./validate";
+import {
+  DEFAULT_RULES,
+  hasCritical,
+  validatePlanogram,
+  withMandatory,
+  type Rule,
+} from "./validate";
 
 function requireManager(actor: Actor) {
   if (!canManagePlanograms(actor.role)) throw new PlanogramError("forbidden");
@@ -83,16 +90,25 @@ const metaData = (meta: z.output<typeof planogramMetaSchema>) => ({
   notes: meta.notes,
 });
 
-async function latestPriceListId() {
-  const list = await db.priceList.findFirst({
-    orderBy: [{ effectiveFrom: "desc" }, { createdAt: "desc" }],
+// The prices in force today: the latest applied list that is already effective. A list made for a
+// later date (or not applied yet) would put prices on the new planogram that no shop has. Before
+// any list was applied (a fresh library), the latest effective one.
+export async function currentPriceList(today = todayInTimezone(getEnv().DEFAULT_TIMEZONE)) {
+  const effective = { effectiveFrom: { lte: fromDateString(today) } };
+  const order = [{ effectiveFrom: "desc" as const }, { createdAt: "desc" as const }];
+  const applied = await db.priceList.findFirst({
+    where: { ...effective, appliedAt: { not: null } },
+    orderBy: order,
   });
-  return list?.id ?? null;
+  if (applied) return applied;
+  if (await db.priceList.count({ where: { appliedAt: { not: null } } })) return null;
+  return db.priceList.findFirst({ where: effective, orderBy: order });
 }
 
-// Validation of the stored planogram with its own rules and the current SKU catalogue.
+// Validation of the stored planogram with its own rules, the current SKU catalogue and the
+// mandatory SKUs of its equipment model.
 export async function validateStored(loaded: LoadedPlanogram) {
-  const skus = await loadSkuInfos();
+  const skus = withMandatory(await loadSkuInfos(), loaded.record.equipment.mandatorySkuIds);
   return validatePlanogram(loaded.layout, loaded.geometry, skus, loaded.rules);
 }
 
@@ -102,6 +118,8 @@ export async function createPlanogram(
     equipmentId: string;
     templateId?: string | null;
     fill?: "empty" | "auto";
+    // false: no price list was chosen on purpose (the form's empty choice).
+    defaultPriceList?: boolean;
   },
 ) {
   requireManager(actor);
@@ -123,15 +141,21 @@ export async function createPlanogram(
     headerPosmId = template.record.headerPosmId;
     shelftalkers = template.shelftalkers;
   } else if (input.fill === "auto") {
-    const skus = (await loadSkuInfos()).filter((s) => !s.archived);
+    const skus = withMandatory(
+      (await loadSkuInfos()).filter((s) => !s.archived),
+      equipment.mandatorySkuIds,
+    );
     layout = autofill(geometry, skus).layout;
   }
+  const priceListId =
+    meta.priceListId ??
+    (input.defaultPriceList === false ? null : ((await currentPriceList())?.id ?? null));
 
   const planogram = await db.$transaction(async (tx) => {
     const created = await tx.planogram.create({
       data: {
         ...metaData(meta),
-        priceListId: meta.priceListId ?? (await latestPriceListId()),
+        priceListId,
         equipmentId: equipment.id,
         headerPosmId,
         shelftalkers,
@@ -166,6 +190,21 @@ async function loadDraft(actor: Actor, id: string) {
   if (loaded.record.status !== "DRAFT" && loaded.record.status !== "PENDING_APPROVAL")
     throw new PlanogramError("notDraft");
   return loaded;
+}
+
+// Editing a version that waits for approval sends it back to draft: the approver who was told
+// about it hears that it is no longer waiting.
+async function backToDraftNotice(actor: Actor, loaded: LoadedPlanogram) {
+  if (loaded.record.status !== "PENDING_APPROVAL") return;
+  const submitted = await db.activityLog.findFirst({
+    where: { action: "planogram.submitted", entityType: "Planogram", entityId: loaded.record.id },
+    orderBy: { createdAt: "desc" },
+    select: { actorId: true },
+  });
+  const approvers = await approverFor(submitted?.actorId ?? loaded.record.createdById);
+  await notifyPlanogram(approvers, actor, loaded.record.id, () =>
+    t("planograms.notify.backToDraft"),
+  );
 }
 
 // Saves the editor's layout. Editing a planogram that waits for approval sends it back to draft.
@@ -212,16 +251,18 @@ export async function saveLayout(
     entityType: "Planogram",
     entityId: id,
   });
+  await backToDraftNotice(actor, loaded);
   const updated = await loadPlanogram(id);
   return validateStored(updated!);
 }
 
 export async function updateMeta(actor: Actor, id: string, input: PlanogramMeta) {
-  await loadDraft(actor, id);
+  const loaded = await loadDraft(actor, id);
   await db.planogram.update({
     where: { id },
     data: { ...metaData(parseMeta(input)), status: "DRAFT" },
   });
+  await backToDraftNotice(actor, loaded);
 }
 
 const ruleSchema = z.object({
@@ -296,9 +337,13 @@ export async function submitForApproval(actor: Actor, id: string) {
     entityType: "Planogram",
     entityId: id,
   });
-  await notifyPlanogram(await approverFor(actor.id), actor, id, () =>
+  const approvers = await approverFor(actor.id);
+  await notifyPlanogram(approvers, actor, id, () =>
     t("notifications.events.planogramPendingTitle"),
   );
+  // Who was told, for the page.
+  const people = await db.user.findMany({ where: { id: { in: approvers } } });
+  return people.map((p) => displayName(p));
 }
 
 // A version in the works that was not made from the version in force: since it was copied,
@@ -423,6 +468,9 @@ export async function copyPlanogram(
     priceListId?: string | null;
     title?: string;
     equipmentId?: string;
+    // For other equipment: what of the header and shelftalkers fits it (else none).
+    headerPosmId?: string | null;
+    shelftalkers?: Shelftalkers;
   } = {},
 ) {
   requireManager(actor);
@@ -450,8 +498,14 @@ export async function copyPlanogram(
         validFrom: r.validFrom,
         validTo: r.validTo,
         notes: r.notes,
-        headerPosmId: options.equipmentId ? null : r.headerPosmId,
-        shelftalkers: options.equipmentId ? {} : (r.shelftalkers ?? {}),
+        headerPosmId:
+          options.headerPosmId !== undefined
+            ? options.headerPosmId
+            : options.equipmentId
+              ? null
+              : r.headerPosmId,
+        shelftalkers: (options.shelftalkers ??
+          (options.equipmentId ? {} : (r.shelftalkers ?? {}))) as Prisma.InputJsonValue,
         priceListId: options.priceListId === undefined ? r.priceListId : options.priceListId,
         isTemplate: options.isTemplate ?? false,
         status,
@@ -527,6 +581,76 @@ export async function listPlanograms(
   });
 }
 
+export type PlanogramCard = {
+  id: string;
+  title: string;
+  status: "DRAFT" | "PENDING_APPROVAL" | "APPROVED" | "ARCHIVED";
+  version: number;
+  project: string | null;
+  channel: string;
+  updatedAt: Date;
+  equipment: { name: string };
+  // Newer versions in the works besides the one shown: «есть черновик vN», «на утверждении vN».
+  working: { id: string; version: number; status: "DRAFT" | "PENDING_APPROVAL" }[];
+};
+
+// One card per planogram (not per version): the version in force, else the latest in the works,
+// else (with `all`) the latest archived one; with the other versions in the works as markers.
+export async function planogramCards(
+  filter: { all?: boolean; project?: string; query?: string } = {},
+): Promise<PlanogramCard[]> {
+  const rows = await db.planogram.findMany({
+    where: { isTemplate: false },
+    select: {
+      id: true,
+      rootId: true,
+      title: true,
+      status: true,
+      version: true,
+      project: true,
+      channel: true,
+      updatedAt: true,
+      equipment: { select: { name: true } },
+    },
+    orderBy: { version: "desc" },
+  });
+  const groups = new Map<string, typeof rows>();
+  for (const row of rows) {
+    const root = row.rootId ?? row.id;
+    groups.set(root, [...(groups.get(root) ?? []), row]);
+  }
+  const query = filter.query?.trim().toLowerCase() ?? "";
+  const cards: { card: PlanogramCard; touched: number }[] = [];
+  for (const versions of groups.values()) {
+    const inForce = versions.find((v) => v.status === "APPROVED");
+    const working = versions.filter(
+      (v): v is (typeof versions)[number] & { status: "DRAFT" | "PENDING_APPROVAL" } =>
+        v.status === "DRAFT" || v.status === "PENDING_APPROVAL",
+    );
+    const main = inForce ?? working[0] ?? versions[0]!;
+    if (!filter.all && main.status === "ARCHIVED") continue;
+    if (filter.project && main.project !== filter.project) continue;
+    if (query && !versions.some((v) => v.title.toLowerCase().includes(query))) continue;
+    cards.push({
+      card: {
+        id: main.id,
+        title: main.title,
+        status: main.status,
+        version: main.version,
+        project: main.project,
+        channel: main.channel,
+        updatedAt: main.updatedAt,
+        equipment: main.equipment,
+        working: working
+          .filter((v) => v.id !== main.id)
+          .map((v) => ({ id: v.id, version: v.version, status: v.status })),
+      },
+      touched: Math.max(...versions.map((v) => v.updatedAt.getTime())),
+    });
+  }
+  return cards.sort((a, b) => b.touched - a.touched).map((c) => c.card);
+}
+
 export async function versionHistory(rootId: string) {
   return db.planogram.findMany({
     where: { rootId },
@@ -542,14 +666,28 @@ export async function versionHistory(rootId: string) {
   });
 }
 
+// A link sent earlier always shows the version that is in force now. When none is (the planogram
+// went to the archive), the last one it showed comes back with `inForce: false`, so the page says
+// it no longer applies instead of looking approved.
 export async function findByShareToken(token: string) {
   const planogram = await db.planogram.findUnique({ where: { shareToken: token } });
   if (!planogram || (planogram.status !== "APPROVED" && planogram.status !== "ARCHIVED"))
     return null;
-  // A link sent earlier always shows the version that is in force now.
   const current = await db.planogram.findFirst({
     where: { rootId: planogram.rootId ?? planogram.id, status: "APPROVED" },
     orderBy: { version: "desc" },
   });
-  return loadPlanogram(current?.id ?? planogram.id);
+  const loaded = await loadPlanogram(current?.id ?? planogram.id);
+  return loaded ? { ...loaded, inForce: Boolean(current) } : null;
+}
+
+// The version in force of the planogram `id` belongs to (null when none is).
+export async function inForceVersion(id: string) {
+  const planogram = await db.planogram.findUnique({ where: { id }, select: { rootId: true } });
+  if (!planogram) return null;
+  return db.planogram.findFirst({
+    where: { rootId: planogram.rootId ?? id, status: "APPROVED" },
+    orderBy: { version: "desc" },
+    select: { id: true, shareToken: true },
+  });
 }

@@ -6,10 +6,18 @@ import { NativeSelect } from "@/components/ui/native-select";
 import type { Posm } from "@/lib/generated/prisma/client";
 import { t } from "@/lib/i18n";
 
-export function PosmForm({ posm }: { posm: Posm | null }) {
+// `inUse`: approved planograms or ones waiting for approval this item stands on — its size is
+// locked then (read-only, still sent with the form), with the reason under it.
+export function PosmForm({ posm, inUse = 0 }: { posm: Posm | null; inUse?: number }) {
+  const locked = inUse > 0;
   return (
     <form action={savePosmAction} className="grid gap-3 md:grid-cols-2">
       {posm && <input type="hidden" name="posmId" value={posm.id} />}
+      {locked && (
+        <p className="text-muted-foreground text-sm md:col-span-2">
+          {t("planograms.library.posm.sizeLocked", { count: String(inUse) })}
+        </p>
+      )}
       <Label className="flex-col items-start">
         {t("planograms.library.posm.name")}
         <Input name="name" required defaultValue={posm?.name ?? ""} />
@@ -32,7 +40,8 @@ export function PosmForm({ posm }: { posm: Posm | null }) {
           min={1}
           max={40}
           defaultValue={posm?.slotSpan ?? 1}
-          className="w-24"
+          readOnly={locked}
+          className="w-24 read-only:opacity-60"
         />
       </Label>
       <Label className="flex-col items-start">
@@ -43,7 +52,8 @@ export function PosmForm({ posm }: { posm: Posm | null }) {
           min={1}
           max={20}
           defaultValue={posm?.shelfSpan ?? 1}
-          className="w-24"
+          readOnly={locked}
+          className="w-24 read-only:opacity-60"
         />
         <span className="text-muted-foreground text-xs font-normal">
           {t("planograms.library.posm.shelfSpanHint")}

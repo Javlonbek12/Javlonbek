@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { db } from "@/lib/db";
-import { fromDateString, isDateString, toDateString } from "@/lib/dates";
+import { addDays, fromDateString, isDateString, toDateString } from "@/lib/dates";
 import type { Prisma, Task, TaskStatus } from "@/lib/generated/prisma/client";
 import { TaskPriority } from "@/lib/generated/prisma/enums";
 import { logActivity } from "@/modules/core/activity/service";
@@ -15,6 +15,7 @@ import {
   CLOSED_STATUSES,
   doerWhere,
   isClosed,
+  isDoer,
   reviewerOf,
   oversight,
   visibleTasksWhere,
@@ -37,6 +38,7 @@ import { dropCoAssigneeRequests, listCoAssigneeDecisions } from "./co-assignees"
 import { stopTimersOnTask } from "./time-rules";
 import { withAccess } from "@/modules/core/access/actor";
 import { notify } from "@/modules/core/notifications/service";
+import { getUserToday } from "@/modules/core/settings/service";
 import { t } from "@/lib/i18n";
 
 const dateField = z
@@ -115,11 +117,13 @@ export async function createTask(
   mode: CreateMode = "draft",
   // repeat: the task starts a repeating series; seriesId: the task is a copy made for one;
   // needsApproval: the author asks for approval even where the route starts it right away;
+  // startOwn: one's own task that starts right away goes straight into work (see changeStatus);
   // extra: project plan fields.
   options: {
     repeat?: RepeatInput | null;
     seriesId?: string;
     needsApproval?: boolean;
+    startOwn?: boolean;
     extra?: Pick<
       Prisma.TaskUncheckedCreateInput,
       | "phaseId"
@@ -194,7 +198,7 @@ export async function createTask(
     }
   }
 
-  return target ? changeStatus(actor, task.id, target) : task;
+  return target ? changeStatus(actor, task.id, target, { startOwn: options.startOwn }) : task;
 }
 
 const TRACKED_FIELDS = [
@@ -395,6 +399,9 @@ export type StatusOptions = {
   reason?: string | null;
   // Accept although a blocking task was cancelled.
   despiteCancelled?: boolean;
+  // Sending one's own task that the route starts right away: straight into work («Создать» in
+  // the form, the bot, repeats). A project plan's tasks keep waiting as «Утверждена».
+  startOwn?: boolean;
   now?: Date;
 };
 
@@ -424,7 +431,15 @@ export async function changeStatus(
     !task.isPersonal && task.status === "DRAFT" && requested === "PENDING_APPROVAL"
       ? await routeFor(task.creatorId, task.assigneeId, task.needsApproval)
       : null;
-  const to: TaskStatus = route ? route.status : requested;
+  // One's own task that the route starts right away goes straight into work: nobody else has to
+  // take it, so «Взять в работу» would be an extra click. One with a start date ahead waits.
+  const startsOwn =
+    options.startOwn === true &&
+    route?.status === "APPROVED" &&
+    task.assigneeId === task.creatorId &&
+    (!task.startDate || toDateString(task.startDate) <= (await getUserToday(task.creatorId, now)));
+  const to: TaskStatus = route ? (startsOwn ? "IN_PROGRESS" : route.status) : requested;
+  const approves = !task.approvedAt && (to === "APPROVED" || route?.status === "APPROVED");
 
   const updated = await db.task.update({
     where: { id: taskId },
@@ -432,9 +447,7 @@ export async function changeStatus(
       status: to,
       statusChangedAt: now,
       ...(route ? { deciderIds: route.deciderIds, reviewerId: route.reviewerId } : {}),
-      ...(to === "APPROVED" && !task.approvedAt
-        ? { approvedAt: now, approvedById: route ? null : actor.id }
-        : {}),
+      ...(approves ? { approvedAt: now, approvedById: route ? null : actor.id } : {}),
       // Back to draft: nobody decides on it any more.
       ...(to === "DRAFT" ? { deciderIds: [] } : {}),
       completedAt: to === "DONE" ? now : null,
@@ -451,8 +464,8 @@ export async function changeStatus(
   if (reason && !task.isPersonal)
     await db.comment.create({ data: { taskId, authorId: actor.id, body: reason } });
   if (isClosed(to) && !task.isPersonal) await dropCoAssigneeRequests(taskId);
-  // A closed task: nobody works on it any more, its timers stop.
-  if (isClosed(to)) await stopTimersOnTask(taskId, now);
+  // Handed in or closed: nobody works on it any more, its timers stop.
+  if (isClosed(to) || to === "IN_REVIEW") await stopTimersOnTask(taskId, now);
 
   const event = statusEvent(task, updated, actor, route?.teamNoticeId ?? null, reason);
   if (event) await notifyTaskEvent(event.task, event.event, actor.id, await actorName(actor.id));
@@ -469,7 +482,8 @@ function statusEvent(
 ): { task: Task; event: TaskEvent } | null {
   const from = before.status;
   const to = after.status;
-  if (from === "DRAFT" && to === "APPROVED")
+  // Started by the route (one's own task goes straight into work).
+  if (from === "DRAFT" && (to === "APPROVED" || (to === "IN_PROGRESS" && !before.isPersonal)))
     return { task: after, event: { kind: "started", teamNoticeId } };
   if (to === "PENDING_APPROVAL") return { task: after, event: { kind: "pending" } };
   if (from === "PENDING_APPROVAL" && to === "APPROVED")
@@ -495,6 +509,54 @@ function statusEvent(
   return null;
 }
 
+// A closed or cancelled task goes back to work within this time (owner's decision): an undo for a
+// click too many, not a way to revive old tasks.
+export const REOPEN_HOURS = 24;
+
+// «Вернуть в работу»: the author or whoever controls the task (and the one who accepted it, whose
+// click it undoes), within 24 hours of closing. A team task that never started (cancelled while it
+// waited) can't: it was never in work.
+export function canReopen(
+  actor: Actor,
+  task: Pick<Task, "isPersonal" | "creatorId" | "assigneeId" | "status" | "approvedAt"> &
+    Pick<Task, "statusChangedAt" | "acceptedById" | "coAssigneeIds">,
+  now = new Date(),
+) {
+  if (!isClosed(task.status)) return false;
+  if (now.getTime() - task.statusChangedAt.getTime() > REOPEN_HOURS * 3_600_000) return false;
+  if (task.isPersonal) return task.creatorId === actor.id;
+  if (task.approvedAt === null) return false;
+  return task.creatorId === actor.id || canControl(actor, task) || task.acceptedById === actor.id;
+}
+
+export async function reopenTask(actor: Actor, taskId: string, now = new Date()) {
+  const task = await db.task.findUnique({ where: { id: taskId } });
+  if (!task || !canViewTask(actor, task) || !canReopen(actor, task, now))
+    throw new TaskError("forbidden");
+  const updated = await db.task.update({
+    where: { id: taskId },
+    data: { status: "IN_PROGRESS", statusChangedAt: now, completedAt: null, acceptedById: null },
+  });
+  await logActivity({
+    actorId: actor.id,
+    action: "task.reopened",
+    entityType: "Task",
+    entityId: taskId,
+    details: { from: task.status, to: "IN_PROGRESS" },
+  });
+  await notifyTaskEvent(updated, { kind: "reopened" }, actor.id, await actorName(actor.id));
+  return updated;
+}
+
+// «Вернуть» right after the round button in a list: work handed in comes back from review (the
+// doer takes it back); a task closed comes back to work.
+export async function undoQuickClose(actor: Actor, taskId: string, now = new Date()) {
+  const task = await db.task.findUnique({ where: { id: taskId } });
+  if (!task || !canViewTask(actor, task)) throw new TaskError("forbidden");
+  if (task.status === "IN_REVIEW") return changeStatus(actor, taskId, "IN_PROGRESS", { now });
+  return reopenTask(actor, taskId, now);
+}
+
 const listInclude = {
   assignee: { select: { id: true, firstName: true, lastName: true } },
   creator: { select: { id: true, firstName: true, lastName: true } },
@@ -512,6 +574,7 @@ export function toTaskView(task: TaskWithPeople) {
     startDate: task.startDate ? toDateString(task.startDate) : null,
     dueDate: task.dueDate ? toDateString(task.dueDate) : null,
     openBlockers: blockedBy.filter((d) => !CLOSED_STATUSES.includes(d.blocker.status)).length,
+    cancelledBlockers: blockedBy.filter((d) => d.blocker.status === "CANCELLED").length,
     steps: stepProgress(steps),
   };
 }
@@ -526,15 +589,55 @@ const ORDER_BY: Record<TaskSort, Prisma.TaskOrderByWithRelationInput[]> = {
   updated: [{ updatedAt: "desc" }],
 };
 
+// A list shows at most this many tasks; a page that gets this many says it was cut.
+export const LIST_LIMIT = 500;
+
 export async function listTasks(actor: Actor, filters: TaskFilters, today: string) {
   const tasks = await db.task.findMany({
     where: { AND: [visibleTasksWhere(actor), filtersWhere(filters, actor, today)] },
     include: listInclude,
     orderBy: ORDER_BY[filters.sort],
-    take: 500,
+    take: LIST_LIMIT,
   });
   const views = tasks.map(toTaskView);
   return filters.sort === "smart" ? smartSort(views, today) : views;
+}
+
+// Days a done task stays on the board.
+export const BOARD_DONE_DAYS = 30;
+
+// The kanban board: every open task (cancelled ones hidden) and those done in the last 30 days.
+// Open tasks are asked for on their own, so a long history never pushes them out; `cut` says
+// that a part was left out.
+export async function listBoardTasks(actor: Actor, filters: TaskFilters, today: string) {
+  const where = (status: Prisma.TaskWhereInput): Prisma.TaskWhereInput => ({
+    AND: [
+      visibleTasksWhere(actor),
+      filtersWhere({ ...filters, status: "all", due: "any" }, actor, today),
+      status,
+    ],
+  });
+  const [open, done] = await Promise.all([
+    db.task.findMany({
+      where: where({ status: { notIn: CLOSED_STATUSES } }),
+      include: listInclude,
+      orderBy: ORDER_BY.due,
+      take: LIST_LIMIT,
+    }),
+    db.task.findMany({
+      where: where({
+        status: "DONE",
+        completedAt: { gte: fromDateString(addDays(today, -BOARD_DONE_DAYS)) },
+      }),
+      include: listInclude,
+      orderBy: { completedAt: "desc" },
+      take: LIST_LIMIT,
+    }),
+  ]);
+  return {
+    tasks: [...open, ...done].map(toTaskView),
+    cut: open.length >= LIST_LIMIT || done.length >= LIST_LIMIT,
+  };
 }
 
 // How many tasks each quick filter (overdue, today, important...) would show.
@@ -611,6 +714,9 @@ export async function listTasksDueBetween(actor: Actor, scope: Scope, from: stri
   return tasks.map(toTaskView);
 }
 
+// At most this many bars on the timeline (the page says when it got this many).
+export const TIMELINE_LIMIT = 200;
+
 // Tasks whose bar (startDate or dueDate .. dueDate) overlaps [from, to).
 export async function listTimeline(actor: Actor, scope: Scope, from: string, to: string) {
   const tasks = await db.task.findMany({
@@ -630,7 +736,7 @@ export async function listTimeline(actor: Actor, scope: Scope, from: string, to:
     },
     include: listInclude,
     orderBy: [{ startDate: { sort: "asc", nulls: "last" } }, { dueDate: "asc" }],
-    take: 200,
+    take: TIMELINE_LIMIT,
   });
   const ids = tasks.map((t) => t.id);
   const edges = await db.taskDependency.findMany({
@@ -740,8 +846,9 @@ export async function listWaitingDecisions(actor: Actor) {
     .map(toTaskView);
 }
 
-// Everything that waits for the actor's decision (the «Ждут решения» view): tasks to approve,
-// work to accept, and requests to delete tasks they control.
+// Everything that waits for the actor's decision: tasks to approve, work to accept, requests to
+// delete tasks they control and to add co-assignees. The one source for «Ждут решения» wherever
+// it shows: the tab and its badge, the home screen, the morning digest and the bot's /pending.
 export async function listDecisions(actor: Actor) {
   const [waiting, removals] = await Promise.all([
     listWaitingDecisions(actor),
@@ -768,10 +875,20 @@ export async function listDecisions(actor: Actor) {
   };
 }
 
-export async function countDecisions(actor: Actor) {
-  const { approve, accept, remove, coAssignees } = await listDecisions(actor);
+export type Decisions = Awaited<ReturnType<typeof listDecisions>>;
+
+// How many decisions wait, counted the same way everywhere.
+export function decisionCount({ approve, accept, remove, coAssignees }: Decisions) {
   return approve.length + accept.length + remove.length + coAssignees.length;
 }
+
+export async function countDecisions(actor: Actor) {
+  return decisionCount(await listDecisions(actor));
+}
+
+// Statuses in which the one doing the task has nothing left to do: closed, or handed in (the
+// due date is the reviewer's business then).
+export const NOTHING_TO_DO: TaskStatus[] = [...CLOSED_STATUSES, "IN_REVIEW"];
 
 export async function getTodayOverview(actor: Actor, today: string) {
   const mine = await db.task.findMany({
@@ -779,7 +896,7 @@ export async function getTodayOverview(actor: Actor, today: string) {
       AND: [
         visibleTasksWhere(actor),
         doerWhere(actor.id),
-        { status: { notIn: CLOSED_STATUSES } },
+        { status: { notIn: NOTHING_TO_DO } },
         { dueDate: { lte: fromDateString(today) } },
       ],
     },
@@ -791,6 +908,35 @@ export async function getTodayOverview(actor: Actor, today: string) {
   const waiting = await listWaitingDecisions(actor);
 
   return { dueToday, overdue, waiting };
+}
+
+// Overdue work of others that the actor answers for: team tasks they authored, decide on while
+// they wait, or accept — but don't do themselves (their own are in «Просрочено»). Handed-in work
+// is not here: it waits for acceptance. For «Просрочены у исполнителей» in the morning digest.
+export async function listOverdueAtDoers(actor: Actor, today: string) {
+  const tasks = await db.task.findMany({
+    where: {
+      AND: [
+        visibleTasksWhere(actor),
+        {
+          isPersonal: false,
+          status: { notIn: NOTHING_TO_DO },
+          dueDate: { lt: fromDateString(today) },
+          NOT: { assigneeId: actor.id },
+          OR: [
+            { creatorId: actor.id },
+            { reviewerId: actor.id },
+            { status: "PENDING_APPROVAL", deciderIds: { has: actor.id } },
+          ],
+        },
+      ],
+    },
+    include: listInclude,
+    orderBy: [{ dueDate: "asc" }, { priority: "desc" }],
+    take: 100,
+  });
+  // A co-assignee has it in their own «Просрочено» (checked here: the list column may be empty).
+  return tasks.filter((task) => !isDoer(actor, task)).map(toTaskView);
 }
 
 // People whose tasks the actor can see (as assignees), for the "employee" filter.
@@ -844,6 +990,7 @@ export async function createRepeatCopies(now = new Date()) {
       copyMode(copy),
       {
         seriesId,
+        startOwn: true,
         extra: {
           labels: [
             ...copy.labels.filter((label) => label !== PREVIOUS_OPEN_LABEL),

@@ -20,6 +20,10 @@ type Props = {
   // Types of the equipment file (BW) this model is, and every type with the model it is now.
   distTypes: string[];
   typeOptions: { code: string; label: string; owner: string | null }[];
+  // The SKUs mandatory on this model (empty = the SKUs marked «обязательный»), and every SKU
+  // (archived ones only when chosen before).
+  mandatorySkuIds: string[];
+  skus: { id: string; label: string; brand: string; mandatory: boolean; archived: boolean }[];
 };
 
 // Equipment constructor: shelves with slot counts, offsets and grouping, plus a live preview.
@@ -191,6 +195,39 @@ export function EquipmentForm(props: Props) {
               {o.owner && !props.distTypes.includes(o.code) && (
                 <span className="text-muted-foreground text-xs">({o.owner})</span>
               )}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      <fieldset className="flex flex-col gap-2 rounded-lg border p-3">
+        <legend className="px-1 text-sm font-medium">
+          {t("planograms.library.equipment.mandatory")}
+        </legend>
+        <p className="text-muted-foreground text-xs">
+          {t("planograms.library.equipment.mandatoryHint")}
+        </p>
+        {props.mandatorySkuIds.length === 0 && (
+          <p className="text-xs">
+            {t("planograms.library.equipment.mandatoryGlobal", {
+              count: String(props.skus.filter((s) => s.mandatory && !s.archived).length),
+            })}
+          </p>
+        )}
+        <div className="grid max-h-80 gap-x-4 gap-y-1.5 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
+          {props.skus.map((s) => (
+            <label key={s.id} className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                name="mandatorySkuIds"
+                value={s.id}
+                defaultChecked={props.mandatorySkuIds.includes(s.id)}
+                className="size-4 shrink-0"
+              />
+              <span className="truncate">
+                {s.brand} {s.label}
+                {s.mandatory && " ★"}
+              </span>
             </label>
           ))}
         </div>

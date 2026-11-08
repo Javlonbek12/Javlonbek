@@ -9,7 +9,7 @@ import type { Actor } from "@/modules/core/permissions";
 import { logActivity } from "@/modules/core/activity/service";
 import { safeFileName } from "@/modules/tasks/attachment-service";
 
-import { contentRights, ContentError } from "./service";
+import { contentRights, ContentError, sendBackToReview } from "./service";
 
 // Files of a post, separately for Russian and Uzbek: photos, videos and other files (PDF, ...).
 // The kind is decided by the file's bytes, not by its name.
@@ -105,6 +105,7 @@ export async function addPostFile(actor: Actor, postId: string, lang: ContentLan
     entityId: postId,
     details: { name: row.name, lang },
   });
+  await sendBackToReview(actor, post);
   return row;
 }
 
@@ -117,7 +118,7 @@ async function removeFromDisk(relative: string) {
 export async function removePostFile(actor: Actor, fileId: string) {
   const file = await db.contentFile.findUnique({ where: { id: fileId } });
   if (!file) throw new ContentError("notFound");
-  await loadEditable(actor, file.postId);
+  const post = await loadEditable(actor, file.postId);
   await db.contentFile.delete({ where: { id: fileId } });
   await removeFromDisk(file.path);
   await logActivity({
@@ -127,13 +128,14 @@ export async function removePostFile(actor: Actor, fileId: string) {
     entityId: file.postId,
     details: { name: file.name, lang: file.lang },
   });
+  await sendBackToReview(actor, post);
 }
 
 // Moves a file one place up or down within its language.
 export async function movePostFile(actor: Actor, fileId: string, direction: "up" | "down") {
   const file = await db.contentFile.findUnique({ where: { id: fileId } });
   if (!file) throw new ContentError("notFound");
-  await loadEditable(actor, file.postId);
+  const post = await loadEditable(actor, file.postId);
   const files = await db.contentFile.findMany({
     where: { postId: file.postId, lang: file.lang },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
@@ -147,6 +149,8 @@ export async function movePostFile(actor: Actor, fileId: string, direction: "up"
       db.contentFile.update({ where: { id: f.id }, data: { sortOrder: index } }),
     ),
   );
+  // The order of pictures is part of the post.
+  await sendBackToReview(actor, post);
 }
 
 // A file and its place on disk, for those who can see the post.
@@ -165,7 +169,7 @@ export async function copyPostFiles(
   from: ContentLang,
   to: ContentLang,
 ) {
-  await loadEditable(actor, postId);
+  const post = await loadEditable(actor, postId);
   if (from === to) throw new ContentError("invalid");
   const [source, existing] = await Promise.all([
     db.contentFile.findMany({
@@ -195,4 +199,5 @@ export async function copyPostFiles(
     entityId: postId,
     details: { from, to },
   });
+  await sendBackToReview(actor, post);
 }

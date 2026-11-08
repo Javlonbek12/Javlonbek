@@ -600,19 +600,22 @@ model EmployeeNote {
 // ============================================================
 
 model Equipment {
-  id        String   @id @default(cuid())
+  id              String   @id @default(cuid())
   // e.g. DISPLAY_L, MODULE_9x2, LEGO_21, POG_MINI
-  code      String   @unique
-  name      String
-  channel   String
+  code            String   @unique
+  name            String
+  channel         String
   // { header: null | "horizontal" | "vertical", shelves: [{ slots, offset, group }] } — see modules/planograms/geometry.ts
-  geometry  Json
+  geometry        Json
   // The equipment types of the equipment file (BW) this model is, e.g. ["DG_L", "MW25_L",
   // "MW24_L"] for Display L MW/DG: one shared equipment for planograms and POSM distribution.
   // A type belongs to one model at most.
-  distTypes String[] @default([])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  distTypes       String[] @default([])
+  // The SKUs that must stand on this model (they differ by equipment). Empty = the
+  // global «обязательный» flags of the SKUs apply.
+  mandatorySkuIds String[] @default([])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   planograms Planogram[]
 }
@@ -860,6 +863,8 @@ model Project {
   // The written plan (e.g. the Launching Plan): { sectionKey: text }.
   planSections Json?
   archived     Boolean   @default(false)
+  // «Завершить проект»: off the home screen and the portfolio, under «Завершённые».
+  finishedAt   DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
@@ -1053,6 +1058,9 @@ model ConnectRecord {
   // The parsed row (typed per kind, see modules/connect/parse.ts).
   data       Json
   importId   String
+  // How fresh the file that last wrote the row was: its latest record time (YYYY-MM-DDTHH:mm).
+  // A file older than that doesn't overwrite the row (a later export has the newer statuses).
+  asOf       String?
   updatedAt  DateTime    @updatedAt
 
   @@unique([kind, externalId])
@@ -1067,6 +1075,8 @@ model ConnectImport {
   created   Int
   updated   Int
   skipped   Int
+  // Rows left as they were because the file is older than what was loaded.
+  kept      Int      @default(0)
   createdAt DateTime @default(now())
 }
 
@@ -1146,6 +1156,9 @@ model DistPurchase {
   date        DateTime @db.Date
   document    String
   note        String?
+  // Where a loaded entry came from: "launch:<name>" or "file:<sha256>" for a launch template, so
+  // uploading the same template again (under any file name) replaces its entries. Null = by hand.
+  source      String?
   createdById String
   createdBy   User     @relation("DistPurchaseCreatedBy", fields: [createdById], references: [id])
   createdAt   DateTime @default(now())
@@ -1188,6 +1201,10 @@ model DistOrder {
   eas               Json?
   // When the POSM was ordered from the printer; the list doesn't change after.
   orderedOn         DateTime? @db.Date
+  // The split's base frozen when the campaign was ordered: equipment counts by region and TSM
+  // and the planograms' facts (see modules/distribution/freeze.ts). A new equipment file or
+  // outlet base doesn't change the plan of an ordered campaign. Null = computed live.
+  frozenBase        Json?
   note              String?
   // A closed campaign is kept for history; new shipments go to open ones.
   closed            Boolean   @default(false)

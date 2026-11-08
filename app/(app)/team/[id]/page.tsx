@@ -14,6 +14,7 @@ import { EmployeeNoteKind } from "@/lib/generated/prisma/enums";
 import { t } from "@/lib/i18n";
 import { formatDateTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
+import { canUseModule } from "@/modules/core/access/actor";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { canChangeRole, canSendTestNotification } from "@/modules/core/permissions";
 import { getSettings } from "@/modules/core/settings/service";
@@ -41,7 +42,20 @@ export default async function EmployeePage({ params, searchParams }: PageProps<"
   const query = await searchParams;
   const card = await getEmployeeCard(viewer, id);
   if (!card) notFound();
-  const { user, manager, reports, stats, notes, editable } = card;
+  const { user, manager, reports, stats, notes, editable, inChart } = card;
+  // Links only where the viewer can go: the chart is a separate section.
+  const seesChart = canUseModule(viewer, "structure");
+  const fromChart = (
+    <span className="text-muted-foreground text-xs font-normal">
+      {seesChart ? (
+        <Link href="/team/structure" className="underline">
+          {t("team.profile.fromChart")}
+        </Link>
+      ) : (
+        t("team.profile.fromChart")
+      )}
+    </span>
+  );
   const [{ timezone }, managers, orgPath] = await Promise.all([
     getSettings(viewer.id),
     listManagerCandidates(),
@@ -91,9 +105,13 @@ export default async function EmployeePage({ params, searchParams }: PageProps<"
       {orgPath && (
         <p className="text-muted-foreground -mt-3 text-xs">
           {t("team.org.inStructure")}:{" "}
-          <Link href="/team/structure" className="underline">
-            {orgPath.length ? orgPath.join(" › ") : t("team.org.title")}
-          </Link>
+          {seesChart ? (
+            <Link href="/team/structure" className="underline">
+              {orgPath.length ? orgPath.join(" › ") : t("team.org.title")}
+            </Link>
+          ) : (
+            <span>{orgPath.length ? orgPath.join(" › ") : t("team.org.title")}</span>
+          )}
         </p>
       )}
 
@@ -166,12 +184,19 @@ export default async function EmployeePage({ params, searchParams }: PageProps<"
           <div className="grid gap-3 md:grid-cols-2">
             <Label className="flex-col items-start">
               {t("team.profile.position")}
-              <Input
-                name="position"
-                maxLength={100}
-                defaultValue={user.position ?? ""}
-                disabled={!can("position")}
-              />
+              {inChart ? (
+                <span className="flex flex-col py-2 font-normal">
+                  {user.position ?? t("team.noPosition")}
+                  {fromChart}
+                </span>
+              ) : (
+                <Input
+                  name="position"
+                  maxLength={100}
+                  defaultValue={user.position ?? ""}
+                  disabled={!can("position")}
+                />
+              )}
             </Label>
             <Label className="flex-col items-start">
               {t("team.profile.responsibility")}
@@ -229,7 +254,7 @@ export default async function EmployeePage({ params, searchParams }: PageProps<"
                     ))}
                 </NativeSelect>
               ) : (
-                <span className="py-2 font-normal">
+                <span className="flex flex-col py-2 font-normal">
                   {manager ? (
                     <Link className="underline" href={`/team/${manager.id}`}>
                       {displayName(manager)}
@@ -237,6 +262,7 @@ export default async function EmployeePage({ params, searchParams }: PageProps<"
                   ) : (
                     t("team.profile.noManager")
                   )}
+                  {inChart && fromChart}
                 </span>
               )}
             </Label>

@@ -14,7 +14,7 @@ import { tagPendingContent } from "@/modules/content/tagging";
 import { CLOSED_STATUSES, reviewerOf } from "@/modules/tasks/access";
 import { purgeDeletedTasks } from "@/modules/tasks/delete-service";
 import { migrateToRoutingV2 } from "@/modules/tasks/migrate-v2";
-import { createRepeatCopies } from "@/modules/tasks/service";
+import { createRepeatCopies, NOTHING_TO_DO } from "@/modules/tasks/service";
 
 import { collectDigestData, defaultDigestWriter, isDigestEmpty, type DigestWriter } from "./digest";
 import {
@@ -44,14 +44,15 @@ export async function claim(userId: string, kind: string, key: string): Promise<
 }
 
 // Tasks someone is responsible for reminding about (routing v2): what they do (as the assignee or a
-// co-assignee), and as the author
-// a team task nobody has started yet (or that waits), and as a decider one that waits for them.
+// co-assignee) — unless they handed it in (then it waits for acceptance, not for them) — and as
+// the author a team task in the given statuses, and as a decider one that waits for them.
 function remindersFor(userId: string, authorStatuses: Prisma.EnumTaskStatusFilter["in"]) {
+  const doing = { status: { notIn: NOTHING_TO_DO } };
   return {
     status: { notIn: CLOSED_STATUSES },
     OR: [
-      { assigneeId: userId, OR: [{ isPersonal: true }, { approvedAt: { not: null } }] },
-      { isPersonal: false, coAssigneeIds: { has: userId }, approvedAt: { not: null } },
+      { ...doing, assigneeId: userId, OR: [{ isPersonal: true }, { approvedAt: { not: null } }] },
+      { ...doing, isPersonal: false, coAssigneeIds: { has: userId }, approvedAt: { not: null } },
       { creatorId: userId, isPersonal: false, status: { in: authorStatuses } },
       { deciderIds: { has: userId }, status: "PENDING_APPROVAL" },
     ],
@@ -95,19 +96,17 @@ async function dueRemindersFor(user: User, dueDates: string[]) {
   }
 }
 
-// Overdue: the assignee and (for team tasks) the author; for a task still waiting, the author and
-// whoever decides. Every day, but only for people with the morning digest turned off: the digest
-// already lists what is overdue.
+// Overdue: the assignee and (for team tasks) the author and whoever accepts the result; for a task
+// still waiting, the author and whoever decides. Handed-in work is not overdue: it waits for
+// acceptance. Every day, but only for people with the morning digest turned off: the digest
+// already lists what is overdue, theirs and at the assignees («Просрочены у исполнителей»).
 async function overdueFor(user: User, range: { from: string; to: string }, today: string) {
   const tasks = await db.task.findMany({
     where: {
-      ...remindersFor(user.id, [
-        "DRAFT",
-        "PENDING_APPROVAL",
-        "APPROVED",
-        "IN_PROGRESS",
-        "IN_REVIEW",
-      ]),
+      OR: [
+        remindersFor(user.id, ["DRAFT", "PENDING_APPROVAL", "APPROVED", "IN_PROGRESS"]),
+        { isPersonal: false, reviewerId: user.id, status: { in: ["APPROVED", "IN_PROGRESS"] } },
+      ],
       dueDate: { gte: fromDateString(range.from), lt: fromDateString(range.to) },
     },
     select: {
@@ -213,7 +212,9 @@ async function meetingReminders(now: Date) {
   });
   for (const meeting of meetings) {
     for (const { userId } of meeting.participants) {
-      if (!(await claim(userId, "meeting_reminder", meeting.id))) continue;
+      // Keyed by the start time too: a meeting moved after its reminder gets a new one.
+      const key = `${meeting.id}:${meeting.startsAt.toISOString()}`;
+      if (!(await claim(userId, "meeting_reminder", key))) continue;
       const { timezone } = await getSettings(userId);
       await notify(userId, () => ({
         type: "meeting_reminder",

@@ -10,12 +10,13 @@ import {
   sketchKind,
 } from "@/components/distribution/sketch";
 import { Button } from "@/components/ui/button";
+import { ConfirmAction } from "@/components/ui/confirm-action";
 import { Input } from "@/components/ui/input";
 import { t, type TranslationKey } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { equipmentSize, gapsOf } from "@/modules/distribution/builder";
-import { loadCatalog } from "@/modules/distribution/catalog";
+import { elementUsage, loadCatalog } from "@/modules/distribution/catalog";
 import { canManageDistribution } from "@/modules/distribution/service";
 import { DIST_TYPES } from "@/modules/distribution/types";
 
@@ -33,6 +34,7 @@ export default async function DistributionElementPage({
   const catalog = await loadCatalog();
   const element = catalog.elements.find((e) => e.id === id);
   if (!element) notFound();
+  const usage = await elementUsage(element.id);
   const error = typeof query.error === "string" ? query.error : null;
 
   return (
@@ -179,12 +181,30 @@ export default async function DistributionElementPage({
             <Button type="submit">{t("dist.posm.save")}</Button>
           </div>
         </form>
-        <form action={deleteElementAction} className="border-t pt-4">
-          <input type="hidden" name="id" value={element.id} />
-          <Button type="submit" variant="outline" size="sm">
-            {t("dist.sizes.delete")}
-          </Button>
-        </form>
+        <div className="flex flex-col gap-2 border-t pt-4">
+          {usage.length > 0 ? (
+            <p className="text-muted-foreground text-sm">
+              {t("dist.sizes.inUse")}{" "}
+              {usage.map((o, i) => (
+                <span key={o.id}>
+                  {i > 0 && ", "}
+                  <Link href={`/distribution/campaigns/${o.id}`} className="underline">
+                    {o.name}
+                  </Link>
+                </span>
+              ))}
+            </p>
+          ) : (
+            <ConfirmAction
+              label={t("dist.sizes.delete")}
+              title={t("dist.sizes.deleteTitle", { name: element.name })}
+              hint={t("dist.sizes.deleteHint")}
+              confirm={t("dist.sizes.deleteConfirm")}
+              action={deleteElementAction}
+              hidden={{ id: element.id }}
+            />
+          )}
+        </div>
       </Section>
     </div>
   );

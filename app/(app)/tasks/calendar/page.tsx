@@ -40,7 +40,7 @@ import {
   type PlannedRepeat,
   type TaskView,
 } from "@/modules/tasks/service";
-import { isOverdue } from "@/modules/tasks/today";
+import { isLateWork } from "@/modules/tasks/today";
 
 type Meeting = Awaited<ReturnType<typeof listMeetingsBetween>>[number];
 
@@ -79,7 +79,7 @@ function kindOf(task: TaskView): keyof typeof KIND {
 }
 
 function TaskItem({ task, today, compact }: { task: TaskView; today: string; compact?: boolean }) {
-  const kind = isOverdue(task, today) ? KIND.high : KIND[kindOf(task)];
+  const kind = isLateWork(task, today) ? KIND.high : KIND[kindOf(task)];
   const body = (
     <>
       <span className="flex items-center gap-1.5 font-medium">
@@ -216,7 +216,7 @@ export default async function CalendarPage({ searchParams }: PageProps<"/tasks/c
   const working = tasks.filter(
     (x) => x.status === "IN_PROGRESS" || x.status === "IN_REVIEW",
   ).length;
-  const late = tasks.filter((x) => isOverdue(x, today)).length;
+  const late = tasks.filter((x) => isLateWork(x, today)).length;
   const share = (n: number) => (tasks.length ? Math.round((n / tasks.length) * 100) : 0);
   const stats = [
     { label: t("tasks.look.total"), value: tasks.length, percent: 100, color: "var(--series-1)" },

@@ -1,12 +1,17 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { db } from "@/lib/db";
+import type { DigestData } from "@/modules/ai/prompts";
+import { withAccess } from "@/modules/core/access/actor";
 import { DEFAULT_ROLE_CONFIG, saveRoleConfig } from "@/modules/core/access/config";
 import { notify } from "@/modules/core/notifications/service";
 import { updateSettings } from "@/modules/core/settings/service";
-import { digestTemplate } from "@/modules/scheduler/digest";
+import { displayName } from "@/modules/core/users/display-name";
+import { digestTemplate, type DigestWriter } from "@/modules/scheduler/digest";
 import { claim, LAST_TICK_KEY, runSchedulerTick } from "@/modules/scheduler/tick";
-import { changeStatus, createTask } from "@/modules/tasks/service";
+import { requestTaskDeletion } from "@/modules/tasks/delete-service";
+import { changeStatus, countDecisions, createTask } from "@/modules/tasks/service";
+import { startTimer } from "@/modules/tasks/time";
 import { createTestUser, resetDb } from "@/tests/helpers/db";
 import { taskInput } from "@/tests/helpers/tasks";
 import { telegramMock } from "@/tests/helpers/telegram";
@@ -141,6 +146,95 @@ describe("scheduler", () => {
     expect(await count(member.id, "overdue")).toBe(2);
   });
 
+  it("the digest tells the author what is overdue at the assignees, and all that waits for them", async () => {
+    const owner = await createTestUser("OWNER");
+    const member = await createTestUser("MEMBER");
+    const other = await createTestUser("MEMBER");
+    for (const user of [owner, member]) await updateSettings(user.id, settings("Asia/Tashkent"));
+    await createTask(
+      owner,
+      taskInput({ title: "Отчёт исполнителя", assigneeId: member.id, dueDate: "2026-10-01" }),
+      "create",
+    );
+    // Handed in: it waits for acceptance — not «overdue» for anyone, but a decision for the author.
+    const handedIn = await createTask(
+      owner,
+      taskInput({ title: "Сдана", assigneeId: member.id, dueDate: "2026-09-30" }),
+      "create",
+    );
+    await changeStatus(member, handedIn.id, "IN_PROGRESS");
+    await changeStatus(member, handedIn.id, "IN_REVIEW");
+    // A request to delete (the assignee asks): a decision for the owner too.
+    const doomed = await createTask(
+      owner,
+      taskInput({ title: "Дубль", assigneeId: member.id }),
+      "create",
+    );
+    await changeStatus(member, doomed.id, "IN_PROGRESS");
+    await requestTaskDeletion(member, doomed.id, "Дубль");
+    // Someone else's task: not the owner's to answer for in the digest.
+    await createTask(
+      member,
+      taskInput({ title: "Чужая", assigneeId: other.id, dueDate: "2026-09-29" }),
+      "create",
+    );
+
+    const seen = new Map<string, DigestData>();
+    const capture: DigestWriter = async (user, _today, data) => {
+      seen.set(user.id, data);
+      return digestTemplate(data);
+    };
+    await runSchedulerTick(new Date("2026-10-02T03:35:00Z"), { writeDigest: capture });
+
+    const forOwner = seen.get(owner.id)!;
+    expect(forOwner.overdueAtDoers.map((x) => [x.title, x.assignee])).toEqual([
+      ["Отчёт исполнителя", displayName(member)],
+    ]);
+    // The same list as «Ждут решения» (its badge counts 2 too).
+    expect(forOwner.waitingForDecision.map((x) => x.title).sort()).toEqual(["Дубль", "Сдана"]);
+    expect(await countDecisions(await withAccess(owner))).toBe(2);
+    const body = (
+      await db.notification.findFirstOrThrow({ where: { userId: owner.id, type: "digest" } })
+    ).body!;
+    expect(body).toContain("⏰ Просрочены у исполнителей: 1");
+
+    // The assignee: their own overdue, without the work they handed in.
+    expect(seen.get(member.id)!.overdue.map((x) => x.title)).toEqual(["Отчёт исполнителя"]);
+  });
+
+  it("the digest reminds about a timer left running since yesterday", async () => {
+    const owner = await createTestUser("OWNER");
+    await updateSettings(owner.id, settings("Asia/Tashkent"));
+    const task = await createTask(owner, taskInput({ title: "Звонки", isPersonal: true }), "start");
+    await startTimer(owner, task.id, new Date("2026-10-01T12:00:00Z"));
+    const seen: DigestData[] = [];
+    const capture: DigestWriter = async (_user, _today, data) => {
+      seen.push(data);
+      return "Текст";
+    };
+    await runSchedulerTick(new Date("2026-10-02T03:35:00Z"), { writeDigest: capture });
+    expect(seen[0]?.runningTimer).toEqual({ title: "Звонки", since: "1 окт." });
+  });
+
+  it("work handed in gets no due or overdue reminders for the assignee", async () => {
+    const owner = await createTestUser("OWNER");
+    const member = await createTestUser("MEMBER");
+    await updateSettings(member.id, settings("Asia/Tashkent", { disabledTypes: ["digest"] }));
+    for (const due of ["2026-10-01", "2026-10-03"]) {
+      const task = await createTask(
+        owner,
+        taskInput({ title: `Сдана ${due}`, assigneeId: member.id, dueDate: due }),
+        "create",
+      );
+      await changeStatus(member, task.id, "IN_PROGRESS");
+      await changeStatus(member, task.id, "IN_REVIEW");
+    }
+    await runSchedulerTick(new Date("2026-10-02T05:00:00Z"), { writeDigest }); // 10:00, overdue
+    await runSchedulerTick(new Date("2026-10-02T11:30:00Z"), { writeDigest }); // Fri 16:30, due
+    expect(await count(member.id, "overdue")).toBe(0);
+    expect(await count(member.id, "due_reminder")).toBe(0);
+  });
+
   it("sends the Friday team summary to the owner and to managers who see all team tasks", async () => {
     const owner = await createTestUser("OWNER");
     const manager = await createTestUser("MANAGER");
@@ -223,20 +317,25 @@ describe("scheduler", () => {
 });
 
 describe("digest template (fallback without AI)", () => {
-  it("lists overdue first, then today, waiting and tomorrow", () => {
+  it("lists overdue first, then overdue at the assignees, today, waiting, tomorrow, the timer", () => {
     const text = digestTemplate({
       overdue: [{ title: "Старое", dueDate: "2026-09-30" }],
+      overdueAtDoers: [{ title: "Отчёт Азиза", dueDate: "2026-09-29", assignee: "Азиз" }],
       dueToday: [{ title: "Сегодня" }],
       waitingForDecision: [{ title: "Утвердить", status: "На утверждении" }],
       dueTomorrow: [],
+      runningTimer: { title: "Звонки", since: "1 окт." },
     });
     expect(text.split("\n")).toEqual([
       "🔥 Просрочено: 1",
       "  • Старое (30 сент.)",
+      "⏰ Просрочены у исполнителей: 1",
+      "  • Отчёт Азиза — Азиз (29 сент.)",
       "📋 На сегодня: 1",
       "  • Сегодня",
       "⏳ Ждут вашего решения: 1",
       "  • Утвердить — На утверждении",
+      "⏱ Таймер идёт с 1 окт.: «Звонки». Если работа закончена — остановите его.",
     ]);
   });
 });

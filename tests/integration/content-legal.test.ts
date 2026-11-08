@@ -3,12 +3,15 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/lib/db";
 import { withAccess } from "@/modules/core/access/actor";
 import { saveRoleConfig } from "@/modules/core/access/config";
+import { addPostFile, removePostFile } from "@/modules/content/files";
 import {
   approvePost,
+  cancelPost,
   ContentError,
   getPost,
   legalApprove,
   movePost,
+  restorePost,
   returnWithFeedback,
   saveContent,
   savePlanItem,
@@ -118,6 +121,53 @@ describe("content: lawyer, withdrawing, moving", () => {
     expect(
       await db.notification.count({ where: { userId: author.id, title: "Пост снят с проверки" } }),
     ).toBe(1);
+  });
+
+  it("a change of text or files of an approved post (or one with the lawyer) sends it back to review", async () => {
+    const { owner, author, lawyer, post } = await setup();
+    await submitForReview(author, post.id);
+    await approvePost(owner, post.id);
+    expect(await status(post.id)).toBe("LEGAL_REVIEW");
+
+    // Saving the same text changes nothing.
+    await saveContent(owner, post.id, { textRu: "Тестовый текст" });
+    expect(await status(post.id)).toBe("LEGAL_REVIEW");
+
+    // With the lawyer: a new text goes back to the planner's review; the planner who added the
+    // post hears it unless they changed it themselves.
+    await saveContent(lawyer, post.id, { textRu: "Новый текст" });
+    expect(await status(post.id)).toBe("REVIEW");
+    const changed = { title: "Утверждённый пост изменили — снова на проверку" };
+    expect(await db.notification.count({ where: { userId: owner.id, ...changed } })).toBe(1);
+
+    await approvePost(owner, post.id);
+    await legalApprove(lawyer, post.id);
+    expect(await status(post.id)).toBe("APPROVED");
+
+    // Approved: a new file sends it back too, and the approval is gone.
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    const file = await addPostFile(owner, post.id, "RU", new File([png], "visual.png"));
+    const after = await db.contentPost.findUniqueOrThrow({ where: { id: post.id } });
+    expect(after.status).toBe("REVIEW");
+    expect(after.approvedAt).toBeNull();
+    expect(await db.notification.count({ where: { userId: lawyer.id, ...changed } })).toBe(0);
+
+    // Removing a file of a post under review leaves it there.
+    await removePostFile(owner, file.id);
+    expect(await status(post.id)).toBe("REVIEW");
+  });
+
+  it("a cancelled post can be put back into the plan", async () => {
+    const { owner, post } = await setup();
+    await cancelPost(owner, post.id);
+    expect(await status(post.id)).toBe("CANCELLED");
+    await restorePost(owner, post.id);
+    // It already had a text: back as a draft.
+    expect(await status(post.id)).toBe("DRAFT");
+    await expect(restorePost(owner, post.id)).rejects.toBeInstanceOf(ContentError);
   });
 
   it("moves a post to another day: everyone with the section", async () => {

@@ -49,6 +49,8 @@ import {
   changeStatus,
   createTask,
   makeTeamTask,
+  reopenTask,
+  undoQuickClose,
   updateTask,
   type CreateMode,
   type TaskInput,
@@ -124,7 +126,11 @@ export async function createTaskAction(
       user,
       taskInputFromForm(formData),
       mode in CREATE_MODES ? (mode as CreateMode) : "draft",
-      { repeat: repeatFromForm(formData), needsApproval: formData.get("needsApproval") === "on" },
+      {
+        repeat: repeatFromForm(formData),
+        needsApproval: formData.get("needsApproval") === "on",
+        startOwn: true,
+      },
     );
     taskId = task.id;
   } catch (error) {
@@ -183,19 +189,26 @@ export async function changeStatusAction(formData: FormData) {
   await onTaskPage(
     formData,
     taskId,
-    () => changeStatus(user, taskId, to, { reason, despiteCancelled }),
+    // «Отправить» on one's own draft starts it, as «Создать» does.
+    () => changeStatus(user, taskId, to, { reason, despiteCancelled, startOwn: true }),
     then,
   );
 }
 
-// For the kanban board: returns the result instead of redirecting.
+// For the kanban board: returns the result instead of redirecting. A move that needs a reason (or
+// a conscious «despite the cancelled blocking task») gets it from the board's small dialog.
 export async function moveTaskAction(
   taskId: string,
   to: string,
+  extra: { reason?: string; despiteCancelled?: boolean } | null = null,
 ): Promise<{ ok: boolean; error?: string }> {
   const user = await actor();
+  const reason = typeof extra?.reason === "string" ? extra.reason.trim().slice(0, 1000) : null;
   try {
-    await changeStatus(user, idSchema.parse(taskId), statusSchema.parse(to));
+    await changeStatus(user, idSchema.parse(taskId), statusSchema.parse(to), {
+      reason: reason || null,
+      despiteCancelled: extra?.despiteCancelled === true,
+    });
   } catch (error) {
     if (error instanceof TaskError) return { ok: false, error: error.code };
     throw error;
@@ -386,18 +399,42 @@ export async function updateTaskFieldAction(formData: FormData) {
   );
 }
 
-// The round button in a task row: the next allowed step towards closing the task. When it can't
-// be taken (a blocking task, a cancelled one to confirm), the task panel opens with the reason.
+// The round button in a task row: the next allowed step towards closing the task. It acts at once
+// and the page then offers to undo it («Вернуть», ?done=…). When it can't be taken (a blocking
+// task, a cancelled one to confirm), the task panel opens with the reason.
 export async function quickCloseAction(formData: FormData) {
   const user = await actor();
   const taskId = idSchema.parse(str(formData, "taskId"));
   const back = safeBack(str(formData, "back"), "/tasks");
-  let target = withParams(back, {});
+  let target = withParams(back, { done: taskId });
   try {
     await completeTask(user, taskId);
   } catch (error) {
     if (!(error instanceof TaskError)) throw error;
     target = withParams(back, { task: taskId, error: error.code });
+  }
+  revalidatePath("/", "layout");
+  redirect(target);
+}
+
+// «Вернуть в работу»: a task closed or cancelled within 24 hours goes back to «В работе».
+export async function reopenTaskAction(formData: FormData) {
+  const user = await actor();
+  const taskId = idSchema.parse(str(formData, "taskId"));
+  await onTaskPage(formData, taskId, () => reopenTask(user, taskId));
+}
+
+// «Вернуть» after the round button handed work in: the doer takes it back from review.
+export async function undoQuickAction(formData: FormData) {
+  const user = await actor();
+  const taskId = idSchema.parse(str(formData, "taskId"));
+  const back = safeBack(str(formData, "back"), "/tasks");
+  let target = withParams(back, { done: null });
+  try {
+    await undoQuickClose(user, taskId);
+  } catch (error) {
+    if (!(error instanceof TaskError)) throw error;
+    target = withParams(back, { done: null, task: taskId, error: error.code });
   }
   revalidatePath("/", "layout");
   redirect(target);
@@ -524,10 +561,22 @@ export async function tickStepAction(formData: FormData) {
 
 // ---------- time («Время») ----------
 
+// Starting a timer stops the one running on another task: the card then says which one and how
+// long it ran (?stopped=<minutes>.<taskId>), so it never happens unnoticed.
 export async function startTimerAction(formData: FormData) {
   const user = await actor();
   const taskId = idSchema.parse(str(formData, "taskId"));
-  await onTaskPage(formData, taskId, () => startTimer(user, taskId));
+  const back = safeBack(str(formData, "back"), `/tasks/${encodeURIComponent(taskId)}`);
+  let target = withParams(back, { stopped: null });
+  try {
+    const { stopped } = await startTimer(user, taskId);
+    if (stopped) target = withParams(back, { stopped: `${stopped.minutes}.${stopped.taskId}` });
+  } catch (error) {
+    if (!(error instanceof TaskError)) throw error;
+    target = withParams(back, { error: error.code });
+  }
+  revalidatePath("/", "layout");
+  redirect(target);
 }
 
 export async function stopTimerAction(formData: FormData) {

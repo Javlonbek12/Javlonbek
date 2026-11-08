@@ -19,15 +19,17 @@ import {
 } from "@/modules/connect/report";
 import { canLeadConnect, lastImports } from "@/modules/connect/service";
 import { requireUser } from "@/modules/core/auth/current-user";
-import { getUserToday } from "@/modules/core/settings/service";
+import { getSettings } from "@/modules/core/settings/service";
+import { todayInTimezone } from "@/lib/dates";
 
 // Connect bot analytics on three levels: leadership, managers, executors.
 export default async function ConnectPage({ searchParams }: PageProps<"/connect">) {
   const user = await requireUser();
   const canLead = canLeadConnect(user);
   const query = parseConnectQuery(await searchParams, canLead);
+  const { timezone } = await getSettings(user.id);
   const [report, imports] = await Promise.all([
-    buildConnectReport(query, await getUserToday(user.id)),
+    buildConnectReport(query, todayInTimezone(timezone)),
     lastImports(1),
   ]);
   const q = report.query;
@@ -43,9 +45,12 @@ export default async function ConnectPage({ searchParams }: PageProps<"/connect"
           {lastImport && (
             <p className="text-muted-foreground text-xs">
               {t("connect.updated", {
-                date: dateFormat({ dateStyle: "medium", timeStyle: "short" }).format(
-                  lastImport.createdAt,
-                ),
+                // In the viewer's time zone, not the server's.
+                date: dateFormat({
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                  timeZone: timezone,
+                }).format(lastImport.createdAt),
               })}
             </p>
           )}

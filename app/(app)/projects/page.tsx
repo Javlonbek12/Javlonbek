@@ -1,8 +1,11 @@
+import Link from "next/link";
+
 import { StatRing } from "@/components/dashboard/ring";
 import { Portfolio } from "@/components/projects/portfolio";
 import { ProjectForm } from "@/components/projects/project-form";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { t, type TranslationKey } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getSettings, getUserToday } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
@@ -14,10 +17,12 @@ import { createProjectAction } from "./actions";
 
 export default async function ProjectsPage({ searchParams }: PageProps<"/projects">) {
   const user = await requireUser();
-  const { error } = await searchParams;
+  const { error, show } = await searchParams;
+  // In work by default; finished projects under their own filter.
+  const finished = show === "finished";
   const [today, settings] = await Promise.all([getUserToday(user.id), getSettings(user.id)]);
   const [projects, users] = await Promise.all([
-    listProjectCards(user, today, settings.timezone),
+    listProjectCards(user, today, settings.timezone, { finished }),
     user.role === "OWNER" ? listAssignableUsers() : Promise.resolve([]),
   ]);
   const sum = (pick: (p: (typeof projects)[number]) => number) =>
@@ -26,7 +31,23 @@ export default async function ProjectsPage({ searchParams }: PageProps<"/project
 
   return (
     <div className="flex flex-col gap-4 [&>*]:min-w-0">
-      <h1 className="text-[22px] font-medium md:text-2xl">{t("projects.title")}</h1>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-[22px] font-medium md:text-2xl">{t("projects.title")}</h1>
+        <div className="bg-secondary/70 inline-flex gap-0.5 rounded-full p-1 text-sm">
+          {[false, true].map((value) => (
+            <Link
+              key={String(value)}
+              href={value ? "/projects?show=finished" : "/projects"}
+              className={cn(
+                "rounded-full px-3.5 py-1",
+                value === finished ? "bg-card font-medium shadow-sm" : "text-muted-foreground",
+              )}
+            >
+              {t(value ? "projects.filterFinished" : "projects.filterActive")}
+            </Link>
+          ))}
+        </div>
+      </div>
       {typeof error === "string" && (
         <p role="alert" className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
           {t(`projects.errors.${error}` as TranslationKey)}
@@ -34,8 +55,8 @@ export default async function ProjectsPage({ searchParams }: PageProps<"/project
       )}
       {projects.length === 0 ? (
         <Card className="gap-1">
-          <CardTitle>{t("projects.empty")}</CardTitle>
-          <CardDescription>{t("projects.emptyHint")}</CardDescription>
+          <CardTitle>{t(finished ? "projects.noneFinished" : "projects.empty")}</CardTitle>
+          {!finished && <CardDescription>{t("projects.emptyHint")}</CardDescription>}
         </Card>
       ) : (
         <>

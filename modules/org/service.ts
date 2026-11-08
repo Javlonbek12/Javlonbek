@@ -177,6 +177,7 @@ export async function linkPeopleByName() {
 
 // People placed in the chart get their job title from it, and as manager the nearest person
 // above them who can be a manager (OWNER or MANAGER — the same rule as in the employee card).
+// For them both fields are set here only; the employee card shows them read-only.
 export async function syncPeople() {
   const rows = await db.orgNode.findMany({
     include: { user: { select: { id: true, role: true } } },
@@ -201,9 +202,10 @@ export async function syncPeople() {
         break;
       }
     }
+    // Nobody above who can be a manager: no manager (a stale one would keep their access).
     await db.user.update({
       where: { id: node.user.id },
-      data: { position: node.title, ...(managerId ? { managerId } : {}) },
+      data: { position: node.title, managerId },
     });
   }
 }

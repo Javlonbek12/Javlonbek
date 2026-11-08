@@ -6,6 +6,7 @@ import { TaskStatus } from "@/lib/generated/prisma/enums";
 import type { Actor } from "@/modules/core/permissions";
 
 import { CLOSED_STATUSES, doerWhere } from "./access";
+import { WEEK_DAYS } from "./sort";
 
 export const SCOPES = ["mine", "created", "team"] as const;
 // "smart": overdue first, then today, then by importance and due date (see sort.ts).
@@ -81,11 +82,16 @@ export function filtersWhere(
   else if (filters.priority !== "any") and.push({ priority: filters.priority });
 
   if (filters.due === "overdue") {
-    and.push({ dueDate: { lt: asDate(today) }, status: { notIn: CLOSED_STATUSES } });
+    // Handed-in work waits for acceptance: it is not «overdue» (see sort.ts).
+    and.push({
+      dueDate: { lt: asDate(today) },
+      status: { notIn: [...CLOSED_STATUSES, "IN_REVIEW"] },
+    });
   } else if (filters.due === "today") {
     and.push({ dueDate: asDate(today) });
   } else if (filters.due === "week") {
-    and.push({ dueDate: { gte: asDate(today), lt: asDate(addDays(today, 7)) } });
+    // Today and the 6 days after it, like the «Ближайшие 7 дней» group with «Сегодня».
+    and.push({ dueDate: { gte: asDate(today), lt: asDate(addDays(today, WEEK_DAYS)) } });
   } else if (filters.due === "none") {
     and.push({ dueDate: null });
   }

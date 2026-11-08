@@ -17,6 +17,7 @@ import { TaskError } from "./errors";
 import { notifyTaskEvent, type TaskEvent } from "./notifications";
 import { loadRouting, resolveRoute } from "./routing";
 import { stepPeopleIds } from "./step-rules";
+import { stopTimersOnTask } from "./time-rules";
 
 // Co-assignees of a team task (BACKLOG item 24): they do what the assignee does — take the task
 // into work, tick steps, hand it in — but don't accept the result. Adding someone follows the
@@ -95,7 +96,7 @@ export async function addCoAssignee(
     return "added";
   }
 
-  await db.taskCoAssigneeRequest.create({
+  const request = await db.taskCoAssigneeRequest.create({
     data: { taskId, userId, requestedById: actor.id, deciderIds: route.deciderIds },
   });
   await logActivity({
@@ -107,7 +108,12 @@ export async function addCoAssignee(
   });
   await tell(
     task,
-    { kind: "coRequested", deciderIds: route.deciderIds, name: displayName(user) },
+    {
+      kind: "coRequested",
+      requestId: request.id,
+      deciderIds: route.deciderIds,
+      name: displayName(user),
+    },
     actor,
   );
   return "requested";
@@ -136,6 +142,8 @@ export async function removeCoAssignee(
       where: { taskId, responsibleId: userId, doneAt: null },
       data: { responsibleId: null },
     });
+  // Off the task, off the clock: their timer on it stops (the time so far is kept).
+  await stopTimersOnTask(taskId, new Date(), userId);
   await logActivity({
     actorId: actor.id,
     action: self ? "task.coassignee_left" : "task.coassignee_removed",

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/lib/db";
 import { deleteOrgNode, getOrgTree, orgPathOf, saveOrgNode } from "@/modules/org/service";
 import { teamProfiles } from "@/modules/team/profile";
+import { getEmployeeCard, updateProfile } from "@/modules/team/service";
 import { createTestUser, resetDb } from "@/tests/helpers/db";
 
 const unit = (name: string, parentId: string | null = null, title: string | null = null) => ({
@@ -90,6 +91,46 @@ describe("org structure", () => {
     await deleteOrgNode(owner, leadNode.id);
     const [after] = await getOrgTree();
     expect(after.children[0].children.length).toBe(3);
+  });
+
+  it("people in the chart get title and manager only from it; no one above — no manager", async () => {
+    const owner = await createTestUser("OWNER");
+    const lead = await createTestUser("MANAGER");
+    const member = await createTestUser("MEMBER");
+    const leadNode = await saveOrgNode(
+      owner,
+      null,
+      position("Тестовый лидер", { userId: lead.id }),
+    );
+    const memberNode = await saveOrgNode(
+      owner,
+      null,
+      position("Тестовый специалист", { userId: member.id, parentId: leadNode.id }),
+    );
+    expect((await db.user.findUniqueOrThrow({ where: { id: member.id } })).managerId).toBe(lead.id);
+
+    // The card offers neither field; a save leaves them as the chart says.
+    const card = await getEmployeeCard(owner, member.id);
+    expect(card!.inChart).toBe(true);
+    expect(card!.editable).not.toContain("position");
+    expect(card!.editable).not.toContain("managerId");
+    await updateProfile(owner, member.id, {
+      position: "Другая должность",
+      responsibility: "Тестовая зона",
+      phone: null,
+      email: null,
+      startedAt: null,
+      managerId: owner.id,
+    });
+    expect(await db.user.findUniqueOrThrow({ where: { id: member.id } })).toMatchObject({
+      position: "Тестовый специалист",
+      managerId: lead.id,
+      responsibility: "Тестовая зона",
+    });
+
+    // Moved to the top: nobody above, so the old manager goes away.
+    await saveOrgNode(owner, memberNode.id, position("Тестовый специалист", { userId: member.id }));
+    expect((await db.user.findUniqueOrThrow({ where: { id: member.id } })).managerId).toBeNull();
   });
 
   it("refuses cycles, a person twice and edits by non-owners", async () => {

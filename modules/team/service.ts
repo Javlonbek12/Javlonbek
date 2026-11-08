@@ -125,13 +125,15 @@ export async function getEmployeeCard(viewer: Actor, employeeId: string) {
         orderBy: { createdAt: "desc" },
       })
     : null;
+  const inChart = await isInChart(user.id);
   return {
     user,
     manager,
     reports,
     stats: canSeeStats(viewer, user) ? employeeStats(tasks.get(user.id) ?? [], today) : null,
     notes,
-    editable: editableProfileFields(viewer, user),
+    inChart,
+    editable: cardFields(editableProfileFields(viewer, user), inChart),
   };
 }
 
@@ -149,11 +151,19 @@ const profileSchema = z.object({
 
 export type ProfileInput = z.input<typeof profileSchema>;
 
+// A person placed in the org chart gets the job title and the manager from it (syncPeople), so the
+// card doesn't offer them: an edit there would be undone by the next chart change.
+const isInChart = async (userId: string) =>
+  (await db.orgNode.count({ where: { userId, kind: "POSITION" } })) > 0;
+const FROM_CHART: ProfileField[] = ["position", "managerId"];
+const cardFields = (fields: ProfileField[], inChart: boolean) =>
+  inChart ? fields.filter((f) => !FROM_CHART.includes(f)) : fields;
+
 // Saves only the fields this viewer may change; others are ignored.
 export async function updateProfile(viewer: Actor, employeeId: string, input: ProfileInput) {
   const employee = await db.user.findUnique({ where: { id: employeeId } });
   if (!employee) throw new TeamError("forbidden");
-  const allowed = editableProfileFields(viewer, employee);
+  const allowed = cardFields(editableProfileFields(viewer, employee), await isInChart(employeeId));
   if (allowed.length === 0) throw new TeamError("forbidden");
   const parsed = profileSchema.safeParse(input);
   if (!parsed.success) throw new TeamError("invalid");

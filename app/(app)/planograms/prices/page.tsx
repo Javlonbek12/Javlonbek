@@ -18,11 +18,16 @@ import { savePricesAction } from "../actions";
 
 export default async function PricesPage({ searchParams }: PageProps<"/planograms/prices">) {
   const user = await requireUser();
-  const { error } = await searchParams;
+  const { error, unread } = await searchParams;
   const [lists, current] = await Promise.all([listPriceLists(), priceTable()]);
   return (
     <div className="flex flex-col gap-4">
       <PlanogramErrorNote error={error} />
+      {typeof unread === "string" && (
+        <p className="text-sm text-amber-700 dark:text-amber-300">
+          {t("planograms.library.prices.unreadRows", { rows: unread })}
+        </p>
+      )}
       {canManagePlanograms(user.role) && (
         <Card className="gap-2">
           <div className="flex flex-wrap items-center justify-between gap-2">

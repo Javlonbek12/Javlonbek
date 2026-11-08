@@ -21,13 +21,13 @@ describe("report periods", () => {
       to: "2026-09-15",
       preset: null,
     });
-    expect(parsePeriod({ from: "2026-09-15", to: "2026-09-01" }, TODAY).preset).toBe("week");
-    expect(parsePeriod({ from: "2024-01-01", to: "2026-01-01" }, TODAY).preset).toBe("week");
+    expect(parsePeriod({ from: "2026-09-15", to: "2026-09-01" }, TODAY).preset).toBe("lastWeek");
+    expect(parsePeriod({ from: "2024-01-01", to: "2026-01-01" }, TODAY).preset).toBe("lastWeek");
     expect(parsePeriod({ preset: "lastMonth" }, TODAY)).toMatchObject({
       from: "2026-09-01",
       preset: "lastMonth",
     });
-    expect(parsePeriod({ preset: "nonsense" }, TODAY).preset).toBe("week");
+    expect(parsePeriod({ preset: "nonsense" }, TODAY).preset).toBe("lastWeek");
   });
 
   it("compares with the period of the same length right before", () => {
