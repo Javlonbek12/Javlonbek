@@ -97,10 +97,10 @@ export default async function ContentPostPage({
         <Link href={back} className="text-muted-foreground text-sm hover:underline">
           ← {t("content.title")}
         </Link>
-        <div className="flex items-start justify-between gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <h1 className="min-w-0 text-[22px] font-medium break-words md:text-2xl">{post.title}</h1>
           {/* Both rare and final actions together, each behind a confirmation. */}
-          <div className="flex shrink-0 flex-wrap justify-end gap-1">
+          <div className="flex shrink-0 flex-wrap gap-1 sm:justify-end">
             {rights.editPlan && (
               <ConfirmAction
                 label={t("content.actions.cancel")}
