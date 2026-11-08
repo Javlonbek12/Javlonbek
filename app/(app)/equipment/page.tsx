@@ -10,6 +10,7 @@ import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { outletReview } from "@/modules/distribution/control";
 import { equipmentOverview } from "@/modules/distribution/equipment";
+import { regionLabel } from "@/modules/distribution/types";
 
 const METRICS = ["installed", "stock", "outlets"] as const;
 type Metric = (typeof METRICS)[number];
@@ -88,7 +89,7 @@ export default async function EquipmentMapPage({ searchParams }: PageProps<"/equ
                   className="hover:bg-accent/40 flex flex-col gap-1 rounded-lg px-2 py-1.5"
                 >
                   <span className="flex items-baseline justify-between gap-2 text-sm">
-                    <span className="font-medium">{r.region}</span>
+                    <span className="font-medium">{regionLabel(r.region)}</span>
                     <span className="tabular-nums">
                       {fmt(value(r))}{" "}
                       <span className="text-muted-foreground text-xs">

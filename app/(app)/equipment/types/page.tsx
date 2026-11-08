@@ -9,7 +9,7 @@ import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { equipmentOverview } from "@/modules/distribution/equipment";
 import { describeGeometry, parseGeometry } from "@/modules/planograms/geometry";
-import { DIST_TYPES } from "@/modules/distribution/types";
+import { DIST_TYPES, regionLabel } from "@/modules/distribution/types";
 
 type TypeInfo = (typeof DIST_TYPES)[number];
 
@@ -140,7 +140,7 @@ export default async function EquipmentTypesPage() {
                   href={`/equipment/region/${encodeURIComponent(r.region)}`}
                   className="grid grid-cols-[6.5rem_1fr_3rem] items-center gap-2 text-xs hover:underline"
                 >
-                  <span className="truncate">{r.region}</span>
+                  <span className="truncate">{regionLabel(r.region)}</span>
                   <span className="bg-muted h-1.5 overflow-hidden rounded-full">
                     <span
                       className="block h-full rounded-full bg-[#2a78d6]"

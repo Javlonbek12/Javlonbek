@@ -16,7 +16,7 @@ import { displayName } from "@/modules/core/users/display-name";
 import { getUserToday } from "@/modules/core/settings/service";
 import { remainder, shippingRows, type ShippingRow } from "@/modules/distribution/compute";
 import { canManageDistribution, loadDistribution } from "@/modules/distribution/service";
-import { parseDestination } from "@/modules/distribution/types";
+import { destinationLabel, parseDestination, regionLabel } from "@/modules/distribution/types";
 
 import { addShipmentAction, deleteShipmentAction } from "../actions";
 
@@ -129,7 +129,7 @@ export default async function DistributionStockPage({
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="min-w-0 font-medium break-words">
-                      {r.tsm ?? r.destination}
+                      {r.tsm ?? regionLabel(r.destination)}
                     </span>
                     <StatusChip row={r} />
                   </div>
@@ -163,7 +163,7 @@ export default async function DistributionStockPage({
                         {r.tsm}
                       </span>
                     ) : (
-                      <strong key="d">{r.destination}</strong>
+                      <strong key="d">{regionLabel(r.destination)}</strong>
                     ),
                     fmt(r.planned),
                     <N key="s" value={r.shipped} />,
@@ -197,6 +197,9 @@ export default async function DistributionStockPage({
             items={d.items.map((i) => ({ id: i.id, name: i.name }))}
             tsms={tsms}
             regions={regions}
+            labels={Object.fromEntries(
+              d.destinations.map((dest) => [dest, destinationLabel(dest)]),
+            )}
             left={left}
             values={{
               posmId: q("posmId"),
@@ -248,7 +251,7 @@ export default async function DistributionStockPage({
             </summary>
             <Matrix
               dense
-              head={[t("dist.stock.posm"), ...used]}
+              head={[t("dist.stock.posm"), ...used.map((dest) => destinationLabel(dest))]}
               rows={d.items
                 .filter((i) => used.some((dest) => shippedTo(dest, i.id) > 0))
                 .map((i) => ({
@@ -274,7 +277,7 @@ export default async function DistributionStockPage({
                   <option value="">{t("dist.shipping.journalAll")}</option>
                   {used.map((dest) => (
                     <option key={dest} value={dest}>
-                      {dest}
+                      {destinationLabel(dest)}
                     </option>
                   ))}
                 </NativeSelect>
@@ -297,7 +300,9 @@ export default async function DistributionStockPage({
                         <span className="tabular-nums">
                           {formatDay(toDateString(first.shippedOn))}
                         </span>
-                        <span className="min-w-0 font-medium break-words">{first.destination}</span>
+                        <span className="min-w-0 font-medium break-words">
+                          {destinationLabel(first.destination)}
+                        </span>
                         {first.waybill !== null ? (
                           <Link
                             href={`/distribution/plan/${encodeURIComponent(first.destination)}?n=${first.waybill}`}

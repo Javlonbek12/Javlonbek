@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { dateFormat, t } from "@/lib/i18n";
 import { coverage, sumUnits } from "@/modules/distribution/compute";
 import { loadDistribution } from "@/modules/distribution/service";
-import { DIST_TYPES, tagPrice } from "@/modules/distribution/types";
+import { DIST_TYPES, regionLabel, tagPrice } from "@/modules/distribution/types";
 
 // The analysis on one page: the numbers, what needs attention, regions, coverage and checks.
 export default async function DistributionPage() {
@@ -117,10 +117,11 @@ export default async function DistributionPage() {
               cells: [
                 d.tsms.has(region) ? (
                   <Link href="/distribution/plan#tsm" className="hover:underline">
-                    {region} · {t("dist.regions.tsmCount", { count: d.tsms.get(region)!.size })}
+                    {regionLabel(region)} ·{" "}
+                    {t("dist.regions.tsmCount", { count: d.tsms.get(region)!.size })}
                   </Link>
                 ) : (
-                  region
+                  regionLabel(region)
                 ),
                 fmt(sumUnits(units)),
                 pct(baseUnits ? sumUnits(units) / baseUnits : 0),

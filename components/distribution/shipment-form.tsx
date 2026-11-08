@@ -25,6 +25,7 @@ export function ShipmentForm({
   items,
   tsms,
   regions,
+  labels,
   left,
   values,
   error,
@@ -33,6 +34,8 @@ export function ShipmentForm({
   items: { id: string; name: string }[];
   tsms: string[];
   regions: string[];
+  // How each place reads on screen (the value sent stays the stored name).
+  labels: Record<string, string>;
   // `${posmId}\n${destination}` → pieces the plan still leaves there.
   left: Record<string, number>;
   values: ShipmentValues;
@@ -76,7 +79,7 @@ export function ShipmentForm({
             <optgroup label={t("dist.shipping.groupTsm")}>
               {tsms.map((d) => (
                 <option key={d} value={d}>
-                  {d}
+                  {labels[d] ?? d}
                 </option>
               ))}
             </optgroup>
@@ -84,7 +87,7 @@ export function ShipmentForm({
           <optgroup label={t("dist.shipping.groupRegions")}>
             {regions.map((d) => (
               <option key={d} value={d}>
-                {d}
+                {labels[d] ?? d}
               </option>
             ))}
           </optgroup>

@@ -16,7 +16,7 @@ import { getUserToday } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
 import { remainder, sumUnits } from "@/modules/distribution/compute";
 import { loadDistribution, loadWaybill, waybillsTo } from "@/modules/distribution/service";
-import { parseDestination } from "@/modules/distribution/types";
+import { destinationLabel, parseDestination } from "@/modules/distribution/types";
 
 import { shipWaybillAction } from "../../actions";
 
@@ -75,7 +75,7 @@ export default async function WaybillPage({
           title={t("dist.waybill.number", { number: waybill.number })}
           date={t("dist.waybill.dated", { date: formatDate(waybill.shippedOn, "UTC") })}
           campaign={waybill.campaign}
-          destination={waybill.destination}
+          destination={destinationLabel(waybill.destination)}
         >
           <div className="-mx-1 overflow-x-auto px-1 print:mx-0 print:overflow-visible print:px-0">
             <table className="w-full text-sm print:text-[11pt]">
@@ -179,7 +179,7 @@ export default async function WaybillPage({
             </label>
           }
           campaign={d.order?.name ?? "—"}
-          destination={destination}
+          destination={destinationLabel(destination)}
           note={t("dist.waybill.units", { count: fmt(units) })}
         >
           <WaybillLines lines={lines} viaTsm={viaTsm} />

@@ -1,3 +1,5 @@
+import { t, type Locale, type TranslationKey } from "@/lib/i18n";
+
 // Equipment types of the POSM distribution file, in its column order. Which planogram model
 // each type is lives on the model (Equipment.distTypes).
 export const DIST_TYPES = [
@@ -192,6 +194,20 @@ export function parseDestination(destination: string): { region: string; tsm: st
   return at === -1
     ? { region: destination, tsm: null }
     : { region: destination.slice(0, at), tsm: destination.slice(at + SEP.length) };
+}
+
+// A region's name on screen, in the viewer's language («Ташкент»). Files, stored destinations and
+// Excel keep the names the files come with; a region the dictionary doesn't know stays as it is.
+export function regionLabel(region: string, locale?: Locale): string {
+  const key = `equip.regions.${region}` as TranslationKey;
+  const text = t(key, undefined, locale);
+  return text === key ? region : text;
+}
+
+// A destination on screen: its region's name, and the TSM after it.
+export function destinationLabel(destination: string, locale?: Locale): string {
+  const { region, tsm } = parseDestination(destination);
+  return tsm === null ? regionLabel(region, locale) : `${regionLabel(region, locale)}${SEP}${tsm}`;
 }
 
 // The price on a price tag: "Ценник 28000" → 28000, "Ценник 19,000 blue" → 19000; null otherwise.
