@@ -1878,7 +1878,7 @@ export const en: Dictionary = {
         "Couldn't read the file. An Excel (.xlsx) with the columns «Дата», «Тема», «Боты» is needed — download the template.",
       ownPost: "Somebody else approves or returns your own post.",
     },
-    views: { month: "Month", week: "Week", list: "List", preview: "Preview" },
+    views: { month: "Month", week: "Week", list: "List", preview: "Preview", plan: "Plan" },
     brands: {
       ESSE: "ESSE",
       BOHEM: "BOHEM",
@@ -2098,6 +2098,17 @@ export const en: Dictionary = {
     },
     late: {
       badge: "Not sent on time",
+    },
+    more: "More",
+    period: {
+      thisMonth: "This month",
+      nextMonth: "Next month",
+      thisWeek: "This week",
+      nextWeek: "Next week",
+    },
+    newForm: {
+      cancel: "Cancel",
+      textRu: "Text in Russian (optional, can be added later)",
     },
   },
   projects: {

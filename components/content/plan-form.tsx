@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useState } from "react";
 
 import { useT } from "@/components/locale-provider";
@@ -22,7 +23,10 @@ export type PlanValues = {
 };
 
 // A refused save comes back with what was typed, so nothing is lost.
-export type PlanFormState = { error: string | null; values: Partial<PlanValues> };
+export type PlanFormState = {
+  error: string | null;
+  values: Partial<PlanValues> & { textRu?: string | null };
+};
 
 const CHANNELS = Object.keys(BOT_COLOR) as ContentChannel[];
 
@@ -35,14 +39,20 @@ export function PlanForm({
   postId,
   submit,
   showAuthor = true,
+  cancelHref,
+  withText = false,
 }: {
   action: (state: PlanFormState, form: FormData) => Promise<PlanFormState>;
-  values: Partial<PlanValues>;
+  values: Partial<PlanValues> & { textRu?: string | null };
   users: { id: string; name: string }[];
   postId?: string;
   submit: string;
   // Employees add posts for themselves: no author to choose.
   showAuthor?: boolean;
+  // A «Отмена» link back (the new post page).
+  cancelHref?: string;
+  // A new post: its Russian text can be typed right away, a short post is one step.
+  withText?: boolean;
 }) {
   const t = useT();
   const [state, dispatch, pending] = useActionState(action, { error: null, values });
@@ -129,10 +139,21 @@ export function PlanForm({
         {t("content.fields.brief")}
         <Textarea name="brief" rows={3} maxLength={4000} defaultValue={current.brief ?? ""} />
       </label>
-      <div>
+      {withText && (
+        <label className="flex flex-col gap-1">
+          {t("content.newForm.textRu")}
+          <Textarea name="textRu" rows={4} maxLength={4096} defaultValue={current.textRu ?? ""} />
+        </label>
+      )}
+      <div className="flex flex-wrap gap-2">
         <Button type="submit" disabled={pending}>
           {pending ? "…" : submit}
         </Button>
+        {cancelHref && (
+          <Button asChild variant="ghost">
+            <Link href={cancelHref}>{t("content.newForm.cancel")}</Link>
+          </Button>
+        )}
       </div>
     </form>
   );

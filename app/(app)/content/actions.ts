@@ -63,15 +63,23 @@ const planState = (code: string, form: FormData): PlanFormState => {
   const fields = planFields(form);
   return {
     error: code,
-    values: { ...fields, brief: fields.brief, publishTime: fields.publishTime || null },
+    values: {
+      ...fields,
+      brief: fields.brief,
+      publishTime: fields.publishTime || null,
+      textRu: str(form, "textRu") || null,
+    },
   };
 };
 
+// A new post; the Russian text typed in the same form is saved with it.
 export async function createPlanItemAction(_: PlanFormState, form: FormData) {
   const actor = await requireUser();
   let id: string;
   try {
     id = (await savePlanItem(actor, null, planFields(form))).id;
+    const textRu = str(form, "textRu").trim();
+    if (textRu) await saveContent(actor, id, { textRu });
   } catch (error) {
     if (!(error instanceof ContentError)) throw error;
     return planState(error.code, form);

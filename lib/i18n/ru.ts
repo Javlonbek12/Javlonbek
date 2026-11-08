@@ -1886,7 +1886,7 @@ export const ru = {
         "Не удалось прочитать файл. Нужен Excel (.xlsx) с колонками «Дата», «Тема», «Боты» — скачайте шаблон.",
       ownPost: "Свой пост утверждает или возвращает кто-то другой.",
     },
-    views: { month: "Месяц", week: "Неделя", list: "Список", preview: "Превью" },
+    views: { month: "Месяц", week: "Неделя", list: "Список", preview: "Превью", plan: "План" },
     brands: {
       ESSE: "ESSE",
       BOHEM: "BOHEM",
@@ -2107,6 +2107,17 @@ export const ru = {
     },
     late: {
       badge: "Не отправлен в срок",
+    },
+    more: "Ещё",
+    period: {
+      thisMonth: "Этот месяц",
+      nextMonth: "Следующий месяц",
+      thisWeek: "Эта неделя",
+      nextWeek: "Следующая неделя",
+    },
+    newForm: {
+      cancel: "Отмена",
+      textRu: "Текст на русском (необязательно, можно добавить позже)",
     },
   },
   projects: {
