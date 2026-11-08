@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { Section } from "@/components/connect/parts";
+import { NoList } from "@/components/distribution/no-list";
 import { fmt, Matrix, N } from "@/components/distribution/parts";
 import { t } from "@/lib/i18n";
 import { tsmBreakdown } from "@/modules/distribution/compute";
@@ -10,13 +11,14 @@ import { loadDistribution } from "@/modules/distribution/service";
 // share broken down by its TSMs.
 export default async function DistributionPlanPage() {
   const d = await loadDistribution();
+  if (d.items.length === 0) return <NoList order={d.order} />;
   const regions = [...d.regions.keys()];
   const breakdown = tsmBreakdown(d.plans, d.tsms);
   const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
   const waybill = (destination: string, label: string) => (
     <Link
       href={`/distribution/plan/${encodeURIComponent(destination)}`}
-      className="hover:text-primary hover:underline"
+      className="text-primary underline decoration-dotted underline-offset-2 hover:decoration-solid"
     >
       {label}
     </Link>

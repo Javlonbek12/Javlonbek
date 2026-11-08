@@ -109,7 +109,7 @@ describe("POSM distribution", () => {
         "2026-10-26",
         d,
       ),
-    ).toBe(1);
+    ).toMatchObject({ count: 1 });
     await addShipment(
       owner,
       {

@@ -464,6 +464,59 @@ export function findings(input: {
   return out.sort((a, b) => order[a.tone] - order[b.tone]);
 }
 
+export type ShippingStatus = "notStarted" | "partial" | "done";
+
+export type ShippingRow = {
+  destination: string;
+  region: string;
+  tsm: string | null;
+  planned: number;
+  // A region's row counts what went to its TSMs too: it all comes out of the region's share.
+  shipped: number;
+  left: number;
+  status: ShippingStatus;
+  // Some POSM went there beyond its plan.
+  over: boolean;
+};
+
+// Who still needs what, for the warehouse: every destination with a plan or a shipment, each
+// region followed by its TSMs, with the pieces planned, shipped and left over all POSM items.
+export function shippingRows(
+  plans: ItemPlan[],
+  shipments: Shipment[],
+  destinations: string[],
+): ShippingRow[] {
+  const rows = destinations.map((destination): ShippingRow => {
+    const { region, tsm } = parseDestination(destination);
+    let planned = 0;
+    let shipped = 0;
+    let left = 0;
+    let over = false;
+    for (const plan of plans) {
+      const r = remainder(plan, destination, shipments);
+      const got = r.shipped + r.viaTsm;
+      planned += r.planned;
+      shipped += got;
+      left += r.toSend;
+      if (got > r.planned) over = true;
+    }
+    const status = left === 0 ? "done" : shipped === 0 ? "notStarted" : "partial";
+    return { destination, region, tsm, planned, shipped, left, status, over };
+  });
+  const shown = rows.filter((r) => r.planned > 0 || r.shipped > 0);
+  const regionOrder = new Map(
+    shown.filter((r) => r.tsm === null).map((r, i) => [r.region, i] as const),
+  );
+  const at = (r: ShippingRow) => regionOrder.get(r.region) ?? regionOrder.size;
+  return shown
+    .map((r, i) => ({ r, i }))
+    .sort(
+      (a, b) =>
+        at(a.r) - at(b.r) || Number(a.r.tsm !== null) - Number(b.r.tsm !== null) || a.i - b.i,
+    )
+    .map(({ r }) => r);
+}
+
 export type BreakdownRow = {
   kind: "region" | "tsm" | "rest";
   region: string;
