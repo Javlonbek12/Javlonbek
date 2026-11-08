@@ -11,8 +11,10 @@ import {
   deleteContentPost,
   contentAttention,
   getPost,
+  isLatePost,
   listPostsBetween,
   markSent,
+  postsAwaitingDecision,
   returnWithFeedback,
   saveContent,
   savePlanItem,
@@ -165,7 +167,105 @@ describe("content plan", () => {
     expect(
       await db.notification.findFirst({ where: { userId: owner.id, type: "content_review" } }),
     ).not.toBeNull();
-    await approvePost(member, post.id);
+    // The author never approves their own post (owner's decision); anybody else with the section does.
+    await expect(approvePost(member, post.id)).rejects.toMatchObject({ code: "ownPost" });
+    await approvePost(other, post.id);
+    expect((await db.contentPost.findUniqueOrThrow({ where: { id: post.id } })).status).toBe(
+      "APPROVED",
+    );
+  });
+
+  it("nobody approves or returns their own post, the owner included", async () => {
+    const owner = await withAccess(await createTestUser("OWNER"));
+    const manager = await withAccess(await createTestUser("MANAGER"));
+    // The owner's own post, without an author set.
+    const post = await savePlanItem(owner, null, {
+      title: "Тестовый пост владельца",
+      channels: ["PARTNER"],
+      publishDate: "2026-10-10",
+    });
+    await saveContent(owner, post.id, { textRu: "Тест" });
+    // A draft is not approved at all: it goes for review first.
+    await expect(approvePost(manager, post.id)).rejects.toMatchObject({ code: "state" });
+    await submitForReview(owner, post.id);
+    // Sending it made the owner its author; the manager is asked to check it.
+    expect(await db.contentPost.findUniqueOrThrow({ where: { id: post.id } })).toMatchObject({
+      status: "REVIEW",
+      authorId: owner.id,
+    });
+    expect(
+      await db.notification.count({ where: { userId: manager.id, type: "content_review" } }),
+    ).toBe(1);
+    expect((await getPost(owner, post.id))?.rights).toMatchObject({
+      review: false,
+      waitsForOthers: true,
+    });
+    await expect(approvePost(owner, post.id)).rejects.toMatchObject({ code: "ownPost" });
+    await expect(returnWithFeedback(owner, post.id, "Тест")).rejects.toMatchObject({
+      code: "ownPost",
+    });
+    expect((await getPost(manager, post.id))?.rights.review).toBe(true);
+    await approvePost(manager, post.id);
+    expect((await db.contentPost.findUniqueOrThrow({ where: { id: post.id } })).status).toBe(
+      "APPROVED",
+    );
+  });
+
+  it("sending for review saves the texts typed in the form first", async () => {
+    const { owner, author, post } = await setup();
+    // Nothing saved yet: the post is only planned. The text typed before pressing «send» goes along.
+    await submitForReview(author, post.id, { textRu: "Тестовый текст из формы", textUz: "" });
+    expect(await db.contentPost.findUniqueOrThrow({ where: { id: post.id } })).toMatchObject({
+      status: "REVIEW",
+      textRu: "Тестовый текст из формы",
+      textUz: null,
+    });
+    await returnWithFeedback(owner, post.id, "Тестовое замечание");
+    await submitForReview(author, post.id, { textRu: "Исправлено", textUz: "Tuzatildi" });
+    expect(await db.contentPost.findUniqueOrThrow({ where: { id: post.id } })).toMatchObject({
+      status: "REVIEW",
+      textRu: "Исправлено",
+      textUz: "Tuzatildi",
+    });
+    // Empty form, nothing uploaded: refused, the post stays as it was.
+    const empty = await savePlanItem(owner, null, {
+      title: "Тестовый пустой пост",
+      channels: ["PARTNER"],
+      publishDate: "2026-10-11",
+      authorId: author.id,
+    });
+    await expect(
+      submitForReview(author, empty.id, { textRu: " ", textUz: "" }),
+    ).rejects.toMatchObject({ code: "empty" });
+  });
+
+  it("lists posts awaiting a decision: not the person's own, `asked` for their reviewers", async () => {
+    const { owner, author, other, post } = await setup();
+    await saveContent(author, post.id, { textRu: "Тест" });
+    await submitForReview(author, post.id);
+    expect(await postsAwaitingDecision(author)).toHaveLength(0);
+    // The owner put it in the plan: they are asked; the colleague may decide too, unasked.
+    expect(await postsAwaitingDecision(owner)).toMatchObject([{ id: post.id, asked: true }]);
+    expect(await postsAwaitingDecision(other)).toMatchObject([{ id: post.id, asked: false }]);
+    const attention = await contentAttention(other, "2026-10-01");
+    expect(attention.review.map((p) => p.id)).toEqual([post.id]);
+    expect(attention.mine.size).toBe(0);
+    expect((await contentAttention(owner, "2026-10-01")).mine.has(post.id)).toBe(true);
+  });
+
+  it("shows late posts, and to the owner the posts returned to their authors", async () => {
+    const { owner, author, post } = await setup();
+    await saveContent(author, post.id, { textRu: "Тест" });
+    await submitForReview(author, post.id);
+    await returnWithFeedback(owner, post.id, "Тестовое замечание");
+    const before = await contentAttention(owner, "2026-10-09");
+    expect(before.late).toHaveLength(0);
+    expect(before.changes.map((p) => p.id)).toEqual([post.id]);
+    // The day has passed and the post wasn't sent.
+    const after = await contentAttention(owner, "2026-10-11");
+    expect(after.late.map((p) => p.id)).toEqual([post.id]);
+    expect(isLatePost(after.late[0]!, "2026-10-11")).toBe(true);
+    expect(isLatePost({ status: "SENT", publishDate: post.publishDate }, "2026-10-11")).toBe(false);
   });
 
   it("deletes: everyone with the section, any post", async () => {

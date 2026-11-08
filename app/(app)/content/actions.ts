@@ -150,10 +150,14 @@ export async function movePostAction(id: string, date: string): Promise<{ ok: bo
   return { ok: true };
 }
 
+// From the materials form: the texts typed there are saved first, then the post is sent.
 export async function submitContentAction(form: FormData) {
   const actor = await requireUser();
   const id = str(form, "postId");
-  await run(`/content/${id}`, () => submitForReview(actor, id));
+  const texts = form.has("textRu")
+    ? { textRu: str(form, "textRu"), textUz: str(form, "textUz") }
+    : undefined;
+  await run(`/content/${id}`, () => submitForReview(actor, id, texts));
 }
 
 export async function approveContentAction(form: FormData) {

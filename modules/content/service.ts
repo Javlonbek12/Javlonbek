@@ -37,7 +37,9 @@ export class ContentError extends Error {
       | "empty"
       | "state"
       | "noBot"
-      | "nothingToday",
+      | "nothingToday"
+      // Nobody decides on their own post (owner's decision): somebody else approves or returns it.
+      | "ownPost",
   ) {
     super(code);
     this.name = "ContentError";
@@ -61,10 +63,19 @@ export const changeSendsBackToReview = (status: ContentStatus) => RECHECK.includ
 
 type PostRow = { authorId: string | null; createdById: string; status: ContentStatus };
 
+// Whose work the post is: its author; a post without one is the work of whoever added it
+// (sending it for review makes the sender its author, see submitForReview).
+export const isOwnPost = (actor: Pick<Actor, "id">, post: Omit<PostRow, "status">) =>
+  (post.authorId ?? post.createdById) === actor.id;
+
+// Statuses a post may be sent for review from (a planned one once something is typed in).
+const SUBMITTABLE: ContentStatus[] = ["PLANNED", "DRAFT", "CHANGES"];
+
 export function contentRights(actor: Actor, post: PostRow) {
   const planner = canPlanContent(actor);
   const author = post.authorId === actor.id;
   const creator = post.createdById === actor.id;
+  const own = isOwnPost(actor, post);
   const closed = post.status === "SENT" || post.status === "CANCELLED";
   return {
     // The whole plan is visible to everyone with the section; changing it follows the rights below.
@@ -72,12 +83,15 @@ export function contentRights(actor: Actor, post: PostRow) {
     planner,
     // Upload the visual and texts.
     editContent: !closed && (planner || (author && EDITABLE_BY_AUTHOR.includes(post.status))),
-    submit: (planner || author) && (post.status === "DRAFT" || post.status === "CHANGES"),
+    submit: (planner || author) && SUBMITTABLE.includes(post.status),
     // Take the post back from review to change it.
     withdraw: (author || creator) && IN_CHECK.includes(post.status),
-    review: planner && post.status === "REVIEW",
-    // The lawyer's check, after a planner approved the post.
-    legal: actor.role === "LAWYER" && post.status === "LEGAL_REVIEW",
+    // Approve or return a post sent for review: anyone with the section but its author.
+    review: planner && post.status === "REVIEW" && !own,
+    // The lawyer's check, after a planner approved the post (never of the lawyer's own post).
+    legal: actor.role === "LAWYER" && post.status === "LEGAL_REVIEW" && !own,
+    // The post is being checked and it is this person's own: somebody else decides.
+    waitsForOthers: own && IN_CHECK.includes(post.status),
     send: planner && post.status === "APPROVED",
     // Planners always; whoever added the post, until it goes for review.
     editPlan: (planner && !closed) || (creator && EDITABLE_BY_AUTHOR.includes(post.status)),
@@ -118,33 +132,77 @@ export async function listPostsBetween(
   });
 }
 
-// What needs someone now: to review (planners), to prepare (my posts), to send soon (planners).
+const OPEN: ContentStatus[] = ["PLANNED", "DRAFT", "REVIEW", "LEGAL_REVIEW", "CHANGES", "APPROVED"];
+
+// Late: the publication day has passed and the post hasn't gone to every bot (nor was cancelled).
+export const isLatePost = (post: { status: ContentStatus; publishDate: Date }, today: string) =>
+  OPEN.includes(post.status) && toDateString(post.publishDate) < today;
+
+// What needs someone now. Everyone with the section has the same rights, so the lists are the
+// team's: waiting for a check (`mine`: the ones this person is asked to check), my posts to
+// prepare, posts returned to their authors (owner and managers follow those), approved ones to
+// send (not for the lawyer, whose part is the legal check) and late ones.
 export async function contentAttention(actor: Actor, today: string) {
   const planner = canPlanContent(actor);
   const lawyer = actor.role === "LAWYER";
-  const [review, prepare, toSend] = await Promise.all([
+  const lead = actor.role === "OWNER" || actor.role === "MANAGER";
+  const byDate = { publishDate: "asc" } as const;
+  const [review, prepare, changes, toSend, late] = await Promise.all([
     planner || lawyer
       ? db.contentPost.findMany({
           where: { status: lawyer ? "LEGAL_REVIEW" : "REVIEW" },
           include,
-          orderBy: { publishDate: "asc" },
+          orderBy: byDate,
         })
       : Promise.resolve([]),
     db.contentPost.findMany({
       where: { authorId: actor.id, status: { in: EDITABLE_BY_AUTHOR } },
       include,
-      orderBy: { publishDate: "asc" },
+      orderBy: byDate,
     }),
-    planner
+    lead && planner
       ? db.contentPost.findMany({
-          where: { status: "APPROVED" },
+          where: { status: "CHANGES", NOT: { authorId: actor.id } },
           include,
-          orderBy: { publishDate: "asc" },
+          orderBy: byDate,
         })
       : Promise.resolve([]),
+    planner && !lawyer
+      ? db.contentPost.findMany({ where: { status: "APPROVED" }, include, orderBy: byDate })
+      : Promise.resolve([]),
+    db.contentPost.findMany({
+      where: {
+        ...visibleWhere(actor),
+        status: { in: OPEN },
+        publishDate: { lt: fromDateString(today) },
+      },
+      include,
+      orderBy: byDate,
+    }),
   ]);
-  const late = (p: { publishDate: Date }) => toDateString(p.publishDate) < today;
-  return { review, prepare, toSend, lateCount: [...prepare, ...review].filter(late).length };
+  const mine = new Set<string>();
+  for (const post of review)
+    if ((await expectedReviewers(post)).includes(actor.id)) mine.add(post.id);
+  return { review, mine, prepare, changes, toSend, late, lateCount: late.length };
+}
+
+// Posts waiting for a check that this person may decide (approve or return): sent for review,
+// and for a lawyer also those with the lawyer; never their own. `asked`: they are among the
+// people asked to check it (and got the notification). For «Сегодня».
+export async function postsAwaitingDecision(actor: Actor) {
+  if (!canPlanContent(actor)) return [];
+  const posts = await db.contentPost.findMany({
+    where: {
+      status: { in: actor.role === "LAWYER" ? ["REVIEW", "LEGAL_REVIEW"] : ["REVIEW"] },
+      NOT: { OR: [{ authorId: actor.id }, { authorId: null, createdById: actor.id }] },
+    },
+    include,
+    orderBy: [{ publishDate: "asc" }, { publishTime: "asc" }],
+  });
+  const result = [];
+  for (const post of posts)
+    result.push({ ...post, asked: (await expectedReviewers(post)).includes(actor.id) });
+  return result;
 }
 
 export async function getPost(actor: Actor, id: string) {
@@ -287,6 +345,7 @@ export async function sendBackToReview(
     status: ContentStatus;
     publishDate: Date;
     createdById: string;
+    authorId?: string | null;
   },
 ) {
   if (!changeSendsBackToReview(post.status)) return false;
@@ -316,14 +375,32 @@ const isEmpty = async (post: { id: string; textRu: string | null; textUz: string
   !post.textUz &&
   (await db.contentFile.count({ where: { postId: post.id } })) === 0;
 
-export async function submitForReview(actor: Actor, id: string) {
+// `texts`: what is typed in the form right now. They are saved first, so sending never loses a
+// text that wasn't saved separately.
+export async function submitForReview(
+  actor: Actor,
+  id: string,
+  texts?: z.input<typeof contentSchema>,
+) {
+  if (texts) {
+    if (!(await load(actor, id)).rights.submit) throw new ContentError("state");
+    await saveContent(actor, id, texts);
+  }
   const { post, rights } = await load(actor, id);
   if (!rights.submit) throw new ContentError("state");
   if (await isEmpty(post)) throw new ContentError("empty");
-  await db.contentPost.update({ where: { id }, data: { status: "REVIEW" } });
+  // Whoever sends a post without an author prepared it: they become its author, so they can't
+  // approve it themselves.
+  await db.contentPost.update({
+    where: { id },
+    data: { status: "REVIEW", ...(post.authorId ? {} : { authorId: actor.id }) },
+  });
   await log(actor, "content.submitted", id);
   const actorRow = await db.user.findUnique({ where: { id: actor.id } });
-  for (const reviewer of await reviewersOf(post, actor)) {
+  for (const reviewer of await reviewersOf(
+    { ...post, authorId: post.authorId ?? actor.id },
+    actor,
+  )) {
     await notify(reviewer, () => ({
       type: "content_review",
       title: t("notifications.events.contentReviewTitle"),
@@ -338,13 +415,18 @@ export async function submitForReview(actor: Actor, id: string) {
 }
 
 // Who reviews a post: the planner who put it in the plan; for a post an employee added
-// themselves — the owner and the managers who have the section.
-async function reviewersOf(post: { createdById: string }, actor: Actor) {
+// themselves (or a planner's own post) — the owner and the managers who have the section.
+// Never its author: nobody approves their own post.
+async function reviewersOf(
+  post: { createdById: string; authorId?: string | null },
+  actor: Pick<Actor, "id">,
+): Promise<string[]> {
+  const skip = new Set([actor.id, post.authorId ?? post.createdById]);
   const creator = await db.user.findUnique({ where: { id: post.createdById } });
   if (
     creator &&
     !creator.deactivatedAt &&
-    creator.id !== actor.id &&
+    !skip.has(creator.id) &&
     canPlanContent(await withAccess(creator))
   )
     return [creator.id];
@@ -353,8 +435,36 @@ async function reviewersOf(post: { createdById: string }, actor: Actor) {
   });
   const ids: string[] = [];
   for (const user of candidates)
-    if (user.id !== actor.id && canPlanContent(await withAccess(user))) ids.push(user.id);
+    if (!skip.has(user.id) && canPlanContent(await withAccess(user))) ids.push(user.id);
   return ids;
+}
+
+// Who checks the post now: its reviewers (see reviewersOf) or, with the lawyer, the lawyers.
+// Shown as «Что дальше» on the post and as «вы проверяете» in the plan.
+export async function expectedReviewers(post: PostRow): Promise<string[]> {
+  if (post.status === "LEGAL_REVIEW") {
+    const author = post.authorId ?? post.createdById;
+    return (await lawyerIds()).filter((id) => id !== author);
+  }
+  // Nobody is acting here, so only the author is left out.
+  return reviewersOf(post, { id: "" });
+}
+
+// «Что дальше» for the author: who checks the post now (or once it is sent), and whether the
+// lawyer checks it after them.
+export async function nextChecks(post: PostRow) {
+  const legal = post.status === "LEGAL_REVIEW";
+  const ids = await expectedReviewers(legal ? post : { ...post, status: "REVIEW" });
+  const people = await db.user.findMany({
+    where: { id: { in: ids } },
+    select: { firstName: true, lastName: true },
+    orderBy: { firstName: "asc" },
+  });
+  const author = post.authorId ?? post.createdById;
+  return {
+    names: people.map(displayName),
+    lawyerNext: !legal && (await lawyerIds()).some((id) => id !== author),
+  };
 }
 
 // The author takes the post back from review (planner's or lawyer's) to change it.
@@ -378,6 +488,7 @@ export async function withdrawPost(actor: Actor, id: string) {
 // Returned by the planner (review) or by the lawyer (legal check).
 export async function returnWithFeedback(actor: Actor, id: string, feedback: string) {
   const { post, rights } = await load(actor, id);
+  if (rights.waitsForOthers) throw new ContentError("ownPost");
   if (!rights.review && !rights.legal) throw new ContentError("state");
   const body = feedback.trim().slice(0, 4000);
   if (!body) throw new ContentError("invalid");
@@ -406,14 +517,17 @@ const lawyerIds = async () =>
 
 export const hasLawyer = async () => (await db.user.count({ where: lawyers })) > 0;
 
-// A planner approves; the post then goes to the lawyer (or straight to approved without one).
+// A planner approves a post sent for review, never their own one; the post then goes to the
+// lawyer (or straight to approved without one).
 export async function approvePost(actor: Actor, id: string, now = new Date()) {
   const { post, rights } = await load(actor, id);
-  // A planner may also approve a draft they finished themselves.
-  if (!rights.planner || !["REVIEW", "DRAFT", "CHANGES"].includes(post.status))
-    throw new ContentError("state");
+  if (rights.planner && post.status === "REVIEW" && rights.waitsForOthers)
+    throw new ContentError("ownPost");
+  if (!rights.review) throw new ContentError("state");
   if (await isEmpty(post)) throw new ContentError("empty");
-  const lawyers = (await lawyerIds()).filter((lawyer) => lawyer !== actor.id);
+  // A lawyer who wrote the post doesn't check it either.
+  const author = post.authorId ?? post.createdById;
+  const lawyers = (await lawyerIds()).filter((lawyer) => lawyer !== actor.id && lawyer !== author);
   if (!lawyers.length) return finalApprove(actor, post, now);
   await db.contentPost.update({ where: { id }, data: { status: "LEGAL_REVIEW" } });
   await log(actor, "content.to_legal", id);
@@ -433,11 +547,11 @@ export async function approvePost(actor: Actor, id: string, now = new Date()) {
 // The lawyer approves: the post is ready to send.
 export async function legalApprove(actor: Actor, id: string, now = new Date()) {
   const { post, rights } = await load(actor, id);
+  if (actor.role === "LAWYER" && rights.waitsForOthers) throw new ContentError("ownPost");
   if (!rights.legal) throw new ContentError("state");
   await finalApprove(actor, post, now);
-  // The planners learn the post can be sent.
+  // The planners learn the post can be sent (reviewersOf leaves the author out).
   for (const reviewer of await reviewersOf(post, actor)) {
-    if (reviewer === post.authorId) continue;
     await notify(reviewer, () => ({
       type: "content_approved",
       title: t("notifications.events.contentLegalApprovedTitle"),

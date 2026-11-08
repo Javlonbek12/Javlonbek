@@ -20,7 +20,7 @@ const STATUS_EDGE: Record<Post["status"], string> = {
   DRAFT: "border-l-blue-500",
   REVIEW: "border-l-amber-500",
   LEGAL_REVIEW: "border-l-violet-500",
-  CHANGES: "border-l-destructive",
+  CHANGES: "border-l-orange-500",
   APPROVED: "border-l-emerald-500",
   SENT: "border-l-emerald-700",
   CANCELLED: "border-l-muted",

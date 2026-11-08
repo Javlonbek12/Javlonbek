@@ -1774,12 +1774,16 @@ export const en: Dictionary = {
       CANCELLED: "Cancelled",
     },
     attention: {
-      review: "Waiting for my review",
+      review: "Waiting for review",
       legal: "Waiting for the legal check",
       prepare: "For me to prepare",
       toSend: "Approved — to send",
       none: "none",
       late: "Overdue: {count}",
+      lateTitle: "Overdue",
+      changes: "Changes needed by authors",
+      mine: "you review",
+      own: "your post",
     },
     month: {
       prev: "Previous month",
@@ -1872,6 +1876,7 @@ export const en: Dictionary = {
       move: "Couldn't move the post.",
       import:
         "Couldn't read the file. An Excel (.xlsx) with the columns «Дата», «Тема», «Боты» is needed — download the template.",
+      ownPost: "Somebody else approves or returns your own post.",
     },
     views: { month: "Month", week: "Week", list: "List", preview: "Preview" },
     brands: {
@@ -2028,6 +2033,38 @@ export const en: Dictionary = {
       materials: "Materials",
       visual: "files",
       empty: "No posts in this period.",
+    },
+    materialsForm: {
+      readiness: "Post readiness:",
+      textRu: "RU text",
+      textUz: "UZ text",
+      filesRu: "RU files",
+      filesUz: "UZ files",
+      saveAndSubmit: "Save and send for review",
+      missing: "Missing: {list}. Send for review anyway?",
+      sendAnyway: "Yes, send",
+      back: "Go back",
+      unsaved: "The post text isn't saved. Leave the page without saving?",
+    },
+    next: {
+      title: "What's next",
+      afterSubmit: "Once sent, the post is checked by: {names}.",
+      review: "The post is in review. Checked by: {names}.",
+      legal: "The post is with the lawyer: {names}.",
+      thenLawyer: "Then the lawyer.",
+      notYours: "Somebody else approves or returns your own post.",
+    },
+    remark: {
+      title: "Remark: {name}",
+      fix: "Fix the materials ↓",
+    },
+    cancelConfirm: {
+      title: "Cancel the post?",
+      hint: "The post stays in the plan, crossed out; it can be put back.",
+      yes: "Yes, cancel",
+    },
+    late: {
+      badge: "Not sent on time",
     },
   },
   projects: {
