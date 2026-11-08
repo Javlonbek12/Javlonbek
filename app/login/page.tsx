@@ -10,6 +10,11 @@ import { t } from "@/lib/i18n";
 import { getCurrentUser, getViewerLocale } from "@/modules/core/auth/current-user";
 import { safeNextPath } from "@/modules/core/auth/next-path";
 
+export async function generateMetadata() {
+  await getViewerLocale();
+  return { title: t("login.tabTitle") };
+}
+
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const { error, next: nextParam } = await searchParams;
   // The page the person came for (a link from a notification): back there after signing in.
@@ -30,6 +35,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
         ) : (
           <p className="text-muted-foreground text-sm">{t("login.widgetNotConfigured")}</p>
         )}
+        <p className="text-muted-foreground text-sm">{t("login.noInvite")}</p>
       </Card>
       {isDevLoginEnabled() && <DevLoginForm next={next} />}
     </AuthShell>

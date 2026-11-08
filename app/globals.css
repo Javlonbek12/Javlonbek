@@ -37,6 +37,8 @@
 :root {
   /* Clean "workspace" look: cool light surface, white cards and sidebar, vivid blue for the active
      item and primary actions. Bright colours are kept for data (projects, statuses). */
+  /* The browser's own controls (checkboxes, date and time fields, lists, scrollbars) match. */
+  color-scheme: light;
   --radius: 0.875rem;
   --background: oklch(0.982 0.005 260);
   --foreground: oklch(0.24 0.035 265);
@@ -71,8 +73,10 @@
   --series-8: #e34948;
 }
 
-/* Dark theme (the sun / moon button in the top bar): deep navy surfaces, the same blue accent. */
+/* Dark theme (the theme button in the top bar, or "как в телефоне" on a dark phone): deep navy
+   surfaces, the same blue accent. */
 .dark {
+  color-scheme: dark;
   --background: oklch(0.17 0.025 265);
   --foreground: oklch(0.95 0.01 265);
   --card: oklch(0.215 0.03 265);
@@ -211,5 +215,53 @@
   }
   .confirm-popover[data-align="right"] {
     position-area: bottom span-left;
+  }
+}
+
+/* The loading bar on top (components/navigation-progress.tsx): fast at first, then slower, never
+   reaching the end until the page is there. */
+@keyframes navigation-progress {
+  from {
+    width: 0;
+  }
+  to {
+    width: 85%;
+  }
+}
+
+/* Printing (a waybill, an EAS, any page): only the page itself, on white paper. The app's menu,
+   header, phone bar and buttons are marked `data-print="hide"` or are buttons; a section can hide
+   more with Tailwind's `print:hidden`. The dark theme prints in the light colours. */
+@media print {
+  @page {
+    margin: 12mm;
+  }
+  :root,
+  .dark {
+    color-scheme: light;
+    --background: #fff;
+    --foreground: #000;
+    --card: #fff;
+    --card-foreground: #000;
+    --popover: #fff;
+    --popover-foreground: #000;
+    --muted: #f3f4f6;
+    --muted-foreground: #4b5563;
+    --secondary: #f3f4f6;
+    --secondary-foreground: #111827;
+    --accent: #f3f4f6;
+    --accent-foreground: #111827;
+    --border: #d1d5db;
+    --input: #d1d5db;
+    --shadow-card: none;
+  }
+  [data-print="hide"],
+  button,
+  [data-slot="button"] {
+    display: none !important;
+  }
+  /* The page fills the paper: no room left for the menu or the phone bar. */
+  [data-print="page"] {
+    padding: 0 !important;
   }
 }

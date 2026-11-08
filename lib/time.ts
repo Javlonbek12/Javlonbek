@@ -1,3 +1,4 @@
+import { dropYearMark, isOtherYear, todayInTimezone, yearOption } from "@/lib/dates";
 import { dateFormat } from "@/lib/i18n";
 
 // Minutes from midnight (0..1439) of `date` in the given IANA timezone.
@@ -42,15 +43,23 @@ export function formatDate(date: Date, timeZone: string): string {
   return dateFormat({ timeZone, day: "numeric", month: "long", year: "numeric" }).format(date);
 }
 
+// «6 нояб., 14:30»; in another year «6 нояб. 2025, 14:30».
 export function formatDateTime(date: Date, timeZone: string): string {
-  return dateFormat({
-    timeZone,
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).format(date);
+  const otherYear = isOtherYear(
+    todayInTimezone(timeZone, date).slice(0, 4),
+    todayInTimezone(timeZone).slice(0, 4),
+  );
+  return dropYearMark(
+    dateFormat({
+      timeZone,
+      day: "numeric",
+      month: "short",
+      ...yearOption(otherYear),
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).format(date),
+  );
 }
 
 // Offset of the timezone from UTC at the given moment, in minutes (Tashkent = +300).
