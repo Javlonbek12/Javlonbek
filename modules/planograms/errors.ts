@@ -10,7 +10,9 @@ export type PlanogramErrorCode =
   | "badFile"
   | "noChanges"
   | "applied"
-  | "stale";
+  | "stale"
+  | "posmInUse"
+  | "unreadable";
 
 // `code` maps to planograms.errors.* in the i18n dictionary.
 export class PlanogramError extends Error {

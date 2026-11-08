@@ -1,6 +1,12 @@
-import { allSlots, slotKey, type Geometry } from "./geometry";
-import { coveredSlots, skuFacings, type Layout, type SkuInfo } from "./layout";
-import { autofill } from "./autofill";
+import { allSlots, isInside, slotKey, type Geometry } from "./geometry";
+import {
+  coveredSlots,
+  posmArea,
+  skuFacings,
+  type Layout,
+  type SkuInfo,
+  type SlotContent,
+} from "./layout";
 
 // Replace one SKU with another everywhere in the layout (badges are kept).
 export function replaceSku(
@@ -50,19 +56,89 @@ export function insertSku(
   return { layout: result, ok: true, droppedSkuId: last?.kind === "SKU" ? last.skuId : null };
 }
 
-// Same assortment on other equipment: keeps the SKU order and facings where they fit
-// (fewer slots → fewer facings, then non-mandatory SKUs drop off). POSM is not carried over.
+type Facing = Extract<SlotContent, { kind: "SKU" }>;
+
+// Same planogram on other equipment. Everything stays on its shelf and place where it fits
+// (packs, deliberate empties, POSM); what is cut off (a shorter shelf, fewer shelves) moves to the
+// free places in reading order, the SKUs not on the new equipment yet first. A SKU that still has
+// no place takes an extra facing of another one (mandatory SKUs first); `dropped` lists the SKUs
+// that found none, for the user to see.
 export function adaptLayout(layout: Layout, from: Geometry, to: Geometry, skus: SkuInfo[]) {
-  const facings = new Map<string, number>();
-  for (const f of skuFacings(layout, from))
-    facings.set(f.content.skuId, (facings.get(f.content.skuId) ?? 0) + 1);
-  const ordered = [...facings.keys()]
-    .map((id) => skus.find((s) => s.id === id))
-    .filter((s): s is SkuInfo => Boolean(s));
-  const brandOrder = [...new Set(ordered.map((s) => s.brand))];
-  const result = autofill(to, ordered, { brandOrder, facings, maxFacings: 40 });
-  // Spare slots stay empty rather than inventing facings.
-  for (const { shelf, position } of allSlots(to))
-    result.layout[slotKey(shelf, position)] ??= { kind: "EMPTY" };
-  return result;
+  const result: Layout = {};
+  const taken = new Set<string>();
+  const overflow: Facing[] = [];
+  for (const { shelf, position } of allSlots(from)) {
+    const key = slotKey(shelf, position);
+    const content = layout[key];
+    if (!content) continue;
+    const area = content.kind === "POSM" ? posmArea(key, content.span, content.rows) : [key];
+    const fits = area.every((k) => {
+      const [s, p] = k.split(":").map(Number);
+      return isInside(to, s, p) && !taken.has(k);
+    });
+    if (fits) {
+      result[key] = content;
+      for (const k of area) taken.add(k);
+    } else if (content.kind === "SKU") overflow.push(content);
+  }
+
+  const free = allSlots(to)
+    .map(({ shelf, position }) => slotKey(shelf, position))
+    .filter((k) => !taken.has(k));
+  const onTarget = () =>
+    new Set(Object.values(result).flatMap((c) => (c.kind === "SKU" ? [c.skuId] : [])));
+  // Fewer free places than packs cut off: the first facing of each SKU not placed yet goes first,
+  // then extra facings; the chosen ones keep their order.
+  let moving = overflow;
+  if (free.length < overflow.length) {
+    const present = onTarget();
+    const first = new Set<number>();
+    overflow.forEach((c, i) => {
+      if (!present.has(c.skuId)) {
+        present.add(c.skuId);
+        first.add(i);
+      }
+    });
+    const keep = new Set([...first].slice(0, free.length));
+    for (let i = 0; i < overflow.length && keep.size < free.length; i++) keep.add(i);
+    moving = overflow.filter((_, i) => keep.has(i));
+  }
+  moving.forEach((c, i) => (result[free[i]!] = c));
+  for (const key of free.slice(moving.length)) result[key] = { kind: "EMPTY" };
+
+  // SKUs still missing take an extra facing of another SKU (of the same brand if possible),
+  // looking from the end of the equipment.
+  const source = skuFacings(layout, from).map((f) => f.content.skuId);
+  const info = new Map(skus.map((s) => [s.id, s]));
+  const present = onTarget();
+  const missing = [...new Set(source)]
+    .filter((id) => !present.has(id))
+    .sort((a, b) => Number(info.get(b)?.isMandatory ?? 0) - Number(info.get(a)?.isMandatory ?? 0));
+  const dropped: string[] = [];
+  const order = allSlots(to)
+    .map(({ shelf, position }) => slotKey(shelf, position))
+    .reverse();
+  for (const id of missing) {
+    const counts = new Map<string, number>();
+    for (const c of Object.values(result))
+      if (c.kind === "SKU") counts.set(c.skuId, (counts.get(c.skuId) ?? 0) + 1);
+    const extra = (key: string) => {
+      const c = result[key];
+      return c?.kind === "SKU" && (counts.get(c.skuId) ?? 0) > 1;
+    };
+    const brand = info.get(id)?.brand;
+    const key =
+      order.find(
+        (k) =>
+          extra(k) && info.get((result[k] as Facing).skuId)?.brand === brand && brand !== undefined,
+      ) ?? order.find(extra);
+    if (!key) {
+      dropped.push(id);
+      continue;
+    }
+    const sku = info.get(id);
+    const old = overflow.find((c) => c.skuId === id);
+    result[key] = { kind: "SKU", skuId: id, badges: old?.badges ?? sku?.defaultBadges ?? [] };
+  }
+  return { layout: result, dropped };
 }

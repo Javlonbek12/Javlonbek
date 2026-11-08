@@ -41,6 +41,8 @@ const equipmentSchema = z.object({
     .array(z.string())
     .default([])
     .refine((list) => list.every((t) => TYPE_CODES.includes(t as never))),
+  // The SKUs mandatory on this model; empty = the SKUs marked «обязательный».
+  mandatorySkuIds: z.array(z.string().max(64)).max(500).default([]),
 });
 
 export type EquipmentInput = z.input<typeof equipmentSchema>;
@@ -49,7 +51,19 @@ export async function saveEquipment(actor: Actor, id: string | null, input: Equi
   requireManager(actor);
   const parsed = equipmentSchema.safeParse(input);
   if (!parsed.success) throw new PlanogramError("invalid");
-  const data = { ...parsed.data, geometry: parsed.data.geometry as Prisma.InputJsonValue };
+  const known = new Set(
+    (
+      await db.sku.findMany({
+        where: { id: { in: parsed.data.mandatorySkuIds } },
+        select: { id: true },
+      })
+    ).map((s) => s.id),
+  );
+  const data = {
+    ...parsed.data,
+    geometry: parsed.data.geometry as Prisma.InputJsonValue,
+    mandatorySkuIds: [...new Set(parsed.data.mandatorySkuIds)].filter((s) => known.has(s)),
+  };
   // A type is one model: taking it here takes it from any other.
   const release = async (keep: string | null) => {
     if (data.distTypes.length === 0) return;
@@ -101,6 +115,23 @@ export async function distTypeOptions() {
     code: t.code,
     label: t.label,
     owner: models.find((m) => m.distTypes.includes(t.code))?.name ?? null,
+  }));
+}
+
+// The SKUs to pick a model's mandatory ones from: the current assortment, plus archived ones
+// already picked (so they can be unticked).
+export async function mandatorySkuOptions(selected: string[]) {
+  const skus = await db.sku.findMany({
+    where: { OR: [{ archived: false }, { id: { in: selected } }] },
+    orderBy: [{ brand: "asc" }, { name: "asc" }],
+    select: { id: true, name: true, brand: true, isMandatory: true, archived: true },
+  });
+  return skus.map((s) => ({
+    id: s.id,
+    label: s.name,
+    brand: s.brand,
+    mandatory: s.isMandatory,
+    archived: s.archived,
   }));
 }
 
@@ -171,10 +202,28 @@ const posmSchema = z.object({
 
 export type PosmInput = z.input<typeof posmSchema>;
 
+// Planograms (approved or waiting for approval) a POSM item stands on: its size is the shape of
+// their shelves, so it is locked while they use it (like the shape of equipment in use).
+export async function posmInUse(id: string) {
+  return db.planogram.count({
+    where: {
+      status: { in: ["APPROVED", "PENDING_APPROVAL"] },
+      slots: { some: { posmId: id } },
+    },
+  });
+}
+
 export async function savePosm(actor: Actor, id: string | null, input: PosmInput) {
   requireManager(actor);
   const parsed = posmSchema.safeParse(input);
   if (!parsed.success) throw new PlanogramError("invalid");
+  if (id) {
+    const current = await db.posm.findUnique({ where: { id } });
+    if (!current) throw new PlanogramError("notFound");
+    const resized =
+      current.slotSpan !== parsed.data.slotSpan || current.shelfSpan !== parsed.data.shelfSpan;
+    if (resized && (await posmInUse(id)) > 0) throw new PlanogramError("posmInUse");
+  }
   const saved = id
     ? await db.posm.update({ where: { id }, data: parsed.data })
     : await db.posm.create({ data: parsed.data });

@@ -15,6 +15,8 @@ type Item = {
   channel: string;
   updatedAt: Date;
   equipment: { name: string };
+  // Other versions in the works (the list shows one card per planogram).
+  working?: { id: string; version: number; status: "DRAFT" | "PENDING_APPROVAL" }[];
 };
 
 export function PlanogramList({ items }: { items: Item[] }) {
@@ -23,20 +25,40 @@ export function PlanogramList({ items }: { items: Item[] }) {
   return (
     <div className="grid gap-2 md:grid-cols-2">
       {items.map((p) => (
-        <Link
+        <div
           key={p.id}
-          href={`/planograms/${p.id}`}
-          className="bg-card hover:bg-accent/40 flex flex-col gap-1 rounded-lg border p-3"
+          className="bg-card hover:bg-accent/40 relative flex flex-col gap-1 rounded-lg border p-3"
         >
-          <span className="flex flex-wrap items-center gap-2">
+          <Link
+            href={`/planograms/${p.id}`}
+            className="flex flex-wrap items-center gap-2 after:absolute after:inset-0"
+          >
             <span className="font-medium">{p.title}</span>
             <PlanogramStatusBadge status={p.status} />
-          </span>
+          </Link>
           <span className="text-muted-foreground text-xs">
             {p.equipment.name} · {p.channel} · {t("planograms.version", { version: p.version })}
             {p.project && ` · ${p.project}`} · {formatDay(toDateString(p.updatedAt))}
           </span>
-        </Link>
+          {p.working && p.working.length > 0 && (
+            <span className="relative z-10 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+              {p.working.map((w) => (
+                <Link
+                  key={w.id}
+                  href={`/planograms/${w.id}`}
+                  className="text-amber-700 underline dark:text-amber-300"
+                >
+                  {t(
+                    w.status === "DRAFT"
+                      ? "planograms.list.hasDraft"
+                      : "planograms.list.hasPending",
+                    { version: w.version },
+                  )}
+                </Link>
+              ))}
+            </span>
+          )}
+        </div>
       ))}
     </div>
   );

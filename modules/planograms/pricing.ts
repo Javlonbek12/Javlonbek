@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { db } from "@/lib/db";
+import type { Prisma } from "@/lib/generated/prisma/client";
 import { fromDateString, isDateString } from "@/lib/dates";
 import { t } from "@/lib/i18n";
 import { logActivity } from "@/modules/core/activity/service";
@@ -75,7 +76,21 @@ export type PricePreview = {
   changes: PriceChange[];
 }[];
 
-// Active (approved) planograms whose price tags would change with this list.
+// Planograms on a list older than this one (or on none): what this list replaces. A planogram on
+// a newer list keeps it — opening an older list must never roll its prices back.
+function onOlderList(list: { effectiveFrom: Date; createdAt: Date }): Prisma.PlanogramWhereInput {
+  return {
+    OR: [
+      { priceListId: null },
+      { priceList: { effectiveFrom: { lt: list.effectiveFrom } } },
+      { priceList: { effectiveFrom: list.effectiveFrom, createdAt: { lt: list.createdAt } } },
+    ],
+  };
+}
+
+// Approved planograms on older lists whose price tags would change with this list. A planogram
+// that already has a version on this list (one left a draft by an earlier apply) is skipped:
+// applying again must not make a second one.
 export async function previewPriceList(priceListId: string): Promise<PricePreview> {
   const list = await db.priceList.findUnique({
     where: { id: priceListId },
@@ -83,15 +98,23 @@ export async function previewPriceList(priceListId: string): Promise<PricePrevie
   });
   if (!list) throw new PlanogramError("notFound");
   const newPrices = new Map(list.prices.map((p) => [p.skuId, p.price]));
-  const planograms = await db.planogram.findMany({
-    where: { status: "APPROVED", isTemplate: false, NOT: { priceListId } },
-    include: {
-      slots: { where: { kind: "SKU" }, select: { skuId: true } },
-      priceList: { include: { prices: true } },
-    },
-    orderBy: { title: "asc" },
-  });
+  const [planograms, onThisList] = await Promise.all([
+    db.planogram.findMany({
+      where: { status: "APPROVED", isTemplate: false, ...onOlderList(list) },
+      include: {
+        slots: { where: { kind: "SKU" }, select: { skuId: true } },
+        priceList: { include: { prices: true } },
+      },
+      orderBy: { title: "asc" },
+    }),
+    db.planogram.findMany({
+      where: { priceListId, isTemplate: false, status: { not: "ARCHIVED" } },
+      select: { rootId: true, id: true },
+    }),
+  ]);
+  const done = new Set(onThisList.map((p) => p.rootId ?? p.id));
   return planograms
+    .filter((p) => !done.has(p.rootId ?? p.id))
     .map((p) => {
       const old = new Map(p.priceList?.prices.map((x) => [x.skuId, x.price]) ?? []);
       return {
@@ -118,11 +141,7 @@ export async function draftsOnOlderLists(priceListId: string) {
     where: {
       isTemplate: false,
       status: { in: ["DRAFT", "PENDING_APPROVAL"] },
-      OR: [
-        { priceListId: null },
-        { priceList: { effectiveFrom: { lt: list.effectiveFrom } } },
-        { priceList: { effectiveFrom: list.effectiveFrom, createdAt: { lt: list.createdAt } } },
-      ],
+      ...onOlderList(list),
     },
     select: { id: true, title: true, version: true, status: true },
     orderBy: [{ title: "asc" }, { version: "asc" }],

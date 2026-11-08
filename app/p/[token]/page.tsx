@@ -34,10 +34,19 @@ export default async function PublicPlanogramPage({
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-col gap-3 p-4 print:p-0">
+      {!loaded.inForce && (
+        <p
+          role="alert"
+          className="border-destructive/40 bg-destructive/10 text-destructive rounded-xl border p-3 text-sm font-medium"
+        >
+          {t("planograms.public.notInForce")}
+        </p>
+      )}
       <h1 className="text-[22px] font-medium md:text-2xl">{slideTitle(loaded)}</h1>
       <p className="text-muted-foreground text-sm">
         {slideSubtitle(loaded)}
-        {loaded.record.approvedAt &&
+        {loaded.inForce &&
+          loaded.record.approvedAt &&
           ` · ${t("planograms.public.approved", { date: formatDay(toDateString(loaded.record.approvedAt)) })}`}
       </p>
       <PlanogramPicture

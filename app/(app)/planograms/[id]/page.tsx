@@ -7,6 +7,7 @@ import { PlanogramStatusBadge } from "@/components/planograms/status-badge";
 import { PlanogramPicture } from "@/components/planograms/planogram-picture";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
+import { ConfirmAction } from "@/components/ui/confirm-action";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -50,6 +51,8 @@ export default async function PlanogramPage({
   const r = loaded.record;
   const manage = canManagePlanograms(user.role);
   const approve = canApprovePlanograms(user.role);
+  // Sending to Telegram is for the owner and managers (the action checks the same).
+  const canSend = user.role === "OWNER" || user.role === "MANAGER";
   const draft = r.status === "DRAFT" || r.status === "PENDING_APPROVAL";
 
   const [svg, violations, changes, history, equipment, people, priceLists, names, stale] =
@@ -102,6 +105,14 @@ export default async function PlanogramPage({
         show={query.sent}
         text={t("planograms.actions.sent", { count: String(query.sent) })}
       />
+      <SavedNote
+        show={query.submitted}
+        text={
+          query.submitted === "-"
+            ? t("planograms.actions.submittedNobody")
+            : t("planograms.actions.submittedTo", { names: String(query.submitted) })
+        }
+      />
 
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-xl font-semibold">{r.title}</h2>
@@ -129,9 +140,20 @@ export default async function PlanogramPage({
             step("draft", t("planograms.actions.returnToDraft"), "ghost")}
           {!draft && step("version", t("planograms.actions.newVersion"))}
           {!r.isTemplate && step("template", t("planograms.actions.saveTemplate"), "ghost")}
-          {approve &&
-            r.status !== "ARCHIVED" &&
-            step("archive", t("planograms.actions.archive"), "ghost")}
+          {approve && r.status !== "ARCHIVED" && (
+            <ConfirmAction
+              label={t("planograms.actions.archive")}
+              title={t("planograms.actions.archiveTitle")}
+              hint={
+                r.status === "APPROVED"
+                  ? t("planograms.actions.archiveInForce")
+                  : t("planograms.actions.archiveHint")
+              }
+              confirm={t("planograms.actions.archiveConfirm")}
+              action={workflowAction}
+              hidden={{ planogramId: r.id, step: "archive" }}
+            />
+          )}
         </div>
       )}
       {critical && draft && (
@@ -271,7 +293,10 @@ export default async function PlanogramPage({
               {t("planograms.actions.print")}
             </a>
           </p>
-          {manage && people.length > 0 && (
+          {canSend && r.status !== "APPROVED" && (
+            <p className="text-muted-foreground text-xs">{t("planograms.actions.sendsInForce")}</p>
+          )}
+          {canSend && people.length > 0 && (
             <form action={sendToTelegramAction} className="flex flex-col gap-2">
               <input type="hidden" name="planogramId" value={r.id} />
               <div className="flex flex-wrap gap-3">
@@ -339,6 +364,11 @@ export default async function PlanogramPage({
           </summary>
           <form action={updateMetaAction} className="mt-3 grid gap-3 md:grid-cols-2">
             <input type="hidden" name="planogramId" value={r.id} />
+            {r.status === "PENDING_APPROVAL" && (
+              <p className="text-sm text-amber-700 md:col-span-2 dark:text-amber-300">
+                {t("planograms.editor.pendingWarning")}
+              </p>
+            )}
             <Label className="flex-col items-start">
               {t("planograms.fields.title")}
               <Input name="title" required defaultValue={r.title} />

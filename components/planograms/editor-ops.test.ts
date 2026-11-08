@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { EQUIPMENT_FIXTURES } from "@/modules/planograms/fixtures";
-import type { Layout } from "@/modules/planograms/layout";
+import { layoutProblems, type Layout } from "@/modules/planograms/layout";
 
 import { copyShelf, moveCell, placeAt, removeAt, swapShelves, toggleBadge } from "./editor-ops";
 
@@ -57,5 +57,15 @@ describe("editor operations", () => {
     const layout: Layout = { "0:0": sku("a"), "1:5": sku("b") };
     expect(copyShelf(layout, g, 0, 1)).toEqual({ "0:0": sku("a"), "1:0": sku("a") });
     expect(swapShelves(layout, g, 0, 1)).toEqual({ "1:0": sku("a"), "0:5": sku("b") });
+  });
+
+  // The editor refuses such a move (it checks layoutProblems) instead of failing on save.
+  it("moving shelves under a POSM over several shelves leaves cells under it", () => {
+    const combo = { kind: "POSM" as const, posmId: "combo", span: 5, rows: 2 };
+    const layout: Layout = { "1:0": combo, "3:2": sku("a") };
+    expect(layoutProblems(layout, g)).toEqual([]);
+    const swapped = swapShelves(layout, g, 2, 3)!;
+    expect(layoutProblems(swapped, g)).toEqual(["overlap:2:2"]);
+    expect(layoutProblems(copyShelf(layout, g, 1, 2)!, g)).toContain("overlap:2:0");
   });
 });
