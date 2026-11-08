@@ -581,12 +581,15 @@ Assistant — рабочее место команды трейд-маркети
 | `/planograms/new` | Новая планограмма |
 | `/planograms/[id]` | Карточка планограммы |
 | `/planograms/[id]/edit` | Редактор планограммы |
+| `/planograms/[id]/compare` | Сравнение версий планограммы |
+| `/planograms/[id]/3d` | 3D-вид планограммы |
 | `/planograms/templates` | Планограммы — шаблоны |
 | `/planograms/skus` | Планограммы — SKU |
 | `/planograms/posm` | Планограммы — POSM |
 | `/planograms/prices` | Планограммы — прайс-листы |
 | `/planograms/mass` | Планограммы — массовые операции |
 | `/equipment` | Оборудование — карта |
+| `/equipment/region/[регион]` | Оборудование — страница региона |
 | `/equipment/outlets` | Оборудование — новые точки |
 | `/equipment/control` | Оборудование — контроль и журнал закупок |
 | `/equipment/uploads` | Оборудование — загрузки |
@@ -596,7 +599,9 @@ Assistant — рабочее место команды трейд-маркети
 | `/equipment/tables` | Оборудование — таблицы |
 | `/distribution/campaigns` | Распределение POSM — кампании |
 | `/distribution/campaigns/[id]` | Страница кампании (шаги) |
+| `/distribution/campaigns/[id]/eas` | Документ EAS кампании |
 | `/distribution/plan` | Распределение POSM — распределение по регионам и TSM |
+| `/distribution/plan/[куда]` | Накладная региона или TSM |
 | `/distribution/stock` | Распределение POSM — склад и отгрузки |
 | `/distribution` | Распределение POSM — анализ |
 | `/distribution/import` | Распределение POSM — данные |

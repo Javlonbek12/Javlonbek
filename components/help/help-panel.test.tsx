@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { HelpResult } from "@/app/(app)/help-actions";
 import { LocaleProvider } from "@/components/locale-provider";
 
+import { HelpLauncher } from "./help-launcher";
 import { HelpPanel, type AskHelp } from "./help-panel";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/tasks/board" }));
@@ -106,5 +107,24 @@ describe("HelpPanel", () => {
     expect(dialog.getByText("Частые вопросы здесь")).toBeInTheDocument();
     fireEvent.click(dialog.getByRole("button", { name: "Закрыть" }));
     expect(onClose).toHaveBeenCalled();
+  });
+});
+
+describe("HelpLauncher", () => {
+  it("opens and closes the sheet from the header button", () => {
+    render(
+      <LocaleProvider locale="ru">
+        <HelpLauncher ask={vi.fn()} />
+      </LocaleProvider>,
+    );
+    const button = screen.getByRole("button", { name: "Помощь ИИ" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    fireEvent.click(button);
+    // The sheet sits in <body>, outside the header that holds the button.
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.parentElement?.parentElement).toBe(document.body);
+    expect(button).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Закрыть" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });
