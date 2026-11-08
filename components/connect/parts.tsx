@@ -46,6 +46,7 @@ export function Kpi({
   note,
   meter,
   tone,
+  compare,
 }: {
   label: string;
   value: string | number;
@@ -53,6 +54,8 @@ export function Kpi({
   // 0..100: a thin bar under the number.
   meter?: number;
   tone?: "good" | "warn" | "bad";
+  // Against the previous period: «к прошлому месяцу: ▲ 2 п.п. (было 79%)».
+  compare?: { text: string; trend: "better" | "worse" | "same" };
 }) {
   return (
     <Card className="gap-1 p-4 md:p-5">
@@ -78,6 +81,19 @@ export function Kpi({
         </span>
       )}
       {note && <span className="text-muted-foreground text-xs">{note}</span>}
+      {compare && (
+        <span
+          className={cn(
+            "text-xs",
+            compare.trend === "better" && "text-emerald-700 dark:text-emerald-400",
+            // Worse is amber: red is kept for overdue items and errors.
+            compare.trend === "worse" && "text-amber-700 dark:text-amber-400",
+            compare.trend === "same" && "text-muted-foreground",
+          )}
+        >
+          {compare.text}
+        </span>
+      )}
     </Card>
   );
 }
@@ -198,7 +214,8 @@ export function MiniColumns({
   color = "#2a78d6",
 }: {
   title: string;
-  points: { label: string; value: number }[];
+  // partial: a month the data covers only in part — drawn paler, labelled with its days.
+  points: { label: string; value: number; partial?: boolean }[];
   format?: (value: number) => string;
   color?: string;
 }) {
@@ -224,6 +241,7 @@ export function MiniColumns({
               style={{
                 height: `${p.value ? Math.max(3, (p.value / max) * 75) : 0}%`,
                 background: color,
+                opacity: p.partial ? 0.4 : undefined,
               }}
             />
           </div>
@@ -251,7 +269,9 @@ export type Column<T> = {
   className?: string;
 };
 
-// A table that scrolls sideways on phones; long lists are cut with "and N more".
+// A table on wider screens and one card per row on phones (the first column is the card's
+// heading, the rest are «label: value» lines), so nothing scrolls sideways; long lists are cut
+// with "and N more".
 export function DataTable<T>({
   rows,
   columns,
@@ -265,9 +285,27 @@ export function DataTable<T>({
 }) {
   if (!rows.length)
     return <p className="text-muted-foreground text-sm">{t("connect.manager.noRows")}</p>;
+  const [head, ...rest] = columns;
   return (
     <div className="flex flex-col gap-2">
-      <div className="-mx-1 overflow-x-auto px-1">
+      <ul className="flex flex-col gap-2 md:hidden">
+        {rows.slice(0, limit).map((row) => (
+          <li key={rowKey(row)} className="flex flex-col gap-1.5 rounded-xl border p-3 text-sm">
+            {head && <div className="font-medium">{head.cell(row)}</div>}
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-xs">
+              {rest.map((c) => (
+                <div key={c.key} className="contents">
+                  <dt className="text-muted-foreground">{c.header}</dt>
+                  <dd className={cn("min-w-0 break-words", c.numeric && "tabular-nums")}>
+                    {c.cell(row)}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </li>
+        ))}
+      </ul>
+      <div className="-mx-1 hidden overflow-x-auto px-1 md:block">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-muted-foreground border-b text-left text-xs">
