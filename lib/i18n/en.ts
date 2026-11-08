@@ -854,7 +854,6 @@ export const en: Dictionary = {
     },
     timeReport: {
       title: "Who spent how much time",
-      subtitle: "{from} – {to}",
       hint: "Timer time and time added by hand — on the tasks you see. A timer running now gets into the report once it is stopped.",
       total: "Total time",
       tasks: "Tasks",

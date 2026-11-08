@@ -4,14 +4,14 @@ import Link from "next/link";
 import { StatusBadge } from "@/components/tasks/task-badges";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { PeriodPicker } from "@/components/ui/period-picker";
 import { Progress } from "@/components/ui/progress";
 import { todayInTimezone } from "@/lib/dates";
 import { t } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getSettings } from "@/modules/core/settings/service";
-import { parsePeriod, PRESETS } from "@/modules/reports/period";
-import { formatReportDate } from "@/modules/reports/summary";
+import { formatRange } from "@/modules/reports/format";
+import { parsePeriod, presetPeriod, PRESETS } from "@/modules/reports/period";
 import { durationText } from "@/modules/tasks/time-format";
 import { getTimeReport, listRunningTimers } from "@/modules/tasks/time-report";
 
@@ -35,7 +35,8 @@ export default async function TimeReportPage({ searchParams }: PageProps<"/tasks
   const params = await searchParams;
   // This week by default: the first screen shows the work going on now.
   const chosen = params.preset || params.from || params.to;
-  const period = parsePeriod(chosen ? params : { preset: "week" }, todayInTimezone(timezone));
+  const today = todayInTimezone(timezone);
+  const period = parsePeriod(chosen ? params : { preset: "week" }, today);
   const [report, running] = await Promise.all([
     getTimeReport(user, period, timezone),
     listRunningTimers(user),
@@ -44,16 +45,8 @@ export default async function TimeReportPage({ searchParams }: PageProps<"/tasks
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-medium">{t("tasks.timeReport.title")}</h2>
-          <p className="text-muted-foreground text-sm">
-            {t("tasks.timeReport.subtitle", {
-              from: formatReportDate(period.from),
-              to: formatReportDate(period.to),
-            })}
-          </p>
-        </div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <h2 className="text-lg font-medium">{t("tasks.timeReport.title")}</h2>
         {report.totalMinutes > 0 && (
           <Button asChild variant="outline">
             <a href={`/api/tasks/time-report?${query}`}>
@@ -63,31 +56,30 @@ export default async function TimeReportPage({ searchParams }: PageProps<"/tasks
         )}
       </div>
 
-      <div className="flex flex-wrap items-end gap-2">
-        {PRESETS.map((preset) => (
-          <Button
-            key={preset}
-            asChild
-            size="sm"
-            variant={period.preset === preset ? "default" : "outline"}
-          >
-            <Link href={`/tasks/time?preset=${preset}`}>{t(`reports.presets.${preset}`)}</Link>
-          </Button>
-        ))}
-        <form className="flex flex-wrap items-end gap-2">
-          <label className="text-muted-foreground flex flex-col text-xs">
-            {t("reports.from")}
-            <Input type="date" name="from" defaultValue={period.from} className="w-40" />
-          </label>
-          <label className="text-muted-foreground flex flex-col text-xs">
-            {t("reports.to")}
-            <Input type="date" name="to" defaultValue={period.to} className="w-40" />
-          </label>
-          <Button type="submit" size="sm" variant="outline">
-            {t("reports.show")}
-          </Button>
-        </form>
-      </div>
+      {/* The same period choice as in the reports: chips apply at once, the dates beside them. */}
+      <PeriodPicker
+        chips={PRESETS.map((preset) => {
+          const range = presetPeriod(preset, today);
+          return {
+            key: preset,
+            label: t(`reports.presets.${preset}`),
+            href: `/tasks/time?preset=${preset}`,
+            dates: formatRange(range.from, range.to, today),
+          };
+        })}
+        active={period.preset}
+        dates={formatRange(period.from, period.to, today)}
+        custom={{
+          label: t("reports.customDates"),
+          apply: t("reports.show"),
+          fromLabel: t("reports.from"),
+          toLabel: t("reports.to"),
+          type: "date",
+          from: period.from,
+          to: period.to,
+          action: "/tasks/time",
+        }}
+      />
 
       {running.length > 0 && (
         <Card className="gap-2 p-4">
