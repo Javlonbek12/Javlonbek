@@ -8,6 +8,8 @@ import { onTimeText, StatLinks } from "@/components/team/stat-links";
 import { TeamSearch } from "@/components/team/team-search";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
+import { Segmented } from "@/components/ui/segmented";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { requireModule } from "@/modules/core/access/guard";
@@ -163,16 +165,16 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-[22px] font-medium md:text-2xl">{t("team.title")}</h1>
-        <div className="flex flex-wrap gap-2">
-          {canUseModule(user, "structure") && (
+      <PageHeader
+        title={t("team.title")}
+        actions={
+          canUseModule(user, "structure") && (
             <Button asChild size="sm" variant="outline">
               <Link href="/team/structure">{t("team.org.open")}</Link>
             </Button>
-          )}
-        </div>
-      </div>
+          )
+        }
+      />
 
       {/* Inviting comes first: it is what a manager most often comes here for. */}
       {canInvite && (
@@ -199,20 +201,15 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
               ...(view !== "list" ? { view } : {}),
             }}
           />
-          <div className="bg-secondary/70 inline-flex gap-0.5 rounded-full p-1 text-sm">
-            {(["list", "cards"] as const).map((v) => (
-              <Link
-                key={v}
-                href={href({ view: v })}
-                className={cn(
-                  "rounded-full px-3.5 py-1",
-                  v === view ? "bg-card font-medium shadow-sm" : "text-muted-foreground",
-                )}
-              >
-                {t(v === "list" ? "team.viewList" : "team.viewCards")}
-              </Link>
-            ))}
-          </div>
+          <Segmented
+            label={t("tasks.views.view")}
+            items={(["list", "cards"] as const).map((v) => ({
+              key: v,
+              label: t(v === "list" ? "team.viewList" : "team.viewCards"),
+              href: href({ view: v }),
+              active: v === view,
+            }))}
+          />
         </div>
         <div className="flex flex-wrap gap-1 text-sm">
           {filters.map((f) => (

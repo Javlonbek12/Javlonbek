@@ -86,11 +86,11 @@ export function TaskTabs({ decisions }: { decisions: number }) {
             <ArrowLeft className="size-4" aria-hidden />
             {t("tasks.back")}
           </Button>
-          <h1 className="min-w-0 truncate text-lg font-semibold">{t(single)}</h1>
+          <h1 className="min-w-0 truncate text-[22px] font-semibold">{t(single)}</h1>
         </div>
       )}
       <div className={cn("flex items-start justify-between gap-3", single && "hidden md:flex")}>
-        <h1 className="min-w-0 text-[26px] md:text-[34px]">{t("tasks.title")}</h1>
+        <h1 className="min-w-0 text-[22px] font-medium md:text-2xl">{t("tasks.title")}</h1>
         <Button
           asChild
           className="h-10 shrink-0 rounded-xl px-4 shadow-[0_8px_18px_-8px_var(--primary)] md:h-11 md:px-5"

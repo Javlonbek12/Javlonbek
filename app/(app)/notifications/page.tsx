@@ -2,6 +2,8 @@ import { Settings2 } from "lucide-react";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
+import { Segmented } from "@/components/ui/segmented";
 import { addDays, formatDayLong, todayInTimezone } from "@/lib/dates";
 import { t } from "@/lib/i18n";
 import { formatTime } from "@/lib/time";
@@ -236,36 +238,31 @@ export default async function NotificationsPage({ searchParams }: PageProps<"/no
     days.set(day, [...(days.get(day) ?? []), item]);
   }
   const canOpen = (item: Item) => !!item.link && canOpenPath(user, item.link);
-  const chip = (active: boolean) =>
-    cn(
-      "rounded-full px-3.5 py-1",
-      active ? "bg-card font-medium shadow-sm" : "text-muted-foreground",
-    );
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-[22px] font-medium md:text-2xl">{t("notifications.title")}</h1>
-        <Link
-          href="/settings#telegram-types"
-          className="text-muted-foreground inline-flex items-center gap-1.5 text-sm hover:underline"
-        >
-          <Settings2 className="size-4" aria-hidden />
-          {t("notifications.whatToSend")}
-        </Link>
-      </div>
+      <PageHeader
+        title={t("notifications.title")}
+        actions={
+          <Link
+            href="/settings#telegram-types"
+            className="text-muted-foreground inline-flex items-center gap-1.5 text-sm hover:underline"
+          >
+            <Settings2 className="size-4" aria-hidden />
+            {t("notifications.whatToSend")}
+          </Link>
+        }
+      />
       <div className="flex flex-wrap items-center gap-2">
-        <div className="bg-secondary/70 inline-flex gap-0.5 rounded-full p-1 text-sm">
-          {[false, true].map((only) => (
-            <Link
-              key={String(only)}
-              href={href({ unread: only, page: 1 })}
-              className={chip(only === unreadOnly)}
-            >
-              {only ? t("notifications.unread", { count: unread }) : t("notifications.all")}
-            </Link>
-          ))}
-        </div>
+        <Segmented
+          label={t("notifications.title")}
+          items={[false, true].map((only) => ({
+            key: String(only),
+            label: only ? t("notifications.unread", { count: unread }) : t("notifications.all"),
+            href: href({ unread: only, page: 1 }),
+            active: only === unreadOnly,
+          }))}
+        />
         {unread > 0 && (
           <form action={markAllReadAction}>
             <Button type="submit" variant="ghost" size="sm">

@@ -11,6 +11,7 @@ import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
+import { PageHeader } from "@/components/ui/page-header";
 import { db } from "@/lib/db";
 import { addMonths, fromDateString, startOfMonth, todayInTimezone } from "@/lib/dates";
 import { getEnv } from "@/lib/env";
@@ -160,7 +161,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-[22px] font-medium md:text-2xl">{t("settings.title")}</h1>
+      <PageHeader title={t("settings.title")} />
       {saved && (
         <p role="status" className="bg-secondary rounded-md p-3 text-sm">
           {saved === "contacts" ? t("team.profile.saved") : t("common.saved")}

@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 
 import { DirtyForm } from "@/components/settings/dirty-form";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
-import { InfoHint } from "@/components/ui/info-hint";
+import { PageHeader } from "@/components/ui/page-header";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { t } from "@/lib/i18n";
@@ -51,10 +51,7 @@ export default async function RolesPage({ searchParams }: PageProps<"/settings/r
       <Link href="/settings" className="text-muted-foreground w-fit text-sm hover:underline">
         ← {t("settings.title")}
       </Link>
-      <div className="flex flex-wrap items-center gap-1">
-        <h1 className="text-[22px] font-medium md:text-2xl">{t("roleAccess.title")}</h1>
-        <InfoHint>{t("roleAccess.intro")}</InfoHint>
-      </div>
+      <PageHeader title={t("roleAccess.title")} hint={t("roleAccess.intro")} />
       {saved && (
         <p role="status" className="bg-secondary rounded-md p-3 text-sm">
           {t("roleAccess.saved")}

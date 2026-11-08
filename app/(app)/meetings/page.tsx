@@ -3,6 +3,8 @@ import Link from "next/link";
 
 import { MeetingButtons, MeetingStatus, timeRange } from "@/components/meetings/meeting-line";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
+import { Segmented } from "@/components/ui/segmented";
 import { formatDay } from "@/lib/dates";
 import { t } from "@/lib/i18n";
 import { utcToZonedLocal } from "@/lib/time";
@@ -89,61 +91,57 @@ export default async function MeetingsPage({ searchParams }: PageProps<"/meeting
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-2">
-        <h1 className="text-[22px] font-medium md:text-2xl">{t("meetings.title")}</h1>
-        <Button asChild size="sm">
-          <Link href="/meetings/new">
-            <Plus />
-            {t("meetings.newMeeting")}
-          </Link>
-        </Button>
-      </div>
-      <div className="flex flex-wrap items-end justify-between gap-2 border-b">
-        <div className="flex gap-1 text-sm">
-          {[
-            { key: "upcoming", show: "", label: t("meetings.upcoming"), active: !past },
-            { key: "past", show: "past", label: t("meetings.past"), active: past },
-          ].map((tab) => (
-            <Link
-              key={tab.key}
-              href={href({ show: tab.show })}
-              aria-current={tab.active ? "page" : undefined}
-              className={cn(
-                "-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2",
-                tab.active
-                  ? "border-primary font-medium"
-                  : "text-muted-foreground border-transparent",
-              )}
-            >
-              {tab.label}
-              {tab.key === "past" && withoutNotes > 0 && (
-                <span className="rounded-full bg-amber-500/15 px-1.5 text-xs font-semibold text-amber-800 dark:text-amber-300">
-                  {t("meetings.noNotesCount", { n: withoutNotes })}
-                </span>
-              )}
+      <PageHeader
+        title={t("meetings.title")}
+        actions={
+          <Button asChild size="sm">
+            <Link href="/meetings/new">
+              <Plus />
+              {t("meetings.newMeeting")}
             </Link>
-          ))}
-        </div>
+          </Button>
+        }
+      />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Segmented
+          label={t("meetings.title")}
+          items={[
+            {
+              key: "upcoming",
+              label: t("meetings.upcoming"),
+              href: href({ show: "" }),
+              active: !past,
+            },
+            {
+              key: "past",
+              label: (
+                <span className="inline-flex items-center gap-1.5">
+                  {t("meetings.past")}
+                  {withoutNotes > 0 && (
+                    <span className="rounded-full bg-amber-500/15 px-1.5 text-xs font-semibold text-amber-800 dark:text-amber-300">
+                      {t("meetings.noNotesCount", { n: withoutNotes })}
+                    </span>
+                  )}
+                </span>
+              ),
+              href: href({ show: "past" }),
+              active: past,
+            },
+          ]}
+        />
         {user.role === "OWNER" && (
-          <div className="bg-secondary/70 mb-1.5 inline-flex gap-0.5 rounded-full p-1 text-sm">
-            {[
+          <Segmented
+            label={t("tasks.filters.scope")}
+            items={[
               { key: "", label: t("meetings.scopeMine") },
               { key: "all", label: t("meetings.scopeAll") },
-            ].map((option) => (
-              <Link
-                key={option.key || "mine"}
-                href={href({ who: option.key })}
-                className={cn(
-                  "rounded-full px-3 py-1",
-                  (option.key === "all") === all
-                    ? "bg-card font-medium shadow-sm"
-                    : "text-muted-foreground",
-                )}
-              >
-                {option.label}
-              </Link>
-            ))}
-          </div>
+            ].map((option) => ({
+              key: option.key || "mine",
+              label: option.label,
+              href: href({ who: option.key }),
+              active: (option.key === "all") === all,
+            }))}
+          />
         )}
       </div>
       {meetings.length === 0 && (
