@@ -3,6 +3,7 @@ import { Prisma, type TaskStatus, type User } from "@/lib/generated/prisma/clien
 import { t } from "@/lib/i18n";
 import { getUserToday } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
+import { listOtherApprovals } from "@/modules/home/approvals";
 import { decideCoAssignee } from "@/modules/tasks/co-assignees";
 import { resolveTaskDeletion } from "@/modules/tasks/delete-service";
 import { TaskError } from "@/modules/tasks/errors";
@@ -82,8 +83,31 @@ export async function showPending(
       ],
     });
 
+  for (const task of decisions.dueChange)
+    items.push({
+      line: (n) => `${n}. ${escapeHtml(task.title)}${what(t("bot.lists.toMoveDue"))}`,
+      buttons: [],
+    });
+  // Planograms and posts are decided on their own pages: listed here, opened in the app.
+  const others = await listOtherApprovals(user);
+  for (const item of others)
+    items.push({
+      line: (n) =>
+        `${n}. ${escapeHtml(item.title)}` +
+        what(
+          t(
+            item.kind === "planogram"
+              ? "bot.lists.toApprovePlanogram"
+              : item.legal
+                ? "bot.lists.toCheckLegal"
+                : "bot.lists.toCheckPost",
+          ),
+        ),
+      buttons: [],
+    });
+
   const shown = items.slice(0, PENDING_LIMIT);
-  const lines = [listHeader(t("bot.lists.pending"), decisionCount(decisions))];
+  const lines = [listHeader(t("bot.lists.pending"), decisionCount(decisions) + others.length)];
   if (items.length === 0) lines.push(escapeHtml(t("bot.lists.empty")));
   lines.push(...shown.map((item, i) => item.line(i + 1)));
   if (items.length > shown.length) lines.push(moreLine(items.length - shown.length));
@@ -91,9 +115,9 @@ export async function showPending(
     text: [options.notice ? escapeHtml(options.notice) : null, lines.join("\n")]
       .filter(Boolean)
       .join("\n\n"),
-    buttons: shown.map((item, i) =>
-      item.buttons.map((b) => ({ ...b, text: `${i + 1} ${b.text}` })),
-    ),
+    buttons: shown
+      .map((item, i) => item.buttons.map((b) => ({ ...b, text: `${i + 1} ${b.text}` })))
+      .filter((row) => row.length > 0),
     html: true,
     open: "/",
   };

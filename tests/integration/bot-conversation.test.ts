@@ -659,7 +659,7 @@ describe("lists you can act on, the summary's buttons, short answers", () => {
     );
     const reply = await handleCallback(users.owner, `t:${pending.id}:A:s`);
     expect(reply.edit).toBeFalsy();
-    expect(reply.text).toContain("Утверждена: «Ждёт»");
+    expect(reply.text).toContain("К выполнению: «Ждёт»");
   });
 
   it("anything unknown gets a short answer with the main lists; the menu follows the role", async () => {
