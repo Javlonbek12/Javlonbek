@@ -1278,6 +1278,7 @@ export const ru = {
     overdueAtDoers: "⏰ Просрочены у исполнителей: {count}",
     runningTimer: "⏱ Таймер идёт с {since}: «{title}». Если работа закончена — остановите его.",
     removeRequest: "просят удалить",
+    dueChange: "просят перенести срок",
     coRequest: "просят добавить соисполнителя: {name}",
   },
   weekly: {

@@ -1275,6 +1275,7 @@ export const en: Dictionary = {
     runningTimer:
       "⏱ A timer has been running since {since}: “{title}”. Stop it if the work is done.",
     removeRequest: "asked to delete",
+    dueChange: "asked to move the due date",
     coRequest: "asked to add a co-assignee: {name}",
   },
   weekly: {
