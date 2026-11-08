@@ -5,6 +5,7 @@ import { Section } from "@/components/connect/parts";
 import { NoList } from "@/components/distribution/no-list";
 import { fmt, Matrix, N } from "@/components/distribution/parts";
 import { ShipmentForm } from "@/components/distribution/shipment-form";
+import { AutoSubmitForm } from "@/components/ui/auto-submit-form";
 import { Button } from "@/components/ui/button";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -269,7 +270,8 @@ export default async function DistributionStockPage({
       <div id="history" className="scroll-mt-24">
         <Section title={t("dist.stock.history")}>
           {used.length > 0 && (
-            <form action="/distribution/stock#history" className="flex flex-wrap items-end gap-2">
+            // The choice applies at once; the page keeps its scroll, so the journal stays in view.
+            <AutoSubmitForm action="/distribution/stock" className="flex flex-wrap items-end gap-2">
               {filter !== "all" && <input type="hidden" name="show" value={filter} />}
               <label className="flex min-w-0 flex-col gap-1 text-sm">
                 {t("dist.shipping.journalFilter")}
@@ -282,10 +284,7 @@ export default async function DistributionStockPage({
                   ))}
                 </NativeSelect>
               </label>
-              <Button type="submit" variant="outline">
-                {t("dist.shipping.apply")}
-              </Button>
-            </form>
+            </AutoSubmitForm>
           )}
           {groups.size === 0 ? (
             <p className="text-muted-foreground text-sm">{t("dist.stock.empty")}</p>

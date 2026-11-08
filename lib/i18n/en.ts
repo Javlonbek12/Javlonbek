@@ -4126,7 +4126,6 @@ export const en: Dictionary = {
       journalFilter: "To",
       waybillShort: "No. {number}",
       single: "single line",
-      apply: "Show",
     },
   },
   offline: {

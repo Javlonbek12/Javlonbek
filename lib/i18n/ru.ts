@@ -4133,7 +4133,6 @@ export const ru = {
       journalFilter: "Куда",
       waybillShort: "№ {number}",
       single: "отдельной строкой",
-      apply: "Показать",
     },
   },
   offline: {
