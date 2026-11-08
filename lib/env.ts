@@ -29,6 +29,9 @@ const envSchema = z.object({
   // Model name sent to the speech-to-text server ("whisper-1" for OpenAI).
   STT_MODEL: optional(z.string()),
   UPLOAD_DIR: z.string().default("./uploads"),
+  // The server's backup folder, mounted read-only (docker-compose.prod.yml): the owner's
+  // «Сервер и бэкапы» card in the settings reads it. Not set elsewhere.
+  SERVER_BACKUPS_DIR: optional(z.string()),
 });
 
 export type Env = z.infer<typeof envSchema>;

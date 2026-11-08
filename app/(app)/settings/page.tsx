@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { AiUsageCard } from "@/components/ai-usage-card";
+import { ServerStatusCard } from "@/components/server-status-card";
 import { QuietHours } from "@/components/settings/quiet-hours";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
@@ -193,6 +194,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
       </form>
 
       {user.role === "OWNER" && <AiUsageCard today={todayInTimezone(settings.timezone)} />}
+      {user.role === "OWNER" && <ServerStatusCard timezone={settings.timezone} />}
     </div>
   );
 }
