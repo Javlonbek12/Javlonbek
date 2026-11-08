@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { addDays, fromDateString, startOfWeek, todayInTimezone } from "@/lib/dates";
 import type { Actor } from "@/modules/core/permissions";
 
-import { CLOSED_STATUSES, doerWhere } from "./access";
+import { CLOSED_STATUSES, doerWhere, visibleTasksWhere } from "./access";
 
 export const DASHBOARD_WEEKS = 10;
 
@@ -23,13 +23,25 @@ export async function getMyDashboard(actor: Actor, today: string, timeZone: stri
   const weekEnd = addDays(weekStart, 6);
   const since = addDays(weekStart, -7 * (DASHBOARD_WEEKS - 1) - 1);
   const [open, done] = await Promise.all([
+    // The same tasks the lists on «Сегодня» show: ones I do and can open (drafts of personal
+    // tasks included), so the numbers match the lists below them.
     db.task.findMany({
-      where: { AND: [doerWhere(actor.id), { status: { notIn: [...CLOSED_STATUSES, "DRAFT"] } }] },
+      where: {
+        AND: [
+          visibleTasksWhere(actor),
+          doerWhere(actor.id),
+          { status: { notIn: CLOSED_STATUSES } },
+        ],
+      },
       select: { status: true, dueDate: true },
     }),
     db.task.findMany({
       where: {
-        AND: [doerWhere(actor.id), { status: "DONE", completedAt: { gte: fromDateString(since) } }],
+        AND: [
+          visibleTasksWhere(actor),
+          doerWhere(actor.id),
+          { status: "DONE", completedAt: { gte: fromDateString(since) } },
+        ],
       },
       select: { completedAt: true },
     }),
@@ -37,10 +49,17 @@ export async function getMyDashboard(actor: Actor, today: string, timeZone: stri
   const doneOn = done.map((task) => todayInTimezone(timeZone, task.completedAt!));
   const due = (task: { dueDate: Date | null }) => task.dueDate?.toISOString().slice(0, 10);
   const doneThisWeek = doneOn.filter((day) => day >= weekStart).length;
+  // Last week up to the same weekday: on Monday morning a whole last week would always win.
+  const lastWeekStart = addDays(weekStart, -7);
+  const doneSameDaysLastWeek = doneOn.filter(
+    (day) => day >= lastWeekStart && day <= addDays(today, -7),
+  ).length;
   return {
     open: open.length,
     inProgress: open.filter((t) => t.status === "IN_PROGRESS" || t.status === "IN_REVIEW").length,
-    overdue: open.filter((t) => (due(t) ?? "9999") < today).length,
+    // Handed in and waiting for acceptance is not the doer's delay.
+    overdue: open.filter((t) => t.status !== "IN_REVIEW" && (due(t) ?? "9999") < today).length,
+    doneSameDaysLastWeek,
     doneThisWeek,
     // Done this week plus what is still open and due by Sunday.
     weekPlan: doneThisWeek + open.filter((t) => (due(t) ?? "9999") <= weekEnd).length,

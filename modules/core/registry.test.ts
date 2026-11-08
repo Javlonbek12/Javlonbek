@@ -14,8 +14,15 @@ describe("modulesForRole", () => {
 
   it("hides modules the role has no access to", () => {
     const modules: ModuleEntry[] = [
-      { id: "a", titleKey: "nav.home", href: "/a", icon: House, roles: ["OWNER"] },
-      { id: "b", titleKey: "nav.home", href: "/b", icon: House, roles: ["OWNER", "MEMBER"] },
+      { id: "a", titleKey: "nav.home", href: "/a", icon: House, roles: ["OWNER"], group: "work" },
+      {
+        id: "b",
+        titleKey: "nav.home",
+        href: "/b",
+        icon: House,
+        roles: ["OWNER", "MEMBER"],
+        group: "work",
+      },
     ];
     expect(modulesForRole("MEMBER", modules).map((m) => m.id)).toEqual(["b"]);
     expect(modulesForRole("MANAGER", modules)).toEqual([]);
