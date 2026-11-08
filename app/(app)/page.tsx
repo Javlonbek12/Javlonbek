@@ -265,7 +265,8 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
           asChild
           className="h-10 shrink-0 rounded-xl shadow-[0_8px_18px_-8px_var(--primary)]"
         >
-          <Link href="/tasks/new">
+          {/* On a phone only «+» shows: the label still names it for screen readers. */}
+          <Link href="/tasks/new" aria-label={t("home.today.newTask")}>
             <Plus />
             <span className="hidden sm:inline">{t("home.today.newTask")}</span>
           </Link>

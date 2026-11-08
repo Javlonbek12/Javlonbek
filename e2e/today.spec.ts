@@ -7,7 +7,7 @@ test("a task due today, made from «Сегодня», shows in «Мой день
   await expect(myDay).toBeVisible();
 
   // On a phone the button is a bare «+» (its text is hidden), so it is found by where it leads.
-  await page.getByRole("main").locator('a[href="/tasks/new"]').click();
+  await page.getByRole("main").getByRole("link", { name: "Новая задача" }).click();
   await expect(page).toHaveURL("/tasks/new");
   await submitNewTask(page, title);
 
