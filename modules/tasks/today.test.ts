@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { classifyByDueDate, isLateWork, isOverdue } from "./today";
+import { classifyByDueDate, countTaskStates, isLateWork, isOverdue, taskState } from "./today";
 
 describe("classifyByDueDate", () => {
   const tasks = [
@@ -26,5 +26,42 @@ describe("classifyByDueDate", () => {
     expect(isOverdue(handedIn, "2026-10-02")).toBe(true);
     expect(isLateWork(handedIn, "2026-10-02")).toBe(false);
     expect(isLateWork(tasks[1], "2026-10-02")).toBe(true);
+  });
+});
+
+describe("taskState and countTaskStates", () => {
+  const today = "2026-10-02";
+
+  it("puts each task in one state; handed-in work is never late", () => {
+    expect(taskState({ status: "IN_REVIEW", dueDate: "2026-09-01" }, today)).toBe("inReview");
+    expect(taskState({ status: "IN_PROGRESS", dueDate: "2026-09-01" }, today)).toBe("late");
+    expect(taskState({ status: "IN_PROGRESS", dueDate: today }, today)).toBe("inWork");
+    expect(taskState({ status: "APPROVED", dueDate: null }, today)).toBe("notStarted");
+    expect(taskState({ status: "PENDING_APPROVAL", dueDate: "2026-09-01" }, today)).toBe("late");
+    expect(taskState({ status: "DONE", dueDate: "2026-09-01" }, today)).toBe("done");
+  });
+
+  it("counts add up to the total, cancelled ones left out", () => {
+    const counts = countTaskStates(
+      [
+        { status: "IN_PROGRESS", dueDate: today },
+        { status: "APPROVED", dueDate: today },
+        { status: "APPROVED", dueDate: "2026-10-09" },
+        { status: "IN_PROGRESS", dueDate: "2026-09-30" },
+        { status: "IN_REVIEW", dueDate: "2026-09-30" },
+        { status: "DONE", dueDate: "2026-09-30" },
+        { status: "CANCELLED", dueDate: "2026-09-30" },
+      ],
+      today,
+    );
+    expect(counts).toEqual({
+      total: 6,
+      done: 1,
+      late: 1,
+      inReview: 1,
+      inWork: 1,
+      notStarted: 2,
+      dueToday: 2,
+    });
   });
 });

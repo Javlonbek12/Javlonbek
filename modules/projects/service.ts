@@ -7,6 +7,8 @@ import { canUseModule } from "@/modules/core/access/actor";
 import type { Actor } from "@/modules/core/permissions";
 import { displayName } from "@/modules/core/users/display-name";
 import { canEditTask, CLOSED_STATUSES, visibleTasksWhere } from "@/modules/tasks/access";
+import { distinctNames } from "@/modules/tasks/names";
+import type { Route } from "@/modules/tasks/routing";
 
 import { applyTemplate } from "./apply-template";
 import { notifyPlanTasks, planRoute } from "./routing";
@@ -17,7 +19,7 @@ import {
   projectStats,
   type ProjectTask,
 } from "./progress";
-import { templateByKey } from "./templates";
+import { taskRole, templateByKey, type TemplateTask } from "./templates";
 
 export class ProjectError extends Error {
   constructor(public readonly code: "forbidden" | "invalid" | "notFound" | "nameTaken") {
@@ -47,11 +49,13 @@ async function loadTasks(names: string[], timeZone: string): Promise<Map<string,
   const rows = await db.task.findMany({
     where: { project: { in: names }, isPersonal: false },
     include: {
-      assignee: { select: { firstName: true, lastName: true } },
+      assignee: { select: { id: true, firstName: true, lastName: true, position: true } },
       blockedBy: { select: { blocker: { select: { status: true } } } },
     },
     orderBy: [{ dueDate: "asc" }, { code: "asc" }, { createdAt: "asc" }],
   });
+  // Two people with one name get their position after it.
+  const people = distinctNames(rows.map((row) => row.assignee));
   const result = new Map<string, ProjectTask[]>(names.map((name) => [name, []]));
   for (const row of rows) {
     result.get(row.project!)?.push({
@@ -65,7 +69,8 @@ async function loadTasks(names: string[], timeZone: string): Promise<Map<string,
       completedOn: row.completedAt ? todayInTimezone(timeZone, row.completedAt) : null,
       phaseId: row.phaseId,
       responsible: row.responsible,
-      assigneeName: displayName(row.assignee),
+      assigneeId: row.assigneeId,
+      assigneeName: people.get(row.assigneeId) ?? displayName(row.assignee),
       isMilestone: row.isMilestone,
       atRisk: row.atRisk,
       openBlockers: row.blockedBy.filter((b) => !CLOSED_STATUSES.includes(b.blocker.status)).length,
@@ -182,10 +187,14 @@ const createSchema = projectSchema.extend({
     .nullish()
     .transform((v) => v || null)
     .refine((v) => v === null || isDateString(v)),
+  // «Кто делает»: a person for each role of the template (by its name); a role left empty goes
+  // to the project lead.
+  roles: z.record(z.string().max(120), z.string().max(64)).optional(),
 });
 export type ProjectInput = z.input<typeof projectSchema>;
 
 // From a template: its phases and tasks are created, dated from the anchor day (required then).
+// Each task goes to the person picked for its role, or to the lead (the owner without one).
 export async function createProject(
   actor: Actor,
   input: z.input<typeof createSchema>,
@@ -194,20 +203,24 @@ export async function createProject(
   if (actor.role !== "OWNER") throw new ProjectError("forbidden");
   const parsed = createSchema.safeParse(input);
   if (!parsed.success) throw new ProjectError("invalid");
-  const { template: key, anchorDate, ...fields } = parsed.data;
+  const { template: key, anchorDate, roles = {}, ...fields } = parsed.data;
   const template = templateByKey(key);
   if (template?.anchor && !anchorDate) throw new ProjectError("invalid");
   if (await db.project.findUnique({ where: { name: fields.name } }))
     throw new ProjectError("nameTaken");
-  if (
-    fields.leadId &&
-    !(await db.user.findFirst({ where: { id: fields.leadId, deactivatedAt: null } }))
-  )
-    throw new ProjectError("invalid");
+  const picked = [...new Set(Object.values(roles).filter(Boolean))];
+  const wanted = [...picked, ...(fields.leadId ? [fields.leadId] : [])];
+  const active = await db.user.count({ where: { id: { in: wanted }, deactivatedAt: null } });
+  if (active !== new Set(wanted).size) throw new ProjectError("invalid");
   const color = (await db.project.count()) % 8;
-  const assigneeId = fields.leadId ?? actor.id;
-  const route = template?.anchor && anchorDate ? await planRoute(actor.id, assigneeId) : null;
-  let made = 0;
+  const lead = fields.leadId ?? actor.id;
+  const assigneeOf = (task: TemplateTask) => roles[taskRole(task)] || lead;
+  const dated = template?.anchor && anchorDate ? template : null;
+  const routes = new Map<string, Route>();
+  if (dated)
+    for (const id of new Set(dated.phases.flatMap((p) => p.tasks.map(assigneeOf))))
+      routes.set(id, await planRoute(actor.id, id));
+  let made = new Map<string, number>();
   const project = await db.$transaction(
     async (tx) => {
       const created = await tx.project.create({
@@ -216,24 +229,26 @@ export async function createProject(
           createdById: actor.id,
           color,
           template: template?.key ?? null,
-          anchorDate: template?.anchor && anchorDate ? fromDateString(anchorDate) : null,
+          anchorDate: dated ? fromDateString(anchorDate!) : null,
         },
       });
-      if (template?.anchor && anchorDate && route)
+      if (dated)
         made = await applyTemplate(
           tx,
           created,
-          template,
-          anchorDate,
-          { creatorId: actor.id, assigneeId },
-          route,
+          dated,
+          anchorDate!,
+          { creatorId: actor.id, assigneeOf },
+          routes,
           now,
         );
       return created;
     },
     { timeout: 30_000 },
   );
-  if (route) await notifyPlanTasks(route, actor.id, assigneeId, project.name, made);
+  // One notice per person for all their tasks of the plan.
+  for (const [assigneeId, count] of made)
+    await notifyPlanTasks(routes.get(assigneeId)!, actor.id, assigneeId, project.name, count);
   await logActivity({
     actorId: actor.id,
     action: "project.created",

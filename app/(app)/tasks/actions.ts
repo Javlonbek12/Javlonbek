@@ -27,7 +27,13 @@ import {
 } from "@/modules/tasks/quick-actions";
 import type { RepeatInput } from "@/modules/tasks/repeat";
 import { setTaskLabels } from "@/modules/tasks/labels";
-import { addTime, removeTimeEntry, startTimer, stopTimer } from "@/modules/tasks/time";
+import {
+  addTime,
+  correctTimeEntry,
+  removeTimeEntry,
+  startTimer,
+  stopTimer,
+} from "@/modules/tasks/time";
 import { getUserToday } from "@/modules/core/settings/service";
 import {
   addCoAssignee,
@@ -602,6 +608,18 @@ export async function removeTimeEntryAction(formData: FormData) {
   const taskId = idSchema.parse(str(formData, "taskId"));
   const entryId = idSchema.parse(str(formData, "entryId"));
   await onTaskPage(formData, taskId, () => removeTimeEntry(user, entryId));
+}
+
+// «Исправить» on one's own entry: the hours and minutes really worked.
+export async function correctTimeEntryAction(formData: FormData) {
+  const user = await actor();
+  const taskId = idSchema.parse(str(formData, "taskId"));
+  const entryId = idSchema.parse(str(formData, "entryId"));
+  const hours = Number(str(formData, "hours") || 0);
+  const minutes = Number(str(formData, "minutes") || 0);
+  await onTaskPage(formData, taskId, () =>
+    correctTimeEntry(user, entryId, Math.round(hours * 60 + minutes)),
+  );
 }
 
 // ---------- notes («Заметки») ----------

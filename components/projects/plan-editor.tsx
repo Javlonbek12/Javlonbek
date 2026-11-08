@@ -10,22 +10,31 @@ import { cn } from "@/lib/utils";
 import type { ProjectTask } from "@/modules/projects/progress";
 
 import {
+  assignPlanTasksAction,
   deletePhaseAction,
   savePhaseAction,
   saveProjectTaskAction,
   shiftProjectAction,
 } from "@/app/(app)/projects/actions";
+import { StatusBadge } from "@/components/tasks/task-badges";
 
 type Phase = { id: string; title: string; dueDate: string | null; sortOrder: number };
+type Person = { id: string; name: string };
+
+// The assignee can change only before work starts (as in the task card).
+const reassignable = (task: ProjectTask) =>
+  task.status === "DRAFT" || task.status === "PENDING_APPROVAL" || task.status === "APPROVED";
 
 function TaskFields({
   task,
   phases,
   phaseId,
+  people,
 }: {
   task?: ProjectTask;
   phases: Phase[];
   phaseId: string | null;
+  people: Person[];
 }) {
   return (
     <div className="grid gap-2 text-sm sm:grid-cols-2">
@@ -33,6 +42,19 @@ function TaskFields({
         {t("projects.setup.taskTitle")}
         <Input name="title" required maxLength={200} defaultValue={task?.title} />
       </label>
+      {(!task || reassignable(task)) && (
+        <label className="flex flex-col gap-1 sm:col-span-2">
+          {t("projects.setup.assignee")}
+          <NativeSelect name="assigneeId" defaultValue={task?.assigneeId ?? ""}>
+            {!task && <option value="">{t("projects.setup.assigneeLead")}</option>}
+            {people.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </NativeSelect>
+        </label>
+      )}
       <label className="flex flex-col gap-1">
         {t("projects.setup.phase")}
         <NativeSelect name="phaseId" defaultValue={phaseId ?? ""}>
@@ -74,14 +96,19 @@ export function PlanEditor({
   anchor,
   phases,
   tasks,
+  people,
 }: {
   projectId: string;
   // The anchor day and what it means, if the project has one.
   anchor: { label: string; date: string } | null;
   phases: Phase[];
   tasks: ProjectTask[];
+  // Who tasks can go to (active people).
+  people: Person[];
 }) {
   const hidden = <input type="hidden" name="projectId" value={projectId} />;
+  const assignForm = `assign-${projectId}`;
+  const open = tasks.filter(reassignable);
   const groups = [
     ...phases.map((p) => ({
       phase: p as Phase | null,
@@ -220,7 +247,7 @@ export function PlanEditor({
           </summary>
           <form action={saveProjectTaskAction} className="mt-2 flex flex-col gap-2">
             {hidden}
-            <TaskFields phases={phases} phaseId={phases[0]?.id ?? null} />
+            <TaskFields phases={phases} phaseId={phases[0]?.id ?? null} people={people} />
             <div>
               <Button type="submit" size="sm">
                 {t("projects.setup.addTask")}
@@ -228,6 +255,36 @@ export function PlanEditor({
             </div>
           </form>
         </details>
+        {open.length > 0 && (
+          // «Назначить выбранные…»: the ticks in the rows belong to this form (form=…), so each
+          // row can keep its own edit form.
+          <form
+            id={assignForm}
+            action={assignPlanTasksAction}
+            className="bg-muted/50 flex flex-wrap items-end gap-2 rounded-lg p-2.5 text-sm"
+          >
+            {hidden}
+            <label className="flex min-w-0 flex-1 flex-col gap-1">
+              {t("projects.setup.assignSelected")}
+              <NativeSelect name="assigneeId" required defaultValue="">
+                <option value="" disabled>
+                  {t("projects.setup.assignPick")}
+                </option>
+                {people.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </NativeSelect>
+            </label>
+            <Button type="submit" size="sm">
+              {t("projects.setup.assign")}
+            </Button>
+            <span className="text-muted-foreground w-full text-xs">
+              {t("projects.setup.assignHint")}
+            </span>
+          </form>
+        )}
         {groups.map(({ phase, tasks: own }) => (
           <div key={phase?.id ?? "none"} className="flex flex-col gap-1.5">
             <span className="text-muted-foreground text-xs font-medium">
@@ -236,43 +293,69 @@ export function PlanEditor({
             {own.map((task) => {
               const closed = task.status === "DONE" || task.status === "CANCELLED";
               return (
-                <details key={task.id} className="rounded-lg border p-2.5">
-                  <summary className="cursor-pointer text-sm">
-                    {task.code && <span className="text-muted-foreground">{task.code} · </span>}
-                    <span className={cn(closed && "text-muted-foreground line-through")}>
-                      {task.title}
-                    </span>
-                    {task.isMilestone && " ◆"}
-                    <span className="text-muted-foreground text-xs">
-                      {" · "}
-                      {task.dueDate
-                        ? `${formatDay(task.startDate ?? task.dueDate)} – ${formatDay(task.dueDate)}`
-                        : "—"}
-                      {task.responsible && ` · ${task.responsible}`}
-                    </span>
-                  </summary>
-                  <div className="mt-2 flex flex-col gap-2">
-                    {closed ? (
-                      <span className="text-muted-foreground text-xs">
-                        {t("projects.setup.closed")}
+                <div key={task.id} className="flex items-start gap-2 rounded-lg border p-2.5">
+                  {reassignable(task) ? (
+                    <input
+                      type="checkbox"
+                      name="taskIds"
+                      value={task.id}
+                      form={assignForm}
+                      aria-label={t("projects.setup.select", { title: task.title })}
+                      className="mt-1 size-4 shrink-0"
+                    />
+                  ) : (
+                    <span className="size-4 shrink-0" />
+                  )}
+                  <details className="min-w-0 flex-1">
+                    <summary className="flex cursor-pointer list-none flex-col gap-1 text-sm [&::-webkit-details-marker]:hidden">
+                      <span>
+                        {task.code && <span className="text-muted-foreground">{task.code} · </span>}
+                        <span className={cn(closed && "text-muted-foreground line-through")}>
+                          {task.title}
+                        </span>
+                        {task.isMilestone && " ◆"}
                       </span>
-                    ) : (
-                      <form action={saveProjectTaskAction} className="flex flex-col gap-2">
-                        {hidden}
-                        <input type="hidden" name="taskId" value={task.id} />
-                        <TaskFields task={task} phases={phases} phaseId={task.phaseId} />
-                        <div>
-                          <Button type="submit" size="sm">
-                            {t("projects.setup.save")}
-                          </Button>
-                        </div>
-                      </form>
-                    )}
-                    <Link href={`/tasks/${task.id}`} className="text-sm underline">
-                      {t("projects.setup.openTask")}
-                    </Link>
-                  </div>
-                </details>
+                      <span className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                        <StatusBadge status={task.status} />
+                        <span className="text-foreground font-medium">{task.assigneeName}</span>
+                        <span>
+                          {task.dueDate
+                            ? `${formatDay(task.startDate ?? task.dueDate)} – ${formatDay(task.dueDate)}`
+                            : "—"}
+                        </span>
+                        {task.responsible && (
+                          <span title={t("projects.setup.responsible")}>· {task.responsible}</span>
+                        )}
+                      </span>
+                    </summary>
+                    <div className="mt-2 flex flex-col gap-2">
+                      {closed ? (
+                        <span className="text-muted-foreground text-xs">
+                          {t("projects.setup.closed")}
+                        </span>
+                      ) : (
+                        <form action={saveProjectTaskAction} className="flex flex-col gap-2">
+                          {hidden}
+                          <input type="hidden" name="taskId" value={task.id} />
+                          <TaskFields
+                            task={task}
+                            phases={phases}
+                            phaseId={task.phaseId}
+                            people={people}
+                          />
+                          <div>
+                            <Button type="submit" size="sm">
+                              {t("projects.setup.save")}
+                            </Button>
+                          </div>
+                        </form>
+                      )}
+                      <Link href={`/tasks/${task.id}`} className="text-sm underline">
+                        {t("projects.setup.openTask")}
+                      </Link>
+                    </div>
+                  </details>
+                </div>
               );
             })}
           </div>

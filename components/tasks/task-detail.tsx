@@ -17,6 +17,7 @@ import {
   addCoAssigneeAction,
   addLinkAction,
   addTimeAction,
+  correctTimeEntryAction,
   decideCoAssigneeAction,
   makeTeamTaskAction,
   removeCoAssigneeAction,
@@ -1260,13 +1261,52 @@ export async function TaskDetail({
                               </span>
                             </span>
                             {e.mine && time.canTrack && !e.running && (
-                              <form action={removeTimeEntryAction}>
-                                {hidden("description")}
-                                <input type="hidden" name="entryId" value={e.id} />
-                                <Button type="submit" size="sm" variant="ghost">
-                                  {t("tasks.time.remove")}
-                                </Button>
-                              </form>
+                              <span className="flex shrink-0 items-start gap-1">
+                                <details className="group relative">
+                                  <summary className="text-primary hover:bg-accent flex h-8 cursor-pointer list-none items-center rounded-full px-3 text-sm font-medium [&::-webkit-details-marker]:hidden">
+                                    {t("tasks.time.correct")}
+                                  </summary>
+                                  <form
+                                    action={correctTimeEntryAction}
+                                    className="bg-card absolute right-0 z-10 mt-1 flex items-end gap-2 rounded-xl border p-2 shadow-lg"
+                                  >
+                                    {hidden("description")}
+                                    <input type="hidden" name="entryId" value={e.id} />
+                                    <Label className="flex-col items-start text-xs">
+                                      {t("tasks.time.hours")}
+                                      <Input
+                                        type="number"
+                                        name="hours"
+                                        min={0}
+                                        max={24}
+                                        defaultValue={Math.floor(e.minutes / 60)}
+                                        className="w-16"
+                                      />
+                                    </Label>
+                                    <Label className="flex-col items-start text-xs">
+                                      {t("tasks.time.minutes")}
+                                      <Input
+                                        type="number"
+                                        name="minutes"
+                                        min={0}
+                                        max={59}
+                                        defaultValue={e.minutes % 60}
+                                        className="w-16"
+                                      />
+                                    </Label>
+                                    <Button type="submit" size="sm">
+                                      {t("tasks.time.correctSave")}
+                                    </Button>
+                                  </form>
+                                </details>
+                                <form action={removeTimeEntryAction}>
+                                  {hidden("description")}
+                                  <input type="hidden" name="entryId" value={e.id} />
+                                  <Button type="submit" size="sm" variant="ghost">
+                                    {t("tasks.time.remove")}
+                                  </Button>
+                                </form>
+                              </span>
                             )}
                           </li>
                         );

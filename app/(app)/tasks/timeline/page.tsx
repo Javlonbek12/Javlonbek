@@ -23,7 +23,7 @@ import { getUserToday } from "@/modules/core/settings/service";
 import { parseTaskFilters } from "@/modules/tasks/filters";
 import { listTimeline, TIMELINE_LIMIT, type TaskView } from "@/modules/tasks/service";
 import { layoutBars, TIMELINE_DAYS, timelineStart } from "@/modules/tasks/timeline";
-import { isLateWork } from "@/modules/tasks/today";
+import { taskState, type TaskState } from "@/modules/tasks/today";
 
 const MIN_COL = 40; // px per day at least; wider screens stretch the days to the full width
 const ROW = 46; // px per task row
@@ -53,13 +53,16 @@ const PILL: Record<State, string> = {
   overdue: "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300",
 };
 
-function stateOf(task: TaskView, today: string): State {
-  if (task.status === "DONE") return "done";
-  if (isLateWork(task, today)) return "overdue";
-  if (task.status === "IN_PROGRESS") return "inProgress";
-  if (task.status === "IN_REVIEW") return "review";
-  return "notStarted";
-}
+// By the shared dictionary (modules/tasks/today.ts), so the words match the other screens.
+const FROM_SHARED: Record<TaskState, State> = {
+  done: "done",
+  cancelled: "notStarted",
+  late: "overdue",
+  inReview: "review",
+  inWork: "inProgress",
+  notStarted: "notStarted",
+};
+const stateOf = (task: TaskView, today: string): State => FROM_SHARED[taskState(task, today)];
 
 export default async function TimelinePage({ searchParams }: PageProps<"/tasks/timeline">) {
   const user = await requireUser();
@@ -112,7 +115,7 @@ export default async function TimelinePage({ searchParams }: PageProps<"/tasks/t
     {
       icon: Clock3,
       tone: "bg-orange-100 text-orange-600 dark:bg-orange-900/50 dark:text-orange-300",
-      value: count("inProgress") + count("review"),
+      value: count("inProgress"),
       label: t("tasks.look.inProgress"),
       note: "text-orange-600",
     },

@@ -1,57 +1,83 @@
+import { Plus } from "lucide-react";
 import Link from "next/link";
 
-import { StatRing } from "@/components/dashboard/ring";
-import { Portfolio } from "@/components/projects/portfolio";
 import { ProjectForm } from "@/components/projects/project-form";
+import { ProjectRows } from "@/components/projects/project-rows";
+import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { t, type TranslationKey } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getSettings, getUserToday } from "@/modules/core/settings/service";
-import { displayName } from "@/modules/core/users/display-name";
 import { listProjectCards } from "@/modules/projects/service";
-import { TEMPLATES } from "@/modules/projects/templates";
+import { TEMPLATES, templateRoles } from "@/modules/projects/templates";
+import { distinctNames } from "@/modules/tasks/names";
 import { listAssignableUsers } from "@/modules/tasks/service";
 
 import { createProjectAction } from "./actions";
 
 export default async function ProjectsPage({ searchParams }: PageProps<"/projects">) {
   const user = await requireUser();
-  const { error, show } = await searchParams;
+  const { error, show, create } = await searchParams;
   // In work by default; finished projects under their own filter.
   const finished = show === "finished";
+  const canCreate = user.role === "OWNER";
+  const creating = canCreate && create === "1";
   const [today, settings] = await Promise.all([getUserToday(user.id), getSettings(user.id)]);
   const [projects, users] = await Promise.all([
     listProjectCards(user, today, settings.timezone, { finished }),
-    user.role === "OWNER" ? listAssignableUsers() : Promise.resolve([]),
+    creating ? listAssignableUsers() : Promise.resolve([]),
   ]);
+  const names = distinctNames(users);
   const sum = (pick: (p: (typeof projects)[number]) => number) =>
     projects.reduce((total, p) => total + pick(p), 0);
-  const total = sum((p) => p.stats.total);
 
   return (
     <div className="flex flex-col gap-4 [&>*]:min-w-0">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-[22px] font-medium md:text-2xl">{t("projects.title")}</h1>
-        <div className="bg-secondary/70 inline-flex gap-0.5 rounded-full p-1 text-sm">
-          {[false, true].map((value) => (
-            <Link
-              key={String(value)}
-              href={value ? "/projects?show=finished" : "/projects"}
-              className={cn(
-                "rounded-full px-3.5 py-1",
-                value === finished ? "bg-card font-medium shadow-sm" : "text-muted-foreground",
-              )}
-            >
-              {t(value ? "projects.filterFinished" : "projects.filterActive")}
-            </Link>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="bg-secondary/70 inline-flex gap-0.5 rounded-full p-1 text-sm">
+            {[false, true].map((value) => (
+              <Link
+                key={String(value)}
+                href={value ? "/projects?show=finished" : "/projects"}
+                className={cn(
+                  "rounded-full px-3.5 py-1",
+                  value === finished ? "bg-card font-medium shadow-sm" : "text-muted-foreground",
+                )}
+              >
+                {t(value ? "projects.filterFinished" : "projects.filterActive")}
+              </Link>
+            ))}
+          </div>
+          {canCreate && (
+            <Button asChild size="sm">
+              <Link href={creating ? "/projects" : "/projects?create=1"} aria-expanded={creating}>
+                <Plus />
+                {t("projects.new")}
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
       {typeof error === "string" && (
         <p role="alert" className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
           {t(`projects.errors.${error}` as TranslationKey)}
         </p>
+      )}
+      {creating && (
+        <Card className="gap-3">
+          <CardTitle>{t("projects.new")}</CardTitle>
+          <ProjectForm
+            action={createProjectAction}
+            users={users.map((u) => ({ id: u.id, name: names.get(u.id)! }))}
+            canChangeLead
+            submit={t("projects.create")}
+            templates={TEMPLATES}
+            roles={Object.fromEntries(TEMPLATES.map((tpl) => [tpl.key, templateRoles(tpl)]))}
+          />
+        </Card>
       )}
       {projects.length === 0 ? (
         <Card className="gap-1">
@@ -60,51 +86,23 @@ export default async function ProjectsPage({ searchParams }: PageProps<"/project
         </Card>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <StatRing
-              value={projects.filter((p) => p.stats.health !== "done").length}
-              total={projects.length}
-              color="var(--series-7)"
-              caption={t("projects.summary.projects")}
-            />
-            <StatRing
-              value={sum((p) => p.stats.done)}
-              total={total}
-              color="var(--series-3)"
-              caption={t("projects.summary.done")}
-            />
-            <StatRing
-              value={sum((p) => p.stats.inProgress)}
-              total={total}
-              color="var(--series-1)"
-              caption={t("projects.summary.inProgress")}
-            />
-            <StatRing
-              value={sum((p) => p.problems.reduce((n, row) => n + row.count, 0))}
-              total={total}
-              color="var(--series-8)"
-              caption={t("projects.summary.problems")}
-            />
-          </div>
-          <section className="flex flex-col gap-2">
-            <h2 className="text-lg font-medium">{t("projects.board.title")}</h2>
-            <Portfolio cards={projects} />
-          </section>
+          {/* One line instead of four tiles: the whole picture in words. */}
+          <p className="text-muted-foreground text-sm">
+            {t("projects.rows.summary", {
+              projects: projects.length,
+              done: sum((p) => p.stats.done),
+              total: sum((p) => p.stats.total),
+              inWork: sum((p) => p.stats.inProgress),
+            })}
+            {sum((p) => p.stats.overdue) > 0 && (
+              <span className="text-destructive">
+                {" · "}
+                {t("projects.rows.summaryOverdue", { count: sum((p) => p.stats.overdue) })}
+              </span>
+            )}
+          </p>
+          <ProjectRows cards={projects} />
         </>
-      )}
-      {user.role === "OWNER" && (
-        <details className="bg-card rounded-xl border p-4">
-          <summary className="cursor-pointer font-medium">{t("projects.new")}</summary>
-          <div className="pt-3">
-            <ProjectForm
-              action={createProjectAction}
-              users={users.map((u) => ({ id: u.id, name: displayName(u) }))}
-              canChangeLead
-              submit={t("projects.create")}
-              templates={TEMPLATES}
-            />
-          </div>
-        </details>
       )}
     </div>
   );

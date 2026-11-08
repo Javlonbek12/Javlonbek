@@ -21,7 +21,7 @@ import { TimerCard } from "@/components/dashboard/timer-card";
 import { WeekBars } from "@/components/dashboard/week-bars";
 import { MeetingChip } from "@/components/meetings/meeting-chip";
 import { HealthBadge } from "@/components/projects/health-badge";
-import { projectColor } from "@/components/projects/portfolio";
+import { projectColor } from "@/components/projects/project-rows";
 import { ProgressBar } from "@/components/projects/progress-bar";
 import { QuickCircle } from "@/components/tasks/quick-circle";
 import { Badge } from "@/components/ui/badge";
@@ -111,7 +111,7 @@ function DayRow({
           className={cn(
             "flex size-9 items-center justify-center rounded-full border",
             timerRunning
-              ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
+              ? "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
               : "text-muted-foreground hover:bg-accent hover:text-foreground",
           )}
         >

@@ -37,14 +37,14 @@ const LAUNCH: ProjectTemplate = {
   anchor: "Дата начала продаж (T)",
   phases: [
     {
-      title: "Подготовка: продукт, данные и Launching Plan",
+      title: "Подготовка: продукт, данные и план запуска",
       due: -4 * W,
       tasks: [
         {
           code: "L01",
           title:
             "Зафиксировать состав продукта, дату T, команду проекта и сроки производства / поставки",
-          responsible: "Руководитель проекта + HQ",
+          responsible: "Руководитель проекта + головной офис",
           start: -12 * W,
           due: -8 * W,
           result: "Карточка проекта и календарь поставки",
@@ -52,7 +52,7 @@ const LAUNCH: ProjectTemplate = {
         {
           code: "L02",
           title: "Сверить характеристики SKU, макеты упаковки и обязательные документы",
-          responsible: "HQ / продукт + юрист",
+          responsible: "Головной офис / продукт + юрист",
           start: -10 * W,
           due: -8 * W,
           result: "Утверждённые спецификации и перечень документов",
@@ -62,7 +62,7 @@ const LAUNCH: ProjectTemplate = {
           code: "L03",
           title:
             "Актуализировать анализ рынка, цену, базу точек, прогноз и бюджет; свести цифры прошлого плана",
-          responsible: "Marketing + Sales + Finance",
+          responsible: "Маркетинг + продажи + финансы",
           start: -8 * W,
           due: -6 * W,
           result: "Единая версия исходных данных и бюджета",
@@ -70,8 +70,8 @@ const LAUNCH: ProjectTemplate = {
         },
         {
           code: "L04",
-          title: "Подготовить полный Launching Plan и пройти внутреннее согласование",
-          responsible: "Marketing Team Lead",
+          title: "Подготовить полный план запуска и пройти внутреннее согласование",
+          responsible: "Руководитель маркетинга",
           start: -8 * W,
           due: -4 * W,
           result: "Утверждённый план с владельцами и сроками",
@@ -96,7 +96,7 @@ const LAUNCH: ProjectTemplate = {
           code: "L06",
           title:
             "Создать карточки SKU, цены и единицы в учётной системе и ботах; проверить отчёты на тестовых данных",
-          responsible: "IT / данные + Sales",
+          responsible: "IT / данные + продажи",
           start: -6 * W,
           due: -3 * W,
           result: "Корректные SKU, цены и отчётность",
@@ -106,7 +106,7 @@ const LAUNCH: ProjectTemplate = {
           code: "L07",
           title:
             "Проверить версии POSM и планограммы, спецификации, закупку, производство и доставку материалов",
-          responsible: "Marketing Execution + закупки",
+          responsible: "Исполнение маркетинга + закупки",
           start: -6 * W,
           due: -2 * W,
           result: "Принятые материалы и реестр доставки",
@@ -116,7 +116,7 @@ const LAUNCH: ProjectTemplate = {
           code: "L08",
           title:
             "Подтвердить поставку товара, приёмку, остатки по SKU и готовность региональных складов",
-          responsible: "Supply / Logistics",
+          responsible: "Снабжение / логистика",
           start: -4 * W,
           due: -2 * W,
           result: "Товар принят; региональные остатки подтверждены",
@@ -126,7 +126,7 @@ const LAUNCH: ProjectTemplate = {
           code: "L09",
           title:
             "Согласовать порядок работы, документы и правила учёта активностей; подготовить инструкции команде",
-          responsible: "Marketing + Finance + Sales",
+          responsible: "Маркетинг + финансы + продажи",
           start: -3 * W,
           due: -1 * W,
           result: "Единые инструкции и правила подтверждения расходов",
@@ -136,7 +136,7 @@ const LAUNCH: ProjectTemplate = {
           code: "L10",
           title:
             "Провести обучение: продукт, цена, оформление заказов, оборудование, отчётность и обращения",
-          responsible: "Sales + Marketing",
+          responsible: "Продажи + маркетинг",
           start: -2 * W,
           due: -1 * W,
           result: "Команда ознакомлена; ошибки тестового заказа устранены",
@@ -145,7 +145,7 @@ const LAUNCH: ProjectTemplate = {
         {
           code: "L11",
           title: "Провести замену материалов по графику, собрать подтверждения и закрыть дефекты",
-          responsible: "Marketing Execution",
+          responsible: "Исполнение маркетинга",
           start: -7,
           due: -2,
           result: "Реестр выполнения и список исправлений",
@@ -171,7 +171,7 @@ const LAUNCH: ProjectTemplate = {
           code: "L13",
           title:
             "Старт продаж: подтвердить старт в регионах; проверить первые заказы, документы, цены и остатки",
-          responsible: "Sales + IT + Logistics",
+          responsible: "Продажи + IT + логистика",
           start: 0,
           due: 0,
           result: "Работающий процесс заказа и выдачи товара",
@@ -191,7 +191,7 @@ const LAUNCH: ProjectTemplate = {
         {
           code: "L15",
           title: "Проверить исполнение POSM и планограммы по требованиям; исправить дефекты",
-          responsible: "Marketing Execution",
+          responsible: "Исполнение маркетинга",
           start: 0,
           due: W,
           result: "Подтверждение установки и закрытые дефекты",
@@ -201,7 +201,7 @@ const LAUNCH: ProjectTemplate = {
           code: "L16",
           title:
             "Закрыть первую неделю: сверить выполнение, документы и активности с недельным сроком",
-          responsible: "Marketing + Sales + Finance",
+          responsible: "Маркетинг + продажи + финансы",
           start: W,
           due: W,
           result: "Обзор недели и подтверждённые обязательства",
@@ -217,7 +217,7 @@ const LAUNCH: ProjectTemplate = {
           code: "L17",
           title:
             "Еженедельно проверять наличие товара, поставки, возвраты, повторные заказы и обратную связь",
-          responsible: "Sales + Supply + данные",
+          responsible: "Продажи + снабжение + данные",
           start: 2 * W,
           due: 4 * W,
           result: "Проверенные данные и задачи по отклонениям",
@@ -226,7 +226,7 @@ const LAUNCH: ProjectTemplate = {
         {
           code: "L18",
           title: "Обзор первого месяца: факт против целей по SKU, регионам и типам точек",
-          responsible: "Marketing + Sales",
+          responsible: "Маркетинг + продажи",
           start: 4 * W,
           due: 4 * W,
           result: "Обзор месяца с причинами расхождений",
@@ -237,7 +237,7 @@ const LAUNCH: ProjectTemplate = {
           code: "L19",
           title:
             "Проверить подтверждения, расчёты бонусов, документы подрядчиков и фактические расходы",
-          responsible: "Finance + владельцы активностей",
+          responsible: "Финансы + владельцы активностей",
           start: 4 * W,
           due: 6 * W,
           result: "Реестр к оплате и сверка бюджета",
@@ -247,7 +247,7 @@ const LAUNCH: ProjectTemplate = {
           code: "L20",
           title:
             "Проверить регулярность заказов, запасы и качество данных; обновить прогноз поставок",
-          responsible: "Supply + Sales + Finance",
+          responsible: "Снабжение + продажи + финансы",
           start: 8 * W,
           due: 9 * W,
           result: "Актуальный прогноз и план устранения проблем",
@@ -320,7 +320,7 @@ const LAUNCH: ProjectTemplate = {
     {
       key: "kpi",
       title: "Контрольные показатели",
-      hint: "Листинг по SKU, поставки и наличие, продажи и повтор, исполнение материалов, затраты — и как каждый проверять (sell-in ≠ sell-out).",
+      hint: "Листинг по SKU, поставки и наличие, продажи и повтор, исполнение материалов, затраты — и как каждый проверять (отгрузка дистрибьютору ≠ продажи в рознице).",
     },
   ],
 };
@@ -338,3 +338,13 @@ export const TEMPLATES: ProjectTemplate[] = [BLANK, LAUNCH];
 
 export const templateByKey = (key: string | null | undefined) =>
   TEMPLATES.find((tpl) => tpl.key === key) ?? null;
+
+// The role a template task goes to: the first one named in «responsible» («Маркетинг + продажи»
+// → «Маркетинг»). The rest stay a hint inside the task.
+export const taskRole = (task: Pick<TemplateTask, "responsible">) =>
+  task.responsible.split(" + ")[0]!.trim();
+
+// The template's roles in the order they first appear: «Кто делает» asks for a person for each.
+export const templateRoles = (template: ProjectTemplate) => [
+  ...new Set(template.phases.flatMap((phase) => phase.tasks.map(taskRole))),
+];

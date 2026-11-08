@@ -992,7 +992,7 @@ export async function listTaskPeople(actor: Actor) {
 export async function listAssignableUsers(keep: (string | null)[] = []) {
   return db.user.findMany({
     where: activeOr(keep),
-    select: { id: true, firstName: true, lastName: true, deactivatedAt: true },
+    select: { id: true, firstName: true, lastName: true, deactivatedAt: true, position: true },
     orderBy: { firstName: "asc" },
   });
 }

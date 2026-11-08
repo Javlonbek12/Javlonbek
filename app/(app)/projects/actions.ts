@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { safeBack, withParams } from "@/modules/tasks/back";
 import { requireUser } from "@/modules/core/auth/current-user";
 import {
+  assignPlanTasks,
   deletePhase,
   savePhase,
   savePlanSections,
@@ -36,10 +37,16 @@ export async function createProjectAction(form: FormData) {
   const actor = await requireUser();
   let target: string;
   try {
+    // «Кто делает»: role:<role name> = the person for that role of the template.
+    const roles: Record<string, string> = {};
+    for (const [key, value] of form.entries())
+      if (key.startsWith("role:") && typeof value === "string" && value)
+        roles[key.slice(5)] = value;
     const project = await createProject(actor, {
       ...fields(form),
       template: str(form, "template"),
       anchorDate: str(form, "anchorDate"),
+      roles,
     });
     target = `/projects/${project.id}`;
   } catch (error) {
@@ -140,10 +147,20 @@ export async function saveProjectTaskAction(form: FormData) {
       phaseId: str(form, "phaseId"),
       code: str(form, "code"),
       responsible: str(form, "responsible"),
+      assigneeId: str(form, "assigneeId"),
       startDate: str(form, "startDate"),
       dueDate: str(form, "dueDate"),
       isMilestone: form.get("isMilestone") === "on",
     }),
+  );
+}
+
+// «Назначить выбранные…»: the ticked tasks of the plan go to one person.
+export async function assignPlanTasksAction(form: FormData) {
+  const actor = await requireUser();
+  const taskIds = form.getAll("taskIds").filter((v): v is string => typeof v === "string");
+  await planAction(form, "setup", (projectId) =>
+    assignPlanTasks(actor, projectId, taskIds, str(form, "assigneeId")).then(() => undefined),
   );
 }
 

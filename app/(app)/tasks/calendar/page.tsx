@@ -40,7 +40,7 @@ import {
   type PlannedRepeat,
   type TaskView,
 } from "@/modules/tasks/service";
-import { isLateWork } from "@/modules/tasks/today";
+import { countTaskStates, isLateWork } from "@/modules/tasks/today";
 
 type Meeting = Awaited<ReturnType<typeof listMeetingsBetween>>[number];
 
@@ -211,23 +211,29 @@ export default async function CalendarPage({ searchParams }: PageProps<"/tasks/c
         : formatDayLong(date);
   const weekdays = t("tasks.calendar.weekdays").split(",");
 
-  // The numbers of the shown period.
-  const done = tasks.filter((x) => x.status === "DONE").length;
-  const working = tasks.filter(
-    (x) => x.status === "IN_PROGRESS" || x.status === "IN_REVIEW",
-  ).length;
-  const late = tasks.filter((x) => isLateWork(x, today)).length;
-  const share = (n: number) => (tasks.length ? Math.round((n / tasks.length) * 100) : 0);
+  // The numbers of the shown period, by the same words as everywhere (modules/tasks/today.ts).
+  const counts = countTaskStates(tasks, today);
+  const share = (n: number) => (counts.total ? Math.round((n / counts.total) * 100) : 0);
   const stats = [
-    { label: t("tasks.look.total"), value: tasks.length, percent: 100, color: "var(--series-1)" },
-    { label: t("tasks.look.done"), value: done, percent: share(done), color: "var(--series-3)" },
+    { label: t("tasks.look.total"), value: counts.total, percent: 100, color: "var(--series-1)" },
+    {
+      label: t("tasks.look.done"),
+      value: counts.done,
+      percent: share(counts.done),
+      color: "var(--series-3)",
+    },
     {
       label: t("tasks.look.inProgress"),
-      value: working,
-      percent: share(working),
+      value: counts.inWork,
+      percent: share(counts.inWork),
       color: "var(--series-4)",
     },
-    { label: t("tasks.look.overdue"), value: late, percent: share(late), color: "var(--series-8)" },
+    {
+      label: t("tasks.look.overdue"),
+      value: counts.late,
+      percent: share(counts.late),
+      color: "var(--series-8)",
+    },
   ];
 
   // The small month on the right: the month of the chosen date.

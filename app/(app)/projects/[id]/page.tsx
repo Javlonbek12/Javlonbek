@@ -1,3 +1,4 @@
+import { Pencil } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -8,11 +9,12 @@ import { HealthBadge } from "@/components/projects/health-badge";
 import { LaunchPlan } from "@/components/projects/launch-plan";
 import { PlanEditor } from "@/components/projects/plan-editor";
 import { Milestones } from "@/components/projects/milestones";
-import { projectColor } from "@/components/projects/portfolio";
+import { projectColor } from "@/components/projects/project-rows";
 import { ProgressBar } from "@/components/projects/progress-bar";
 import { ProjectForm } from "@/components/projects/project-form";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
+import { InfoHint } from "@/components/ui/info-hint";
 import { formatDay, todayInTimezone, toDateString } from "@/lib/dates";
 import { t, type TranslationKey } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -22,7 +24,7 @@ import { personName } from "@/modules/core/users/display-name";
 import {
   attention,
   burnUp,
-  byResponsible,
+  byPerson,
   milestones,
   phaseProgress,
   projectRange,
@@ -44,6 +46,7 @@ const STATE_STYLES: Record<PhaseState, string> = {
   empty: "text-muted-foreground",
 };
 
+// A task in «Требует внимания»: its due date and who does it (the person, not the template role).
 function TaskLine({ task }: { task: ProjectTask }) {
   return (
     <li className="flex flex-col border-t py-1.5 first:border-t-0">
@@ -52,18 +55,19 @@ function TaskLine({ task }: { task: ProjectTask }) {
         {task.title}
       </Link>
       <span className="text-muted-foreground text-xs">
-        {[task.dueDate && formatDay(task.dueDate), task.responsible ?? task.assigneeName]
-          .filter(Boolean)
-          .join(" · ")}
+        {[task.dueDate && formatDay(task.dueDate), task.assigneeName].filter(Boolean).join(" · ")}
       </span>
     </li>
   );
 }
 
+const TABS = ["overview", "timing", "plan", "setup"] as const;
+type Tab = (typeof TABS)[number];
+
 export default async function ProjectPage({ params, searchParams }: PageProps<"/projects/[id]">) {
   const user = await requireUser();
   const { id } = await params;
-  const { error, tab: tabParam, saved, shifted } = await searchParams;
+  const { error, tab: tabParam, saved, shifted, edit } = await searchParams;
   const [today, settings] = await Promise.all([getUserToday(user.id), getSettings(user.id)]);
   const data = await getProject(user, id, settings.timezone);
   if (!data) notFound();
@@ -77,20 +81,23 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
   const keyDates = milestones(tasks, today);
   const chart = burnUp(tasks, today);
   const watch = attention(tasks, today);
-  const people = byResponsible(tasks, today);
+  const people = byPerson(tasks, today);
   const template = templateByKey(project.template);
-  const tabs = [
-    "overview",
-    ...(template?.sections.length ? ["plan"] : []),
-    ...(canManage ? ["setup"] : []),
-  ] as ("overview" | "plan" | "setup")[];
-  const tab = tabs.find((x) => x === tabParam) ?? "overview";
+  const tabs = TABS.filter(
+    (key) =>
+      (key !== "plan" || Boolean(template?.sections.length)) && (key !== "setup" || canManage),
+  );
+  const tab: Tab = tabs.find((x) => x === tabParam) ?? "overview";
+  const editing = canManage && edit === "1";
+  const base = `/projects/${project.id}`;
   const groups = [
     ["overdue", watch.overdue],
     ["atRisk", watch.atRisk],
     ["blocked", watch.blocked],
     ["dueSoon", watch.dueSoon],
   ] as const;
+  const tasksHref = (more: Record<string, string> = {}) =>
+    `/tasks?${new URLSearchParams({ project: project.name, scope: "team", ...more })}`;
 
   return (
     <div className="flex flex-col gap-4 [&>*]:min-w-0">
@@ -104,12 +111,15 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
           ← {t("projects.title")}
         </Link>
         <div className="flex flex-wrap items-center gap-2">
-          <span
-            className="size-3.5 rounded-full"
-            style={{ background: projectColor(project.color) }}
-            aria-hidden
-          />
-          <h1 className="text-[22px] font-medium md:text-2xl">{project.name}</h1>
+          {/* The dot stays on the title's line, also on a phone. */}
+          <h1 className="flex min-w-0 items-center gap-2 text-[22px] font-medium md:text-2xl">
+            <span
+              className="size-3.5 shrink-0 rounded-full"
+              style={{ background: projectColor(project.color) }}
+              aria-hidden
+            />
+            <span className="min-w-0 break-words">{project.name}</span>
+          </h1>
           {project.finishedAt ? (
             <span className="bg-secondary rounded-full px-2.5 py-0.5 text-xs font-medium">
               {t("projects.finishedOn", {
@@ -120,18 +130,26 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
             <HealthBadge health={stats.health} />
           )}
           {canManage && (
-            <form action={finishProjectAction} className="ml-auto">
-              <input type="hidden" name="projectId" value={project.id} />
-              <input type="hidden" name="finished" value={project.finishedAt ? "" : "1"} />
-              <Button
-                type="submit"
-                size="sm"
-                variant="outline"
-                title={project.finishedAt ? undefined : t("projects.finishHint")}
-              >
-                {t(project.finishedAt ? "projects.reopen" : "projects.finish")}
+            <div className="ml-auto flex flex-wrap gap-2">
+              <Button asChild size="sm" variant="outline">
+                <Link href={editing ? base : `${base}?edit=1`} aria-expanded={editing}>
+                  <Pencil />
+                  {t("projects.edit")}
+                </Link>
               </Button>
-            </form>
+              <form action={finishProjectAction}>
+                <input type="hidden" name="projectId" value={project.id} />
+                <input type="hidden" name="finished" value={project.finishedAt ? "" : "1"} />
+                <Button
+                  type="submit"
+                  size="sm"
+                  variant="outline"
+                  title={project.finishedAt ? undefined : t("projects.finishHint")}
+                >
+                  {t(project.finishedAt ? "projects.reopen" : "projects.finish")}
+                </Button>
+              </form>
+            </div>
           )}
         </div>
         <p className="text-muted-foreground text-sm">
@@ -148,12 +166,27 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
         )}
       </div>
 
+      {editing && (
+        <Card className="gap-3">
+          <CardTitle>{t("projects.edit")}</CardTitle>
+          <ProjectForm
+            action={updateProjectAction}
+            projectId={project.id}
+            values={project}
+            users={users.map((u) => ({ id: u.id, name: personName(u) }))}
+            canChangeLead={user.role === "OWNER"}
+            submit={t("projects.save")}
+          />
+        </Card>
+      )}
+
       {tabs.length > 1 && (
         <nav className="bg-secondary/70 inline-flex w-fit max-w-full gap-0.5 overflow-x-auto rounded-full p-1 text-sm">
           {tabs.map((key) => (
             <Link
               key={key}
-              href={`/projects/${project.id}${key === "overview" ? "" : `?tab=${key}`}`}
+              href={key === "overview" ? base : `${base}?tab=${key}`}
+              aria-current={key === tab ? "page" : undefined}
               className={cn(
                 "rounded-full px-3.5 py-1.5 whitespace-nowrap transition-colors",
                 key === tab
@@ -192,6 +225,7 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
           }
           phases={phases}
           tasks={tasks}
+          people={users.map((u) => ({ id: u.id, name: personName(u) }))}
         />
       )}
 
@@ -215,25 +249,59 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
                 </span>
               </div>
             </div>
-            <dl className="grid grid-cols-3 gap-2 text-center sm:grid-cols-5">
+            <dl className="grid grid-cols-3 gap-2 text-center sm:grid-cols-6">
               {(
                 [
-                  ["done", stats.done, "text-emerald-700 dark:text-emerald-300"],
-                  ["inProgress", stats.inProgress, "text-blue-700 dark:text-blue-300"],
-                  ["notStarted", stats.notStarted, ""],
-                  ["overdue", stats.overdue, stats.overdue ? "text-destructive" : ""],
+                  [
+                    "done",
+                    stats.done,
+                    "text-emerald-700 dark:text-emerald-300",
+                    { status: "DONE" },
+                  ],
+                  [
+                    "inProgress",
+                    stats.inProgress,
+                    "text-blue-700 dark:text-blue-300",
+                    { status: "IN_PROGRESS" },
+                  ],
+                  ["inReview", stats.inReview, "", { status: "IN_REVIEW" }],
+                  ["notStarted", stats.notStarted, "", { status: "APPROVED" }],
+                  [
+                    "overdue",
+                    stats.overdue,
+                    stats.overdue ? "text-destructive" : "",
+                    { due: "overdue" },
+                  ],
                   [
                     "atRisk",
                     stats.atRisk,
                     stats.atRisk ? "text-amber-700 dark:text-amber-300" : "",
+                    null,
                   ],
                 ] as const
-              ).map(([key, value, color]) => (
-                <div key={key} className="bg-muted/50 rounded-lg px-1 py-2">
-                  <dd className={cn("font-display text-xl font-semibold", color)}>{value}</dd>
-                  <dt className="text-muted-foreground text-xs">{t(`projects.counts.${key}`)}</dt>
-                </div>
-              ))}
+              ).map(([key, value, color, filter]) => {
+                const body = (
+                  <>
+                    <dd className={cn("font-display text-xl font-semibold", color)}>{value}</dd>
+                    <dt className="text-muted-foreground text-xs">{t(`projects.counts.${key}`)}</dt>
+                  </>
+                );
+                // Each number opens those tasks in the list.
+                const href = filter && value > 0 ? tasksHref(filter) : null;
+                return href ? (
+                  <Link
+                    key={key}
+                    href={href}
+                    className="bg-muted/50 hover:bg-muted rounded-lg px-1 py-2"
+                  >
+                    {body}
+                  </Link>
+                ) : (
+                  <div key={key} className="bg-muted/50 rounded-lg px-1 py-2">
+                    {body}
+                  </div>
+                );
+              })}
             </dl>
           </Card>
 
@@ -270,20 +338,106 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
                         ))}
                       </ul>
                       {list.length > 5 && (
-                        <span className="text-muted-foreground text-xs">
+                        <Link
+                          href={`${base}?tab=timing`}
+                          className="text-muted-foreground text-xs hover:underline"
+                        >
                           {t("projects.attention.more", { count: list.length - 5 })}
-                        </span>
+                        </Link>
                       )}
                     </div>
                   ),
               )}
             </Card>
+
             <Card className="gap-2">
-              <CardTitle>{t("projects.burnup.title")}</CardTitle>
-              <CardDescription>{t("projects.burnup.hint")}</CardDescription>
-              <BurnUpChart weeks={chart.weeks} total={chart.total} today={today} />
+              <CardTitle className="flex items-center gap-1.5">
+                {t("projects.people.title")}
+                <InfoHint>{t("projects.people.hint")}</InfoHint>
+              </CardTitle>
+              <div className="-mx-1 overflow-x-auto">
+                <table className="w-full text-sm tabular-nums">
+                  <thead>
+                    <tr className="text-muted-foreground text-left text-[11px]">
+                      <th className="px-1 py-1 font-medium">{t("projects.people.person")}</th>
+                      <th className="px-1 py-1 text-right font-medium">
+                        {t("projects.people.total")}
+                      </th>
+                      <th className="px-1 py-1 text-right font-medium">
+                        {t("projects.people.doneCol")}
+                      </th>
+                      <th className="px-1 py-1 text-right font-medium">
+                        {t("projects.people.inWork")}
+                      </th>
+                      <th className="px-1 py-1 text-right font-medium">
+                        {t("projects.people.overdueCol")}
+                      </th>
+                      <th className="hidden px-1 py-1 text-right font-medium sm:table-cell">
+                        {t("projects.people.nextDue")}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {people.map((person) => (
+                      <tr key={person.id} className="border-t">
+                        <td className="max-w-0 px-1 py-1.5">
+                          <Link
+                            href={tasksHref({ person: person.id })}
+                            className="block truncate font-medium hover:underline"
+                          >
+                            {person.name}
+                          </Link>
+                          {person.nextDue && (
+                            <span className="text-muted-foreground text-xs sm:hidden">
+                              {formatDay(person.nextDue)}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-1 py-1.5 text-right">{person.total}</td>
+                        <td className="px-1 py-1.5 text-right">
+                          {person.done || <span className="text-muted-foreground">—</span>}
+                        </td>
+                        <td className="px-1 py-1.5 text-right">
+                          {person.inWork || <span className="text-muted-foreground">—</span>}
+                        </td>
+                        <td className="px-1 py-1.5 text-right">
+                          {person.overdue ? (
+                            <Link
+                              href={tasksHref({ person: person.id, due: "overdue" })}
+                              className="text-destructive font-semibold hover:underline"
+                            >
+                              {person.overdue}
+                            </Link>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </td>
+                        <td className="text-muted-foreground hidden px-1 py-1.5 text-right sm:table-cell">
+                          {person.nextDue ? formatDay(person.nextDue) : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </Card>
           </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline">
+              <Link href={tasksHref()}>{t("projects.allTasks")}</Link>
+            </Button>
+          </div>
+        </>
+      )}
+
+      {tab === "timing" && (
+        <>
+          <Card className="gap-2">
+            <CardTitle>{t("projects.burnup.title")}</CardTitle>
+            <CardDescription>{t("projects.burnup.hint")}</CardDescription>
+            <BurnUpChart weeks={chart.weeks} total={chart.total} today={today} />
+          </Card>
 
           <Card className="gap-3">
             <CardTitle>{t("projects.phases.title")}</CardTitle>
@@ -327,61 +481,6 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
               <CardDescription>{t("projects.gantt.hint")}</CardDescription>
               <Gantt phases={phaseRows} tasks={tasks} range={range} today={today} />
             </Card>
-          )}
-
-          <Card className="gap-3">
-            <CardTitle>{t("projects.people.title")}</CardTitle>
-            <CardDescription>{t("projects.people.hint")}</CardDescription>
-            <ul className="flex flex-col gap-2.5 text-sm">
-              {people.map((person) => (
-                <li
-                  key={person.name}
-                  className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1"
-                >
-                  <span className="truncate">{person.name}</span>
-                  <span className="text-muted-foreground text-xs">
-                    {t("projects.people.done", { done: person.done, total: person.total })}
-                    {person.overdue > 0 && (
-                      <span className="text-destructive">
-                        {" · "}
-                        {t("projects.people.overdue", { count: person.overdue })}
-                      </span>
-                    )}
-                  </span>
-                  <ProgressBar
-                    percent={Math.round((person.done / person.total) * 100)}
-                    late={person.overdue > 0}
-                    className="col-span-2 h-1.5"
-                  />
-                </li>
-              ))}
-            </ul>
-          </Card>
-
-          <div className="flex flex-wrap gap-2">
-            <Button asChild variant="outline">
-              <Link
-                href={`/tasks?${new URLSearchParams({ project: project.name, scope: "team" })}`}
-              >
-                {t("projects.allTasks")}
-              </Link>
-            </Button>
-          </div>
-
-          {canManage && (
-            <details className="bg-card rounded-xl border p-4">
-              <summary className="cursor-pointer font-medium">{t("projects.edit")}</summary>
-              <div className="pt-3">
-                <ProjectForm
-                  action={updateProjectAction}
-                  projectId={project.id}
-                  values={project}
-                  users={users.map((u) => ({ id: u.id, name: personName(u) }))}
-                  canChangeLead={user.role === "OWNER"}
-                  submit={t("projects.save")}
-                />
-              </div>
-            </details>
           )}
         </>
       )}

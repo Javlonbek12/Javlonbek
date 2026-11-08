@@ -6,6 +6,7 @@ import { deleteTask, getDeleteMode, restoreTask } from "@/modules/tasks/delete-s
 import { changeStatus, createTask } from "@/modules/tasks/service";
 import {
   addTime,
+  correctTimeEntry,
   getRunningTimer,
   getTaskTime,
   removeTimeEntry,
@@ -62,10 +63,21 @@ describe("task time", () => {
       await db.activityLog.count({ where: { entityId: task.id, action: "task.time_logged" } }),
     ).toBe(1);
 
-    // A timer forgotten overnight counts 12 hours at most.
+    // A timer forgotten overnight: never capped silently (the owner's decision). «Исправить
+    // время» writes down the time really worked instead, and the entry ends where that time ends.
     await startTimer(worker, task.id, at(60));
-    expect(await stopTimer(worker, task.id, at(60 + 20 * 60))).toBe(12 * 60);
-    expect((await getTaskTime(task, worker)).totalMinutes).toBe(25 + 12 * 60);
+    expect(await stopTimer(worker, task.id, at(60 + 20 * 60), 3 * 60 + 30)).toBe(3 * 60 + 30);
+    const fixed = await db.taskTimeEntry.findFirstOrThrow({ where: { startedAt: at(60) } });
+    expect(fixed).toMatchObject({ minutes: 210, endedAt: at(60 + 210) });
+    expect((await getTaskTime(task, worker)).totalMinutes).toBe(25 + 210);
+    // Plain «Остановить» writes what the timer counted — all of it.
+    await startTimer(worker, task.id, at(24 * 60));
+    expect(await stopTimer(worker, task.id, at(24 * 60 + 20 * 60))).toBe(20 * 60);
+    // The person's own entry can be corrected afterwards.
+    const long = await db.taskTimeEntry.findFirstOrThrow({ where: { startedAt: at(24 * 60) } });
+    await correctTimeEntry(worker, long.id, 90);
+    expect((await getTaskTime(task, worker)).totalMinutes).toBe(25 + 210 + 90);
+    await expect(correctTimeEntry(manager, long.id, 60)).rejects.toThrow("forbidden");
   });
 
   it("time by hand, removing one's own, and who may track", async () => {
@@ -148,6 +160,7 @@ describe("task time", () => {
       taskId: task.id,
       title: task.title,
       startedAt: at(0),
+      timezone: "Asia/Tashkent",
     });
   });
 

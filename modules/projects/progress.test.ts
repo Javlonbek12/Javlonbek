@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   attention,
   burnUp,
-  byResponsible,
+  byPerson,
   milestones,
   phaseProgress,
   problemsByPriority,
@@ -26,6 +26,7 @@ const task = (over: Partial<ProjectTask>): ProjectTask => ({
   completedOn: null,
   phaseId: null,
   responsible: null,
+  assigneeId: "u1",
   assigneeName: "Тестовый руководитель",
   isMilestone: false,
   atRisk: false,
@@ -45,15 +46,22 @@ describe("project progress", () => {
     expect(projectStats(tasks, TODAY)).toEqual({
       total: 4,
       done: 1,
-      inProgress: 1,
+      // The overdue one in work counts as overdue only: each task once.
+      inProgress: 0,
+      inReview: 0,
       notStarted: 2,
       overdue: 1,
       atRisk: 1,
       percent: 25,
       plannedDone: 2,
       plannedPercent: 50,
+      behind: 1,
       health: "late",
     });
+    // Work handed in after its due date is not overdue (the owner's decision).
+    const handedIn = task({ status: "IN_REVIEW", dueDate: "2026-10-01" });
+    expect(projectStats([handedIn], TODAY)).toMatchObject({ overdue: 0, inReview: 1 });
+    expect(projectStats([handedIn], TODAY).health).toBe("onTrack");
     expect(projectStats(tasks.slice(2), TODAY).health).toBe("risk");
     expect(projectStats([tasks[0]!], TODAY).health).toBe("done");
     expect(projectStats([], TODAY).health).toBe("empty");
@@ -129,15 +137,33 @@ describe("project progress", () => {
     expect(result.dueSoon).toEqual([soon]);
   });
 
-  it("groups by the responsible from the plan, falling back to the assignee", () => {
+  it("«Кто что делает»: by the assignee, not by the role from the template", () => {
+    const worker = { assigneeId: "u2", assigneeName: "Тестовый сотрудник" };
     const tasks = [
       task({ responsible: "Тестовая группа", status: "DONE" }),
-      task({ responsible: "Тестовая группа", dueDate: "2026-10-01" }),
-      task({}),
+      task({ ...worker, responsible: "Тестовая группа", dueDate: "2026-10-01" }),
+      task({ ...worker, status: "IN_PROGRESS", dueDate: "2026-10-20" }),
+      task({ ...worker, dueDate: "2026-10-09" }),
     ];
-    expect(byResponsible(tasks, TODAY)).toEqual([
-      { name: "Тестовая группа", total: 2, done: 1, overdue: 1 },
-      { name: "Тестовый руководитель", total: 1, done: 0, overdue: 0 },
+    expect(byPerson(tasks, TODAY)).toEqual([
+      {
+        id: "u2",
+        name: "Тестовый сотрудник",
+        total: 3,
+        done: 0,
+        inWork: 1,
+        overdue: 1,
+        nextDue: "2026-10-09",
+      },
+      {
+        id: "u1",
+        name: "Тестовый руководитель",
+        total: 1,
+        done: 1,
+        inWork: 0,
+        overdue: 0,
+        nextDue: null,
+      },
     ]);
   });
 
