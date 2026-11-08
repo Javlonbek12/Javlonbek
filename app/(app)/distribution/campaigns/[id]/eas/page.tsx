@@ -85,6 +85,20 @@ export default async function DistributionEasPage({
           {t(`dist.errors.${error}` as TranslationKey)}
         </p>
       )}
+      {c.unpriced.length > 0 && (
+        <p
+          role="alert"
+          className="rounded-xl border border-amber-400/60 bg-amber-500/10 p-3 text-sm print:hidden"
+        >
+          {t("dist.eas.unpriced", {
+            count: String(c.unpriced.length),
+            names: c.unpriced.map((i) => i.category).join(", "),
+          })}{" "}
+          <Link href={`/distribution/campaigns/${id}#prices`} className="underline">
+            {t("dist.eas.unpricedLink")}
+          </Link>
+        </p>
+      )}
 
       <div className="grid gap-5 xl:grid-cols-2 [&>*]:min-w-0">
         {manage && (

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Section } from "@/components/connect/parts";
 import { fmt, Matrix } from "@/components/distribution/parts";
 import { Button } from "@/components/ui/button";
+import { ConfirmAction } from "@/components/ui/confirm-action";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
@@ -113,12 +114,15 @@ export default async function DistributionCampaignsPage({
                     </form>
                   )}
                   {manage && o.shipped === 0 && (
-                    <form action={deleteOrderAction}>
-                      <input type="hidden" name="orderId" value={o.id} />
-                      <Button type="submit" size="sm" variant="ghost" className="text-destructive">
-                        {t("dist.orders.delete")}
-                      </Button>
-                    </form>
+                    <ConfirmAction
+                      label={t("dist.orders.delete")}
+                      title={t("dist.orders.deleteTitle", { name: o.name })}
+                      hint={t("dist.orders.deleteHint")}
+                      confirm={t("dist.orders.deleteConfirm")}
+                      action={deleteOrderAction}
+                      hidden={{ orderId: o.id }}
+                      align="right"
+                    />
                   )}
                 </span>,
               ],

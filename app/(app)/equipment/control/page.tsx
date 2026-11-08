@@ -5,6 +5,7 @@ import { Section } from "@/components/connect/parts";
 import { fmt, Matrix } from "@/components/distribution/parts";
 import { ControlTable, typesLabel } from "@/components/equipment/control-table";
 import { Button } from "@/components/ui/button";
+import { ConfirmAction } from "@/components/ui/confirm-action";
 import { Input } from "@/components/ui/input";
 import { dateFormat, t, type TranslationKey } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
@@ -111,17 +112,17 @@ export default async function EquipmentControlPage({
                 [p.createdBy.firstName, p.createdBy.lastName].filter(Boolean).join(" "),
                 ...(manage
                   ? [
-                      <form key="d" action={deletePurchaseAction}>
-                        <input type="hidden" name="id" value={p.id} />
-                        <Button
-                          type="submit"
-                          size="icon"
-                          variant="ghost"
-                          aria-label={t("equip.purchases.delete")}
-                        >
-                          <Trash2 className="size-4" />
-                        </Button>
-                      </form>,
+                      <ConfirmAction
+                        key="d"
+                        label={<span className="sr-only">{t("equip.purchases.delete")}</span>}
+                        icon={<Trash2 className="size-4" />}
+                        title={t("equip.purchases.deleteTitle")}
+                        hint={t("equip.purchases.deleteHint")}
+                        confirm={t("equip.purchases.deleteConfirm")}
+                        action={deletePurchaseAction}
+                        hidden={{ id: p.id }}
+                        align="right"
+                      />,
                     ]
                   : []),
               ],

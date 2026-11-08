@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { Section } from "@/components/connect/parts";
 import { fmt, N } from "@/components/distribution/parts";
 import { Button } from "@/components/ui/button";
+import { ConfirmAction } from "@/components/ui/confirm-action";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { t, type TranslationKey } from "@/lib/i18n";
@@ -36,6 +37,9 @@ export default async function DistributionPosmPage({
   const shipped = d.stock.find((line) => line.item.id === id)?.shipped ?? 0;
   const error = typeof query.error === "string" ? query.error : null;
   const isTag = tagPrice(item.name) !== null;
+  // Percents as shown (one decimal). The stored share goes back with the form, so an unchanged
+  // field keeps its exact value (0.0909…, not 0.091) and the quantities don't move.
+  const shown = (share: number) => String(Math.round(share * 1000) / 10);
 
   return (
     <div className="flex flex-col gap-5 [&>*]:min-w-0">
@@ -107,8 +111,10 @@ export default async function DistributionPosmPage({
                   min={0}
                   max={100}
                   step="any"
-                  defaultValue={Math.round(item.reservePct * 1000) / 10}
+                  defaultValue={shown(item.reservePct)}
                 />
+                <input type="hidden" name="reserveShown" value={shown(item.reservePct)} />
+                <input type="hidden" name="reserveStored" value={String(item.reservePct)} />
               </label>
               <label className="flex flex-col gap-1 text-sm">
                 {t("dist.posm.base")}
@@ -139,8 +145,10 @@ export default async function DistributionPosmPage({
                   name="normReserve"
                   min={0}
                   step="any"
-                  defaultValue={Math.round(item.normReserve * 1000) / 10}
+                  defaultValue={shown(item.normReserve)}
                 />
+                <input type="hidden" name="normReserveShown" value={shown(item.normReserve)} />
+                <input type="hidden" name="normReserveStored" value={String(item.normReserve)} />
               </label>
             </div>
             {isTag && <p className="text-muted-foreground text-xs">{t("dist.posm.baseHint")}</p>}
@@ -169,12 +177,16 @@ export default async function DistributionPosmPage({
             </div>
           </form>
           {shipped === 0 && (
-            <form action={deletePosmAction} className="border-t pt-4">
-              <input type="hidden" name="id" value={item.id} />
-              <Button type="submit" variant="outline" size="sm">
-                {t("dist.posm.delete")}
-              </Button>
-            </form>
+            <div className="border-t pt-4">
+              <ConfirmAction
+                label={t("dist.posm.delete")}
+                title={t("dist.posm.deleteTitle", { name: item.name })}
+                hint={t("dist.posm.deleteHint")}
+                confirm={t("dist.posm.deleteConfirm")}
+                action={deletePosmAction}
+                hidden={{ id: item.id }}
+              />
+            </div>
           )}
         </Section>
       )}

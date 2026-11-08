@@ -303,6 +303,47 @@ export function plannedFor(plan: ItemPlan, destination: string): number {
   return plan.byRegion.get(destination) ?? 0;
 }
 
+// A share typed in percent on a form. The form shows it rounded (9.1 for 0.0909…); when the field
+// comes back as shown, the stored share is kept, so saving other fields doesn't move quantities.
+export function typedShare(typed: string, shown: string, stored: string): number {
+  const text = typed.trim().replace(",", ".");
+  if (text === shown.trim() && stored !== "" && Number.isFinite(Number(stored)))
+    return Number(stored);
+  return Number(text || 0) / 100;
+}
+
+export type Remainder = {
+  planned: number;
+  // Shipped to this destination itself.
+  shipped: number;
+  // For a region: what went straight to its TSMs (it comes out of the region's share).
+  viaTsm: number;
+  toSend: number;
+};
+
+// What is still to send to a destination. A region's share covers its TSMs, so shipments to the
+// region and to its TSMs both come out of it; a TSM never gets more than its own plan nor more
+// than what is left of the region's share.
+export function remainder(plan: ItemPlan, destination: string, shipments: Shipment[]): Remainder {
+  const { region, tsm } = parseDestination(destination);
+  const sum = (list: Shipment[]) => list.reduce((s, x) => s + x.quantity, 0);
+  const inRegion = shipments.filter(
+    (s) => s.posmId === plan.item.id && parseDestination(s.destination).region === region,
+  );
+  const own = sum(inRegion.filter((s) => s.destination === destination));
+  const regionShare = plan.byRegion.get(region) ?? 0;
+  const regionLeft = Math.max(0, regionShare - sum(inRegion));
+  if (tsm === null)
+    return { planned: regionShare, shipped: own, viaTsm: sum(inRegion) - own, toSend: regionLeft };
+  const planned = plan.byTsm.get(destination) ?? 0;
+  return {
+    planned,
+    shipped: own,
+    viaTsm: 0,
+    toSend: Math.max(0, Math.min(planned - own, regionLeft)),
+  };
+}
+
 export type Finding = {
   tone: "bad" | "warn" | "info";
   key: string;

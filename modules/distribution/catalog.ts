@@ -56,10 +56,23 @@ export async function addElement(actor: Actor & Viewer, name: string, material: 
   return element;
 }
 
+// The campaigns an element is in (in what they order, or in their list): it can't be deleted
+// while they are — it would vanish from their composition and break their list.
+export async function elementUsage(id: string) {
+  return db.distOrder.findMany({
+    where: {
+      OR: [{ elements: { some: { elementId: id } } }, { posm: { some: { elementId: id } } }],
+    },
+    select: { id: true, name: true },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
 export async function deleteElement(actor: Actor & Viewer, id: string) {
   assertManager(actor);
   if (!(await db.distElement.findUnique({ where: { id } })))
     throw new DistributionError("notFound");
+  if ((await elementUsage(id)).length > 0) throw new DistributionError("elementInUse");
   await db.distElement.delete({ where: { id } });
   await logActivity({
     actorId: actor.id,
