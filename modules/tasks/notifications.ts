@@ -21,7 +21,8 @@ type Notice = {
   type: NotificationType;
   // Made when sending, in the recipient's language.
   title: () => string;
-  buttons?: TelegramButton[][];
+  // Made when sending too (their words are in the recipient's language).
+  buttons?: () => TelegramButton[][];
 };
 
 // Callback data for status buttons in Telegram: t:<taskId>:<code>.
@@ -41,6 +42,37 @@ export function statusButton(
   return { text, data: `t:${taskId}:${code}` };
 }
 
+// The decision buttons under a notice, the same as in /pending: approve (or, for the assignee who
+// decides on a request themselves, take it on) or decline; accept or send back. Declining and
+// sending back ask for a reason in the chat.
+export function approveButtons(taskId: string, takeOn: boolean): TelegramButton[][] {
+  return [
+    [
+      statusButton(t(takeOn ? "bot.actions.takeOn" : "bot.actions.approve"), taskId, "A"),
+      statusButton(t("bot.actions.decline"), taskId, "D"),
+    ],
+  ];
+}
+
+export function acceptButtons(taskId: string): TelegramButton[][] {
+  return [
+    [
+      statusButton(t("bot.actions.accept"), taskId, "F"),
+      statusButton(t("bot.actions.returnWork"), taskId, "W"),
+    ],
+  ];
+}
+
+// A request to add a co-assignee: ca:<requestId>:y adds them, ca:<requestId>:n declines.
+export function coAssigneeButtons(requestId: string): TelegramButton[][] {
+  return [
+    [
+      { text: t("bot.actions.coAdd"), data: `ca:${requestId}:y` },
+      { text: t("bot.actions.coDecline"), data: `ca:${requestId}:n` },
+    ],
+  ];
+}
+
 // What happened to a team task (routing v2, «Уведомления»).
 export type TaskEvent =
   // Started right away by the route: the assignee, and the assignee's nearest manager (teamNoticeId).
@@ -55,10 +87,12 @@ export type TaskEvent =
   | { kind: "rework"; reason: string | null }
   | { kind: "cancelled"; wasPending: boolean; reason: string | null }
   | { kind: "reassigned"; previousAssigneeId: string; previousSaw: boolean }
+  // A closed or cancelled task back in work («Вернуть в работу», within 24 hours).
+  | { kind: "reopened" }
   // Co-assignees (modules/tasks/co-assignees.ts): added (straight away or on a decision), asked
   // for (to whoever decides), the decision (to whoever asked), taken off.
   | { kind: "coAdded"; userId: string }
-  | { kind: "coRequested"; deciderIds: string[]; name: string }
+  | { kind: "coRequested"; requestId: string; deciderIds: string[]; name: string }
   | { kind: "coDecided"; requesterId: string; name: string; approved: boolean }
   | { kind: "coRemoved"; userId: string };
 
@@ -73,9 +107,22 @@ const assigneeSees = (task: TaskForNotice) =>
 export function taskEventRecipients(task: TaskForNotice, event: TaskEvent, actorId: string) {
   if (task.isPersonal) return [];
   const notices: Notice[] = [];
-  const add = (userId: string | null | undefined, type: NotificationType, title: () => string) => {
-    if (userId) notices.push({ userId, type, title });
+  const add = (
+    userId: string | null | undefined,
+    type: NotificationType,
+    title: () => string,
+    buttons?: () => TelegramButton[][],
+  ) => {
+    if (userId) notices.push({ userId, type, title, buttons });
   };
+  // Whoever decides gets the decision right in the notice.
+  const decide = (id: string) =>
+    add(
+      id,
+      "task_pending_approval",
+      () => t("notifications.events.taskPendingTitle"),
+      () => approveButtons(task.id, id === task.assigneeId),
+    );
   const status = (to: TaskStatus) => () =>
     t("notifications.events.taskStatusTitle", { status: t(`tasks.status.${to}`) });
   const assigned = () => t("notifications.events.taskAssignedTitle");
@@ -94,12 +141,11 @@ export function taskEventRecipients(task: TaskForNotice, event: TaskEvent, actor
           userId: event.teamNoticeId,
           type: "task_team",
           title: () => t("notifications.events.taskTeamTitle"),
-          buttons: [[statusButton(t("bot.actions.cancelTask"), task.id, "C")]],
+          buttons: () => [[statusButton(t("bot.actions.cancelTask"), task.id, "C")]],
         });
       break;
     case "pending":
-      for (const id of deciders)
-        add(id, "task_pending_approval", () => t("notifications.events.taskPendingTitle"));
+      for (const id of deciders) decide(id);
       break;
     case "approved":
       doers("task_assigned", assigned);
@@ -120,7 +166,12 @@ export function taskEventRecipients(task: TaskForNotice, event: TaskEvent, actor
       break;
     case "review":
       for (const id of event.reviewerIds)
-        add(id, "task_status", () => t("notifications.events.taskReviewTitle"));
+        add(
+          id,
+          "task_status",
+          () => t("notifications.events.taskReviewTitle"),
+          () => acceptButtons(task.id),
+        );
       for (const id of [task.assigneeId, ...coAssignees])
         add(id, "task_status", status("IN_REVIEW"));
       break;
@@ -141,13 +192,15 @@ export function taskEventRecipients(task: TaskForNotice, event: TaskEvent, actor
       break;
     case "reassigned":
       if (task.approvedAt !== null) add(task.assigneeId, "task_assigned", assigned);
-      else
-        for (const id of deciders)
-          add(id, "task_pending_approval", () => t("notifications.events.taskPendingTitle"));
+      else for (const id of deciders) decide(id);
       if (event.previousSaw)
         add(event.previousAssigneeId, "task_status", () =>
           t("notifications.events.taskUnassignedTitle"),
         );
+      break;
+    case "reopened":
+      doers("task_status", () => t("notifications.events.taskReopenedTitle"));
+      add(task.creatorId, "task_status", () => t("notifications.events.taskReopenedTitle"));
       break;
     case "coAdded":
       // Before approval they can't see it yet: they hear when it starts.
@@ -156,8 +209,11 @@ export function taskEventRecipients(task: TaskForNotice, event: TaskEvent, actor
       break;
     case "coRequested":
       for (const id of event.deciderIds)
-        add(id, "task_pending_approval", () =>
-          t("notifications.events.coRequestedTitle", { name: event.name }),
+        add(
+          id,
+          "task_pending_approval",
+          () => t("notifications.events.coRequestedTitle", { name: event.name }),
+          () => coAssigneeButtons(event.requestId),
         );
       break;
     case "coDecided":
@@ -198,7 +254,7 @@ export async function sendTaskNotices(
         ? t("notifications.events.taskReasonBody", { title: task.title, name: actorName, reason })
         : t("notifications.events.taskBody", { title: task.title, name: actorName }),
       link: `/tasks/${task.id}`,
-      telegramButtons: notice.buttons,
+      telegramButtons: notice.buttons?.(),
     }));
   }
 }

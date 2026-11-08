@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { classifyByDueDate, isOverdue } from "./today";
+import { classifyByDueDate, isLateWork, isOverdue } from "./today";
 
 describe("classifyByDueDate", () => {
   const tasks = [
@@ -19,5 +19,12 @@ describe("classifyByDueDate", () => {
 
   it("closed tasks are never overdue", () => {
     expect(isOverdue(tasks[2], "2026-10-02")).toBe(false);
+  });
+
+  it("in task lists, handed-in work is not late", () => {
+    const handedIn = { status: "IN_REVIEW" as const, dueDate: "2026-10-01" };
+    expect(isOverdue(handedIn, "2026-10-02")).toBe(true);
+    expect(isLateWork(handedIn, "2026-10-02")).toBe(false);
+    expect(isLateWork(tasks[1], "2026-10-02")).toBe(true);
   });
 });

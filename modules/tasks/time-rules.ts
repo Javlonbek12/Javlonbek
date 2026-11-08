@@ -51,8 +51,11 @@ export async function finishTimer(entry: TaskTimeEntry, now: Date) {
   return minutes;
 }
 
-// A task that closes or goes to the bin stops the timers running on it.
-export async function stopTimersOnTask(taskId: string, now = new Date()) {
-  const running = await db.taskTimeEntry.findMany({ where: { taskId, endedAt: null } });
+// A task that is handed in, closes or goes to the bin stops the timers running on it; one person
+// taken off the task (a co-assignee) — only theirs.
+export async function stopTimersOnTask(taskId: string, now = new Date(), userId?: string) {
+  const running = await db.taskTimeEntry.findMany({
+    where: { taskId, endedAt: null, ...(userId ? { userId } : {}) },
+  });
   for (const entry of running) await finishTimer(entry, now);
 }

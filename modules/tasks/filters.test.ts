@@ -51,16 +51,22 @@ describe("parseTaskFilters", () => {
 });
 
 describe("filtersWhere", () => {
-  it("builds a database filter for 'my overdue tasks'", () => {
+  it("builds a database filter for 'my overdue tasks' (handed-in work is not overdue)", () => {
     expect(filtersWhere({ ...base, due: "overdue" }, actor, "2026-10-02")).toEqual({
       AND: [
         doerWhere("u1"),
         { status: { notIn: ["DONE", "CANCELLED"] } },
         {
           dueDate: { lt: new Date("2026-10-02T00:00:00Z") },
-          status: { notIn: ["DONE", "CANCELLED"] },
+          status: { notIn: ["DONE", "CANCELLED", "IN_REVIEW"] },
         },
       ],
+    });
+  });
+
+  it("«На 7 дней» is today and the six days after it", () => {
+    expect(filtersWhere({ ...base, due: "week" }, actor, "2026-10-02").AND).toContainEqual({
+      dueDate: { gte: new Date("2026-10-02T00:00:00Z"), lt: new Date("2026-10-09T00:00:00Z") },
     });
   });
 

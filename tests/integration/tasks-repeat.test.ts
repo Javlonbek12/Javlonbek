@@ -81,10 +81,28 @@ describe("repeating tasks", () => {
     const series = await db.taskSeries.findFirstOrThrow();
     expect(series.nextDate).toBeNull();
     const tasks = await seriesTasks(series.id);
+    // The copies of a personal task start in work, as one made in the web form.
     expect(tasks.map((t) => [t.due, t.status])).toEqual([
       ["2026-11-02", "DRAFT"],
-      ["2026-11-03", "DRAFT"],
-      ["2026-11-04", "DRAFT"],
+      ["2026-11-03", "IN_PROGRESS"],
+      ["2026-11-04", "IN_PROGRESS"],
+    ]);
+  });
+
+  it("a copy of one's own team task starts in work on its day", async () => {
+    const owner = await createTestUser("OWNER");
+    const first = await createTask(
+      owner,
+      taskInput({ title: "Мой отчёт", assigneeId: owner.id, dueDate: "2026-11-06" }),
+      "create",
+      { repeat: weekly, startOwn: true },
+    );
+    expect(first.status).toBe("IN_PROGRESS");
+    expect(await createRepeatCopies(at("2026-11-13"))).toBe(1);
+    const { seriesId } = await db.task.findUniqueOrThrow({ where: { id: first.id } });
+    expect((await seriesTasks(seriesId!)).map((t) => t.status)).toEqual([
+      "IN_PROGRESS",
+      "IN_PROGRESS",
     ]);
   });
 
