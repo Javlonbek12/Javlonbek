@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { linkPeopleByName, syncPeople } from "@/modules/org/service";
 import type { Role } from "@/lib/generated/prisma/client";
 import { t } from "@/lib/i18n";
+import { canUseModule, withAccess } from "@/modules/core/access/actor";
 import { logActivity } from "@/modules/core/activity/service";
 import type { TelegramProfile } from "@/modules/core/auth/telegram";
 import { ForbiddenError } from "@/modules/core/errors";
@@ -72,12 +73,15 @@ export async function loginWithTelegram(
       });
       if (claimed.count === 0) return { ok: false, reason: "invite_used" };
 
+      // Someone a manager invites joins that manager's team (the chart may place them later).
+      const inviter = await tx.user.findUnique({ where: { id: invite.createdById } });
       const user = await tx.user.create({
         data: {
           ...profileData,
           telegramId: profile.telegramId,
           role: invite.role,
           invitedById: invite.createdById,
+          managerId: inviter?.role === "MANAGER" ? inviter.id : null,
         },
       });
       await tx.invite.update({ where: { id: invite.id }, data: { usedById: user.id } });
@@ -107,11 +111,15 @@ export async function loginWithTelegram(
   // A new person whose name is written in the chart takes that place.
   if (result.ok && result.created && !(await linkPeopleByName())) await syncPeople();
   if (result.ok && result.inviterId) {
+    const inviter = await db.user.findUnique({ where: { id: result.inviterId } });
+    // A link the inviter can open: the team, or their invitations without the Team section.
+    const link =
+      inviter && canUseModule(await withAccess(inviter), "team") ? "/team" : "/settings/invites";
     await notify(result.inviterId, () => ({
       type: "invite_accepted",
       title: t("notifications.events.inviteAcceptedTitle"),
       body: t("notifications.events.inviteAcceptedBody", { name: displayName(result.user) }),
-      link: "/team",
+      link,
     }));
   }
   if (!result.ok) return result;

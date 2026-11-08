@@ -1,26 +1,33 @@
 import Link from "next/link";
+
+import { AiUsageCard } from "@/components/ai-usage-card";
+import { QuietHours } from "@/components/settings/quiet-hours";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { t, LOCALES } from "@/lib/i18n";
+import { NativeSelect } from "@/components/ui/native-select";
+import { todayInTimezone } from "@/lib/dates";
+import { currentLocale, t, LOCALES } from "@/lib/i18n";
 import { formatTimeOfDay } from "@/lib/time";
 import { requireUser } from "@/modules/core/auth/current-user";
-import { OPTIONAL_NOTIFICATION_TYPES } from "@/modules/core/notifications/types";
+import { notificationGroupsFor } from "@/modules/core/notifications/groups";
+import { invitableRoles } from "@/modules/core/permissions";
 import { getSettings } from "@/modules/core/settings/service";
+import { timezoneOptions } from "@/modules/core/settings/timezones";
 import { displayName } from "@/modules/core/users/display-name";
 
-import { AiUsageCard } from "@/components/ai-usage-card";
-import { todayInTimezone } from "@/lib/dates";
+import { saveSettingsAction, sendTestNotificationAction } from "../actions";
 
-import { saveSettingsAction } from "../actions";
-
-const TIMEZONES = ["Asia/Tashkent", "Asia/Samarkand", "Asia/Almaty", "Europe/Moscow", "UTC"];
+const ERRORS = { quiet: "settings.quietHalf", timezone: "settings.timezoneInvalid" } as const;
 
 export default async function SettingsPage({ searchParams }: PageProps<"/settings">) {
   const user = await requireUser();
-  const { saved, error } = await searchParams;
+  const { saved, error, notice } = await searchParams;
   const settings = await getSettings(user.id);
+  const zones = timezoneOptions(currentLocale(), settings.timezone);
+  const groups = notificationGroupsFor(user);
+  const minutes = (value: number | null) => (value === null ? "" : formatTimeOfDay(value));
 
   return (
     <div className="flex flex-col gap-4">
@@ -31,14 +38,25 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
           <p className="text-muted-foreground text-sm">{t("roleAccess.openHint")}</p>
         </Link>
       )}
+      {invitableRoles(user.role).length > 0 && (
+        <Link href="/settings/invites" className="hover:bg-accent/50 rounded-xl border p-4">
+          <p className="font-medium">{t("team.invites")} →</p>
+          <p className="text-muted-foreground text-sm">{t("team.invitesHint")}</p>
+        </Link>
+      )}
       {saved && (
         <p role="status" className="bg-secondary rounded-md p-3 text-sm">
           {t("common.saved")}
         </p>
       )}
+      {notice === "testSent" && (
+        <p role="status" className="bg-secondary rounded-md p-3 text-sm">
+          {t("team.testSent")}
+        </p>
+      )}
       {error && (
         <p role="alert" className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
-          {t("errors.generic")}
+          {t(ERRORS[error as keyof typeof ERRORS] ?? "errors.generic")}
         </p>
       )}
 
@@ -48,11 +66,20 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
           {displayName(user)}
           {user.telegramUsername && ` · @${user.telegramUsername}`} · {t(`roles.${user.role}`)}
         </CardDescription>
-        <form action="/api/auth/logout" method="post">
-          <Button type="submit" variant="outline">
-            {t("login.logout")}
-          </Button>
-        </form>
+        <div className="flex flex-wrap gap-2">
+          <form action={sendTestNotificationAction}>
+            <input type="hidden" name="userId" value={user.id} />
+            <input type="hidden" name="back" value="/settings" />
+            <Button type="submit" variant="outline">
+              {t("notifications.sendTestToMe")}
+            </Button>
+          </form>
+          <form action="/api/auth/logout" method="post">
+            <Button type="submit" variant="outline">
+              {t("login.logout")}
+            </Button>
+          </form>
+        </div>
       </Card>
 
       <form action={saveSettingsAction} className="flex flex-col gap-4">
@@ -77,12 +104,27 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
         <Card>
           <Label className="flex-col items-start">
             {t("settings.timezone")}
-            <Input name="timezone" list="timezones" defaultValue={settings.timezone} required />
-            <datalist id="timezones">
-              {TIMEZONES.map((tz) => (
-                <option key={tz} value={tz} />
-              ))}
-            </datalist>
+            <NativeSelect
+              name="timezone"
+              defaultValue={settings.timezone}
+              required
+              className="w-full max-w-sm"
+            >
+              <optgroup label={t("settings.zonesCommon")}>
+                {zones.common.map((z) => (
+                  <option key={z.value} value={z.value}>
+                    {z.label}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label={t("settings.zonesAll")}>
+                {zones.all.map((z) => (
+                  <option key={z.value} value={z.value}>
+                    {z.label}
+                  </option>
+                ))}
+              </optgroup>
+            </NativeSelect>
           </Label>
         </Card>
 
@@ -100,32 +142,10 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
           <div className="flex flex-col gap-2">
             <span className="text-sm font-medium">{t("settings.quietHours")}</span>
             <CardDescription>{t("settings.quietHoursHint")}</CardDescription>
-            <div className="flex flex-wrap items-center gap-3">
-              <Label>
-                {t("settings.quietFrom")}
-                <Input
-                  type="time"
-                  name="quietFrom"
-                  className="w-28"
-                  defaultValue={
-                    settings.quietHoursStart === null
-                      ? ""
-                      : formatTimeOfDay(settings.quietHoursStart)
-                  }
-                />
-              </Label>
-              <Label>
-                {t("settings.quietTo")}
-                <Input
-                  type="time"
-                  name="quietTo"
-                  className="w-28"
-                  defaultValue={
-                    settings.quietHoursEnd === null ? "" : formatTimeOfDay(settings.quietHoursEnd)
-                  }
-                />
-              </Label>
-            </div>
+            <QuietHours
+              from={minutes(settings.quietHoursStart)}
+              to={minutes(settings.quietHoursEnd)}
+            />
           </div>
         </Card>
 
@@ -143,22 +163,36 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
 
         <Card>
           <CardTitle>{t("settings.types")}</CardTitle>
-          {OPTIONAL_NOTIFICATION_TYPES.map((type) => (
-            <Label key={type}>
-              <input
-                type="checkbox"
-                name={`type_${type}`}
-                defaultChecked={!settings.disabledTypes.includes(type)}
-                className="size-4"
-              />
-              {t(`notifications.types.${type}`)}
-            </Label>
+          <CardDescription>{t("settings.typesHint")}</CardDescription>
+          {groups.map((group) => (
+            <fieldset
+              key={group.id}
+              className="flex flex-col gap-2 border-t pt-3 first-of-type:border-t-0 first-of-type:pt-0"
+            >
+              <legend className="contents text-sm font-medium">
+                {t(`settings.groups.${group.id}`)}
+              </legend>
+              {group.types.map((type) => (
+                <Label key={type} className="font-normal">
+                  {/* Only the types shown here are changed by this form. */}
+                  <input type="hidden" name="shownTypes" value={type} />
+                  <input
+                    type="checkbox"
+                    name={`type_${type}`}
+                    defaultChecked={!settings.disabledTypes.includes(type)}
+                    className="size-4"
+                  />
+                  {t(`notifications.types.${type}`)}
+                </Label>
+              ))}
+            </fieldset>
           ))}
         </Card>
 
-        <Button type="submit" className="self-start">
-          {t("common.save")}
-        </Button>
+        {/* Reachable without scrolling to the end: sticks above the menu on a phone. */}
+        <div className="bg-card/95 sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-10 -mx-1 rounded-2xl border p-2 shadow-sm backdrop-blur md:bottom-4">
+          <Button type="submit">{t("common.save")}</Button>
+        </div>
       </form>
 
       {user.role === "OWNER" && <AiUsageCard today={todayInTimezone(settings.timezone)} />}

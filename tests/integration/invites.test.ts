@@ -57,6 +57,20 @@ describe("invites", () => {
     await expect(revokeInvite(manager, ownerInvite.id)).rejects.toBeInstanceOf(ForbiddenError);
   });
 
+  it("someone a manager invites joins that manager's team", async () => {
+    await createTestUser("OWNER");
+    const manager = await createTestUser("MANAGER");
+    const invite = await createInvite(manager, "MEMBER");
+    const result = await loginWithTelegram(testProfile(5000002n), invite.code);
+    if (!result.ok) throw new Error(result.reason);
+    expect((await db.user.findUniqueOrThrow({ where: { id: result.user.id } })).managerId).toBe(
+      manager.id,
+    );
+    // Managers have no Team section by default: the link goes to their invitations.
+    const notification = await db.notification.findFirstOrThrow({ where: { userId: manager.id } });
+    expect(notification.link).toBe("/settings/invites");
+  });
+
   it("the inviter gets an 'invite accepted' notification", async () => {
     const owner = await createTestUser("OWNER");
     const invite = await createInvite(owner, "MEMBER");

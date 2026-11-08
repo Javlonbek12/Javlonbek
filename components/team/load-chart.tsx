@@ -12,9 +12,21 @@ export function LoadChart({ weeks, compact = false }: { weeks: WeekLoad[]; compa
   const label = (w: WeekLoad) =>
     `${formatDay(w.weekStart)} – ${formatDay(addDays(w.weekStart, 6))}: ${t("team.stats.loadTooltip", { tasks: w.tasks, hours: w.hours })}`;
 
+  const current = weeks.find((w) => w.current);
+
   return (
     <figure className="flex flex-col gap-1">
-      {!compact && (
+      {compact ? (
+        // The small chart on the team page says what it is and the current number in words.
+        <figcaption className="text-muted-foreground flex justify-between gap-2 text-[11px]">
+          <span>{t("team.stats.loadShort")}</span>
+          {current && (
+            <span className="text-foreground font-medium">
+              {t("team.stats.thisWeekTasks", { tasks: current.tasks })}
+            </span>
+          )}
+        </figcaption>
+      ) : (
         <figcaption className="text-muted-foreground text-xs">{t("team.stats.load")}</figcaption>
       )}
       <div className="flex items-end gap-0.5" style={{ height }} aria-hidden>
@@ -22,6 +34,8 @@ export function LoadChart({ weeks, compact = false }: { weeks: WeekLoad[]; compa
           <div
             key={w.weekStart}
             tabIndex={compact ? undefined : 0}
+            // Hover shows the week's numbers on the small chart too.
+            title={compact ? label(w) : undefined}
             className="group relative flex h-full flex-1 items-end outline-none"
           >
             {/* Selective direct label: only the current week's value. */}
