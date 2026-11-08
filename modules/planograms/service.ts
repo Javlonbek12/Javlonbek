@@ -305,7 +305,10 @@ async function approverFor(senderId: string) {
   const manager = nearestManager(people, senderId);
   const person = people.find((p) => p.id === manager);
   if (person && person.id !== senderId && canApprovePlanograms(person.role)) return [person.id];
-  return people.filter((p) => p.role === "OWNER" && p.id !== senderId).map((p) => p.id);
+  // A deactivated owner gets nothing and is not named as told.
+  return people
+    .filter((p) => p.role === "OWNER" && !p.deactivated && p.id !== senderId)
+    .map((p) => p.id);
 }
 
 async function notifyPlanogram(userIds: string[], actor: Actor, id: string, title: () => string) {
