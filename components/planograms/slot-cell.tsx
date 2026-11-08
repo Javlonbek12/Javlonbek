@@ -44,6 +44,7 @@ export function SlotView({
   posm,
   selected,
   violation,
+  marked,
   style,
   height,
 }: {
@@ -52,6 +53,8 @@ export function SlotView({
   posm?: EditorPosm;
   selected?: boolean;
   violation?: boolean;
+  // Changed by the AI's suggestion (outlined until the place changes again).
+  marked?: boolean;
   style?: CSSProperties;
   // A POSM over several shelves: its height (the shelves differ when some have shelftalkers).
   height?: number;
@@ -59,6 +62,7 @@ export function SlotView({
   const ring = cn(
     selected && "ring-2 ring-blue-500",
     violation && !selected && "ring-2 ring-red-500",
+    marked && !selected && !violation && "ring-2 ring-violet-500 ring-offset-1",
   );
   if (content?.kind === "POSM" && posm) {
     const rows = content.rows ?? 1;

@@ -1,8 +1,12 @@
+import { Download } from "lucide-react";
+
 import { Section } from "@/components/connect/parts";
 import { fmt, Matrix } from "@/components/distribution/parts";
+import { DataFreshness } from "@/components/equipment/data-freshness";
+import { Button } from "@/components/ui/button";
 import { dateFormat, t, type TranslationKey } from "@/lib/i18n";
 import { outletReview, type OutletRow } from "@/modules/distribution/control";
-import { typeInfo } from "@/modules/distribution/types";
+import { regionLabel, typeInfo } from "@/modules/distribution/types";
 
 const types = (row: OutletRow) => row.types.map((x) => typeInfo(x)?.label ?? x).join(", ");
 
@@ -14,6 +18,15 @@ export default async function EquipmentOutletsPage() {
   const day = dateFormat({ dateStyle: "medium" });
   return (
     <div className="flex flex-col gap-5 [&>*]:min-w-0">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <DataFreshness />
+        <Button asChild size="sm" variant="outline">
+          <a href="/api/distribution/outlet-review">
+            <Download />
+            {t("equip.attention.excel")}
+          </a>
+        </Button>
+      </div>
       <Section
         title={`${t("equip.outlets.missingTitle")} · ${fmt(r.missing.length)}`}
         hint={t("equip.outlets.missingHint")}
@@ -37,7 +50,7 @@ export default async function EquipmentOutletsPage() {
                 o.outletId,
                 o.posName || "—",
                 o.tin || "—",
-                o.region,
+                regionLabel(o.region),
                 types(o),
                 fmt(o.units),
                 o.firstSeen ? day.format(o.firstSeen) : "—",
@@ -66,7 +79,13 @@ export default async function EquipmentOutletsPage() {
             ]}
             rows={r.noId.map((o) => ({
               key: o.key,
-              cells: [o.posName || "—", o.tin || "—", o.region, types(o), fmt(o.units)],
+              cells: [
+                o.posName || "—",
+                o.tin || "—",
+                regionLabel(o.region),
+                types(o),
+                fmt(o.units),
+              ],
             }))}
           />
         ) : (
@@ -93,7 +112,7 @@ export default async function EquipmentOutletsPage() {
               cells: [
                 s.row,
                 t(`equip.outlets.reasons.${s.reason}` as TranslationKey),
-                s.region || "—",
+                s.region ? regionLabel(s.region) : "—",
                 s.description || "—",
               ],
             }))}
@@ -119,7 +138,15 @@ export default async function EquipmentOutletsPage() {
             ]}
             rows={r.mismatches.map((m) => ({
               key: m.outletId,
-              cells: [m.outletId, m.posName || "—", m.fileRegion, m.baseRegion],
+              cells: [
+                m.outletId,
+                m.posName || "—",
+                regionLabel(m.fileRegion),
+                m.baseRegion
+                  .split(", ")
+                  .map((x) => regionLabel(x))
+                  .join(", "),
+              ],
             }))}
           />
         ) : (

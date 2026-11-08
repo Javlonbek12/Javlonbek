@@ -12,8 +12,13 @@ import { loadPlanogram, loadSkuInfos } from "./repository";
 import { DEFAULT_BRAND_ORDER, withMandatory } from "./validate";
 
 // «Предложить раскладку ИИ»: the manager describes the shelves in words, Claude answers with the
-// SKUs of each shelf left to right, and the code puts them into the free places. POSM stays
-// where it is; the result goes into the editor as an unsaved change (undo takes it back).
+// SKUs of each shelf left to right, and the code puts them into the places it may use. POSM always
+// stays; in «free» mode the packs and «пусто» marks already there stay too and only the places
+// nobody decided are filled, in «all» mode every pack is placed again. Places the answer leaves
+// over stay undecided, so the «every place decided» rule shows the gap. The result goes into the
+// editor as an unsaved change (undo takes it back).
+
+export type AiLayoutMode = "free" | "all";
 
 export const MAX_REQUEST = 1000;
 const MAX_FACINGS = 8;
@@ -53,12 +58,14 @@ export function aiLayoutPrompt(input: {
   posmNames: Map<string, string>;
   request: string;
   brandOrder?: string[];
+  mode?: AiLayoutMode;
 }) {
   const { geometry, layout, skus, posmNames, request } = input;
+  const mode = input.mode ?? "all";
   const covered = coveredSlots(layout);
   const code = new Map(skus.map((s) => [s.id, s.code]));
   const shelves = geometry.shelves.map((shelf, index) => {
-    const free = freePlaces(geometry, layout, index, covered).length;
+    const free = freePlaces(geometry, layout, index, covered, mode).length;
     const posm = [
       ...new Set(
         Array.from({ length: shelf.slots }, (_, p) => layout[slotKey(index, p)])
@@ -66,7 +73,7 @@ export function aiLayoutPrompt(input: {
           .map((c) => (c?.kind === "POSM" ? (posmNames.get(c.posmId) ?? "POSM") : "")),
       ),
     ];
-    const taken = shelf.slots - free;
+    const taken = shelf.slots - freePlaces(geometry, layout, index, covered, "all").length;
     return `Shelf ${index + 1}: ${free} free places${taken > 0 ? ` (${taken} taken by POSM${posm.length ? `: ${posm.join(", ")}` : ""})` : ""}`;
   });
   const now = geometry.shelves.map((shelf, index) => {
@@ -88,6 +95,9 @@ export function aiLayoutPrompt(input: {
       .join(" | "),
   );
   return [
+    mode === "free"
+      ? "Mode: fill only the free places. The packs already on the unit stay where they are; for each shelf, list only the packs for its free places."
+      : "Mode: arrange the whole unit again. Every place except POSM is free; the current layout is only a reference.",
     `The unit: ${geometry.shelves.length} shelves.`,
     ...shelves,
     "",
@@ -103,23 +113,34 @@ export function aiLayoutPrompt(input: {
   ].join("\n");
 }
 
-// The places of a shelf an SKU can take: inside the shelf, not a POSM and not under one.
-function freePlaces(geometry: Geometry, layout: Layout, shelf: number, covered: Set<string>) {
+// The places of a shelf an SKU can take: inside the shelf, not a POSM and not under one; in
+// «free» mode also not a pack or a place marked empty.
+function freePlaces(
+  geometry: Geometry,
+  layout: Layout,
+  shelf: number,
+  covered: Set<string>,
+  mode: AiLayoutMode,
+) {
   const out: string[] = [];
   for (let p = 0; p < (geometry.shelves[shelf]?.slots ?? 0); p++) {
     const key = slotKey(shelf, p);
-    if (!covered.has(key) && layout[key]?.kind !== "POSM") out.push(key);
+    if (covered.has(key) || layout[key]?.kind === "POSM") continue;
+    if (mode === "free" && layout[key]) continue;
+    out.push(key);
   }
   return out;
 }
 
-// The model's answer as a layout: POSM kept, SKUs in the free places of their shelf left to right,
-// what doesn't fit or isn't in the catalog reported, the places left over marked empty.
+// The model's answer as a layout: what the mode keeps, SKUs in the free places of their shelf left
+// to right, what doesn't fit or isn't in the catalog reported. Places left over stay undecided:
+// marking them «пусто» would hide the gap from the rule check.
 export function layoutFromAnswer(
   answer: AiLayoutAnswer,
   geometry: Geometry,
   current: Layout,
   skus: (SkuInfo & { id: string })[],
+  mode: AiLayoutMode = "all",
 ) {
   const byCode = new Map(skus.map((s) => [s.code.trim().toLowerCase(), s]));
   // A pack keeps the marks it had (e.g. «1mg» set by hand); a new one gets its defaults.
@@ -129,11 +150,12 @@ export function layoutFromAnswer(
   const covered = coveredSlots(current);
 
   const layout: Layout = {};
-  for (const [key, cell] of Object.entries(current)) if (cell.kind === "POSM") layout[key] = cell;
+  for (const [key, cell] of Object.entries(current))
+    if (cell.kind === "POSM" || mode === "free") layout[key] = cell;
   const unknown = new Set<string>();
   const overflow = new Set<string>();
   geometry.shelves.forEach((_, shelf) => {
-    const free = freePlaces(geometry, current, shelf, covered);
+    const free = freePlaces(geometry, current, shelf, covered, mode);
     const items = answer.shelves.filter((s) => s.shelf === shelf + 1).flatMap((s) => s.items);
     let next = 0;
     for (const item of items) {
@@ -159,7 +181,6 @@ export function layoutFromAnswer(
         };
       }
     }
-    for (const key of free.slice(next)) layout[key] = { kind: "EMPTY" };
   });
   return { layout, unknown: [...unknown], overflow: [...overflow] };
 }
@@ -172,6 +193,7 @@ export async function suggestLayout(
   request: string,
   today: string,
   call?: ModelCall,
+  mode: AiLayoutMode = "all",
 ) {
   if (!canManagePlanograms(actor.role)) throw new PlanogramError("forbidden");
   const text = request.trim().slice(0, MAX_REQUEST);
@@ -200,13 +222,14 @@ export async function suggestLayout(
       skus,
       posmNames: new Map(posms.map((p) => [p.id, p.name])),
       request: text,
+      mode,
     }),
     schema: aiLayoutSchema,
     today,
     call,
   });
   return {
-    ...layoutFromAnswer(answer, loaded.geometry, current, skus),
+    ...layoutFromAnswer(answer, loaded.geometry, current, skus, mode),
     note: answer.note.trim().slice(0, 500),
   };
 }

@@ -4,10 +4,11 @@ import { notFound } from "next/navigation";
 import { Kpi, Section } from "@/components/connect/parts";
 import { fmt, Matrix, N } from "@/components/distribution/parts";
 import { EquipmentSketch, rowsOf } from "@/components/distribution/sketch";
+import { DataFreshness } from "@/components/equipment/data-freshness";
 import { UzbekistanMap } from "@/components/equipment/uz-map";
 import { t } from "@/lib/i18n";
 import { equipmentOverview, regionEquipment } from "@/modules/distribution/equipment";
-import { DIST_TYPES, NO_TSM } from "@/modules/distribution/types";
+import { DIST_TYPES, NO_TSM, regionLabel } from "@/modules/distribution/types";
 
 // One region: where it is on the map, its equipment by type (with the models), by TSM, and what
 // is in its warehouse.
@@ -27,7 +28,8 @@ export default async function EquipmentRegionPage({
       <Link href="/equipment" className="text-muted-foreground text-sm hover:underline">
         {t("equip.back")}
       </Link>
-      <h2 className="text-xl font-semibold">{region}</h2>
+      <h2 className="text-xl font-semibold">{regionLabel(region)}</h2>
+      <DataFreshness />
       <div className="grid gap-5 lg:grid-cols-[1fr_20rem] [&>*]:min-w-0">
         <div className="grid grid-cols-2 content-start gap-3 lg:grid-cols-3">
           <Kpi label={t("equip.kpi.installed")} value={fmt(r.installedTotal)} />

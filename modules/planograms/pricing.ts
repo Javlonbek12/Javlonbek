@@ -2,7 +2,8 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import type { Prisma } from "@/lib/generated/prisma/client";
-import { fromDateString, isDateString } from "@/lib/dates";
+import { fromDateString, isDateString, todayInTimezone } from "@/lib/dates";
+import { getEnv } from "@/lib/env";
 import { t } from "@/lib/i18n";
 import { logActivity } from "@/modules/core/activity/service";
 import { notify } from "@/modules/core/notifications/service";
@@ -10,8 +11,9 @@ import type { Actor } from "@/modules/core/permissions";
 
 import { canApprovePlanograms, canManagePlanograms } from "./access";
 import { PlanogramError } from "./errors";
+import { priceListStatus } from "./price-status";
 import { mergePriceLists, priceChanges, type PriceChange } from "./prices";
-import { approvePlanogram, copyPlanogram } from "./service";
+import { approvePlanogram, copyPlanogram, currentPriceList } from "./service";
 
 export type PriceRow = { code: string; price: number };
 
@@ -20,15 +22,22 @@ const inputSchema = z.object({
   effectiveFrom: z.string().refine(isDateString),
 });
 
-async function latestList(before?: Date) {
-  return db.priceList.findFirst({
-    where: before ? { createdAt: { lt: before } } : {},
-    orderBy: [{ effectiveFrom: "desc" }, { createdAt: "desc" }],
-    include: { prices: true },
-  });
+// The list a new one dated `date` follows: the latest that starts on that day or before (a list
+// put between today's prices and a later list must not take the later list's prices early).
+// Dated before every list, it follows the latest one.
+async function listInForceOn(date: Date) {
+  const order = [{ effectiveFrom: "desc" as const }, { createdAt: "desc" as const }];
+  return (
+    (await db.priceList.findFirst({
+      where: { effectiveFrom: { lte: date } },
+      orderBy: order,
+      include: { prices: true },
+    })) ?? db.priceList.findFirst({ orderBy: order, include: { prices: true } })
+  );
 }
 
-// A new price list = the latest one + uploaded rows (unknown SKU codes are reported, not created).
+// A new price list = the list in force on its date + uploaded rows (unknown SKU codes are
+// reported, not created).
 export async function createPriceList(
   actor: Actor,
   input: { name: string; effectiveFrom: string },
@@ -46,7 +55,8 @@ export async function createPriceList(
     if (!id || !Number.isFinite(row.price) || row.price <= 0) unknown.push(row.code);
     else uploaded.set(id, Math.round(row.price));
   }
-  const previous = await latestList();
+  const effectiveFrom = fromDateString(meta.data.effectiveFrom);
+  const previous = await listInForceOn(effectiveFrom);
   const merged = mergePriceLists(
     new Map(previous?.prices.map((p) => [p.skuId, p.price]) ?? []),
     uploaded,
@@ -54,7 +64,7 @@ export async function createPriceList(
   const list = await db.priceList.create({
     data: {
       name: meta.data.name,
-      effectiveFrom: fromDateString(meta.data.effectiveFrom),
+      effectiveFrom,
       createdById: actor.id,
       prices: { create: [...merged].map(([skuId, price]) => ({ skuId, price })) },
     },
@@ -198,9 +208,14 @@ export async function applyPriceList(actor: Actor, priceListId: string) {
   return { created, drafts, moved };
 }
 
-export async function listPriceLists() {
-  return db.priceList.findMany({
-    orderBy: [{ effectiveFrom: "desc" }, { createdAt: "desc" }],
-    include: { _count: { select: { prices: true, planograms: true } } },
-  });
+// Every list, newest first, with where it stands today (in force, future, waiting, past).
+export async function listPriceLists(today = todayInTimezone(getEnv().DEFAULT_TIMEZONE)) {
+  const [lists, current] = await Promise.all([
+    db.priceList.findMany({
+      orderBy: [{ effectiveFrom: "desc" }, { createdAt: "desc" }],
+      include: { _count: { select: { prices: true, planograms: true } } },
+    }),
+    currentPriceList(today),
+  ]);
+  return lists.map((list) => ({ ...list, status: priceListStatus(list, current, today) }));
 }

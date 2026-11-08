@@ -22,6 +22,7 @@ import {
   copyPlanogram,
   createPlanogram,
   findByShareToken,
+  planogramsAwaitingApproval,
   returnToDraft,
   saveLayout,
   submitForApproval,
@@ -80,7 +81,8 @@ describe("planogram lifecycle (stage 7 «done» scenario)", () => {
     const violations = await saveLayout(owner, pog.id, layout, null);
     const mandatory = violations.find((v) => v.kind === "MANDATORY_SKUS")!;
     expect(mandatory).toMatchObject({ severity: "CRITICAL", params: { count: 7, total: 9 } });
-    await submitForApproval(owner, pog.id);
+    // With critical violations it is neither sent nor approved.
+    await expect(submitForApproval(owner, pog.id)).rejects.toMatchObject({ code: "critical" });
     await expect(approvePlanogram(owner, pog.id)).rejects.toMatchObject({ code: "critical" });
 
     // Autofill a fresh one: no critical violations, approval works and gives a public link.
@@ -125,9 +127,28 @@ describe("planogram lifecycle (stage 7 «done» scenario)", () => {
     await expect(approvePlanogram(owner, pog.id)).rejects.toMatchObject({ code: "notDraft" });
     await submitForApproval(member, pog.id);
     expect(await db.notification.count({ where: { userId: owner.id, type: "planogram" } })).toBe(1);
+    // The author takes it back without a reason; someone else's is returned only by an
+    // approver, and only with the reason, which the author gets.
     await returnToDraft(member, pog.id);
     await submitForApproval(member, pog.id);
+    const colleague = await createTestUser("MEMBER");
+    await expect(returnToDraft(colleague, pog.id, "Не так")).rejects.toMatchObject({
+      code: "forbidden",
+    });
+    await expect(returnToDraft(owner, pog.id, "  ")).rejects.toMatchObject({ code: "reason" });
+    await returnToDraft(owner, pog.id, "Добавьте новинки (тест)");
+    const told = await db.notification.findFirstOrThrow({
+      where: { userId: member.id, type: "planogram" },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(told.body).toContain("Добавьте новинки (тест)");
+    await submitForApproval(member, pog.id);
     await expect(approvePlanogram(member, pog.id)).rejects.toMatchObject({ code: "forbidden" });
+    // The decision list: what waits, who sent it — only for those who approve.
+    expect(await planogramsAwaitingApproval(member)).toEqual([]);
+    expect(await planogramsAwaitingApproval(owner)).toMatchObject([
+      { id: pog.id, title: "От сотрудника (тест)" },
+    ]);
     await expect(archivePlanogram(member, pog.id)).rejects.toMatchObject({ code: "forbidden" });
     const { list } = await createPriceList(
       member,

@@ -95,10 +95,10 @@ describe("«Предложить раскладку ИИ»", () => {
     expect(layout["0:2"]).toEqual({ kind: "SKU", skuId: esse.id, badges: ["2mg"] });
     expect(layout["0:3"]).toMatchObject({ kind: "SKU", skuId: esse.id });
     expect(layout["0:4"]).toMatchObject({ kind: "SKU", badges: ["YANGI", "1mg"] });
-    expect(layout["0:5"]).toEqual({ kind: "EMPTY" });
     expect(Object.values(layout).filter((c) => c.kind === "SKU")).toHaveLength(3 + 6);
-    // Shelves the model left out are marked empty, so nothing is left undecided.
-    for (let p = 0; p < 6; p++) expect(layout[`3:${p}`]).toEqual({ kind: "EMPTY" });
+    // Places the answer leaves over stay undecided, so the rule check shows the gap.
+    expect(layout["0:5"]).toBeUndefined();
+    for (let p = 0; p < 6; p++) expect(layout[`3:${p}`]).toBeUndefined();
     expect(result.unknown).toEqual(["NO-SUCH-CODE"]);
     expect(result.overflow).toEqual(["ESSE Special Gold (тест)"]);
     expect(result.note).toBe("ESSE наверху.");
@@ -107,6 +107,44 @@ describe("«Предложить раскладку ИИ»", () => {
       userId: owner.id,
       ok: true,
     });
+  });
+
+  it("«only the free places» keeps what is placed and fills the rest", async () => {
+    const { owner, pog } = await setUp();
+    const esse = await db.sku.findUniqueOrThrow({ where: { code: "SKU-TEST-001" } });
+    const current: Layout = {
+      "0:0": { kind: "SKU", skuId: esse.id, badges: ["2mg"] },
+      "0:1": { kind: "EMPTY" },
+    };
+    let prompt = "";
+    const call: ModelCall = async (request) => {
+      prompt = request.prompt;
+      return {
+        output: {
+          shelves: [{ shelf: 1, items: [{ code: "SKU-TEST-002", facings: 2 }] }],
+          note: "Готово.",
+        },
+        inputTokens: 1,
+        outputTokens: 1,
+      };
+    };
+    const { layout } = await suggestLayout(
+      owner,
+      pog.id,
+      current,
+      "заполни пустое",
+      "2026-11-08",
+      call,
+      "free",
+    );
+    expect(prompt).toContain("Mode: fill only the free places");
+    expect(prompt).toContain("Shelf 1: 4 free places");
+    // The pack and the «пусто» mark stay; the answer goes into the next free places.
+    expect(layout["0:0"]).toEqual(current["0:0"]);
+    expect(layout["0:1"]).toEqual({ kind: "EMPTY" });
+    expect(layout["0:2"]).toMatchObject({ kind: "SKU" });
+    expect(layout["0:3"]).toMatchObject({ kind: "SKU" });
+    expect(layout["0:4"]).toBeUndefined();
   });
 
   it("works on a draft and needs a request", async () => {

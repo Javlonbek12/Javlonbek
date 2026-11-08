@@ -2,18 +2,18 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { PlanogramErrorNote, SavedNote } from "@/components/planograms/error-note";
+import { PriceTable } from "@/components/planograms/price-table";
+import { PriceListStatusBadge } from "@/components/planograms/status-badge";
 import { Card, CardTitle } from "@/components/ui/card";
 import { ConfirmAction } from "@/components/ui/confirm-action";
 import { db } from "@/lib/db";
-import { formatDay, toDateString } from "@/lib/dates";
 import { t } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
-import { canApprovePlanograms } from "@/modules/planograms/access";
-import { formatPrice } from "@/modules/planograms/prices";
-import { PriceTable } from "@/components/planograms/price-table";
-import { canManagePlanograms } from "@/modules/planograms/access";
+import { canApprovePlanograms, canManagePlanograms } from "@/modules/planograms/access";
+import { priceListDate } from "@/modules/planograms/price-status";
 import { priceTable } from "@/modules/planograms/price-table";
-import { draftsOnOlderLists, previewPriceList } from "@/modules/planograms/pricing";
+import { formatPrice } from "@/modules/planograms/prices";
+import { draftsOnOlderLists, listPriceLists, previewPriceList } from "@/modules/planograms/pricing";
 
 import { applyPriceListAction, savePricesAction } from "../../actions";
 
@@ -40,12 +40,22 @@ export default async function PriceListPage({
   const price = (value: number | null, skuId: string) =>
     value === null ? "—" : formatPrice(value, byId.get(skuId)?.priceStyle ?? "NUMBER");
 
+  const status = (await listPriceLists()).find((l) => l.id === list.id)?.status ?? "past";
+
   return (
     <div className="flex flex-col gap-3">
-      <h2 className="text-lg font-medium">
-        {list.name} · {t("planograms.library.prices.effectiveFrom").toLowerCase()}{" "}
-        {formatDay(toDateString(list.effectiveFrom))}
-      </h2>
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="text-lg font-medium">
+          {list.name} · {t("planograms.library.prices.effectiveFrom").toLowerCase()}{" "}
+          {priceListDate(list.effectiveFrom)}
+        </h2>
+        <PriceListStatusBadge status={status} />
+      </div>
+      <p className="text-muted-foreground text-sm">
+        {t(`planograms.library.prices.statusHint.${status}`, {
+          date: priceListDate(list.effectiveFrom),
+        })}
+      </p>
       <PlanogramErrorNote error={query.error} />
       <SavedNote
         show={query.edited}
@@ -77,9 +87,7 @@ export default async function PriceListPage({
       )}
       {list.appliedAt && (
         <p className="text-muted-foreground text-sm">
-          {t("planograms.library.prices.applied", {
-            date: formatDay(toDateString(list.appliedAt)),
-          })}
+          {t("planograms.library.prices.applied", { date: priceListDate(list.appliedAt) })}
         </p>
       )}
       <h3 className="font-medium">{t("planograms.library.prices.preview")}</h3>

@@ -117,8 +117,11 @@ describe("price lists", () => {
 
   it("a new planogram takes the applied list in force today, not a later one", async () => {
     const { owner } = await setup();
-    const seeded = (await db.priceList.findFirstOrThrow()).id;
-    expect((await currentPriceList("2026-11-08"))?.id).toBe(seeded);
+    const seededList = await db.priceList.findFirstOrThrow();
+    const seeded = seededList.id;
+    // The seed dates its list today: check on that day, whatever day the tests run.
+    const seededOn = seededList.effectiveFrom.toISOString().slice(0, 10);
+    expect((await currentPriceList(seededOn))?.id).toBe(seeded);
     const { list: later } = await createPriceList(
       owner,
       { name: "С января (тест)", effectiveFrom: "2031-01-01" },
@@ -297,7 +300,9 @@ describe("library and mass operations", () => {
     const input = { name: sticker.name, type: sticker.type, color: sticker.color };
     // A draft doesn't lock it.
     await savePosm(owner, sticker.id, { ...input, slotSpan: 2, shelfSpan: 1 });
-    await submitForApproval(owner, pog.id);
+    // Waiting for approval (as a mass operation leaves it: the sticker pushed out a mandatory SKU,
+    // so it can't be sent by hand).
+    await db.planogram.update({ where: { id: pog.id }, data: { status: "PENDING_APPROVAL" } });
     expect(await posmInUse(sticker.id)).toBe(1);
     await expect(
       savePosm(owner, sticker.id, { ...input, slotSpan: 3, shelfSpan: 1 }),

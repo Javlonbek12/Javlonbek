@@ -1,6 +1,9 @@
-import { db } from "@/lib/db";
+import ExcelJS from "exceljs";
 
-import { sortRegions, TYPE_CODES, type DistType } from "./types";
+import { db } from "@/lib/db";
+import { t, type TranslationKey } from "@/lib/i18n";
+
+import { sortRegions, typeInfo, TYPE_CODES, type DistType } from "./types";
 
 // The control equation of each equipment type (or group bought as one): bought (the purchase journal, entered by hand) =
 // installed (rows of «BW management») + in stock («Current stock») + unaccounted. Unaccounted is
@@ -176,4 +179,62 @@ export async function outletReview() {
     ),
     skipped,
   };
+}
+
+export type OutletReview = Awaited<ReturnType<typeof outletReview>>;
+
+// How many outlets need someone to fix the outlet base or the file (the tab's counter).
+export const reviewCount = (r: OutletReview) =>
+  r.missing.length + r.noId.length + r.skipped.length + r.mismatches.length;
+
+// The outlet check as Excel for whoever keeps the outlet base: one sheet per list.
+export async function outletReviewXlsx(r: OutletReview) {
+  const book = new ExcelJS.Workbook();
+  book.creator = t("app.name");
+  const types = (row: OutletRow) => row.types.map((x) => typeInfo(x)?.label ?? x).join(", ");
+  const sheet = (name: string, head: string[], rows: (string | number)[][], widths: number[]) => {
+    const ws = book.addWorksheet(name);
+    ws.addRow(head).font = { bold: true };
+    for (const row of rows) ws.addRow(row);
+    ws.columns.forEach((c, i) => (c.width = widths[i] ?? 14));
+    ws.views = [{ state: "frozen", ySplit: 1 }];
+  };
+  sheet(
+    "Нет в базе точек",
+    ["ID", "Название", "ИНН", "Регион", "Оборудование", "Ед.", "Появилась в файле"],
+    r.missing.map((o) => [
+      o.outletId,
+      o.posName,
+      o.tin,
+      o.region,
+      types(o),
+      o.units,
+      o.firstSeen ? o.firstSeen.toISOString().slice(0, 10) : "",
+    ]),
+    [14, 30, 14, 16, 30, 6, 16],
+  );
+  sheet(
+    "Без ID",
+    ["Название", "ИНН", "Регион", "Оборудование", "Ед."],
+    r.noId.map((o) => [o.posName, o.tin, o.region, types(o), o.units]),
+    [30, 14, 16, 30, 6],
+  );
+  sheet(
+    "Пропущенные строки",
+    ["Строка", "Причина", "Регион", "Описание в файле"],
+    r.skipped.map((s) => [
+      s.row,
+      t(`equip.outlets.reasons.${s.reason}` as TranslationKey),
+      s.region ?? "",
+      s.description ?? "",
+    ]),
+    [8, 30, 16, 40],
+  );
+  sheet(
+    "Другой регион",
+    ["ID", "Название", "Регион в файле", "Регион в базе"],
+    r.mismatches.map((m) => [m.outletId, m.posName, m.fileRegion, m.baseRegion]),
+    [14, 30, 18, 18],
+  );
+  return Buffer.from(await book.xlsx.writeBuffer());
 }

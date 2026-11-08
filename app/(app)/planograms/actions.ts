@@ -11,7 +11,7 @@ import { sendTelegramPhoto } from "@/modules/bot/send";
 import { getEnv } from "@/lib/env";
 import { AiError } from "@/modules/ai/run";
 import { getUserToday } from "@/modules/core/settings/service";
-import { suggestLayout } from "@/modules/planograms/ai-layout";
+import { suggestLayout, type AiLayoutMode } from "@/modules/planograms/ai-layout";
 import { PlanogramError } from "@/modules/planograms/errors";
 import { planogramPng, slideSubtitle, slideTitle } from "@/modules/planograms/export";
 import type { Layout } from "@/modules/planograms/layout";
@@ -138,12 +138,14 @@ export async function saveLayoutAction(
   }
 }
 
-// «Предложить раскладку ИИ»: the layout as it is in the editor now and the request in words; the
-// answer goes back into the editor unsaved.
+// «Предложить раскладку ИИ»: the layout as it is in the editor now, the request in words and what
+// the AI may touch (only the free places, or every pack); the answer goes back into the editor
+// unsaved.
 export async function suggestLayoutAction(
   planogramId: string,
   layoutJson: string,
   request: string,
+  mode: AiLayoutMode = "free",
 ): Promise<
   | { ok: true; layout: Layout; note: string; unknown: string[]; overflow: string[] }
   | { ok: false; error: string }
@@ -157,6 +159,8 @@ export async function suggestLayoutAction(
       current,
       String(request),
       await getUserToday(user.id),
+      undefined,
+      mode === "all" ? "all" : "free",
     );
     return { ok: true, ...result };
   } catch (error) {
@@ -178,7 +182,7 @@ export async function workflowAction(formData: FormData) {
       return `/planograms/${id}?${new URLSearchParams({ submitted: told.join(", ") || "-" })}`;
     } else if (step === "approve")
       await approvePlanogram(user, id, { force: str(formData, "force") === "1" });
-    else if (step === "draft") await returnToDraft(user, id);
+    else if (step === "draft") await returnToDraft(user, id, str(formData, "reason"));
     else if (step === "archive") await archivePlanogram(user, id);
     else if (step === "version") return `/planograms/${(await copyPlanogram(user, id)).id}/edit`;
     else if (step === "template")

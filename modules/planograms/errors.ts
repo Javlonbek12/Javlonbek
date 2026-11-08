@@ -12,7 +12,8 @@ export type PlanogramErrorCode =
   | "applied"
   | "stale"
   | "posmInUse"
-  | "unreadable";
+  | "unreadable"
+  | "reason";
 
 // `code` maps to planograms.errors.* in the i18n dictionary.
 export class PlanogramError extends Error {

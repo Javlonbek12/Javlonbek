@@ -1,38 +1,20 @@
-import { FileSpreadsheet, Upload } from "lucide-react";
+import { FileSpreadsheet } from "lucide-react";
 import Link from "next/link";
 
 import { Kpi, Section } from "@/components/connect/parts";
+import { NoList } from "@/components/distribution/no-list";
 import { Findings, fmt, Matrix, N, pct, Balance } from "@/components/distribution/parts";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { dateFormat, t } from "@/lib/i18n";
-import { requireUser } from "@/modules/core/auth/current-user";
 import { coverage, sumUnits } from "@/modules/distribution/compute";
-import { canManageDistribution, loadDistribution } from "@/modules/distribution/service";
-import { DIST_TYPES, tagPrice } from "@/modules/distribution/types";
+import { loadDistribution } from "@/modules/distribution/service";
+import { DIST_TYPES, regionLabel, tagPrice } from "@/modules/distribution/types";
 
 // The analysis on one page: the numbers, what needs attention, regions, coverage and checks.
 export default async function DistributionPage() {
-  const user = await requireUser();
-  const manage = canManageDistribution(user);
   const d = await loadDistribution();
 
-  if (d.items.length === 0)
-    return (
-      <Card className="items-start gap-3">
-        <p className="text-sm">
-          {!manage ? t("dist.emptyNoAccess") : d.order ? t("dist.emptyOrder") : t("dist.empty")}
-        </p>
-        {manage && (
-          <Button asChild size="sm">
-            <Link href={d.order ? "/equipment/uploads" : "/distribution/campaigns"}>
-              <Upload />
-              {d.order ? t("dist.import.link") : t("dist.orders.new")}
-            </Link>
-          </Button>
-        )}
-      </Card>
-    );
+  if (d.items.length === 0) return <NoList order={d.order} />;
 
   const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
   const installed = sum(
@@ -135,10 +117,11 @@ export default async function DistributionPage() {
               cells: [
                 d.tsms.has(region) ? (
                   <Link href="/distribution/plan#tsm" className="hover:underline">
-                    {region} · TSM {d.tsms.get(region)!.size}
+                    {regionLabel(region)} ·{" "}
+                    {t("dist.regions.tsmCount", { count: d.tsms.get(region)!.size })}
                   </Link>
                 ) : (
-                  region
+                  regionLabel(region)
                 ),
                 fmt(sumUnits(units)),
                 pct(baseUnits ? sumUnits(units) / baseUnits : 0),

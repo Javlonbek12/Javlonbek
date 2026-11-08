@@ -3,14 +3,15 @@ import Link from "next/link";
 
 import { PlanogramErrorNote } from "@/components/planograms/error-note";
 import { PriceTable } from "@/components/planograms/price-table";
+import { PriceListStatusBadge } from "@/components/planograms/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { formatDay, toDateString } from "@/lib/dates";
 import { t } from "@/lib/i18n";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { canManagePlanograms } from "@/modules/planograms/access";
+import { priceListDate } from "@/modules/planograms/price-status";
 import { priceTable } from "@/modules/planograms/price-table";
 import { listPriceLists } from "@/modules/planograms/pricing";
 
@@ -75,16 +76,14 @@ export default async function PricesPage({ searchParams }: PageProps<"/planogram
               className="hover:bg-accent/50 flex flex-wrap items-center gap-x-3 gap-y-1 p-3 text-sm"
             >
               <span className="font-medium">{l.name}</span>
+              <PriceListStatusBadge status={l.status} />
               <span className="text-muted-foreground">
-                {t("planograms.library.prices.effectiveFrom")}{" "}
-                {formatDay(toDateString(l.effectiveFrom))} ·{" "}
+                {t("planograms.library.prices.effectiveFrom")} {priceListDate(l.effectiveFrom)} ·{" "}
                 {t("planograms.library.prices.rows", { count: String(l._count.prices) })}
               </span>
               {l.appliedAt && (
                 <span className="text-muted-foreground text-xs">
-                  {t("planograms.library.prices.applied", {
-                    date: formatDay(toDateString(l.appliedAt)),
-                  })}
+                  {t("planograms.library.prices.applied", { date: priceListDate(l.appliedAt) })}
                 </span>
               )}
             </Link>

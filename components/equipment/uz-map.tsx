@@ -1,3 +1,6 @@
+import { t } from "@/lib/i18n";
+import { regionLabel } from "@/modules/distribution/types";
+
 import { MAP_HEIGHT, MAP_WIDTH, PROVINCES, REGION_POINTS } from "./uz-map-data";
 
 // Uzbekistan by region, coloured by a number (one hue, lighter = less), with the number on each
@@ -23,14 +26,19 @@ export function UzbekistanMap({
   const kokand = REGION_POINTS.Kokand!;
   const link = (region: string, child: React.ReactNode, key: string) =>
     href ? (
-      <a key={key} href={href(region)} aria-label={`${region}: ${format(values[region] ?? 0)}`}>
+      <a
+        key={key}
+        href={href(region)}
+        aria-label={`${regionLabel(region)}: ${format(values[region] ?? 0)}`}
+      >
         {child}
       </a>
     ) : (
       <g key={key}>{child}</g>
     );
   // Short labels: the map is small on a phone.
-  const short = (region: string) => (region === "Karakalpakistan" ? "Karakalpak." : region);
+  const short = (region: string) =>
+    region === "Karakalpakistan" ? t("equip.regions.KarakalpakistanShort") : regionLabel(region);
 
   return (
     <svg
@@ -50,7 +58,7 @@ export function UzbekistanMap({
             strokeWidth={selected === p.region ? 3 : 1.5}
             stroke={selected === p.region ? "#1f5fae" : undefined}
           >
-            <title>{`${p.region}: ${format(values[p.region] ?? 0)}`}</title>
+            <title>{`${regionLabel(p.region)}: ${format(values[p.region] ?? 0)}`}</title>
           </path>,
           p.iso,
         ),
