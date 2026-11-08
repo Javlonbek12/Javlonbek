@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { formatDay } from "@/lib/dates";
 import { db } from "@/lib/db";
 import type { DigestData } from "@/modules/ai/prompts";
 import { withAccess } from "@/modules/core/access/actor";
@@ -213,7 +214,7 @@ describe("scheduler", () => {
       return "Текст";
     };
     await runSchedulerTick(new Date("2026-10-02T03:35:00Z"), { writeDigest: capture });
-    expect(seen[0]?.runningTimer).toEqual({ title: "Звонки", since: "1 окт." });
+    expect(seen[0]?.runningTimer).toEqual({ title: "Звонки", since: formatDay("2026-10-01") });
   });
 
   it("work handed in gets no due or overdue reminders for the assignee", async () => {
@@ -328,9 +329,9 @@ describe("digest template (fallback without AI)", () => {
     });
     expect(text.split("\n")).toEqual([
       "🔥 Просрочено: 1",
-      "  • Старое (30 сент.)",
+      `  • Старое (${formatDay("2026-09-30")})`,
       "⏰ Просрочены у исполнителей: 1",
-      "  • Отчёт Азиза — Азиз (29 сент.)",
+      `  • Отчёт Азиза — Азиз (${formatDay("2026-09-29")})`,
       "📋 На сегодня: 1",
       "  • Сегодня",
       "⏳ Ждут вашего решения: 1",
