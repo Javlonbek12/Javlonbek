@@ -49,8 +49,6 @@ function Tile({
 export default async function ReportsPage({ searchParams }: PageProps<"/reports">) {
   const user = await requireUser();
   if (!canSeeReports(user)) redirect(deniedHref("reports"));
-  // Names lead to the employee card only for those who can open the team section.
-  const seesTeam = canOpenPath(user, "/team/x");
   const { timezone } = await getSettings(user.id);
   const period = parsePeriod(await searchParams, todayInTimezone(timezone));
   const report = await buildReport(period, timezone);
@@ -203,7 +201,8 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
                   {report.people.map((x) => (
                     <tr key={x.id} className="border-t">
                       <td className="px-2 py-1.5">
-                        {seesTeam ? (
+                        {/* A name links to the card only for someone who can open it. */}
+                        {canOpenPath(user, `/team/${x.id}`) ? (
                           <Link className="hover:underline" href={`/team/${x.id}`}>
                             {x.name}
                           </Link>

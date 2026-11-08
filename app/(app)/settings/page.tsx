@@ -165,11 +165,8 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
           <CardTitle>{t("settings.types")}</CardTitle>
           <CardDescription>{t("settings.typesHint")}</CardDescription>
           {groups.map((group) => (
-            <fieldset
-              key={group.id}
-              className="flex flex-col gap-2 border-t pt-3 first-of-type:border-t-0 first-of-type:pt-0"
-            >
-              <legend className="contents text-sm font-medium">
+            <fieldset key={group.id} className="flex flex-col gap-2 border-t pt-3">
+              <legend className="float-left mb-1 w-full text-sm font-medium">
                 {t(`settings.groups.${group.id}`)}
               </legend>
               {group.types.map((type) => (
