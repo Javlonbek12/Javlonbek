@@ -7,6 +7,8 @@ import { cn } from "@/lib/utils";
 // Building blocks of the Connect analytics pages: tiles, bars, tables and small column charts.
 // Colors follow the validated chart palette (blue #2a78d6, orange #eb6834) and the status scale.
 
+// Red is kept for errors and overdue items: a store that didn't answer or a rejected payment is
+// a warning (amber / orange), not an error.
 export const STAGE_COLOR: Record<string, string> = {
   delivered: "#1f9d55",
   paid: "#1f9d55",
@@ -15,10 +17,152 @@ export const STAGE_COLOR: Record<string, string> = {
   blocked: "#d69e2e",
   waitingBum: "#eb6834",
   waitingBdm: "#eb6834",
-  noAnswer: "#d64545",
+  noAnswer: "#d69e2e",
   refused: "#898781",
-  rejected: "#d64545",
+  rejected: "#898781",
+  // Smart Up visits and Market Visit results.
+  ok: "#1f9d55",
+  noMv: "#eb6834",
+  noOos: "#d69e2e",
+  notInTime: "#b7791f",
+  otherEmployee: "#8a6fd1",
+  closed: "#b8b6ae",
+  full: "#1f9d55",
+  partial: "#d69e2e",
+  noPhoto: "#eb6834",
+  partialNoPhoto: "#b7791f",
+  skipped: "#898781",
 };
+
+// A list of numbers with labels, without boxes inside the section's card.
+export function StatGrid({
+  items,
+}: {
+  items: {
+    key: string;
+    label: string;
+    value: string | number;
+    note?: string;
+    tone?: "warn" | "good";
+  }[];
+}) {
+  return (
+    <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 lg:grid-cols-4">
+      {items.map((item) => (
+        <div key={item.key} className="flex min-w-0 flex-col border-l-2 pl-3">
+          <dt className="text-muted-foreground text-xs">{item.label}</dt>
+          <dd
+            className={cn(
+              "font-display text-xl font-semibold tabular-nums",
+              item.tone === "warn" && "text-amber-600 dark:text-amber-400",
+              item.tone === "good" && "text-emerald-700 dark:text-emerald-400",
+            )}
+          >
+            {item.value}
+          </dd>
+          {item.note && <dd className="text-muted-foreground text-xs">{item.note}</dd>}
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+// Grouped columns per day (plan, visited, with Connect), the legend under them.
+export function DayBars({
+  days,
+  series,
+}: {
+  days: { key: string; label: string; values: number[] }[];
+  series: { label: string; color: string }[];
+}) {
+  const max = Math.max(1, ...days.flatMap((d) => d.values));
+  return (
+    <div className="flex min-w-0 flex-col gap-2">
+      <div className="flex h-36 items-end gap-2 border-b">
+        {days.map((d) => (
+          <div
+            key={d.key}
+            className="flex h-full min-w-0 flex-1 items-end justify-center gap-0.5"
+            title={`${d.label}: ${d.values.map((v, i) => `${series[i]?.label} ${v}`).join(" · ")}`}
+          >
+            {d.values.map((v, i) => (
+              <span
+                key={i}
+                className="w-full max-w-4 rounded-t"
+                style={{
+                  height: `${v ? Math.max(2, (v / max) * 100) : 0}%`,
+                  background: series[i]?.color,
+                }}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        {days.map((d) => (
+          <span
+            key={d.key}
+            className="text-muted-foreground min-w-0 flex-1 truncate text-center text-[10px]"
+          >
+            {d.label}
+          </span>
+        ))}
+      </div>
+      <ul className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-xs">
+        {series.map((s) => (
+          <li key={s.label} className="flex items-center gap-1.5">
+            <span className="size-2.5 rounded-sm" style={{ background: s.color }} />
+            {s.label}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+// Answer values of a question in one bar: «Да» blue, «Нет» orange, the others in turn, not
+// answered grey.
+const YES_NO: Record<string, string> = { Да: "#2a78d6", Нет: "#eb6834" };
+const OTHER_ANSWERS = ["#1f9d55", "#8a6fd1", "#d69e2e", "#0f9b8e"];
+export const UNANSWERED_COLOR = "#d4d2ca";
+
+export function AnswerBar({
+  parts,
+}: {
+  parts: { key: string; label: string; value: number; color?: string }[];
+}) {
+  const total = parts.reduce((a, p) => a + p.value, 0);
+  if (!total) return null;
+  let other = 0;
+  const colored = parts.map((p) => ({
+    ...p,
+    color: p.color ?? YES_NO[p.key] ?? OTHER_ANSWERS[other++ % OTHER_ANSWERS.length]!,
+  }));
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex h-3 overflow-hidden rounded-full">
+        {colored
+          .filter((p) => p.value)
+          .map((p) => (
+            <span
+              key={p.key}
+              className="border-card h-full border-r last:border-r-0"
+              style={{ width: `${(p.value / total) * 100}%`, background: p.color }}
+              title={`${p.label}: ${p.value}`}
+            />
+          ))}
+      </div>
+      <ul className="text-muted-foreground flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
+        {colored.map((p) => (
+          <li key={p.key} className="flex items-center gap-1">
+            <span className="size-2 rounded-sm" style={{ background: p.color }} />
+            {p.label} <span className="text-foreground tabular-nums">{p.value}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 export function Section({
   title,
@@ -167,7 +311,8 @@ export function BarList({
 export function StageBar({
   rows,
 }: {
-  rows: { key: string; label: string; value: number; note?: string }[];
+  // `color` when the key is not a known stage (an order's delivery status as the bot writes it).
+  rows: { key: string; label: string; value: number; note?: string; color?: string }[];
 }) {
   const total = rows.reduce((a, r) => a + r.value, 0);
   if (!total) return <p className="text-muted-foreground text-sm">{t("connect.manager.noRows")}</p>;
@@ -180,7 +325,10 @@ export function StageBar({
             <div
               key={r.key}
               className="border-card h-full border-r-2 last:border-r-0"
-              style={{ width: `${(r.value / total) * 100}%`, background: STAGE_COLOR[r.key] }}
+              style={{
+                width: `${(r.value / total) * 100}%`,
+                background: r.color ?? STAGE_COLOR[r.key],
+              }}
               title={`${r.label}: ${r.value}`}
             />
           ))}
@@ -191,7 +339,7 @@ export function StageBar({
             <span className="flex min-w-0 items-center gap-1.5">
               <span
                 className="size-2.5 shrink-0 rounded-sm"
-                style={{ background: STAGE_COLOR[r.key] }}
+                style={{ background: r.color ?? STAGE_COLOR[r.key] }}
               />
               <span className="truncate">{r.label}</span>
             </span>
@@ -202,61 +350,6 @@ export function StageBar({
           </li>
         ))}
       </ul>
-    </div>
-  );
-}
-
-// A small column chart: one value per month, the value printed above each column.
-export function MiniColumns({
-  title,
-  points,
-  format = (n) => String(n),
-  color = "#2a78d6",
-}: {
-  title: string;
-  // partial: a month the data covers only in part — drawn paler, labelled with its days.
-  points: { label: string; value: number; partial?: boolean }[];
-  format?: (value: number) => string;
-  color?: string;
-}) {
-  const max = Math.max(1, ...points.map((p) => p.value));
-  return (
-    <div className="flex min-w-0 flex-col gap-2">
-      <span className="text-sm font-medium">{title}</span>
-      <div className="flex h-36 items-end gap-1.5 border-b">
-        {points.map((p, i) => (
-          <div
-            key={p.label}
-            className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1"
-            title={`${p.label}: ${format(p.value)}`}
-          >
-            {/* With many months only the peak and the last value are printed. */}
-            {(points.length <= 6 || p.value === max || i === points.length - 1) && (
-              <span className="text-muted-foreground text-[10px] whitespace-nowrap tabular-nums">
-                {format(p.value)}
-              </span>
-            )}
-            <span
-              className="w-full max-w-10 rounded-t"
-              style={{
-                height: `${p.value ? Math.max(3, (p.value / max) * 75) : 0}%`,
-                background: color,
-                opacity: p.partial ? 0.4 : undefined,
-              }}
-            />
-          </div>
-        ))}
-      </div>
-      <div className="flex gap-1.5">
-        {points.map((p) => (
-          <span
-            key={p.label}
-            className="text-muted-foreground min-w-0 flex-1 text-center text-[10px] whitespace-nowrap"
-          >
-            {p.label}
-          </span>
-        ))}
-      </div>
     </div>
   );
 }

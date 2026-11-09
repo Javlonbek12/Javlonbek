@@ -1,24 +1,26 @@
-import { FileSpreadsheet, Presentation, SlidersHorizontal, Upload } from "lucide-react";
+import { FileSpreadsheet, Presentation, Upload } from "lucide-react";
 import Link from "next/link";
 
 import { ExecView } from "@/components/connect/exec-view";
 import { ExecutorsOverview, ExecutorView } from "@/components/connect/executor-view";
-import { FilterSelect } from "@/components/connect/filter-select";
 import { ManagerView } from "@/components/connect/manager-view";
 import { menuItem, MoreMenu } from "@/components/content/more-menu";
+import { AutoSubmitForm } from "@/components/ui/auto-submit-form";
 import { Card, CardDescription } from "@/components/ui/card";
+import { NativeSelect } from "@/components/ui/native-select";
 import { PageHeader } from "@/components/ui/page-header";
 import { PeriodPicker } from "@/components/ui/period-picker";
+import { Segmented } from "@/components/ui/segmented";
+import { todayInTimezone } from "@/lib/dates";
 import { dateFormat, t } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
 import {
-  activePreset,
   buildConnectReport,
   connectHref,
+  leadScope,
+  monthsLabel,
   parseConnectQuery,
   PERIOD_PRESETS,
   periodLabel,
-  presetMonths,
   scopeConnectQuery,
   VIEWS,
 } from "@/modules/connect/report";
@@ -26,17 +28,17 @@ import {
   canLeadConnect,
   connectAppUsers,
   connectPeopleLinks,
+  connectTotal,
   lastImports,
 } from "@/modules/connect/service";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getSettings } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
-import { formatRange } from "@/modules/reports/format";
-import { addDays, addMonths, todayInTimezone } from "@/lib/dates";
+import { presetPeriod } from "@/modules/reports/period";
 
 import { linkConnectPersonAction } from "./actions";
 
-// Connect bot analytics on three levels: leadership, managers, executors.
+// Smart Up visits × Connect Bot on three levels: leadership, managers, executors.
 export default async function ConnectPage({ searchParams }: PageProps<"/connect">) {
   const user = await requireUser();
   const canLead = canLeadConnect(user);
@@ -49,10 +51,13 @@ export default async function ConnectPage({ searchParams }: PageProps<"/connect"
     links,
     user.id,
   );
-  const [report, imports, appUsers] = await Promise.all([
-    buildConnectReport(query, today),
+  // The owner and managers see the TSMs of their team; an employee their own codes.
+  const scope = canLead ? leadScope(user, links) : own ? new Set(own) : null;
+  const [report, imports, appUsers, total] = await Promise.all([
+    buildConnectReport(query, today, scope),
     lastImports(1),
     canLead ? connectAppUsers() : Promise.resolve([]),
+    connectTotal(),
   ]);
   const q = report.query;
   const views = canLead ? VIEWS : (["executor"] as const);
@@ -63,64 +68,16 @@ export default async function ConnectPage({ searchParams }: PageProps<"/connect"
     dateFormat({ dateStyle: "medium", timeStyle: "short", timeZone: timezone }).format(
       lastImport.createdAt,
     );
-  // The dates each chip covers, cut at the last day of data.
-  const presetDates = (preset: (typeof PERIOD_PRESETS)[number]) => {
-    const m = presetMonths(preset, today);
-    if (!m.from || !m.to) return undefined;
-    const from = `${m.from}-01`;
-    const monthEnd = addDays(addMonths(`${m.to}-01`, 1), -1);
-    const data = report.dataDate;
-    return formatRange(from, data && data >= from && data < monthEnd ? data : monthEnd, today);
-  };
-  const filtersSet = Boolean(q.filter.city || q.filter.channel);
-  // City, channel and (for the owner and managers) the person: each applies when chosen.
-  const filters = (
-    <form
-      action="/connect"
-      className="flex flex-wrap items-end gap-x-3 gap-y-2 text-sm [&_label]:flex [&_label]:flex-col [&_label]:gap-1"
-    >
-      <input type="hidden" name="view" value={q.view} />
-      {q.filter.from && <input type="hidden" name="from" value={q.filter.from} />}
-      {q.filter.to && <input type="hidden" name="to" value={q.filter.to} />}
-      {q.view === "executor" && own === null && (
-        <label className="w-full sm:w-auto">
-          <span className="text-muted-foreground text-xs">{t("connect.filters.person")}</span>
-          <FilterSelect name="person" defaultValue={q.person ?? ""} className="sm:max-w-80">
-            <option value="">{t("connect.executor.everyone")}</option>
-            {report.people.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </FilterSelect>
-        </label>
-      )}
-      {own !== null && q.person && <input type="hidden" name="person" value={q.person} />}
-      <label>
-        <span className="text-muted-foreground text-xs">{t("connect.filters.city")}</span>
-        <FilterSelect name="city" defaultValue={q.filter.city ?? ""} className="max-w-44">
-          <option value="">{t("connect.filters.all")}</option>
-          {report.facets.cities.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </FilterSelect>
-      </label>
-      <label>
-        <span className="text-muted-foreground text-xs">{t("connect.filters.channel")}</span>
-        <FilterSelect name="channel" defaultValue={q.filter.channel ?? ""} className="max-w-40">
-          <option value="">{t("connect.filters.all")}</option>
-          {report.facets.channels.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </FilterSelect>
-      </label>
-    </form>
-  );
+  const months = monthsLabel(report.months);
   const downloadable = !report.empty && (q.view !== "executor" || q.person);
+  // The period chosen: chips and own dates keep the level and the TSM.
+  const keep = Object.fromEntries(
+    Object.entries({ view: q.view, person: q.person }).filter((e): e is [string, string] =>
+      Boolean(e[1]),
+    ),
+  );
+  const people = report.people;
+  const choosePerson = q.view === "executor" && (own === null || own.length > 1) && people.length;
 
   return (
     <div className="flex flex-col gap-5 [&>*]:min-w-0">
@@ -161,7 +118,7 @@ export default async function ConnectPage({ searchParams }: PageProps<"/connect"
           <p className="text-xs">
             <span className="text-foreground font-medium">
               {t("connect.dataDate", {
-                date: formatRange(report.dataDate, report.dataDate, today),
+                date: periodLabel({ from: report.dataDate, to: report.dataDate }, today),
               })}
             </span>
             {uploaded && ` · ${t("connect.uploadedAt", { date: uploaded })}`}
@@ -169,100 +126,95 @@ export default async function ConnectPage({ searchParams }: PageProps<"/connect"
         )}
       </PageHeader>
 
-      {report.facets.total === 0 ? (
+      {total === 0 ? (
         <Card>
           <CardDescription>{t("connect.empty")}</CardDescription>
         </Card>
       ) : (
         <>
           {views.length > 1 && (
-            <nav className="flex gap-1 overflow-x-auto border-b text-sm">
-              {views.map((view) => (
-                <Link
-                  key={view}
-                  href={connectHref("/connect", q, { view, person: null })}
-                  className={cn(
-                    "-mb-px flex shrink-0 flex-col border-b-2 px-3 py-2",
-                    view === q.view
-                      ? "border-primary text-foreground font-medium"
-                      : "text-muted-foreground hover:text-foreground border-transparent",
-                  )}
-                >
-                  <span className="whitespace-nowrap">{t(`connect.views.${view}`)}</span>
-                  <span className="text-muted-foreground hidden text-xs font-normal sm:block">
-                    {t(`connect.viewHints.${view}`)}
-                  </span>
-                </Link>
-              ))}
-            </nav>
+            <Segmented
+              label={t("connect.viewsLabel")}
+              className="self-start"
+              items={views.map((view) => ({
+                key: view,
+                label: t(`connect.views.${view}`),
+                href: connectHref("/connect", q, { view, person: null }),
+                active: view === q.view,
+              }))}
+            />
           )}
 
           <div className="flex flex-col gap-2">
             <PeriodPicker
               chips={PERIOD_PRESETS.map((preset) => {
-                const dates = presetDates(preset);
-                const m = presetMonths(preset, today);
+                const range = presetPeriod(preset, today);
                 return {
                   key: preset,
-                  label:
-                    preset === "month" && dates
-                      ? `${t("connect.period.month")} (${dates})`
-                      : t(`connect.period.${preset}`),
-                  href: connectHref("/connect", q, { from: m.from ?? null, to: m.to ?? null }),
-                  dates,
+                  label: t(`connect.period.${preset}`),
+                  href: connectHref("/connect", q, { preset, from: null, to: null }),
+                  dates: periodLabel(range, today),
                 };
               })}
-              active={activePreset(q.filter, today)}
-              dates={periodLabel(report)}
+              active={report.period.preset}
+              dates={periodLabel(report.period, today)}
               custom={{
                 label: t("connect.period.custom"),
                 apply: t("connect.period.apply"),
-                fromLabel: t("connect.filters.from"),
-                toLabel: t("connect.filters.to"),
-                type: "month",
-                from: q.filter.from,
-                to: q.filter.to,
-                min: report.facets.months[0],
-                max: report.facets.months.at(-1),
+                fromLabel: t("connect.period.from"),
+                toLabel: t("connect.period.to"),
+                type: "date",
+                from: report.period.from,
+                to: report.period.to,
                 action: "/connect",
-                params: Object.fromEntries(
-                  Object.entries({
-                    view: q.view,
-                    city: q.filter.city,
-                    channel: q.filter.channel,
-                    person: q.person,
-                  }).filter((e): e is [string, string] => Boolean(e[1])),
-                ),
+                params: keep,
               }}
             />
-            {/* Phones: the other filters behind one button; wider screens: in a row. */}
-            <details className="md:hidden" open={filtersSet}>
-              <summary className="border-input bg-card inline-flex h-8 cursor-pointer list-none items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium shadow-xs [&::-webkit-details-marker]:hidden">
-                <SlidersHorizontal className="size-4" />
-                {t("connect.filters.title")}
-              </summary>
-              <div className="mt-2">{filters}</div>
-            </details>
-            <div className="hidden md:block">{filters}</div>
+            {choosePerson ? (
+              <AutoSubmitForm action="/connect" className="flex flex-wrap items-end gap-2 text-sm">
+                <input type="hidden" name="view" value="executor" />
+                {q.preset && <input type="hidden" name="preset" value={q.preset} />}
+                {q.from && <input type="hidden" name="from" value={q.from} />}
+                {q.to && <input type="hidden" name="to" value={q.to} />}
+                <label className="flex w-full flex-col gap-1 sm:w-auto">
+                  <span className="text-muted-foreground text-xs">
+                    {t("connect.executor.choose")}
+                  </span>
+                  <NativeSelect name="person" defaultValue={q.person ?? ""} className="sm:max-w-80">
+                    {own === null && <option value="">{t("connect.executor.everyone")}</option>}
+                    {people.map((p) => (
+                      <option key={p.code} value={p.code}>
+                        {p.name ? `${p.code} · ${p.name}` : p.code}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </label>
+              </AutoSubmitForm>
+            ) : null}
           </div>
 
           {own !== null && own.length === 0 ? (
             <Card>
               <CardDescription>{t("connect.executor.notLinkedYou")}</CardDescription>
             </Card>
+          ) : canLead && scope && scope.size === 0 && q.view !== "exec" ? (
+            <Card>
+              <CardDescription>{t("connect.manager.noScope")}</CardDescription>
+            </Card>
           ) : report.empty ? (
             <Card>
-              <CardDescription>{t("connect.emptyFilter")}</CardDescription>
+              <CardDescription>{t("connect.emptyPeriod")}</CardDescription>
             </Card>
           ) : report.exec ? (
-            <ExecView data={report.exec} previous={report.previous} dataDate={report.dataDate} />
+            <ExecView data={report.exec} months={months} />
           ) : report.manager ? (
             <ManagerView
               data={report.manager}
+              months={months}
               personHref={(person) => connectHref("/connect", q, { view: "executor", person })}
             />
-          ) : report.executor && q.person ? (
-            <ExecutorView person={q.person} data={report.executor} />
+          ) : report.executor ? (
+            <ExecutorView data={report.executor} months={months} />
           ) : report.executors ? (
             <ExecutorsOverview
               rows={report.executors}
