@@ -8,6 +8,7 @@ import {
   ConnectError,
   importConnectFiles,
   linkConnectPerson,
+  linkConnectPosition,
 } from "@/modules/connect/service";
 import { requireUser } from "@/modules/core/auth/current-user";
 
@@ -15,7 +16,8 @@ export type ConnectUploadResult = { lines: string[]; error: string | null };
 
 // Uploads one export (the page sends the chosen files one by one, so several big files never
 // hit the request size limit together). Returns the result lines for the upload page:
-// file|kind|created|updated|skipped|kept|newer|from|to|test|replaced (replaced: Smart Up visits).
+// file|kind|created|updated|skipped|kept|newer|from|to|test|replaced (replaced: Smart Up visits,
+// positions and sales).
 export async function importConnectFileAction(form: FormData): Promise<ConnectUploadResult> {
   const actor = await requireUser();
   const files = form.getAll("files").filter((f): f is File => f instanceof File && f.size > 0);
@@ -62,6 +64,26 @@ export async function linkConnectPersonAction(form: FormData) {
     await linkConnectPerson(
       actor,
       String(form.get("name") ?? ""),
+      String(form.get("userId") ?? "") || null,
+    );
+  } catch (error) {
+    if (!(error instanceof ConnectError)) throw error;
+    target = `${target}${target.includes("?") ? "&" : "?"}error=${error.code}`;
+  }
+  revalidatePath("/connect", "layout");
+  redirect(target);
+}
+
+// Links a position of the employee info to a person in the app (owner and managers): that person
+// sees every TSM under it. Back to the same view.
+export async function linkConnectPositionAction(form: FormData) {
+  const actor = await requireUser();
+  const back = String(form.get("back") ?? "");
+  let target = back.startsWith("/connect") ? back : "/connect?view=manager";
+  try {
+    await linkConnectPosition(
+      actor,
+      String(form.get("title") ?? ""),
       String(form.get("userId") ?? "") || null,
     );
   } catch (error) {

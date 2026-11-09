@@ -1,12 +1,21 @@
 import ExcelJS from "exceljs";
 
+import { formatDay } from "@/lib/dates";
 import { t } from "@/lib/i18n";
 import type { ru } from "@/lib/i18n/ru";
 
 import type { IsmBlock, paymentIssues } from "./analytics";
+import type { TreeNode } from "./hierarchy";
 import { localizeData } from "./localize";
 import { monthsLabel, periodLabel, type ConnectReport } from "./report";
-import { MV_RESULTS, VISIT_ISSUES, type TsmRow, type VisitSections } from "./visits";
+import {
+  aggregateRows,
+  MV_RESULTS,
+  VISIT_ISSUES,
+  type RowTotals,
+  type TsmRow,
+  type VisitSections,
+} from "./visits";
 
 type Value = string | number | null;
 
@@ -95,6 +104,60 @@ export async function connectXlsx(report: ConnectReport, today: string): Promise
       [col("sku", 34), col("count"), { header: `${t("connect.col.share")}, %`, width: 12 }],
       o.topSkus.map((x) => [x.sku, x.total, x.rate]),
     );
+    const sales = o.sales;
+    if (sales) {
+      const ws = sheet(t("connect.sheets.sales"), metric, [
+        [t("connect.oos.salesChecked"), sales.checked],
+        [t("connect.col.notClosed"), sales.notClosed],
+        [t("connect.oos.salesAny"), sales.anySold],
+        [`${t("connect.oos.salesAny")}, %`, sales.anyRate],
+        [t("connect.oos.salesAll"), sales.allSold],
+        [`${t("connect.oos.salesAll")}, %`, sales.allRate],
+        [t("connect.col.linesSold"), `${sales.linesSold} / ${sales.lines}`],
+        [`${t("connect.oos.salesLines")}, %`, sales.linesRate],
+        [t("connect.col.packsSold"), `${sales.packsSold} / ${sales.packsOrdered}`],
+        [`${t("connect.oos.salesPacks")}, %`, sales.packsRate],
+        [t("connect.col.packsRaw"), sales.packsSoldRaw],
+      ]);
+      ws.insertRow(1, [
+        `${t("connect.oos.salesTitle")} · ${t("connect.oos.salesDate", { date: formatDay(sales.to) })}`,
+      ]);
+      ws.getRow(1).font = { bold: true };
+      sheet(
+        t("connect.sheets.salesStatuses"),
+        [
+          col("status", 44),
+          col("orders", 10),
+          col("checked", 10),
+          col("notClosed", 12),
+          col("anySold", 10),
+          { header: `${t("connect.col.anySold")}, %`, width: 10 },
+          col("allSold", 10),
+          { header: `${t("connect.col.allSold")}, %`, width: 10 },
+          { header: t("connect.col.linesSold"), width: 14 },
+          col("packsSold", 14),
+          col("packsRaw", 12),
+        ],
+        sales.byStatus.map((x) => [
+          localizeData(x.status) || t("connect.oos.noStatus"),
+          x.orders,
+          x.checked,
+          x.notClosed,
+          x.anySold,
+          x.anyRate,
+          x.allSold,
+          x.allRate,
+          `${x.linesSold} / ${x.lines}`,
+          `${x.packsSold} / ${x.packsOrdered}`,
+          x.packsSoldRaw,
+        ]),
+      );
+      sheet(
+        t("connect.sheets.unsoldSkus"),
+        [col("sku", 34), col("orders", 10), col("count", 12), { header: "%", width: 8 }],
+        sales.topUnsold.map((x) => [x.sku, x.ordered, x.unsold, x.rate]),
+      );
+    }
     const m = s.mv;
     sheet(t("connect.sheets.mv"), metric, [
       [t("connect.mv.unique"), m.unique],
@@ -124,6 +187,31 @@ export async function connectXlsx(report: ConnectReport, today: string): Promise
     );
   };
 
+  // The sales cross-check per TSM or position (when sales are loaded).
+  const salesColumns = report.salesDate
+    ? [
+        col("checked", 10),
+        col("anySold", 10),
+        col("salesRate", 12),
+        col("allSold", 10),
+        { header: t("connect.col.linesSold"), width: 14 },
+        col("packsSold", 14),
+        col("notClosed", 12),
+      ]
+    : [];
+  const salesCells = (r: Pick<RowTotals, "sales" | "salesRate">): Value[] =>
+    report.salesDate
+      ? [
+          r.sales.checked,
+          r.sales.anySold,
+          r.sales.checked ? r.salesRate : null,
+          r.sales.allSold,
+          `${r.sales.linesSold} / ${r.sales.lines}`,
+          `${r.sales.packsSold} / ${r.sales.packsOrdered}`,
+          r.sales.notClosed,
+        ]
+      : [];
+
   const people = (rows: TsmRow[]) =>
     sheet(
       t("connect.sheets.people"),
@@ -147,6 +235,7 @@ export async function connectXlsx(report: ConnectReport, today: string): Promise
         col("orders", 10),
         col("packs", 10),
         col("sum", 16),
+        ...salesColumns,
         col("statuses", 60),
       ],
       rows.map((r) => [
@@ -169,11 +258,90 @@ export async function connectXlsx(report: ConnectReport, today: string): Promise
         r.orders,
         r.packs,
         r.sum,
+        ...salesCells(r),
         r.statuses
           .map((s) => `${localizeData(s.status) || t("connect.oos.noStatus")}: ${s.count}`)
           .join("; "),
       ]),
     );
+
+  // The managers' tree: each position indented under the one above it, with the numbers of the
+  // TSMs under it; positions without TSMs (the distributor's staff) after them, without numbers.
+  const tree = (roots: TreeNode[], idle: TreeNode[]) => {
+    const ws = sheet(
+      t("connect.sheets.tree"),
+      [
+        col("position", 40),
+        col("person", 30),
+        col("roles", 26),
+        col("people", 8),
+        col("planned", 10),
+        col("visitedRate", 10),
+        col("connectRate", 10),
+        col("inTimeRate", 10),
+        col("mvFullRate", 10),
+        col("oosFound", 10),
+        col("orders", 10),
+        col("packs", 10),
+        col("sum", 16),
+        ...salesColumns,
+      ],
+      [],
+    );
+    const add = (
+      depth: number,
+      title: string,
+      person: Value,
+      roles: Value,
+      totals: RowTotals | null,
+      tsms: number,
+    ) => {
+      const row = ws.addRow([
+        title,
+        person,
+        roles,
+        tsms || null,
+        ...(totals
+          ? [
+              totals.planned,
+              totals.visitedRate,
+              totals.connectRate,
+              totals.inTimeRate,
+              totals.mvFullRate,
+              totals.oosFound,
+              totals.orders,
+              totals.packs,
+              totals.sum,
+              ...salesCells(totals),
+            ]
+          : []),
+      ]);
+      row.getCell(1).alignment = { indent: Math.min(depth, 15) };
+      if (tsms > 1 || (!totals && depth === 0)) row.font = { bold: true };
+    };
+    const walk = (n: TreeNode) => {
+      add(
+        n.depth,
+        n.title,
+        n.people.length
+          ? n.people.map((p) => p.name ?? t("connect.manager.vacant")).join("; ")
+          : t("connect.manager.noRow"),
+        n.people.flatMap((p) => p.roles).join(", ") || null,
+        n.totals,
+        n.tsms,
+      );
+      // A TSM code of a position with positions under it: its own row.
+      if (n.children.length || n.own.length > 1)
+        for (const r of n.own) add(n.depth + 1, r.code, r.name, null, aggregateRows([r]), 1);
+      n.children.forEach(walk);
+    };
+    roots.forEach(walk);
+    if (idle.length) {
+      ws.addRow([]);
+      ws.addRow([t("connect.manager.idle")]).font = { bold: true };
+      idle.forEach(walk);
+    }
+  };
 
   const ism = (block: IsmBlock | null, issues: ReturnType<typeof paymentIssues> | null) => {
     const name = `${t("connect.sheets.ism")} ${monthsLabel(report.months)}`;
@@ -296,6 +464,7 @@ export async function connectXlsx(report: ConnectReport, today: string): Promise
 
   if (report.manager) {
     const m = report.manager;
+    if (m.tree) tree(m.tree.roots, m.tree.idle);
     people(m.people);
     sections(m.sections, title(t("connect.views.manager")));
     ism(m.ism, null);
@@ -366,6 +535,12 @@ export async function connectXlsx(report: ConnectReport, today: string): Promise
       ],
       d.orders.map((o) => [o.id, o.store, o.day, localizeData(o.status), o.packs, o.sum]),
     );
+    if (report.salesDate)
+      sheet(
+        t("connect.sheets.unsold"),
+        [col("order", 14), col("store", 40), col("date", 12), col("status", 40), col("skus", 80)],
+        d.unsold.map((o) => [o.id, o.store, o.day, localizeData(o.status), o.skus.join(", ")]),
+      );
     sections(x.sections, heading);
     ism(null, x.payments);
   }

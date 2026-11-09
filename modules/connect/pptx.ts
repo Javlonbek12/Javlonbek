@@ -5,6 +5,7 @@ import { t } from "@/lib/i18n";
 import { plural } from "@/modules/reports/format";
 
 import { orderStage, type IsmBlock } from "./analytics";
+import { flattenTree, type TreeNode } from "./hierarchy";
 import { localizeData } from "./localize";
 import { formatMoney, formatNumber, monthsLabel, periodLabel, type ConnectReport } from "./report";
 import { MV_RESULTS, topAnswers, VISIT_ISSUES, type TsmRow, type VisitSections } from "./visits";
@@ -417,6 +418,74 @@ export async function connectPptx(report: ConnectReport, today: string): Promise
       { horizontal: true },
     );
 
+    // Sold after the order: the shares, each delivery status, the products ordered and not sold.
+    const sales = o.sales;
+    if (sales && sales.orders) {
+      const slide = pptx.addSlide();
+      header(
+        slide,
+        t("connect.oos.salesTitle"),
+        `${subtitle} · ${t("connect.oos.salesDate", { date: formatDay(sales.to) })}`,
+      );
+      tiles(
+        slide,
+        [
+          {
+            label: t("connect.oos.salesChecked"),
+            value: formatNumber(sales.checked),
+            note: sales.notClosed
+              ? t("connect.oos.salesNotClosed", { count: formatNumber(sales.notClosed) })
+              : undefined,
+          },
+          {
+            label: t("connect.oos.salesAny"),
+            value: `${sales.anyRate}%`,
+            note: `${t("connect.oos.salesAll")}: ${sales.allRate}%`,
+          },
+          {
+            label: t("connect.oos.salesLines"),
+            value: `${sales.linesRate}%`,
+            note: t("connect.oos.salesOf", {
+              sold: formatNumber(sales.linesSold),
+              total: formatNumber(sales.lines),
+            }),
+          },
+          {
+            label: t("connect.oos.salesPacks"),
+            value: `${sales.packsRate}%`,
+            note: t("connect.oos.salesOf", {
+              sold: formatNumber(sales.packsSold),
+              total: formatNumber(sales.packsOrdered),
+            }),
+          },
+        ],
+        1.45,
+        1.35,
+      );
+      barChart(
+        pptx,
+        slide,
+        { x: 0.5, y: 3.0, w: 6.0, h: 4.2 },
+        `${t("connect.oos.salesByStatus")}: ${t("connect.col.anySold")}, %`,
+        sales.byStatus
+          .filter((x) => x.checked)
+          .map((x) => ({
+            label: `${localizeData(x.status) || t("connect.oos.noStatus")} (${formatNumber(x.checked)})`,
+            value: x.anyRate,
+            color: STAGE[orderStage({ status: x.status, outcome: null, storeAnswer: null })],
+          })),
+        { horizontal: true, percent: true },
+      );
+      barChart(
+        pptx,
+        slide,
+        { x: 6.8, y: 3.0, w: 6.0, h: 4.2 },
+        t("connect.oos.salesTopUnsold"),
+        sales.topUnsold.map((x) => ({ label: x.sku, value: x.unsold, color: C.amber })),
+        { horizontal: true },
+      );
+    }
+
     const m = s.mv;
     const mv = pptx.addSlide();
     header(mv, t("connect.section.mv"), subtitle);
@@ -661,7 +730,50 @@ export async function connectPptx(report: ConnectReport, today: string): Promise
     ismSlide(e.ism);
   }
 
+  // The managers' tree: positions with TSMs, indented under the one above.
+  const treeTable = (roots: TreeNode[]) => {
+    const rows = flattenTree(roots).filter((n) => n.totals);
+    tableSlides(
+      pptx,
+      t("connect.manager.tree"),
+      subtitle,
+      [
+        t("connect.col.position"),
+        t("connect.col.people"),
+        t("connect.col.planned"),
+        t("connect.col.visitedRate"),
+        t("connect.col.connectRate"),
+        t("connect.col.inTimeRate"),
+        t("connect.col.mvFullRate"),
+        t("connect.col.oosFound"),
+        t("connect.col.orders"),
+        t("connect.col.sum"),
+        ...(report.salesDate ? [t("connect.col.salesRate")] : []),
+      ],
+      rows.slice(0, 48).map((n) => {
+        const r = n.totals!;
+        const person = n.people.map((p) => p.name).find(Boolean);
+        return [
+          `${"\u00a0\u00a0".repeat(n.depth)}${n.title}${person ? ` · ${person}` : ""}`,
+          n.tsms,
+          r.planned,
+          pct(r.visitedRate),
+          pct(r.connectRate),
+          pct(r.inTimeRate),
+          pct(r.mvFullRate),
+          r.oosFound,
+          r.orders,
+          formatMoney(r.sum),
+          ...(report.salesDate ? [r.sales.checked ? pct(r.salesRate) : null] : []),
+        ];
+      }),
+      [4.4, 0.7, 0.9, 1, 1, 1, 1, 1, 0.9, 1.6, ...(report.salesDate ? [1.1] : [])],
+      cut(rows.length, 48),
+    );
+  };
+
   if (report.manager) {
+    if (report.manager.tree) treeTable(report.manager.tree.roots);
     peopleTable(report.manager.people);
     sectionSlides(report.manager.sections);
     ismSlide(report.manager.ism);
@@ -748,6 +860,29 @@ export async function connectPptx(report: ConnectReport, today: string): Promise
         ]),
       [3.6, 1.2, 4, 1, 1.4],
       cut(x.detail.orders.length, 24),
+    );
+    tableSlides(
+      pptx,
+      t("connect.executor.unsold"),
+      subtitle,
+      [
+        t("connect.col.store"),
+        t("connect.col.date"),
+        t("connect.col.status"),
+        t("connect.col.skus"),
+      ],
+      x.detail.unsold
+        .slice(0, 24)
+        .map((o) => [
+          o.store,
+          o.day,
+          localizeData(o.status) || t("connect.oos.noStatus"),
+          o.skus.join(", "),
+        ]),
+      [3.4, 1.2, 3, 4.6],
+      [t("connect.executor.unsoldHint"), cut(x.detail.unsold.length, 24)]
+        .filter(Boolean)
+        .join(" · "),
     );
     tableSlides(
       pptx,

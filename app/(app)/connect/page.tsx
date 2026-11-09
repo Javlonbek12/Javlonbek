@@ -18,6 +18,7 @@ import {
   buildConnectReport,
   connectHref,
   leadScope,
+  loadConnectAccess,
   monthsLabel,
   parseConnectQuery,
   PERIOD_PRESETS,
@@ -28,7 +29,6 @@ import {
 import {
   canLeadConnect,
   connectAppUsers,
-  connectPeopleLinks,
   connectTotal,
   lastImports,
 } from "@/modules/connect/service";
@@ -37,7 +37,7 @@ import { getSettings } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
 import { presetPeriod } from "@/modules/reports/period";
 
-import { linkConnectPersonAction } from "./actions";
+import { linkConnectPersonAction, linkConnectPositionAction } from "./actions";
 
 // Smart Up visits × Connect Bot on three levels: leadership, managers, executors.
 export default async function ConnectPage({ searchParams }: PageProps<"/connect">) {
@@ -45,17 +45,23 @@ export default async function ConnectPage({ searchParams }: PageProps<"/connect"
   const canLead = canLeadConnect(user);
   const { timezone } = await getSettings(user.id);
   const today = todayInTimezone(timezone);
-  const links = await connectPeopleLinks();
+  const access = await loadConnectAccess();
+  const links = access.people;
   const { query, own } = scopeConnectQuery(
     parseConnectQuery(await searchParams, canLead),
     canLead,
     links,
     user.id,
+    access.positions,
   );
-  // The owner and managers see the TSMs of their team; an employee their own codes.
-  const scope = canLead ? leadScope(user, links) : own ? new Set(own) : null;
+  // The owner and managers see the TSMs of their team and under their positions; an employee
+  // their own codes and those under their positions.
+  const scope = canLead ? leadScope(user, links, access.positions) : own ? new Set(own) : null;
   const [report, imports, appUsers, total] = await Promise.all([
-    buildConnectReport(query, today, scope),
+    buildConnectReport(query, today, scope, {
+      hierarchy: access.positions.hierarchy,
+      own: own !== null,
+    }),
     lastImports(1),
     canLead ? connectAppUsers() : Promise.resolve([]),
     connectTotal(),
@@ -78,7 +84,9 @@ export default async function ConnectPage({ searchParams }: PageProps<"/connect"
     ),
   );
   const people = report.people;
-  const choosePerson = q.view === "executor" && (own === null || own.length > 1) && people.length;
+  const choosePerson =
+    q.view === "executor" && (own === null || people.length > 1) && people.length;
+  const users = appUsers.map((u) => ({ id: u.id, name: displayName(u) }));
 
   return (
     <div className="flex flex-col gap-5 [&>*]:min-w-0">
@@ -207,7 +215,18 @@ export default async function ConnectPage({ searchParams }: PageProps<"/connect"
             <ManagerView
               data={report.manager}
               months={months}
+              sales={report.salesDate !== null}
               personHref={(person) => connectHref("/connect", q, { view: "executor", person })}
+              link={
+                canLead
+                  ? {
+                      action: linkConnectPositionAction,
+                      users,
+                      links: access.positions.links,
+                      back: connectHref("/connect", q),
+                    }
+                  : undefined
+              }
             />
           ) : report.executor ? (
             <ExecutorView data={report.executor} months={months} />
@@ -219,7 +238,7 @@ export default async function ConnectPage({ searchParams }: PageProps<"/connect"
                 canLead
                   ? {
                       action: linkConnectPersonAction,
-                      users: appUsers.map((u) => ({ id: u.id, name: displayName(u) })),
+                      users,
                       links,
                       back: connectHref("/connect", q),
                     }

@@ -340,6 +340,44 @@ export function ExecutorView({ data, months }: { data: Executor; months: string 
             />
           </>
         )}
+        {d.unsold.length > 0 && (
+          <details className="rounded-xl border p-3">
+            <summary className="cursor-pointer text-sm font-medium">
+              {t("connect.executor.unsold")} · {d.unsold.length}
+            </summary>
+            <p className="text-muted-foreground mt-2 text-xs">{t("connect.executor.unsoldHint")}</p>
+            <div className="mt-2">
+              <DataTable
+                rows={d.unsold}
+                rowKey={(x) => x.id}
+                limit={100}
+                columns={[
+                  {
+                    key: "store",
+                    header: t("connect.col.store"),
+                    cell: (x) => <Store name={x.store} extra={`${formatDay(x.day)} · ${x.id}`} />,
+                    className: "min-w-44",
+                  },
+                  {
+                    key: "status",
+                    header: t("connect.col.status"),
+                    cell: (x) => (
+                      <span style={{ color: deliveryColor(x.status ?? "") }}>
+                        {statusLabel(x.status ?? "")}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: "skus",
+                    header: t("connect.col.skus"),
+                    cell: (x) => x.skus.join(", "),
+                    className: "min-w-56",
+                  },
+                ]}
+              />
+            </div>
+          </details>
+        )}
       </OosSection>
 
       <MvSection data={s.mv}>

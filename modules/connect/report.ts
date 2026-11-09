@@ -5,8 +5,16 @@ import { formatRange } from "@/modules/reports/format";
 import { presetPeriod } from "@/modules/reports/period";
 
 import { ismBlock, paymentIssues } from "./analytics";
-import { personCode } from "./parse";
-import { connectDataDate, loadPayments, loadVisitData } from "./service";
+import { linkedPositionCodes, managerTree, type Hierarchy } from "./hierarchy";
+import { personCode, titleKey } from "./parse";
+import {
+  connectDataDate,
+  connectPeopleLinks,
+  connectPositionLinks,
+  loadHierarchy,
+  loadPayments,
+  loadVisitData,
+} from "./service";
 import {
   analyzeVisits,
   regionRows,
@@ -98,55 +106,98 @@ export function linkOf(links: Record<string, string>, code: string) {
   return key ? links[key]! : null;
 }
 
-// An employee (not the owner or a manager) sees only their own list once TSM codes are linked to
-// people in the app: `own` is their codes (maybe none). Before any link exists the level works
-// as before, with a choice of TSM (`own` null).
+// Positions of the employee info linked to people in the app (title → user) and the hierarchy
+// they are in: a person linked to a position sees every TSM under it.
+export type PositionAccess = { links: Record<string, string>; hierarchy: Hierarchy | null };
+
+// The links and the hierarchy, read once for a page or a download.
+export async function loadConnectAccess() {
+  const [people, links, hierarchy] = await Promise.all([
+    connectPeopleLinks(),
+    connectPositionLinks(),
+    loadHierarchy(),
+  ]);
+  return { people, positions: { links, hierarchy } satisfies PositionAccess };
+}
+
+// An employee (not the owner or a manager) sees only their own list once TSM codes or positions
+// are linked to people in the app: `own` is their codes and those under their positions (maybe
+// none). Before any link exists the level works as before, with a choice of TSM (`own` null).
 export function scopeConnectQuery(
   query: ConnectQuery,
   canLead: boolean,
   links: Record<string, string>,
   userId: string,
+  positions: PositionAccess = { links: {}, hierarchy: null },
 ): { query: ConnectQuery; own: string[] | null } {
-  if (canLead || !Object.keys(links).length) return { query, own: null };
-  const own = linkedCodes(links, new Set([userId]));
+  if (canLead || (!Object.keys(links).length && !Object.keys(positions.links).length))
+    return { query, own: null };
+  const me = new Set([userId]);
+  const own: string[] = [];
+  for (const code of [
+    ...linkedCodes(links, me),
+    ...linkedPositionCodes(positions.hierarchy, positions.links, me),
+  ])
+    if (!own.some((c) => titleKey(c) === titleKey(code))) own.push(code);
   const person =
-    query.person && own.some((c) => sameCode(c, query.person!)) ? query.person : (own[0] ?? null);
+    query.person && own.some((c) => titleKey(c) === titleKey(query.person!))
+      ? query.person
+      : (own[0] ?? null);
   return { query: { ...query, view: "executor", person }, own };
 }
 
 // Which TSMs the owner or a manager sees on the managers' and executors' levels (by the org
 // chart): the owner every one (null); a manager those linked to people of their team or to
-// themselves, or every linked one with «all tasks» in the role settings. A TSM linked to nobody is
-// for the owner to link.
+// themselves, or under positions linked to them (every linked one with «all tasks» in the role
+// settings). A TSM linked to nobody is for the owner to link.
 export function leadScope(
   actor: Pick<Actor, "id" | "role" | "access">,
   links: Record<string, string>,
+  positions: PositionAccess = { links: {}, hierarchy: null },
 ): Set<string> | null {
   if (actor.role === "OWNER") return null;
   const scope = actor.access?.taskScope ?? "all";
   const team = scope === "all" ? null : new Set([actor.id, ...(actor.access?.teamIds ?? [])]);
-  return new Set(linkedCodes(links, team));
+  return new Set([
+    ...linkedCodes(links, team),
+    ...linkedPositionCodes(positions.hierarchy, positions.links, team),
+  ]);
 }
 
-const inScope = (scope: Set<string> | null, code: string | null) =>
-  !scope || Boolean(code && [...scope].some((s) => sameCode(s, code)));
+// Codes compared by titleKey («BDM_99» is the position «BDM 99»); each scope's keys made once.
+const scopeKeys = new WeakMap<Set<string>, Set<string>>();
+function inScope(scope: Set<string> | null, code: string | null) {
+  if (!scope) return true;
+  if (!code) return false;
+  let keys = scopeKeys.get(scope);
+  if (!keys) scopeKeys.set(scope, (keys = new Set([...scope].map(titleKey))));
+  return keys.has(titleKey(code));
+}
 
 export async function buildConnectReport(
   query: ConnectQuery,
   today: string,
   // The TSMs this person may see on the managers' and executors' levels (null: all).
   scope: Set<string> | null = null,
+  options: {
+    // The positions (undefined: read here; null: none).
+    hierarchy?: Hierarchy | null;
+    // An employee's own list: always one TSM's list, the first with data when none is chosen.
+    own?: boolean;
+  } = {},
 ) {
   const dataDate = await connectDataDate();
   const period = connectPeriod(query, today, dataDate);
   const months = { from: period.from.slice(0, 7), to: period.to.slice(0, 7) };
-  const [data, payments] = await Promise.all([loadVisitData(period), loadPayments(months)]);
+  const [data, payments, hierarchy] = await Promise.all([
+    loadVisitData(period),
+    loadPayments(months),
+    options.hierarchy === undefined ? loadHierarchy() : options.hierarchy,
+  ]);
   const analysis = analyzeVisits(data);
   const codes = tsmCodes(data).filter((code) => inScope(scope, code));
-  const person =
-    query.person && codes.some((c) => sameCode(c, query.person!))
-      ? codes.find((c) => sameCode(c, query.person!))!
-      : null;
+  const chosen = query.person && codes.find((c) => titleKey(c) === titleKey(query.person!));
+  const person = chosen || (options.own && query.view === "executor" ? (codes[0] ?? null) : null);
   const paymentsOf = (allowed: Set<string> | null) =>
     payments.filter((p) => inScope(allowed, personCode(p.person)));
   const empty =
@@ -155,11 +206,14 @@ export async function buildConnectReport(
     !data.oos.length &&
     !data.orders.length &&
     !payments.length;
+  const managerRows = query.view === "manager" ? tsmRows(analysis, codes) : [];
   return {
     query: { ...query, person },
     period,
     months,
     dataDate,
+    // The last day of the sales loaded (null: no sales, no cross-check).
+    salesDate: data.salesRange?.to ?? null,
     empty,
     people: codes.map((code) => tsmInfo(data, code)),
     exec:
@@ -174,7 +228,9 @@ export async function buildConnectReport(
       query.view === "manager"
         ? {
             sections: visitSections(analysis, scope),
-            people: tsmRows(analysis, codes),
+            people: managerRows,
+            // By the employee info, when one is uploaded.
+            tree: hierarchy ? managerTree(hierarchy, managerRows, scope) : null,
             ism: ismBlock(paymentsOf(scope), today),
           }
         : null,

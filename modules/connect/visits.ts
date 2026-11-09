@@ -1,12 +1,25 @@
 import { hasGap, percent, skuGaps } from "./analytics";
 import {
   personCode,
+  titleKey,
   type OosRecord,
   type OrderRecord,
+  type SaleRecord,
   type SuPersonRecord,
   type SuVisitRecord,
   type VisitRecord,
 } from "./parse";
+import {
+  checkOrders,
+  indexSales,
+  SALES_COUNTS,
+  salesCounts,
+  salesSummary,
+  unsoldOrders,
+  type OrderCheck,
+  type SalesCounts,
+  type SalesRange,
+} from "./sales";
 
 // Smart Up visits × Connect Bot, as pure functions (rules approved by the owner on 09.11.2026,
 // see docs/DECISIONS.md). Smart Up says where a TSM had to go and went; Connect Bot says what was
@@ -19,6 +32,10 @@ export type VisitData = {
   oos: OosRecord[];
   orders: OrderRecord[];
   people: SuPersonRecord[];
+  // The CRM's sales of the stores ordered from (order days … + 3) and the days all loaded sales
+  // cover; without them there is no sales cross-check.
+  sales?: SaleRecord[];
+  salesRange?: SalesRange | null;
 };
 
 // A MV / OOS counts as done during the visit within Smart Up start − 15 min … finish + 15 min.
@@ -282,15 +299,20 @@ export function analyzeVisits(data: VisitData, tolerance = TOLERANCE_MINUTES) {
   );
   // Days Smart Up data exists for: only there can a MV be «without a Smart Up visit».
   const suDays = new Set(data.suVisits.map((v) => v.day));
-  return { data, mvFinals, oosFinals, checks, visited, suDays };
+  // Every auto-stock order checked against the sales once.
+  const sales = indexSales(data.sales ?? [], data.salesRange ?? null);
+  const orderChecks = new Map<OrderRecord, OrderCheck>(
+    sales ? checkOrders(data.orders, sales).map((c) => [c.order, c]) : [],
+  );
+  return { data, mvFinals, oosFinals, checks, visited, suDays, sales, orderChecks };
 }
 
 // The TSM codes a section is counted for; null is everyone.
 type Scope = Set<string> | null;
 const scopeTest = (scope: Scope) => {
   if (!scope) return () => true;
-  const codes = new Set([...scope].map((s) => s.toUpperCase()));
-  return (person: string | null) => codes.has(personCode(person)?.toUpperCase() ?? "");
+  const codes = new Set([...scope].map(titleKey));
+  return (person: string | null) => codes.has(titleKey(personCode(person) ?? ""));
 };
 
 // Counts of a list of made visits (planned or not).
@@ -496,6 +518,8 @@ function sectionsOf(a: Analysis, parts: Parts, light: boolean) {
     ordered.has(storeDay(f.final.storeCode, f.final.day)),
   ).length;
 
+  const orderChecks = orders.flatMap((o) => a.orderChecks.get(o) ?? []);
+
   const finals = mvFinals.map((f) => f.final);
   const results = Object.fromEntries(
     MV_RESULTS.map((r) => [r, finals.filter((v) => mvResult(v) === r).length]),
@@ -524,6 +548,8 @@ function sectionsOf(a: Analysis, parts: Parts, light: boolean) {
       packs: sum(orders.map((o) => o.packs)),
       sum: sum(orders.map((o) => o.sum)),
       byStatus: ordersByStatus(orders),
+      // Sold after the order (null: no sales loaded).
+      sales: a.sales ? salesSummary(orderChecks, a.sales, light) : null,
     },
     mv: {
       unique: finals.length,
@@ -626,10 +652,61 @@ export function tsmRows(a: Analysis, codes: string[]) {
       packs: s.oos.packs,
       sum: s.oos.sum,
       statuses: s.oos.byStatus,
+      sales: s.oos.sales ? pickCounts(s.oos.sales) : salesCounts([]),
+      salesRate: s.oos.sales?.anyRate ?? 0,
     };
   });
 }
 export type TsmRow = ReturnType<typeof tsmRows>[number];
+
+const pickCounts = (c: SalesCounts) =>
+  Object.fromEntries(SALES_COUNTS.map((k) => [k, c[k]])) as SalesCounts;
+
+// TSM rows summed (a region, a position and those under it); rates counted again from the sums.
+export function aggregateRows(list: TsmRow[]) {
+  const total = (pick: (r: TsmRow) => number) => sum(list.map(pick));
+  const planned = total((r) => r.planned);
+  const visited = total((r) => r.visited);
+  const withConnect = total((r) => r.withConnect);
+  const mvFull = total((r) => r.mvFull);
+  const mvOpen = total((r) => r.mvOpen);
+  const sales = Object.fromEntries(
+    SALES_COUNTS.map((k) => [k, total((r) => r.sales[k])]),
+  ) as SalesCounts;
+  return {
+    planned,
+    visited,
+    visitedRate: percent(visited, planned),
+    withConnect,
+    connectRate: percent(withConnect, visited),
+    withMvRate: percent(
+      total((r) => r.withMv),
+      visited,
+    ),
+    withOosRate: percent(
+      total((r) => r.withOos),
+      visited,
+    ),
+    inTimeRate: percent(
+      total((r) => r.inTime),
+      withConnect,
+    ),
+    otherEmployee: total((r) => r.otherEmployee),
+    closed: total((r) => r.closed),
+    attention: total((r) => r.attention),
+    mvFull,
+    mvOpen,
+    mvFullRate: percent(mvFull, mvOpen),
+    problems: total((r) => r.problems),
+    oosFound: total((r) => r.oosFound),
+    orders: total((r) => r.orders),
+    packs: total((r) => r.packs),
+    sum: total((r) => r.sum),
+    sales,
+    salesRate: percent(sales.anySold, sales.checked),
+  };
+}
+export type RowTotals = ReturnType<typeof aggregateRows>;
 
 // The TSM rows summed by region (rates counted again from the sums).
 export function regionRows(rows: TsmRow[]) {
@@ -639,29 +716,7 @@ export function regionRows(rows: TsmRow[]) {
     groups.set(region, [...(groups.get(region) ?? []), r]);
   }
   return [...groups.entries()]
-    .map(([region, list]) => {
-      const total = (key: keyof TsmRow) => sum(list.map((r) => Number(r[key]) || 0));
-      const visited = total("visited");
-      const withConnect = total("withConnect");
-      return {
-        region,
-        people: list.length,
-        planned: total("planned"),
-        visited,
-        visitedRate: percent(visited, total("planned")),
-        connectRate: percent(withConnect, visited),
-        withMvRate: percent(total("withMv"), visited),
-        withOosRate: percent(total("withOos"), visited),
-        inTimeRate: percent(total("inTime"), withConnect),
-        otherEmployee: total("otherEmployee"),
-        closed: total("closed"),
-        mvFullRate: percent(total("mvFull"), total("mvOpen")),
-        oosFound: total("oosFound"),
-        orders: total("orders"),
-        packs: total("packs"),
-        sum: total("sum"),
-      };
-    })
+    .map(([region, list]) => ({ region, people: list.length, ...aggregateRows(list) }))
     .sort((a, b) => b.planned - a.planned || a.region.localeCompare(b.region));
 }
 
@@ -750,6 +805,11 @@ export function tsmDetail(a: Analysis, code: string) {
     .map(({ final: v }) => ({ id: v.id, store: v.storeName, day: v.day, at: timeOf(v.at) }))
     .sort((x, y) => y.day.localeCompare(x.day) || x.store.localeCompare(y.store));
 
+  // Orders with nothing sold in a closed window (the sales cross-check).
+  const unsold = unsoldOrders(
+    a.data.orders.filter((o) => mine(o.person)).flatMap((o) => a.orderChecks.get(o) ?? []),
+  );
+
   const notVisited = a.data.suVisits
     .filter((v) => sameCode(v.person, code) && v.planned && !v.factDay)
     .map((v) => ({ id: v.id, store: v.storeName, day: v.planDay! }))
@@ -762,6 +822,7 @@ export function tsmDetail(a: Analysis, code: string) {
     ),
     problems,
     orders,
+    unsold,
     withoutVisit,
     notVisited,
   };
