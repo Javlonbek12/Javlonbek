@@ -406,7 +406,8 @@ export function DataTable<T>({
                 <th
                   key={c.key}
                   className={cn(
-                    "px-2 py-2 font-medium whitespace-nowrap",
+                    // Headers wrap («Другой / сотр.»): a wide table still fits its card.
+                    "px-2 py-2 align-bottom font-medium",
                     c.numeric && "text-right",
                   )}
                 >

@@ -400,6 +400,22 @@ function questionStats(finals: VisitRecord[]) {
   });
 }
 
+// The most frequent answers and the rest summed: the equipment question has dozens of
+// combinations, which would bury the bar under a wall of labels.
+export const MAX_ANSWERS = 8;
+export function topAnswers<T extends { value: string; count: number }>(
+  answers: T[],
+  max = MAX_ANSWERS,
+) {
+  if (answers.length <= max) return { shown: answers, other: 0, otherKinds: 0 };
+  const rest = answers.slice(max);
+  return {
+    shown: answers.slice(0, max),
+    other: sum(rest.map((a) => a.count)),
+    otherKinds: rest.length,
+  };
+}
+
 // Installed equipment types of the final MVs (a list counts each type).
 function equipmentStats(finals: VisitRecord[]) {
   const counts = new Map<string, number>();

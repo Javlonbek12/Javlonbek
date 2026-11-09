@@ -3229,6 +3229,7 @@ export const en: Dictionary = {
       questionsHint:
         "Closed stores answer only «Торговая точка открыта?». «Not answered» — where the question is required; with «No BWD» the equipment questions are not required. Problem — as marked by the bot.",
       unanswered: "not answered",
+      otherAnswers: "other ({count})",
       problemShare: "problem: {rate}%",
       equipment: "Installed equipment",
     },

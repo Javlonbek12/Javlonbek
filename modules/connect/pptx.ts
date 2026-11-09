@@ -6,7 +6,7 @@ import { plural } from "@/modules/reports/format";
 
 import { orderStage, type IsmBlock } from "./analytics";
 import { formatMoney, formatNumber, monthsLabel, periodLabel, type ConnectReport } from "./report";
-import { MV_RESULTS, VISIT_ISSUES, type TsmRow, type VisitSections } from "./visits";
+import { MV_RESULTS, topAnswers, VISIT_ISSUES, type TsmRow, type VisitSections } from "./visits";
 
 // The level on the screen as a 16:9 deck: native PowerPoint charts and tables, so numbers
 // stay editable. Colors: the validated chart palette (blue / orange) and the status scale.
@@ -467,7 +467,12 @@ export async function connectPptx(report: ConnectReport, today: string): Promise
       m.questions.map((q) => [
         q.q,
         [
-          ...q.answers.map((a) => `${a.value}: ${formatNumber(a.count)}`),
+          ...topAnswers(q.answers).shown.map((a) => `${a.value}: ${formatNumber(a.count)}`),
+          ...(topAnswers(q.answers).other
+            ? [
+                `${t("connect.mv.otherAnswers", { count: topAnswers(q.answers).otherKinds })}: ${formatNumber(topAnswers(q.answers).other)}`,
+              ]
+            : []),
           ...(q.unanswered ? [`${t("connect.mv.unanswered")}: ${formatNumber(q.unanswered)}`] : []),
         ].join(" · "),
         q.answered ? `${q.problemRate}%` : null,

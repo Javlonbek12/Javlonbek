@@ -7,6 +7,7 @@ import { formatMoney, formatNumber } from "@/modules/connect/report";
 import {
   MV_RESULTS,
   STORE_OPEN_QUESTION,
+  topAnswers,
   VISIT_ISSUES,
   type VisitSections,
 } from "@/modules/connect/visits";
@@ -291,7 +292,23 @@ export function MvSection({ data, children }: { data: VisitSections["mv"]; child
                 </span>
                 <AnswerBar
                   parts={[
-                    ...q.answers.map((a) => ({ key: a.value, label: a.value, value: a.count })),
+                    ...topAnswers(q.answers).shown.map((a) => ({
+                      key: a.value,
+                      label: a.value,
+                      value: a.count,
+                    })),
+                    ...(topAnswers(q.answers).other
+                      ? [
+                          {
+                            key: "+",
+                            label: t("connect.mv.otherAnswers", {
+                              count: topAnswers(q.answers).otherKinds,
+                            }),
+                            value: topAnswers(q.answers).other,
+                            color: UNANSWERED_COLOR,
+                          },
+                        ]
+                      : []),
                     ...(q.unanswered
                       ? [
                           {

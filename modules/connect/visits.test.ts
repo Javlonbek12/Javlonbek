@@ -20,6 +20,7 @@ import {
   tsmRows,
   visitSections,
   type VisitData,
+  topAnswers,
 } from "./visits";
 
 // Synthetic data only: TSM_TST_* codes, «Тест TSM» names, stores 9000xx.
@@ -463,5 +464,20 @@ describe("Sections", () => {
         problems: ["Тестовый вопрос 2 — Выше рекомендованной"],
       },
     ]);
+  });
+});
+
+describe("topAnswers", () => {
+  it("keeps the eight most frequent answers and sums the rest", () => {
+    const answers = Array.from({ length: 11 }, (_, i) => ({ value: `Тип ${i}`, count: 20 - i }));
+    const top = topAnswers(answers);
+    expect(top.shown).toHaveLength(8);
+    expect(top.otherKinds).toBe(3);
+    expect(top.other).toBe(12 + 11 + 10);
+    expect(topAnswers(answers.slice(0, 5))).toEqual({
+      shown: answers.slice(0, 5),
+      other: 0,
+      otherKinds: 0,
+    });
   });
 });
