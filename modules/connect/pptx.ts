@@ -5,11 +5,14 @@ import { t } from "@/lib/i18n";
 import { plural } from "@/modules/reports/format";
 
 import { orderStage, type IsmBlock } from "./analytics";
+import { localizeData } from "./localize";
 import { formatMoney, formatNumber, monthsLabel, periodLabel, type ConnectReport } from "./report";
 import { MV_RESULTS, topAnswers, VISIT_ISSUES, type TsmRow, type VisitSections } from "./visits";
 
 // The level on the screen as a 16:9 deck: native PowerPoint charts and tables, so numbers
 // stay editable. Colors: the validated chart palette (blue / orange) and the status scale.
+// Texts follow the language of the current work (see withExportLocale); known data values
+// (answers, statuses, questions, equipment) are translated with localizeData.
 
 const C = {
   ink: "1B1B1A",
@@ -399,7 +402,7 @@ export async function connectPptx(report: ConnectReport, today: string): Promise
       { x: 0.5, y: 3.0, w: 6.0, h: 4.2 },
       t("connect.oos.byStatus"),
       o.byStatus.map((x) => ({
-        label: x.status || t("connect.oos.noStatus"),
+        label: localizeData(x.status) || t("connect.oos.noStatus"),
         value: x.count,
         color: STAGE[orderStage({ status: x.status, outcome: null, storeAnswer: null })],
       })),
@@ -456,7 +459,9 @@ export async function connectPptx(report: ConnectReport, today: string): Promise
       mv,
       { x: 6.8, y: 3.0, w: 6.0, h: 4.2 },
       t("connect.mv.equipment"),
-      m.equipment.slice(0, 10).map((e) => ({ label: e.type.slice(0, 40), value: e.count })),
+      m.equipment
+        .slice(0, 10)
+        .map((e) => ({ label: localizeData(e.type).slice(0, 40), value: e.count })),
       { horizontal: true },
     );
     tableSlides(
@@ -465,9 +470,11 @@ export async function connectPptx(report: ConnectReport, today: string): Promise
       subtitle,
       [t("connect.col.question"), t("connect.col.answer"), t("connect.col.problemRate")],
       m.questions.map((q) => [
-        q.q,
+        localizeData(q.q),
         [
-          ...topAnswers(q.answers).shown.map((a) => `${a.value}: ${formatNumber(a.count)}`),
+          ...topAnswers(q.answers).shown.map(
+            (a) => `${localizeData(a.value)}: ${formatNumber(a.count)}`,
+          ),
           ...(topAnswers(q.answers).other
             ? [
                 `${t("connect.mv.otherAnswers", { count: topAnswers(q.answers).otherKinds })}: ${formatNumber(topAnswers(q.answers).other)}`,
@@ -732,7 +739,13 @@ export async function connectPptx(report: ConnectReport, today: string): Promise
       ],
       x.detail.orders
         .slice(0, 24)
-        .map((o) => [o.store, o.day, o.status || t("connect.oos.noStatus"), o.packs, o.sum]),
+        .map((o) => [
+          o.store,
+          o.day,
+          localizeData(o.status) || t("connect.oos.noStatus"),
+          o.packs,
+          o.sum,
+        ]),
       [3.6, 1.2, 4, 1, 1.4],
       cut(x.detail.orders.length, 24),
     );
@@ -741,7 +754,9 @@ export async function connectPptx(report: ConnectReport, today: string): Promise
       t("connect.executor.problems"),
       subtitle,
       [t("connect.col.store"), t("connect.col.date"), t("connect.col.problems")],
-      x.detail.problems.slice(0, 24).map((p) => [p.store, p.day, p.problems.join("; ")]),
+      x.detail.problems
+        .slice(0, 24)
+        .map((p) => [p.store, p.day, p.problems.map((q) => localizeData(q)).join("; ")]),
       [3.4, 1.2, 7.6],
       cut(x.detail.problems.length, 24),
     );
@@ -758,7 +773,10 @@ export async function connectPptx(report: ConnectReport, today: string): Promise
       x.payments.map((p) => [
         p.store,
         t(`connect.paymentStage.${p.stage}`),
-        [p.note, ...p.failed].filter(Boolean).join("; ") || null,
+        [p.note, ...p.failed]
+          .map((q) => localizeData(q))
+          .filter(Boolean)
+          .join("; ") || null,
         formatMoney(p.sum),
       ]),
       [3.4, 2.2, 5, 1.6],

@@ -1,5 +1,5 @@
-import { t } from "@/lib/i18n";
-import { withLocale } from "@/lib/i18n/server";
+import { isExportLocale, t } from "@/lib/i18n";
+import { withExportLocale } from "@/lib/i18n/server";
 import { connectPptx } from "@/modules/connect/pptx";
 import {
   buildConnectReport,
@@ -17,13 +17,17 @@ const TYPES = {
   pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 } as const;
 
-// GET /api/connect/xlsx|pptx?view=…&preset=…|from=…&to=…&person=… — what the page shows.
+// GET /api/connect/xlsx|pptx?view=…&preset=…|from=…&to=…&person=…&lang=ru|en|ko — what the page
+// shows, in the language chosen before downloading.
 export async function GET(request: Request, { params }: RouteContext<"/api/connect/[format]">) {
   const user = await getUserFromRequest(request);
   if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
   if (!canSeeConnect(user)) return Response.json({ error: "forbidden" }, { status: 403 });
-  // Texts in the file follow the user's language.
-  return withLocale(user.locale, async () => {
+  const search = new URL(request.url).searchParams;
+  const lang = search.get("lang");
+  // The whole file (texts, numbers, dates, known data values, its name) is in the chosen
+  // language; without a known one, in the user's.
+  return withExportLocale(isExportLocale(lang) ? lang : user.locale, async () => {
     const { format } = await params;
     if (format !== "xlsx" && format !== "pptx")
       return Response.json({ error: "format" }, { status: 400 });
@@ -31,7 +35,7 @@ export async function GET(request: Request, { params }: RouteContext<"/api/conne
     const links = await connectPeopleLinks();
     // An employee downloads only their own list (see scopeConnectQuery), a manager their TSMs.
     const { query, own } = scopeConnectQuery(
-      parseConnectQuery(Object.fromEntries(new URL(request.url).searchParams), canLead),
+      parseConnectQuery(Object.fromEntries(search), canLead),
       canLead,
       links,
       user.id,

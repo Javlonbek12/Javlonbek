@@ -1,6 +1,7 @@
-import { FileSpreadsheet, Presentation, Upload } from "lucide-react";
+import { Upload } from "lucide-react";
 import Link from "next/link";
 
+import { ConnectDownloads } from "@/components/connect/download-menu";
 import { ExecView } from "@/components/connect/exec-view";
 import { ExecutorsOverview, ExecutorView } from "@/components/connect/executor-view";
 import { ManagerView } from "@/components/connect/manager-view";
@@ -99,16 +100,11 @@ export default async function ConnectPage({ searchParams }: PageProps<"/connect"
                 </Link>
               )}
               {downloadable && (
-                <>
-                  <a href={connectHref("/api/connect/xlsx", q)} download className={menuItem}>
-                    <FileSpreadsheet />
-                    {t("connect.download.xlsx")}
-                  </a>
-                  <a href={connectHref("/api/connect/pptx", q)} download className={menuItem}>
-                    <Presentation />
-                    {t("connect.download.pptx")}
-                  </a>
-                </>
+                // The file language is chosen before downloading (the interface's by default).
+                <ConnectDownloads
+                  xlsx={connectHref("/api/connect/xlsx", q)}
+                  pptx={connectHref("/api/connect/pptx", q)}
+                />
               )}
             </MoreMenu>
           )
