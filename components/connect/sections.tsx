@@ -4,6 +4,7 @@ import { formatDay } from "@/lib/dates";
 import { t } from "@/lib/i18n";
 import { orderStage } from "@/modules/connect/analytics";
 import { formatMoney, formatNumber } from "@/modules/connect/report";
+import type { SalesSummary } from "@/modules/connect/sales";
 import {
   MV_RESULTS,
   STORE_OPEN_QUESTION,
@@ -16,6 +17,7 @@ import { plural } from "@/modules/reports/format";
 import {
   AnswerBar,
   BarList,
+  DataTable,
   DayBars,
   Section,
   StageBar,
@@ -229,6 +231,7 @@ export function OosSection({
           </div>
         )}
       </div>
+      {o.sales && <SalesBlock data={o.sales} />}
       {children}
     </Section>
   );
@@ -328,5 +331,142 @@ export function MvSection({ data, children }: { data: VisitSections["mv"]; child
       )}
       {children}
     </Section>
+  );
+}
+
+// «Продажи после заказа (3 дня)» in the «Автосток (OOS) и заказы» section: were the products of
+// each auto-stock order sold to that store from the order day to the third day after it.
+function SalesBlock({ data }: { data: SalesSummary }) {
+  const s = data;
+  return (
+    <div className="flex flex-col gap-3 border-t pt-4">
+      <div className="flex flex-col gap-0.5">
+        <h3 className="text-sm font-medium">{t("connect.oos.salesTitle")}</h3>
+        <p className="text-xs">{t("connect.oos.salesDate", { date: formatDay(s.to) })}</p>
+        <p className="text-muted-foreground text-xs">{t("connect.oos.salesHint")}</p>
+      </div>
+      {s.orders === 0 ? (
+        <p className="text-muted-foreground text-sm">{t("connect.oos.salesNone")}</p>
+      ) : (
+        <>
+          <StatGrid
+            items={[
+              {
+                key: "checked",
+                label: t("connect.oos.salesChecked"),
+                value: formatNumber(s.checked),
+                note: s.notClosed
+                  ? t("connect.oos.salesNotClosed", { count: formatNumber(s.notClosed) })
+                  : undefined,
+              },
+              {
+                key: "any",
+                label: t("connect.oos.salesAny"),
+                value: pct(s.anyRate),
+                note: formatNumber(s.anySold),
+              },
+              {
+                key: "all",
+                label: t("connect.oos.salesAll"),
+                value: pct(s.allRate),
+                note: `${formatNumber(s.allSold)} · ${t("connect.oos.salesAllNote")}`,
+              },
+              {
+                key: "lines",
+                label: t("connect.oos.salesLines"),
+                value: pct(s.linesRate),
+                note: t("connect.oos.salesOf", {
+                  sold: formatNumber(s.linesSold),
+                  total: formatNumber(s.lines),
+                }),
+              },
+              {
+                key: "packs",
+                label: t("connect.oos.salesPacks"),
+                value: pct(s.packsRate),
+                note: t("connect.oos.salesPacksNote", {
+                  sold: formatNumber(s.packsSold),
+                  total: formatNumber(s.packsOrdered),
+                  raw: formatNumber(s.packsSoldRaw),
+                }),
+              },
+            ]}
+          />
+          {s.byStatus.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <h4 className="text-sm font-medium">{t("connect.oos.salesByStatus")}</h4>
+              <DataTable
+                rows={s.byStatus}
+                rowKey={(r) => r.status || "-"}
+                columns={[
+                  {
+                    key: "status",
+                    header: t("connect.col.status"),
+                    cell: (r) => (
+                      <span style={{ color: deliveryColor(r.status) }}>
+                        {statusLabel(r.status)}
+                      </span>
+                    ),
+                    className: "min-w-52",
+                  },
+                  {
+                    key: "checked",
+                    header: t("connect.col.checked"),
+                    numeric: true,
+                    cell: (r) => formatNumber(r.checked),
+                  },
+                  {
+                    key: "any",
+                    header: t("connect.col.anySold"),
+                    numeric: true,
+                    cell: (r) =>
+                      r.checked ? `${formatNumber(r.anySold)} · ${pct(r.anyRate)}` : "—",
+                  },
+                  {
+                    key: "all",
+                    header: t("connect.col.allSold"),
+                    numeric: true,
+                    cell: (r) =>
+                      r.checked ? `${formatNumber(r.allSold)} · ${pct(r.allRate)}` : "—",
+                  },
+                  {
+                    key: "lines",
+                    header: t("connect.col.linesSold"),
+                    numeric: true,
+                    cell: (r) => `${formatNumber(r.linesSold)} / ${formatNumber(r.lines)}`,
+                  },
+                  {
+                    key: "packs",
+                    header: t("connect.col.packsSold"),
+                    numeric: true,
+                    cell: (r) => `${formatNumber(r.packsSold)} / ${formatNumber(r.packsOrdered)}`,
+                  },
+                  {
+                    key: "notClosed",
+                    header: t("connect.col.notClosed"),
+                    numeric: true,
+                    cell: (r) => formatNumber(r.notClosed),
+                  },
+                ]}
+              />
+            </div>
+          )}
+          {s.topUnsold.length > 0 && (
+            <div className="flex flex-col gap-2 lg:max-w-[50%]">
+              <h4 className="text-sm font-medium">{t("connect.oos.salesTopUnsold")}</h4>
+              <BarList
+                rows={s.topUnsold.map((x) => ({
+                  key: x.sku,
+                  label: x.sku,
+                  value: x.unsold,
+                  color: "#d69e2e",
+                  note: t("connect.oos.salesTopUnsoldNote", { count: formatNumber(x.ordered) }),
+                }))}
+              />
+            </div>
+          )}
+        </>
+      )}
+    </div>
   );
 }

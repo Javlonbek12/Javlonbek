@@ -4,10 +4,11 @@ import { connectPptx } from "@/modules/connect/pptx";
 import {
   buildConnectReport,
   leadScope,
+  loadConnectAccess,
   parseConnectQuery,
   scopeConnectQuery,
 } from "@/modules/connect/report";
-import { canLeadConnect, canSeeConnect, connectPeopleLinks } from "@/modules/connect/service";
+import { canLeadConnect, canSeeConnect } from "@/modules/connect/service";
 import { connectXlsx } from "@/modules/connect/xlsx";
 import { getUserFromRequest } from "@/modules/core/auth/request-user";
 import { getUserToday } from "@/modules/core/settings/service";
@@ -32,18 +33,26 @@ export async function GET(request: Request, { params }: RouteContext<"/api/conne
     if (format !== "xlsx" && format !== "pptx")
       return Response.json({ error: "format" }, { status: 400 });
     const canLead = canLeadConnect(user);
-    const links = await connectPeopleLinks();
+    const access = await loadConnectAccess();
     // An employee downloads only their own list (see scopeConnectQuery), a manager their TSMs.
     const { query, own } = scopeConnectQuery(
       parseConnectQuery(Object.fromEntries(search), canLead),
       canLead,
-      links,
+      access.people,
       user.id,
+      access.positions,
     );
-    if (own && !query.person) return Response.json({ error: "empty" }, { status: 404 });
-    const scope = canLead ? leadScope(user, links) : own ? new Set(own) : null;
+    if (own && !own.length) return Response.json({ error: "empty" }, { status: 404 });
+    const scope = canLead
+      ? leadScope(user, access.people, access.positions)
+      : own
+        ? new Set(own)
+        : null;
     const today = await getUserToday(user.id);
-    const report = await buildConnectReport(query, today, scope);
+    const report = await buildConnectReport(query, today, scope, {
+      hierarchy: access.positions.hierarchy,
+      own: own !== null,
+    });
     if (report.empty || (query.view === "executor" && !report.query.person))
       return Response.json({ error: "empty" }, { status: 404 });
     const body =

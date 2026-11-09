@@ -1,3 +1,4 @@
+import { addDays } from "@/lib/dates";
 import { db } from "@/lib/db";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import type { ConnectKind } from "@/lib/generated/prisma/enums";
@@ -6,7 +7,16 @@ import { logActivity } from "@/modules/core/activity/service";
 import type { Actor } from "@/modules/core/permissions";
 
 import { isTestStore, type Dataset } from "./analytics";
-import { parseWorkbook, personCode, type ParsedRow, type RecordOf } from "./parse";
+import { buildHierarchy } from "./hierarchy";
+import {
+  parseWorkbook,
+  personCode,
+  titleKey,
+  type ParsedRow,
+  type RecordOf,
+  type SaleRecord,
+} from "./parse";
+import { SALES_WINDOW_DAYS } from "./sales";
 import type { VisitData } from "./visits";
 
 type Viewer = Parameters<typeof canUseModule>[0];
@@ -46,8 +56,8 @@ export async function loadDataset(filter: ConnectFilter = {}): Promise<Dataset> 
   return { oos: of("OOS"), orders: of("ORDER"), payments: of("PAYMENT"), visits: of("VISIT") };
 }
 
-// Smart Up visits and the bot's MVs, checks and orders of the days from..to (inclusive), and
-// every TSM of Smart Up's totals.
+// Smart Up visits and the bot's MVs, checks and orders of the days from..to (inclusive), every
+// TSM of Smart Up's totals, and the sales of the stores ordered from in from..to + 3 days.
 export async function loadVisitData(period: { from: string; to: string }): Promise<VisitData> {
   const [rows, people] = await Promise.all([
     db.connectRecord.findMany({
@@ -63,13 +73,49 @@ export async function loadVisitData(period: { from: string; to: string }): Promi
   const real = rows.filter((r) => !isTestStore(r.storeName, r.storeCode));
   const of = <K extends ConnectKind>(kind: K) =>
     real.filter((r) => r.kind === kind).map((r) => r.data as RecordOf<K>);
+  const orders = of("ORDER");
+  const clients = [...new Set(orders.map((o) => o.storeCode))];
+  const [sales, range] = await Promise.all([
+    clients.length
+      ? db.connectRecord.findMany({
+          where: {
+            kind: "SALE",
+            storeCode: { in: clients },
+            day: { gte: period.from, lte: addDays(period.to, SALES_WINDOW_DAYS) },
+          },
+          select: { data: true },
+        })
+      : [],
+    db.connectRecord.aggregate({
+      where: { kind: "SALE" },
+      _min: { day: true },
+      _max: { day: true },
+    }),
+  ]);
   return {
     suVisits: of("SU_VISIT"),
     mv: of("VISIT"),
     oos: of("OOS"),
-    orders: of("ORDER"),
+    orders,
     people: people.map((p) => p.data as RecordOf<"SU_PERSON">),
+    sales: sales.map((s) => s.data as SaleRecord),
+    salesRange:
+      range._min.day && range._max.day ? { from: range._min.day, to: range._max.day } : null,
   };
+}
+
+// The positions of the last employee info uploaded, as a tree (null: none uploaded). In order of
+// their ИД, so ties (a cycle, a code in two positions' zones) are settled the same way each time.
+export async function loadHierarchy() {
+  const rows = await db.connectRecord.findMany({
+    where: { kind: "SU_POSITION" },
+    select: { data: true },
+  });
+  if (!rows.length) return null;
+  const positions = rows
+    .map((r) => r.data as RecordOf<"SU_POSITION">)
+    .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+  return buildHierarchy(positions);
 }
 
 // The ISM payment requests of the months from..to (the ISM block keeps its months).
@@ -85,19 +131,41 @@ export async function connectTotal() {
 // was uploaded.
 export async function connectDataDate(): Promise<string | null> {
   const { _max } = await db.connectRecord.aggregate({
-    where: { kind: { not: "SU_PERSON" } },
+    // People and positions have no day; sales have their own date in the orders block.
+    where: { kind: { notIn: ["SU_PERSON", "SU_POSITION", "SALE"] } },
     _max: { day: true },
   });
   return _max.day;
+}
+
+// What is loaded now, by kind: rows, the days they cover and when they were last written (the
+// upload page).
+export async function connectLoaded() {
+  const groups = await db.connectRecord.groupBy({
+    by: ["kind"],
+    _count: { _all: true },
+    _min: { day: true },
+    _max: { day: true, updatedAt: true },
+  });
+  return groups.map((g) => ({
+    kind: g.kind,
+    count: g._count._all,
+    from: g._min.day || null,
+    to: g._max.day || null,
+    at: g._max.updatedAt,
+  }));
 }
 
 // Which TSM (by its code, «TSM_TST_1»; links saved before 10.11.2026 have the bot's full name
 // «TSM_TST_1 - Имя», which means the same code) belongs to which person in the app, set by the
 // owner or a manager: an employee then sees only their own list, a manager the TSMs of their team.
 const PEOPLE_KEY = "connect.people";
+// Which position of the employee info (by its title) belongs to which person in the app: that
+// person sees every TSM under the position.
+const POSITIONS_KEY = "connect.positions";
 
-export async function connectPeopleLinks(): Promise<Record<string, string>> {
-  const row = await db.systemState.findUnique({ where: { key: PEOPLE_KEY } });
+async function readLinks(key: string): Promise<Record<string, string>> {
+  const row = await db.systemState.findUnique({ where: { key } });
   if (!row) return {};
   try {
     const value: unknown = JSON.parse(row.value);
@@ -107,12 +175,40 @@ export async function connectPeopleLinks(): Promise<Record<string, string>> {
   }
 }
 
+export const connectPeopleLinks = () => readLinks(PEOPLE_KEY);
+export const connectPositionLinks = () => readLinks(POSITIONS_KEY);
+
 // The people a bot name can be linked to: everyone active.
 export async function connectAppUsers() {
   return db.user.findMany({
     where: { deactivatedAt: null },
     select: { id: true, firstName: true, lastName: true },
     orderBy: { firstName: "asc" },
+  });
+}
+
+// Links a position (by its title) to a person in the app, or unlinks it with `userId` null.
+export async function linkConnectPosition(actor: Actor, title: string, userId: string | null) {
+  if (!canLeadConnect(actor)) throw new ConnectError("forbidden");
+  const name = title.replace(/\s+/g, " ").trim().slice(0, 200);
+  if (!name) throw new ConnectError("empty");
+  if (userId && !(await db.user.findFirst({ where: { id: userId, deactivatedAt: null } })))
+    throw new ConnectError("unknown");
+  const links = await connectPositionLinks();
+  for (const key of Object.keys(links)) if (titleKey(key) === titleKey(name)) delete links[key];
+  if (userId) links[name] = userId;
+  const value = JSON.stringify(links);
+  await db.systemState.upsert({
+    where: { key: POSITIONS_KEY },
+    create: { key: POSITIONS_KEY, value },
+    update: { value },
+  });
+  await logActivity({
+    actorId: actor.id,
+    action: "connect.position_linked",
+    entityType: "SystemState",
+    entityId: POSITIONS_KEY,
+    details: { title: name, userId },
   });
 }
 
@@ -161,7 +257,8 @@ export type ImportResult = {
     from: string | null;
     to: string | null;
     test: number;
-    // Smart Up visits: the rows of those days that were there before and were replaced.
+    // Smart Up visits and sales: the rows of those days that were there before and were replaced;
+    // positions: all that were there.
     replaced: number | null;
   }[];
 };
@@ -322,8 +419,55 @@ async function replaceSmartUpVisits(rows: ParsedRow[], importId: string) {
   return { created: byId.size, updated: 0, kept: 0, newer: null, replaced: removed.count };
 }
 
+// The employee info is a snapshot of the CRM: it replaces every position. A sheet without a
+// position changes nothing.
+async function replacePositions(rows: ParsedRow[], importId: string) {
+  const byId = new Map(rows.map((r) => [r.record.id, r.record]));
+  if (!byId.size) return { created: 0, updated: 0, kept: 0, newer: null, replaced: 0 };
+  const [removed] = await db.$transaction([
+    db.connectRecord.deleteMany({ where: { kind: "SU_POSITION" } }),
+    db.connectRecord.createMany({
+      data: [...byId.values()].map((r) => ({
+        kind: "SU_POSITION" as const,
+        externalId: r.id,
+        ...recordFields(r, importId, null),
+      })),
+    }),
+  ]);
+  return { created: byId.size, updated: 0, kept: 0, newer: null, replaced: removed.count };
+}
+
+// A sales report replaces the sales of its days (first to last); rows of the same store, day and
+// SKU are summed.
+async function replaceSales(rows: ParsedRow[], importId: string) {
+  const byId = new Map<string, SaleRecord>();
+  for (const { record } of rows) {
+    const sale = record as SaleRecord;
+    const was = byId.get(sale.id);
+    byId.set(sale.id, was ? { ...was, blocks: was.blocks + sale.blocks } : sale);
+  }
+  const days = [...byId.values()].map((r) => r.day).sort();
+  const from = days[0];
+  const to = days.at(-1);
+  if (!from || !to) return { created: 0, updated: 0, kept: 0, newer: null, replaced: 0 };
+  const data = [...byId.values()].map((r) => ({
+    kind: "SALE" as const,
+    externalId: r.id,
+    ...recordFields(r, importId, null),
+  }));
+  const chunks = [];
+  for (let i = 0; i < data.length; i += 5000) chunks.push(data.slice(i, i + 5000));
+  const [removed] = await db.$transaction([
+    db.connectRecord.deleteMany({ where: { kind: "SALE", day: { gte: from, lte: to } } }),
+    ...chunks.map((chunk) => db.connectRecord.createMany({ data: chunk })),
+  ]);
+  return { created: byId.size, updated: 0, kept: 0, newer: null, replaced: removed.count };
+}
+
 async function saveRows(kind: ConnectKind, rows: ParsedRow[], importId: string) {
   if (kind === "SU_VISIT") return replaceSmartUpVisits(rows, importId);
+  if (kind === "SU_POSITION") return replacePositions(rows, importId);
+  if (kind === "SALE") return replaceSales(rows, importId);
   // The last row wins when an export repeats an ID.
   const byId = new Map(rows.map((r) => [r.record.id, r.record]));
   // Smart Up's people have no dates: a later file always writes them.

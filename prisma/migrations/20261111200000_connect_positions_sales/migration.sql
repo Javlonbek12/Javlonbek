@@ -1,0 +1,3 @@
+-- AlterEnum
+ALTER TYPE "ConnectKind" ADD VALUE 'SU_POSITION';
+ALTER TYPE "ConnectKind" ADD VALUE 'SALE';

@@ -6,7 +6,8 @@ import type { ConnectKind } from "@/lib/generated/prisma/enums";
 // the format is recognised by its columns, whatever the sheet or file is called:
 // - the bot's Russian exports: stock checks (OOS), express orders, ISM payment requests, visits;
 // - the bot's English exports: Market Visit, OOS check, OOS orders (mapped to the same records);
-// - Smart Up: the visit detail (plans and visits) and the totals per TSM (names and zones).
+// - Smart Up: the visit detail (plans and visits) and the totals per TSM (names and zones);
+// - the CRM's employee info (positions and who reports to whom) and its sales report.
 
 export type Cell = string | number | null;
 
@@ -114,13 +115,35 @@ export type SuPersonRecord = Base & {
   organization: string | null;
 };
 
+// A position of the CRM's employee info: `id` is its ИД, `title` the position («BDM 99», a TSM
+// code), `user` the person in it, `manager` the title of the position above it.
+export type PositionRecord = Base & {
+  title: string;
+  user: string | null;
+  zones: string[];
+  roles: string[];
+  manager: string | null;
+  created: string | null;
+  status: string | null;
+};
+
+// One SKU sold to a store on a delivery day (the CRM's sales report): `storeCode` is the client ID,
+// `city` the organization, `channel` the POS channel. The quantity is in blocks of 10 packs;
+// rows of the same store, day and SKU are summed when saved.
+export type SaleRecord = Base & {
+  sku: string;
+  blocks: number;
+};
+
 export type ParsedRow =
   | { kind: "OOS"; record: OosRecord }
   | { kind: "ORDER"; record: OrderRecord }
   | { kind: "PAYMENT"; record: PaymentRecord }
   | { kind: "VISIT"; record: VisitRecord }
   | { kind: "SU_VISIT"; record: SuVisitRecord }
-  | { kind: "SU_PERSON"; record: SuPersonRecord };
+  | { kind: "SU_PERSON"; record: SuPersonRecord }
+  | { kind: "SU_POSITION"; record: PositionRecord }
+  | { kind: "SALE"; record: SaleRecord };
 
 export type RecordOf<K extends ConnectKind> = Extract<ParsedRow, { kind: K }>["record"];
 
@@ -185,6 +208,11 @@ export function personCode(person: string | null | undefined): string | null {
   return person.split(" - ")[0]!.replace(/\s+/g, " ").trim() || null;
 }
 
+// A position title or TSM code compared without case, repeated spaces and with «_» as a space: the
+// employee info may write «Bdm test» for «BDM TEST» and «BUM_TEST» for «BUM TEST».
+export const titleKey = (title: string) =>
+  title.toLowerCase().replace(/_/g, " ").replace(/\s+/g, " ").trim();
+
 // The sheet formats: the bot's Russian exports (one per kind), its English exports and Smart Up's.
 export type SheetFormat = ConnectKind | "VISIT_EN" | "OOS_EN" | "ORDER_EN";
 type RuKind = "OOS" | "ORDER" | "PAYMENT" | "VISIT";
@@ -196,6 +224,8 @@ const KIND_OF: Record<SheetFormat, ConnectKind> = {
   VISIT: "VISIT",
   SU_VISIT: "SU_VISIT",
   SU_PERSON: "SU_PERSON",
+  SU_POSITION: "SU_POSITION",
+  SALE: "SALE",
   VISIT_EN: "VISIT",
   OOS_EN: "OOS",
   ORDER_EN: "ORDER",
@@ -210,6 +240,8 @@ export function detectFormat(headers: string[]): SheetFormat | null {
   if (has("Шаблон") && has("Статус проверки")) return "VISIT";
   if (has("Visit Plan Date") && has("Fact Visit Date") && has("Client ID")) return "SU_VISIT";
   if (has("Name of Employee") && has("Planned Visits")) return "SU_PERSON";
+  if (has("Название") && has("Руководитель") && has("Рабочие зоны")) return "SU_POSITION";
+  if (has("ИД клиента") && has("ТМЦ") && has("Количество продажи")) return "SALE";
   if (has("ID visit") && has("Шаблон")) return "VISIT_EN";
   if (has("ID Check") && has("OOS issue")) return "OOS_EN";
   if (has("Order Number") && has("Amount (UZS)")) return "ORDER_EN";
@@ -255,6 +287,10 @@ export function parseRow(format: SheetFormat, headers: string[], cells: Cell[]):
       return parseSmartUpVisit(headers, cells);
     case "SU_PERSON":
       return parseSmartUpPerson(headers, cells);
+    case "SU_POSITION":
+      return parsePosition(headers, cells);
+    case "SALE":
+      return parseSale(headers, cells);
     default:
       return parseRussianRow(format, headers, cells);
   }
@@ -277,10 +313,10 @@ function questionnaire(headers: string[], cells: Cell[]) {
   };
 }
 
-const splitList = (text: string | null) =>
+const splitList = (text: string | null, separator = ";") =>
   text
     ? text
-        .split(";")
+        .split(separator)
         .map((s) => s.trim())
         .filter(Boolean)
     : [];
@@ -450,6 +486,67 @@ function parseSmartUpPerson(headers: string[], cells: Cell[]): ParsedRow | null 
     },
   };
 }
+
+// The CRM's employee info: one row per position. A row without a title is not a position.
+function parsePosition(headers: string[], cells: Cell[]): ParsedRow | null {
+  const get = getter(headers, cells);
+  const title = str(get("Название"));
+  if (!title) return null;
+  return {
+    kind: "SU_POSITION",
+    record: {
+      id: str(get("ИД")) ?? `title|${title}`,
+      storeCode: "",
+      storeName: "",
+      city: null,
+      channel: null,
+      at: "",
+      day: "",
+      month: "",
+      person: null,
+      title,
+      user: str(get("Пользователь")),
+      zones: splitList(str(get("Рабочие зоны")), ","),
+      roles: splitList(str(get("Роли")), ","),
+      manager: str(get("Руководитель")),
+      created: parseDateTime(get("Дата создания")),
+      status: str(get("Статус")),
+    },
+  };
+}
+
+// The CRM's sales report: the store (client ID), the delivery day, the SKU and the blocks sold.
+// The ID is the store, the day and the SKU (rows repeating it are summed when saved).
+function parseSale(headers: string[], cells: Cell[]): ParsedRow | null {
+  const get = getter(headers, cells);
+  const storeCode = str(get("ИД клиента"));
+  const day = parseDateTime(get("Дата доставки"))?.slice(0, 10) ?? null;
+  const sku = str(get("ТМЦ"));
+  const blocks = num(get("Количество продажи"));
+  if (!storeCode || !day || !sku || blocks === null) return null;
+  // «ХЮ:(TSM;DR) Основной канал / POS channel»: the prefix may change.
+  const channel = headers.find((h) => /channel/i.test(h));
+  return {
+    kind: "SALE",
+    record: {
+      id: `${storeCode}|${day}|${skuKey(sku)}`,
+      storeCode,
+      storeName: str(get("Клиент")) ?? storeCode,
+      city: str(get("Организация")),
+      channel: channel ? str(get(channel)) : null,
+      at: `${day}T00:00`,
+      day,
+      month: day.slice(0, 7),
+      person: null,
+      sku,
+      blocks,
+    },
+  };
+}
+
+// A product name compared without case and repeated spaces («Esse Change 1» = «ESSE  Change 1»):
+// the sales report and the bot's order columns write some names differently.
+export const skuKey = (name: string) => name.toLowerCase().replace(/\s+/g, " ").trim();
 
 // The bot's Russian exports.
 function parseRussianRow(kind: RuKind, headers: string[], cells: Cell[]): ParsedRow | null {

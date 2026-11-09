@@ -9,10 +9,15 @@ import { ConfirmAction } from "@/components/ui/confirm-action";
 import { PageHeader } from "@/components/ui/page-header";
 import type { ConnectKind } from "@/lib/generated/prisma/enums";
 import { dateFormat, t } from "@/lib/i18n";
-import { canLeadConnect, connectTotal, lastImports } from "@/modules/connect/service";
+import {
+  canLeadConnect,
+  connectLoaded,
+  connectTotal,
+  lastImports,
+} from "@/modules/connect/service";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getSettings } from "@/modules/core/settings/service";
-import { formatRange } from "@/modules/reports/format";
+import { formatRange, plural } from "@/modules/reports/format";
 import { todayInTimezone } from "@/lib/dates";
 
 import { clearConnectAction, importConnectFileAction } from "../actions";
@@ -25,19 +30,22 @@ const KINDS = [
   "OOS",
   "ORDER",
   "PAYMENT",
+  "SU_POSITION",
+  "SALE",
 ] as const satisfies ConnectKind[];
 
-// Upload the Connect bot's and Smart Up's Excel exports; recent uploads and (for the owner) a full
-// reset.
+// Upload the Connect bot's and Smart Up's Excel exports (and the CRM's employee info and sales);
+// what is loaded now, recent uploads and (for the owner) a full reset.
 export default async function ConnectImportPage({ searchParams }: PageProps<"/connect/import">) {
   const user = await requireUser();
   if (!canLeadConnect(user)) redirect("/connect");
   const params = await searchParams;
   const error = ERRORS.find((e) => e === params.error);
   const done = typeof params.done === "string" ? params.done.split("\n").filter(Boolean) : [];
-  const [imports, total, { timezone }] = await Promise.all([
+  const [imports, total, loaded, { timezone }] = await Promise.all([
     lastImports(),
     connectTotal(),
+    connectLoaded(),
     getSettings(user.id),
   ]);
   // Times in the viewer's time zone, not the server's.
@@ -83,27 +91,43 @@ export default async function ConnectImportPage({ searchParams }: PageProps<"/co
                 replaced = "",
               ] = line.split("|");
               const range = from && to ? formatRange(from, to, today) : null;
+              // Under the line: the days (sales have them in the line), the rows replaced, test
+              // stores left out.
+              const notes = [
+                range &&
+                  kind !== "SALE" &&
+                  (replaced
+                    ? t("connect.import.replaced", { range })
+                    : t("connect.import.range", { range })),
+                replaced &&
+                  replaced !== "0" &&
+                  t("connect.import.replacedRows", { count: replaced }),
+                test !== "0" && t("connect.import.testRows", { count: test }),
+              ].filter(Boolean);
               return (
                 <li key={line}>
-                  {kind === "SU_VISIT"
-                    ? t("connect.import.resultSmartUp", { file, kind: kindName(kind), created })
-                    : t("connect.import.result", { file, kind: kindName(kind), created, updated })}
+                  {kind === "SU_POSITION"
+                    ? t("connect.import.resultPositions", {
+                        file,
+                        count: plural("connect.words.positions", Number(created)),
+                      })
+                    : kind === "SALE"
+                      ? t("connect.import.resultSales", {
+                          file,
+                          count: plural("connect.words.rows", Number(created)),
+                          range: range ?? "—",
+                        })
+                      : kind === "SU_VISIT"
+                        ? t("connect.import.resultSmartUp", { file, kind: kindName(kind), created })
+                        : t("connect.import.result", {
+                            file,
+                            kind: kindName(kind),
+                            created,
+                            updated,
+                          })}
                   {skipped !== "0" && `; ${t("connect.import.skipped", { count: skipped })}`}
-                  {(range || test !== "0") && (
-                    <span className="text-muted-foreground block text-xs">
-                      {[
-                        range &&
-                          (replaced
-                            ? t("connect.import.replaced", { range })
-                            : t("connect.import.range", { range })),
-                        replaced &&
-                          replaced !== "0" &&
-                          t("connect.import.replacedRows", { count: replaced }),
-                        test !== "0" && t("connect.import.testRows", { count: test }),
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </span>
+                  {notes.length > 0 && (
+                    <span className="text-muted-foreground block text-xs">{notes.join(" · ")}</span>
                   )}
                   {newer && (
                     <span className="mt-0.5 block font-medium text-amber-700 dark:text-amber-300">
@@ -133,6 +157,34 @@ export default async function ConnectImportPage({ searchParams }: PageProps<"/co
           ))}
         </ul>
         <ConnectUploadForm action={importConnectFileAction} />
+      </Card>
+
+      <Card className="gap-3">
+        <CardTitle>{t("connect.import.loaded")}</CardTitle>
+        {loaded.length === 0 ? (
+          <p className="text-muted-foreground text-sm">{t("connect.import.loadedNone")}</p>
+        ) : (
+          <ul className="flex flex-col divide-y text-sm">
+            {KINDS.flatMap((kind) => loaded.filter((l) => l.kind === kind)).map((l) => (
+              <li key={l.kind} className="flex flex-col gap-0.5 py-2">
+                <span>{kindName(l.kind)}</span>
+                <span className="text-muted-foreground text-xs">
+                  {[
+                    l.kind === "SU_POSITION"
+                      ? t("connect.import.loadedPositions", { count: l.count })
+                      : t("connect.import.loadedRows", { count: l.count }),
+                    l.from &&
+                      l.to &&
+                      t("connect.import.loadedRange", { range: formatRange(l.from, l.to, today) }),
+                    l.at && t("connect.import.loadedAt", { date: when.format(l.at) }),
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </Card>
 
       <Card className="gap-3">

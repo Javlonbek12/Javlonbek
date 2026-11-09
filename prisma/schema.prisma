@@ -1048,8 +1048,8 @@ model ContentComment {
 
 // ============================================================
 // Connect analytics: exports of the Connect bot (stock checks, express orders,
-// ISM payment requests, market visits) and of the Smart Up CRM (visit plans and visits),
-// uploaded as Excel and analysed on three levels.
+// ISM payment requests, market visits) and of the Smart Up CRM (visit plans and visits,
+// positions and who reports to whom, sales), uploaded as Excel and analysed on three levels.
 // ============================================================
 
 enum ConnectKind {
@@ -1060,10 +1060,16 @@ enum ConnectKind {
   // Smart Up: one planned or made visit (detail sheet) and one TSM (totals sheet: name, zone).
   SU_VISIT
   SU_PERSON
+  // The CRM's employee info: one position (ID — its ИД); every upload replaces all of them.
+  SU_POSITION
+  // The CRM's sales: one store, delivery day and SKU (ID — store|day|SKU); an upload replaces the
+  // sales of its days.
+  SALE
 }
 
 // One row of an export. Uploading a newer export updates the rows with the same ID; a Smart Up
-// detail sheet replaces the visits of its days instead.
+// detail sheet replaces the visits of its days instead, the employee info all positions and the
+// sales report the sales of its days.
 model ConnectRecord {
   id         String      @id @default(cuid())
   kind       ConnectKind
