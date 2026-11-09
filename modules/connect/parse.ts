@@ -2,8 +2,11 @@ import ExcelJS from "exceljs";
 
 import type { ConnectKind } from "@/lib/generated/prisma/enums";
 
-// Reads the Connect bot's Excel exports. Each export is one sheet with a header row; the kind is
-// recognised by its columns: stock checks (OOS), express orders, ISM payment requests, market visits.
+// Reads the Connect bot's and Smart Up's Excel exports. Each export is a sheet with a header row;
+// the format is recognised by its columns, whatever the sheet or file is called:
+// - the bot's Russian exports: stock checks (OOS), express orders, ISM payment requests, visits;
+// - the bot's English exports: Market Visit, OOS check, OOS orders (mapped to the same records);
+// - Smart Up: the visit detail (plans and visits) and the totals per TSM (names and zones).
 
 export type Cell = string | number | null;
 
@@ -86,13 +89,38 @@ export type VisitRecord = Base & {
   problemList: string[];
   photos: number;
   answers: { q: string; a: string }[];
+  // The questions of the questionnaire left blank (rows saved before 10.11.2026 don't have it).
+  unanswered?: string[];
+};
+
+// A Smart Up visit: planned (has a plan date) or not, made (has a fact date) or not. `person` is
+// the TSM code, `city` the working zone, `day` the fact date or else the plan date.
+export type SuVisitRecord = Base & {
+  planned: boolean;
+  planDay: string | null;
+  factDay: string | null;
+  // "HH:mm"
+  start: string | null;
+  finish: string | null;
+  backwall: string | null;
+  comment: string | null;
+  organization: string | null;
+};
+
+// A TSM from Smart Up's totals: `id` and `person` are the code.
+export type SuPersonRecord = Base & {
+  name: string | null;
+  zone: string | null;
+  organization: string | null;
 };
 
 export type ParsedRow =
   | { kind: "OOS"; record: OosRecord }
   | { kind: "ORDER"; record: OrderRecord }
   | { kind: "PAYMENT"; record: PaymentRecord }
-  | { kind: "VISIT"; record: VisitRecord };
+  | { kind: "VISIT"; record: VisitRecord }
+  | { kind: "SU_VISIT"; record: SuVisitRecord }
+  | { kind: "SU_PERSON"; record: SuPersonRecord };
 
 export type RecordOf<K extends ConnectKind> = Extract<ParsedRow, { kind: K }>["record"];
 
@@ -138,23 +166,68 @@ const num = (value: Cell) => {
 const str = (value: Cell) => (value === null ? null : String(value));
 const yes = (value: Cell) => value === "Да";
 
+// "HH:mm:ss", "1899-12-30 11:52" (a time cell read as a date) or a fraction of a day → "HH:mm".
+export function parseTime(value: Cell): string | null {
+  if (value === null) return null;
+  if (typeof value === "number") {
+    if (value < 0 || value >= 1) return null;
+    const minutes = Math.round(value * 1440) % 1440;
+    return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+  }
+  const m = /(\d{1,2}):(\d{2})/.exec(String(value));
+  return m ? `${m[1]!.padStart(2, "0")}:${m[2]}` : null;
+}
+
+// The bot writes people as "TSM_TST_1 - Name"; Smart Up and the analytics use the code before
+// " - " ("KA / TSM_TST_2 - Name" → "KA / TSM_TST_2").
+export function personCode(person: string | null | undefined): string | null {
+  if (!person) return null;
+  return person.split(" - ")[0]!.replace(/\s+/g, " ").trim() || null;
+}
+
+// The sheet formats: the bot's Russian exports (one per kind), its English exports and Smart Up's.
+export type SheetFormat = ConnectKind | "VISIT_EN" | "OOS_EN" | "ORDER_EN";
+type RuKind = "OOS" | "ORDER" | "PAYMENT" | "VISIT";
+
+const KIND_OF: Record<SheetFormat, ConnectKind> = {
+  OOS: "OOS",
+  ORDER: "ORDER",
+  PAYMENT: "PAYMENT",
+  VISIT: "VISIT",
+  SU_VISIT: "SU_VISIT",
+  SU_PERSON: "SU_PERSON",
+  VISIT_EN: "VISIT",
+  OOS_EN: "OOS",
+  ORDER_EN: "ORDER",
+};
+
 // Which export a header row belongs to.
-export function detectKind(headers: string[]): ConnectKind | null {
+export function detectFormat(headers: string[]): SheetFormat | null {
   const has = (name: string) => headers.includes(name);
   if (has("Нет в наличии, поз.")) return "OOS";
   if (has("Номер заказа") && has("Тип заказа")) return "ORDER";
   if (has("ID заявки")) return "PAYMENT";
   if (has("Шаблон") && has("Статус проверки")) return "VISIT";
+  if (has("Visit Plan Date") && has("Fact Visit Date") && has("Client ID")) return "SU_VISIT";
+  if (has("Name of Employee") && has("Planned Visits")) return "SU_PERSON";
+  if (has("ID visit") && has("Шаблон")) return "VISIT_EN";
+  if (has("ID Check") && has("OOS issue")) return "OOS_EN";
+  if (has("Order Number") && has("Amount (UZS)")) return "ORDER_EN";
   return null;
 }
 
-const ID_COLUMN: Record<ConnectKind, string> = {
+export function detectKind(headers: string[]): ConnectKind | null {
+  const format = detectFormat(headers);
+  return format ? KIND_OF[format] : null;
+}
+
+const ID_COLUMN: Record<RuKind, string> = {
   OOS: "ID проверки",
   ORDER: "Номер заказа",
   PAYMENT: "ID заявки",
   VISIT: "ID проверки",
 };
-const DATE_COLUMN: Record<ConnectKind, string> = {
+const DATE_COLUMN: Record<RuKind, string> = {
   OOS: "Дата проверки",
   ORDER: "Дата заказа",
   PAYMENT: "Дата заявки",
@@ -171,8 +244,215 @@ function between(headers: string[], after: string, before?: string) {
     .filter((c) => c.index > start && c.index < (end < 0 ? headers.length : end) && c.name);
 }
 
-// One row → a typed record, or null when it has no ID, store or date.
-export function parseRow(kind: ConnectKind, headers: string[], cells: Cell[]): ParsedRow | null {
+// One row → a typed record, or null when it has no ID, store or date (no code for a TSM).
+export function parseRow(format: SheetFormat, headers: string[], cells: Cell[]): ParsedRow | null {
+  switch (format) {
+    case "VISIT_EN":
+    case "OOS_EN":
+    case "ORDER_EN":
+      return parseEnglishRow(format, headers, cells);
+    case "SU_VISIT":
+      return parseSmartUpVisit(headers, cells);
+    case "SU_PERSON":
+      return parseSmartUpPerson(headers, cells);
+    default:
+      return parseRussianRow(format, headers, cells);
+  }
+}
+
+const getter = (headers: string[], cells: Cell[]) => (name: string) => {
+  const index = headers.indexOf(name);
+  return index < 0 ? null : (cells[index] ?? null);
+};
+
+// The question columns after «Шаблон»: the answers given, and the questions left blank.
+function questionnaire(headers: string[], cells: Cell[]) {
+  const columns = between(headers, "Шаблон").map((c) => ({
+    q: c.name,
+    a: str(cells[c.index] ?? null),
+  }));
+  return {
+    answers: columns.filter((c): c is { q: string; a: string } => c.a !== null),
+    unanswered: columns.filter((c) => c.a === null).map((c) => c.q),
+  };
+}
+
+const splitList = (text: string | null) =>
+  text
+    ? text
+        .split(";")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : [];
+
+const MONTH = /^\d{4}-\d{2}$/;
+
+// The bot's English exports: Market Visit, OOS check and OOS orders. The store is the Client ID,
+// the region goes where the Russian exports have the city; fields they lack are empty.
+function parseEnglishRow(
+  format: "VISIT_EN" | "OOS_EN" | "ORDER_EN",
+  headers: string[],
+  cells: Cell[],
+): ParsedRow | null {
+  const get = getter(headers, cells);
+  const columns = {
+    VISIT_EN: ["ID visit", "Date of start"],
+    OOS_EN: ["ID Check", "Date of check"],
+    ORDER_EN: ["Order Number", "Date of creation"],
+  } as const;
+  const [idColumn, dateColumn] = columns[format];
+  const id = str(get(idColumn));
+  const at = parseDateTime(get(dateColumn));
+  const storeCode = str(get("Client ID"));
+  if (!id || !at || !storeCode) return null;
+  const month = str(get("Month"));
+  const base: Omit<Base, "person"> = {
+    id,
+    storeCode,
+    storeName: str(get("Client")) ?? storeCode,
+    city: str(get("Region")),
+    channel: null,
+    at,
+    day: at.slice(0, 10),
+    month: month && MONTH.test(month) ? month : at.slice(0, 7),
+  };
+
+  if (format === "OOS_EN") {
+    const skus: Record<string, OosStatus> = {};
+    for (const c of between(headers, "Delivery status")) {
+      const status = OOS_STATUS[String(cells[c.index] ?? "")];
+      if (status) skus[c.name] = status;
+    }
+    return {
+      kind: "OOS",
+      record: {
+        ...base,
+        person: str(get("Employee who completed the OOS")),
+        missing: num(get("OOS issue")) ?? 0,
+        low: num(get("Not enough issue")) ?? 0,
+        orderCreated: yes(get("Order Created")),
+        orderNo: str(get("Created Order Number")),
+        delivery: str(get("Delivery status")),
+        skus,
+      },
+    };
+  }
+  if (format === "ORDER_EN") {
+    const skus: Record<string, number> = {};
+    for (const c of between(headers, "Amount (UZS)")) {
+      const qty = num(cells[c.index] ?? null);
+      if (qty) skus[c.name] = qty;
+    }
+    return {
+      kind: "ORDER",
+      record: {
+        ...base,
+        person: str(get("Created by")),
+        // The Russian export's «Статус заказа» is where the delivery stands; here that is
+        // «Delivery Status» («Order Status» only says it was sent).
+        status: str(get("Delivery Status")) ?? str(get("Order Status")),
+        express: false,
+        payment: null,
+        sourceCheck: str(get("ID check base")),
+        storeAnswer: null,
+        storeAnswerAt: null,
+        agent: null,
+        agentAnswer: null,
+        deliveredAt: null,
+        outcome: null,
+        daysToDeliver: null,
+        positions: num(get("Order assortment count")) ?? 0,
+        adjusted: false,
+        packs: num(get("Total order (packs)")) ?? 0,
+        sum: num(get("Amount (UZS)")) ?? 0,
+        skus,
+      },
+    };
+  }
+  const photos = ["Фото 1", "Фото 2", "Фото 3", "Фото 4", "Фото 5"].filter((n) => get(n)).length;
+  return {
+    kind: "VISIT",
+    record: {
+      ...base,
+      person:
+        str(get("Employee who completed the questionnaire")) ??
+        str(get("Employee who received task")),
+      template: str(get("Шаблон")),
+      status: str(get("Status")),
+      percent: num(get("Completion Rate of questions")),
+      creator: str(get("Employee who received task")),
+      doneAt: parseDateTime(get("Date of completion")),
+      taskStatus: str(get("Assigned task status")),
+      problems: num(get("Problematic Answers")) ?? 0,
+      problemList: splitList(str(get("Frequent Problematic Questions"))),
+      photos,
+      ...questionnaire(headers, cells),
+    },
+  };
+}
+
+// Smart Up's visit detail: a planned visit has a plan date; a made one a fact date, a visit ID
+// and its times. A plan not made yet gets the ID plan|<employee>|<client>|<plan day>.
+function parseSmartUpVisit(headers: string[], cells: Cell[]): ParsedRow | null {
+  const get = getter(headers, cells);
+  const storeCode = str(get("Client ID"));
+  const person = personCode(str(get("Employee")));
+  const planDay = parseDateTime(get("Visit Plan Date"))?.slice(0, 10) ?? null;
+  const factDay = parseDateTime(get("Fact Visit Date"))?.slice(0, 10) ?? null;
+  const day = factDay ?? planDay;
+  if (!storeCode || !person || !day) return null;
+  const start = factDay ? parseTime(get("Start of visit time")) : null;
+  return {
+    kind: "SU_VISIT",
+    record: {
+      id: str(get("Visit ID")) ?? `plan|${person}|${storeCode}|${planDay}`,
+      storeCode,
+      storeName: str(get("Client")) ?? storeCode,
+      city: str(get("Working Zone")),
+      channel: null,
+      at: `${day}T${start ?? "00:00"}`,
+      day,
+      month: day.slice(0, 7),
+      person,
+      planned: planDay !== null,
+      planDay,
+      factDay,
+      start,
+      finish: factDay ? parseTime(get("Finish the visit time")) : null,
+      backwall: str(get("Installed Backwall type")),
+      comment: str(get("Visit Comment")),
+      organization: str(get("Organization")),
+    },
+  };
+}
+
+// Smart Up's totals: only the TSM's name, zone and organization are kept (the numbers are
+// counted again from the detail). The «Итого» row is not a person.
+function parseSmartUpPerson(headers: string[], cells: Cell[]): ParsedRow | null {
+  const get = getter(headers, cells);
+  const code = personCode(str(get("Employee")));
+  if (!code || /^(итого|total)$/i.test(code)) return null;
+  return {
+    kind: "SU_PERSON",
+    record: {
+      id: code,
+      storeCode: "",
+      storeName: "",
+      city: null,
+      channel: null,
+      at: "",
+      day: "",
+      month: "",
+      person: code,
+      name: str(get("Name of Employee")),
+      zone: str(get("Working Zone")),
+      organization: str(get("Organization")),
+    },
+  };
+}
+
+// The bot's Russian exports.
+function parseRussianRow(kind: RuKind, headers: string[], cells: Cell[]): ParsedRow | null {
   const get = (name: string): Cell => {
     const index = headers.indexOf(name);
     return index < 0 ? null : (cells[index] ?? null);
@@ -271,7 +551,6 @@ export function parseRow(kind: ConnectKind, headers: string[], cells: Cell[]): P
       },
     };
   }
-  const problemText = str(get("Проблемные вопросы"));
   const photos = ["Фото 1", "Фото 2", "Фото 3", "Фото 4", "Фото 5"].filter((n) => get(n)).length;
   return {
     kind,
@@ -285,44 +564,44 @@ export function parseRow(kind: ConnectKind, headers: string[], cells: Cell[]): P
       doneAt: at2("Дата выполнения"),
       taskStatus: str(get("Статус задачи")),
       problems: num(get("Проблемных вопросов")) ?? 0,
-      problemList: problemText
-        ? problemText
-            .split(";")
-            .map((s) => s.trim())
-            .filter(Boolean)
-        : [],
+      problemList: splitList(str(get("Проблемные вопросы"))),
       photos,
-      answers: between(headers, "Шаблон")
-        .map((c) => ({ q: c.name, a: str(cells[c.index] ?? null) }))
-        .filter((c): c is { q: string; a: string } => c.a !== null),
+      ...questionnaire(headers, cells),
     },
   };
 }
 
 export type ParsedSheet = { kind: ConnectKind; rows: ParsedRow[]; skipped: number };
 
-// All recognised sheets of a workbook; sheets of unknown shape are left out.
+// All recognised sheets of a workbook; sheets of unknown shape are left out. A header row repeated
+// in row 2 (Smart Up's totals have a two-row header) is not data.
 export async function parseWorkbook(buffer: Buffer): Promise<ParsedSheet[]> {
   const book = new ExcelJS.Workbook();
   await book.xlsx.load(buffer as unknown as ArrayBuffer);
   const sheets: ParsedSheet[] = [];
   for (const ws of book.worksheets) {
-    const headers = (ws.getRow(1).values as ExcelJS.CellValue[])
-      .slice(1)
-      .map((v) => String(cellValue(v) ?? "").trim());
-    const kind = detectKind(headers);
-    if (!kind) continue;
+    const width = ws.getRow(1).cellCount;
+    const cellsOf = (r: number) => {
+      const row = ws.getRow(r);
+      return Array.from({ length: width }, (_, i) => cellValue(row.getCell(i + 1).value));
+    };
+    const headers = cellsOf(1).map((v) => String(v ?? "").trim());
+    const format = detectFormat(headers);
+    if (!format) continue;
+    const second = cellsOf(2).map((v) => String(v ?? "").trim());
+    const first = second.join("|") === headers.join("|") ? 3 : 2;
     const rows: ParsedRow[] = [];
     let skipped = 0;
-    for (let r = 2; r <= ws.rowCount; r++) {
-      const values = ws.getRow(r).values as ExcelJS.CellValue[];
-      const cells = headers.map((_, i) => cellValue(values[i + 1]));
+    for (let r = first; r <= ws.rowCount; r++) {
+      const cells = cellsOf(r);
       if (cells.every((c) => c === null)) continue;
-      const row = parseRow(kind, headers, cells);
+      // A totals row («Итого») is not data and not a skipped row either.
+      if (cells.some((c) => typeof c === "string" && /^(итого|total)$/i.test(c))) continue;
+      const row = parseRow(format, headers, cells);
       if (row) rows.push(row);
       else skipped++;
     }
-    sheets.push({ kind, rows, skipped });
+    sheets.push({ kind: KIND_OF[format], rows, skipped });
   }
   return sheets;
 }

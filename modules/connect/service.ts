@@ -6,7 +6,8 @@ import { logActivity } from "@/modules/core/activity/service";
 import type { Actor } from "@/modules/core/permissions";
 
 import { isTestStore, type Dataset } from "./analytics";
-import { parseWorkbook, type ParsedRow, type RecordOf } from "./parse";
+import { parseWorkbook, personCode, type ParsedRow, type RecordOf } from "./parse";
+import type { VisitData } from "./visits";
 
 type Viewer = Parameters<typeof canUseModule>[0];
 
@@ -27,10 +28,11 @@ export type ConnectFilter = { from?: string; to?: string; city?: string; channel
 
 type Row = { kind: ConnectKind; data: unknown; storeName: string; storeCode: string };
 
-// The records of the period (months from..to, inclusive), split by kind.
+// The bot's records of the period (months from..to, inclusive), split by kind (the reports page).
 export async function loadDataset(filter: ConnectFilter = {}): Promise<Dataset> {
   const rows: Row[] = await db.connectRecord.findMany({
     where: {
+      kind: { in: ["OOS", "ORDER", "PAYMENT", "VISIT"] },
       month: { gte: filter.from || undefined, lte: filter.to || undefined },
       city: filter.city || undefined,
       channel: filter.channel || undefined,
@@ -44,33 +46,54 @@ export async function loadDataset(filter: ConnectFilter = {}): Promise<Dataset> 
   return { oos: of("OOS"), orders: of("ORDER"), payments: of("PAYMENT"), visits: of("VISIT") };
 }
 
-// What the filters can offer: months with data, cities and channels.
-export async function connectFacets() {
-  const [months, cities, channels, total] = await Promise.all([
-    db.connectRecord.findMany({ distinct: ["month"], select: { month: true } }),
-    db.connectRecord.findMany({ distinct: ["city"], select: { city: true } }),
-    db.connectRecord.findMany({ distinct: ["channel"], select: { channel: true } }),
-    db.connectRecord.count(),
+// Smart Up visits and the bot's MVs, checks and orders of the days from..to (inclusive), and
+// every TSM of Smart Up's totals.
+export async function loadVisitData(period: { from: string; to: string }): Promise<VisitData> {
+  const [rows, people] = await Promise.all([
+    db.connectRecord.findMany({
+      where: {
+        kind: { in: ["SU_VISIT", "VISIT", "OOS", "ORDER"] },
+        day: { gte: period.from, lte: period.to },
+      },
+      select: { kind: true, data: true, storeName: true, storeCode: true },
+      orderBy: { day: "asc" },
+    }),
+    db.connectRecord.findMany({ where: { kind: "SU_PERSON" }, select: { data: true } }),
   ]);
-  const sorted = (values: (string | null)[]) =>
-    values.filter((v): v is string => Boolean(v)).sort((a, b) => a.localeCompare(b));
+  const real = rows.filter((r) => !isTestStore(r.storeName, r.storeCode));
+  const of = <K extends ConnectKind>(kind: K) =>
+    real.filter((r) => r.kind === kind).map((r) => r.data as RecordOf<K>);
   return {
-    months: sorted(months.map((m) => m.month)),
-    cities: sorted(cities.map((c) => c.city)),
-    channels: sorted(channels.map((c) => c.channel)),
-    total,
+    suVisits: of("SU_VISIT"),
+    mv: of("VISIT"),
+    oos: of("OOS"),
+    orders: of("ORDER"),
+    people: people.map((p) => p.data as RecordOf<"SU_PERSON">),
   };
+}
+
+// The ISM payment requests of the months from..to (the ISM block keeps its months).
+export async function loadPayments(months: { from: string; to: string }) {
+  return (await loadDataset(months)).payments;
+}
+
+export async function connectTotal() {
+  return db.connectRecord.count();
 }
 
 // How fresh the data is: the latest day any record is about («Данные по 7 нояб.»), not when it
 // was uploaded.
 export async function connectDataDate(): Promise<string | null> {
-  const { _max } = await db.connectRecord.aggregate({ _max: { day: true } });
+  const { _max } = await db.connectRecord.aggregate({
+    where: { kind: { not: "SU_PERSON" } },
+    _max: { day: true },
+  });
   return _max.day;
 }
 
-// Which bot name (as the exports write people) belongs to which person in the app, set by the
-// owner or a manager: an employee then sees only their own list.
+// Which TSM (by its code, «TSM_TST_1»; links saved before 10.11.2026 have the bot's full name
+// «TSM_TST_1 - Имя», which means the same code) belongs to which person in the app, set by the
+// owner or a manager: an employee then sees only their own list, a manager the TSMs of their team.
 const PEOPLE_KEY = "connect.people";
 
 export async function connectPeopleLinks(): Promise<Record<string, string>> {
@@ -93,16 +116,18 @@ export async function connectAppUsers() {
   });
 }
 
-// Links a bot name to a person in the app (or unlinks it with `userId` null).
+// Links a TSM code (or a bot name: its code is taken) to a person in the app, or unlinks it with
+// `userId` null. Old links by full name for the same code are replaced.
 export async function linkConnectPerson(actor: Actor, name: string, userId: string | null) {
   if (!canLeadConnect(actor)) throw new ConnectError("forbidden");
-  const person = name.trim().slice(0, 200);
+  const person = personCode(name.trim().slice(0, 200));
   if (!person) throw new ConnectError("empty");
   if (userId && !(await db.user.findFirst({ where: { id: userId, deactivatedAt: null } })))
     throw new ConnectError("unknown");
   const links = await connectPeopleLinks();
+  for (const key of Object.keys(links))
+    if (personCode(key)?.toUpperCase() === person.toUpperCase()) delete links[key];
   if (userId) links[person] = userId;
-  else delete links[person];
   const value = JSON.stringify(links);
   await db.systemState.upsert({
     where: { key: PEOPLE_KEY },
@@ -136,6 +161,8 @@ export type ImportResult = {
     from: string | null;
     to: string | null;
     test: number;
+    // Smart Up visits: the rows of those days that were there before and were replaced.
+    replaced: number | null;
   }[];
 };
 
@@ -143,7 +170,10 @@ const MAX_FILE = 20 * 1024 * 1024;
 
 // What an upload says about a sheet: «файл за 1 авг. – 7 нояб., 5 строк тестовых точек не учтено».
 function coverage(rows: ParsedRow[]) {
-  const days = rows.map((r) => r.record.day).sort();
+  const days = rows
+    .map((r) => r.record.day)
+    .filter(Boolean)
+    .sort();
   return {
     from: days[0] ?? null,
     to: days.at(-1) ?? null,
@@ -254,10 +284,50 @@ export function exportTime(rows: ParsedRow[]): string | null {
   return max;
 }
 
+const recordFields = (record: ParsedRow["record"], importId: string, asOf: string | null) => ({
+  storeCode: record.storeCode,
+  storeName: record.storeName,
+  city: record.city,
+  channel: record.channel,
+  day: record.day,
+  month: record.month,
+  person: record.person,
+  data: record as unknown as Prisma.InputJsonValue,
+  importId,
+  asOf,
+});
+
+// A Smart Up detail replaces, never appends: the visits of the file's days (first to last) go,
+// the file's rows come (a later export turns plans not visited yet into visits with an ID).
+async function replaceSmartUpVisits(rows: ParsedRow[], importId: string) {
+  const byId = new Map(rows.map((r) => [r.record.id, r.record]));
+  const days = [...byId.values()].map((r) => r.day).sort();
+  const from = days[0];
+  const to = days.at(-1);
+  if (!from || !to) return { created: 0, updated: 0, kept: 0, newer: null, replaced: 0 };
+  const [removed] = await db.$transaction([
+    db.connectRecord.deleteMany({ where: { kind: "SU_VISIT", day: { gte: from, lte: to } } }),
+    // The same visit stored under another day (its plan day before it was made).
+    db.connectRecord.deleteMany({
+      where: { kind: "SU_VISIT", externalId: { in: [...byId.keys()] } },
+    }),
+    db.connectRecord.createMany({
+      data: [...byId.values()].map((r) => ({
+        kind: "SU_VISIT" as const,
+        externalId: r.id,
+        ...recordFields(r, importId, null),
+      })),
+    }),
+  ]);
+  return { created: byId.size, updated: 0, kept: 0, newer: null, replaced: removed.count };
+}
+
 async function saveRows(kind: ConnectKind, rows: ParsedRow[], importId: string) {
+  if (kind === "SU_VISIT") return replaceSmartUpVisits(rows, importId);
   // The last row wins when an export repeats an ID.
   const byId = new Map(rows.map((r) => [r.record.id, r.record]));
-  const asOf = exportTime(rows);
+  // Smart Up's people have no dates: a later file always writes them.
+  const asOf = kind === "SU_PERSON" ? null : exportTime(rows);
   const stored = new Map(
     (
       await db.connectRecord.findMany({
@@ -274,18 +344,7 @@ async function saveRows(kind: ConnectKind, rows: ParsedRow[], importId: string) 
   const newestLoaded = await db.connectRecord.aggregate({ where: { kind }, _max: { asOf: true } });
   const newer =
     asOf && newestLoaded._max.asOf && newestLoaded._max.asOf > asOf ? newestLoaded._max.asOf : null;
-  const fields = (record: ParsedRow["record"]) => ({
-    storeCode: record.storeCode,
-    storeName: record.storeName,
-    city: record.city,
-    channel: record.channel,
-    day: record.day,
-    month: record.month,
-    person: record.person,
-    data: record as unknown as Prisma.InputJsonValue,
-    importId,
-    asOf,
-  });
+  const fields = (record: ParsedRow["record"]) => recordFields(record, importId, asOf);
   const fresh = [...byId.values()].filter((r) => !stored.has(r.id));
   const known = [...byId.values()].filter((r) => stored.has(r.id) && !isNewer(r.id));
   const kept = [...byId.values()].filter((r) => isNewer(r.id)).length;
@@ -301,7 +360,7 @@ async function saveRows(kind: ConnectKind, rows: ParsedRow[], importId: string) 
         }),
       ),
     );
-  return { created: fresh.length, updated: known.length, kept, newer };
+  return { created: fresh.length, updated: known.length, kept, newer, replaced: null };
 }
 
 // Removes everything uploaded (to start over with fresh exports).

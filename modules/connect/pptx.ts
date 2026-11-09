@@ -1,15 +1,12 @@
 import PptxGenJS from "pptxgenjs";
 
+import { formatDay } from "@/lib/dates";
 import { t } from "@/lib/i18n";
+import { plural } from "@/modules/reports/format";
 
-import {
-  formatMoney,
-  formatNumber,
-  insightText,
-  monthLabel,
-  periodLabel,
-  type ConnectReport,
-} from "./report";
+import { orderStage, type IsmBlock } from "./analytics";
+import { formatMoney, formatNumber, monthsLabel, periodLabel, type ConnectReport } from "./report";
+import { MV_RESULTS, topAnswers, VISIT_ISSUES, type TsmRow, type VisitSections } from "./visits";
 
 // The level on the screen as a 16:9 deck: native PowerPoint charts and tables, so numbers
 // stay editable. Colors: the validated chart palette (blue / orange) and the status scale.
@@ -34,11 +31,24 @@ const STAGE: Record<string, string> = {
   blocked: C.amber,
   waitingBum: C.orange,
   waitingBdm: C.orange,
-  noAnswer: C.red,
+  noAnswer: C.amber,
   refused: C.grey,
-  rejected: C.red,
+  rejected: C.grey,
 };
-const TONE = { bad: C.red, warn: C.amber, good: C.green };
+// Smart Up visits and Market Visit results (red stays for errors).
+const STATUS: Record<string, string> = {
+  ok: C.green,
+  noMv: C.orange,
+  noOos: C.amber,
+  notInTime: "B7791F",
+  otherEmployee: "8A6FD1",
+  full: C.green,
+  partial: C.amber,
+  noPhoto: C.orange,
+  partialNoPhoto: "B7791F",
+  skipped: C.grey,
+  closed: "B8B6AE",
+};
 const FONT = "Arial";
 const W = 13.33;
 const ROWS_PER_SLIDE = 12;
@@ -70,11 +80,15 @@ function header(slide: Slide, title: string, subtitle: string) {
   });
 }
 
-function tiles(slide: Slide, items: { label: string; value: string; note?: string }[], y = 1.6) {
+function tiles(
+  slide: Slide,
+  items: { label: string; value: string; note?: string }[],
+  y = 1.6,
+  h = 2.1,
+) {
   const perRow = 4;
   const gap = 0.25;
   const w = (W - 1 - gap * (perRow - 1)) / perRow;
-  const h = 2.1;
   items.forEach((item, i) => {
     const x = 0.5 + (i % perRow) * (w + gap);
     const top = y + Math.floor(i / perRow) * (h + gap);
@@ -220,14 +234,16 @@ const cut = (total: number, shown: number) =>
 
 const pct = (value: number | null) => (value === null ? "—" : `${value}%`);
 
-export async function connectPptx(report: ConnectReport): Promise<Buffer> {
+export async function connectPptx(report: ConnectReport, today: string): Promise<Buffer> {
   const pptx = new PptxGenJS();
   pptx.layout = "LAYOUT_WIDE";
   pptx.title = t("connect.title");
   const view = t(`connect.views.${report.query.view}`);
-  const f = report.query.filter;
-  const filters = [f.city, f.channel].filter(Boolean).join(", ");
-  const subtitle = [periodLabel(report), filters].filter(Boolean).join(" · ");
+  const period = periodLabel(report.period, today);
+  const person = report.executor
+    ? [report.executor.row.code, report.executor.row.name].filter(Boolean).join(" · ")
+    : null;
+  const subtitle = person ? `${person} · ${period}` : period;
 
   // Title slide.
   const cover = pptx.addSlide();
@@ -243,7 +259,7 @@ export async function connectPptx(report: ConnectReport): Promise<Buffer> {
     color: "FFFFFF",
     margin: 0,
   });
-  cover.addText(report.query.person ? `${view}: ${report.query.person}` : view, {
+  cover.addText(person ? `${view}: ${person}` : view, {
     x: 0.7,
     y: 3.25,
     w: W - 1.4,
@@ -253,418 +269,455 @@ export async function connectPptx(report: ConnectReport): Promise<Buffer> {
     color: "CADCFC",
     margin: 0,
   });
-  cover.addText(
-    [
-      t("connect.pptx.period", { period: periodLabel(report) }),
-      ...(filters ? [t("connect.pptx.filters", { list: filters })] : []),
-      t("connect.testNote"),
-    ].join("\n"),
-    {
-      x: 0.7,
-      y: 4.2,
-      w: W - 1.4,
-      h: 1.2,
-      fontFace: FONT,
-      fontSize: 13,
-      color: "CADCFC",
-      margin: 0,
-      valign: "top",
-    },
-  );
+  cover.addText([t("connect.pptx.period", { period }), t("connect.testNote")].join("\n"), {
+    x: 0.7,
+    y: 4.2,
+    w: W - 1.4,
+    h: 1.2,
+    fontFace: FONT,
+    fontSize: 13,
+    color: "CADCFC",
+    margin: 0,
+    valign: "top",
+  });
 
-  if (report.exec) {
-    const e = report.exec;
-    const k = e.kpis;
-    const s1 = pptx.addSlide();
-    header(s1, t("connect.views.exec"), subtitle);
-    tiles(s1, [
-      { label: t("connect.kpi.stores"), value: formatNumber(k.stores) },
-      {
-        label: t("connect.kpi.gapRate"),
-        value: `${k.gapRate}%`,
-        note: t("connect.kpi.ofChecks", { count: formatNumber(k.checks) }),
-      },
-      { label: t("connect.kpi.conversion"), value: `${k.conversion}%` },
-      {
-        label: t("connect.kpi.noAnswerRate"),
-        value: `${k.noAnswerRate}%`,
-        note: `${t("connect.kpi.orders")}: ${formatNumber(k.orders)}`,
-      },
-      {
-        label: t("connect.kpi.contractSum"),
-        value: formatMoney(k.contractSum),
-        note: `${t("connect.kpi.requests")}: ${formatNumber(k.requests)}`,
-      },
-      {
-        label: t("connect.kpi.paidSum"),
-        value: formatMoney(k.paidSum),
-        note: t("connect.kpi.paidRate", { rate: k.paidRate }),
-      },
-      {
-        label: t("connect.kpi.waitingSum"),
-        value: formatMoney(k.waitingSum),
-        note: t("connect.kpi.waiting", { count: k.waiting }),
-      },
-      {
-        label: t("connect.kpi.checklist"),
-        value: pct(k.checklist),
-        note: t("connect.kpi.roiPositive", { rate: k.roiPositive }),
-      },
-    ]);
-
-    if (e.insights.length) {
-      const s2 = pptx.addSlide();
-      header(s2, t("connect.exec.insights"), subtitle);
-      e.insights.forEach((insight, i) => {
-        const y = 1.6 + i * 0.85;
-        s2.addShape("ellipse", {
-          x: 0.6,
-          y: y + 0.12,
-          w: 0.22,
-          h: 0.22,
-          fill: { color: TONE[insight.tone] },
-          line: { color: TONE[insight.tone] },
-        });
-        s2.addText(insightText(insight), {
-          x: 1.05,
-          y,
-          w: W - 1.7,
-          h: 0.5,
-          fontFace: FONT,
-          fontSize: 16,
-          color: C.ink,
-          margin: 0,
-          valign: "middle",
-        });
-      });
-    }
-
-    const s3 = pptx.addSlide();
-    header(s3, t("connect.exec.funnel"), `${subtitle} · ${t("connect.exec.funnelHint")}`);
+  // Sections 1–3: visits by status and by day, orders by delivery status and missing products,
+  // MV results, equipment and the answers by question.
+  const sectionSlides = (s: VisitSections) => {
+    const v = s.visits;
+    const visits = pptx.addSlide();
+    header(visits, t("connect.section.visits"), subtitle);
+    tiles(
+      visits,
+      [
+        {
+          label: t("connect.visits.visited"),
+          value: `${v.visitedRate}%`,
+          note: t("connect.tile.planDoneNote", {
+            visited: formatNumber(v.visited),
+            planned: formatNumber(v.planned),
+          }),
+        },
+        {
+          label: t("connect.visits.withMv"),
+          value: `${v.withMvRate}%`,
+          note: `${t("connect.visits.withOos")}: ${v.withOosRate}%`,
+        },
+        {
+          label: t("connect.visits.inTime"),
+          value: `${v.inTimeRate}%`,
+          note: t("connect.visits.inTimeNote"),
+        },
+        {
+          label: t("connect.visits.otherEmployee"),
+          value: formatNumber(v.otherEmployee),
+          note: `${t("connect.visits.closed")}: ${formatNumber(v.closed)}`,
+        },
+      ],
+      1.45,
+      1.35,
+    );
     barChart(
       pptx,
-      s3,
-      { x: 0.5, y: 1.5, w: 6.2, h: 5.5 },
-      t("connect.exec.funnel"),
-      e.funnel.map((s, i) => ({
-        label: t(`connect.exec.funnelSteps.${s.id}`),
-        value: s.value,
-        color: i === e.funnel.length - 1 ? C.green : C.blue,
+      visits,
+      { x: 0.5, y: 3.0, w: 6.0, h: 4.2 },
+      t("connect.visits.statuses"),
+      (["ok", ...VISIT_ISSUES] as const).map((st) => ({
+        label: t(`connect.status.${st}`),
+        value: v.status[st],
+        color: STATUS[st],
+      })),
+      { horizontal: true },
+    );
+    if (v.days.length)
+      visits.addChart(
+        pptx.ChartType.bar,
+        [
+          [t("connect.visits.legend.planned"), (d: Day) => d.planned],
+          [t("connect.visits.legend.visited"), (d: Day) => d.visited],
+          [t("connect.visits.legend.withConnect"), (d: Day) => d.withConnect],
+        ].map(([name, pick]) => ({
+          name: name as string,
+          labels: v.days.map((d) => formatDay(d.day)),
+          values: v.days.map(pick as (d: Day) => number),
+        })),
+        {
+          x: 6.8,
+          y: 3.0,
+          w: 6.0,
+          h: 4.2,
+          barDir: "col",
+          barGrouping: "clustered",
+          chartColors: ["C9C7BF", C.blue, C.green],
+          showTitle: true,
+          title: t("connect.visits.byDay"),
+          titleFontFace: FONT,
+          titleFontSize: 13,
+          showLegend: true,
+          legendPos: "b",
+          legendFontFace: FONT,
+          legendFontSize: 10,
+          catAxisLabelFontSize: 9,
+          catAxisLabelFontFace: FONT,
+          valAxisHidden: true,
+          valGridLine: { style: "none" },
+        },
+      );
+
+    const o = s.oos;
+    const oos = pptx.addSlide();
+    header(oos, t("connect.section.oos"), subtitle);
+    tiles(
+      oos,
+      [
+        {
+          label: t("connect.oos.withGap"),
+          value: formatNumber(o.withGap),
+          note: t("connect.tile.oosStoresNote", {
+            rate: o.gapRate,
+            checked: formatNumber(o.checked),
+          }),
+        },
+        {
+          label: t("connect.oos.ledToOrder"),
+          value: `${o.orderRate}%`,
+          note: t("connect.oos.ledToOrderNote", { count: formatNumber(o.withGap) }),
+        },
+        {
+          label: t("connect.tile.orders"),
+          value: formatNumber(o.orders),
+          note: t("connect.packs", { count: formatNumber(o.packs) }),
+        },
+        { label: t("connect.tile.ordersSum"), value: formatMoney(o.sum) },
+      ],
+      1.45,
+      1.35,
+    );
+    barChart(
+      pptx,
+      oos,
+      { x: 0.5, y: 3.0, w: 6.0, h: 4.2 },
+      t("connect.oos.byStatus"),
+      o.byStatus.map((x) => ({
+        label: x.status || t("connect.oos.noStatus"),
+        value: x.count,
+        color: STAGE[orderStage({ status: x.status, outcome: null, storeAnswer: null })],
       })),
       { horizontal: true },
     );
     barChart(
       pptx,
-      s3,
-      { x: 6.9, y: 1.5, w: 5.9, h: 5.5 },
-      t("connect.exec.payments"),
-      e.paymentStages.map((s) => ({
+      oos,
+      { x: 6.8, y: 3.0, w: 6.0, h: 4.2 },
+      t("connect.oos.topSkus"),
+      o.topSkus.map((x) => ({ label: x.sku, value: x.total, color: C.orange })),
+      { horizontal: true },
+    );
+
+    const m = s.mv;
+    const mv = pptx.addSlide();
+    header(mv, t("connect.section.mv"), subtitle);
+    tiles(
+      mv,
+      [
+        { label: t("connect.mv.unique"), value: formatNumber(m.unique) },
+        {
+          label: t("connect.mv.fullRate"),
+          value: `${m.fullRate}%`,
+          note: t("connect.mv.fullRateNote"),
+        },
+        { label: t("connect.mv.problems"), value: formatNumber(m.problems) },
+        {
+          label: t("connect.visits.duplicates"),
+          value: formatNumber(v.mvCopiesRemoved),
+          note: t("connect.visits.mvCopies", {
+            copies: formatNumber(v.mvCopiesRemoved),
+            days: formatNumber(v.mvDuplicateDays),
+          }),
+        },
+      ],
+      1.45,
+      1.35,
+    );
+    barChart(
+      pptx,
+      mv,
+      { x: 0.5, y: 3.0, w: 6.0, h: 4.2 },
+      t("connect.mv.results"),
+      MV_RESULTS.map((r) => ({
+        label: t(`connect.result.${r}`),
+        value: m.results[r],
+        color: STATUS[r],
+      })),
+      { horizontal: true },
+    );
+    barChart(
+      pptx,
+      mv,
+      { x: 6.8, y: 3.0, w: 6.0, h: 4.2 },
+      t("connect.mv.equipment"),
+      m.equipment.slice(0, 10).map((e) => ({ label: e.type.slice(0, 40), value: e.count })),
+      { horizontal: true },
+    );
+    tableSlides(
+      pptx,
+      t("connect.mv.questions"),
+      subtitle,
+      [t("connect.col.question"), t("connect.col.answer"), t("connect.col.problemRate")],
+      m.questions.map((q) => [
+        q.q,
+        [
+          ...topAnswers(q.answers).shown.map((a) => `${a.value}: ${formatNumber(a.count)}`),
+          ...(topAnswers(q.answers).other
+            ? [
+                `${t("connect.mv.otherAnswers", { count: topAnswers(q.answers).otherKinds })}: ${formatNumber(topAnswers(q.answers).other)}`,
+              ]
+            : []),
+          ...(q.unanswered ? [`${t("connect.mv.unanswered")}: ${formatNumber(q.unanswered)}`] : []),
+        ].join(" · "),
+        q.answered ? `${q.problemRate}%` : null,
+      ]),
+      [5, 6, 1.2],
+    );
+  };
+
+  const ismSlide = (block: IsmBlock) => {
+    if (!block.requests) return;
+    const slide = pptx.addSlide();
+    header(
+      slide,
+      t("connect.section.ism"),
+      `${subtitle} · ${t("connect.section.ismHint", { months: monthsLabel(report.months) })}`,
+    );
+    tiles(
+      slide,
+      [
+        {
+          label: t("connect.kpi.contractSum"),
+          value: formatMoney(block.contractSum),
+          note: `${t("connect.kpi.requests")}: ${formatNumber(block.requests)}`,
+        },
+        {
+          label: t("connect.kpi.paidSum"),
+          value: formatMoney(block.paidSum),
+          note: t("connect.kpi.paidRate", { rate: block.paidRate }),
+        },
+        {
+          label: t("connect.kpi.waitingSum"),
+          value: formatMoney(block.waitingSum),
+          note: plural("connect.words.requests", block.waiting),
+        },
+        {
+          label: t("connect.kpi.checklist"),
+          value: pct(block.checklist),
+          note: t("connect.kpi.roiPositive", { rate: block.roiPositive }),
+        },
+      ],
+      1.45,
+      1.35,
+    );
+    barChart(
+      pptx,
+      slide,
+      { x: 0.5, y: 3.0, w: 12.3, h: 4.2 },
+      t("connect.ism.stages"),
+      block.stages.map((s) => ({
         label: `${t(`connect.paymentStage.${s.id}`)} (${formatMoney(s.sum)})`,
         value: s.value,
         color: STAGE[s.id],
       })),
       { horizontal: true },
     );
+  };
 
-    if (e.trend.length > 1) {
-      const s4 = pptx.addSlide();
-      header(s4, t("connect.exec.trend"), subtitle);
-      const labels = e.trend.map((m) => monthLabel(m.month));
-      const box = (i: number) => ({
-        x: 0.5 + (i % 2) * 6.25,
-        y: 1.45 + Math.floor(i / 2) * 2.95,
-        w: 6.0,
-        h: 2.8,
-      });
-      barChart(
-        pptx,
-        s4,
-        box(0),
-        t("connect.exec.trendCols.checks"),
-        e.trend.map((m, i) => ({ label: labels[i]!, value: m.checks })),
-      );
-      barChart(
-        pptx,
-        s4,
-        box(1),
-        `${t("connect.exec.trendCols.gapRate")}, %`,
-        e.trend.map((m, i) => ({ label: labels[i]!, value: m.gapRate, color: C.orange })),
-        { percent: true },
-      );
-      barChart(
-        pptx,
-        s4,
-        box(2),
-        t("connect.exec.trendCols.orders"),
-        e.trend.map((m, i) => ({ label: labels[i]!, value: m.orders })),
-      );
-      barChart(
-        pptx,
-        s4,
-        box(3),
-        `${t("connect.exec.trendCols.paidSum")}, ${t("connect.mln")} ${t("connect.sum")}`,
-        e.trend.map((m, i) => ({
-          label: labels[i]!,
-          value: Math.round(m.paidSum / 1e5) / 10,
-          color: C.green,
-        })),
-      );
-    }
-
-    const s5 = pptx.addSlide();
-    header(s5, t("connect.exec.topSkus"), `${subtitle} · ${t("connect.exec.topSkusHint")}`);
-    barChart(
-      pptx,
-      s5,
-      { x: 0.5, y: 1.5, w: 7.4, h: 5.5 },
-      t("connect.exec.topSkus"),
-      e.topSkus.map((s) => ({ label: s.sku, value: s.total, color: C.orange })),
-      { horizontal: true },
-    );
-    barChart(
-      pptx,
-      s5,
-      { x: 8.1, y: 1.5, w: 4.7, h: 2.7 },
-      t("connect.exec.brands"),
-      e.brands.map((b) => ({ label: b.brand, value: b.total })),
-      { horizontal: true },
-    );
-    barChart(
-      pptx,
-      s5,
-      { x: 8.1, y: 4.3, w: 4.7, h: 2.7 },
-      t("connect.exec.orders"),
-      e.orderStages.map((s) => ({
-        label: t(`connect.orderStage.${s.id}`),
-        value: s.value,
-        color: STAGE[s.id],
-      })),
-      { horizontal: true },
-    );
-
-    if (e.checklistFails.length)
-      tableSlides(
-        pptx,
-        t("connect.exec.checklist"),
-        subtitle,
-        [t("connect.col.question"), t("connect.col.share"), t("connect.col.count")],
-        e.checklistFails.map((q) => [q.q, `${q.rate}%`, `${q.no}/${q.total}`]),
-        [8, 1.5, 1.5],
-      );
-  }
-
-  if (report.manager) {
-    const m = report.manager;
+  const peopleTable = (rows: TsmRow[]) =>
     tableSlides(
       pptx,
       t("connect.manager.people"),
       subtitle,
       [
-        t("connect.col.person"),
-        t("connect.col.open"),
-        t("connect.col.checks"),
-        t("connect.col.gaps"),
-        t("connect.col.ordersFromChecks"),
-        t("connect.col.noAnswer"),
-        t("connect.col.requests"),
-        t("connect.col.paid"),
-        t("connect.col.checklist"),
-        t("connect.col.visitScore"),
-      ],
-      m.people.map((p) => [
-        p.person,
-        p.open,
-        p.checks,
-        p.gaps,
-        p.ordersFromChecks,
-        p.noAnswer,
-        p.requests,
-        p.paid,
-        pct(p.checklist),
-        pct(p.visitScore),
-      ]),
-      [4.5, 1, 1, 1, 1.2, 1, 1, 1, 1, 1],
-      cut(m.people.length, 24),
-    );
-    tableSlides(
-      pptx,
-      t("connect.manager.cities"),
-      subtitle,
-      [
-        t("connect.col.city"),
-        t("connect.col.stores"),
-        t("connect.col.checks"),
-        t("connect.col.gapRate"),
+        t("connect.col.tsm"),
+        t("connect.col.planned"),
+        t("connect.col.visitedRate"),
+        t("connect.col.withMvRate"),
+        t("connect.col.withOosRate"),
+        t("connect.col.inTimeRate"),
+        t("connect.col.otherEmployee"),
+        t("connect.col.attention"),
+        t("connect.col.mvFullRate"),
+        t("connect.col.oosFound"),
         t("connect.col.orders"),
-        t("connect.col.delivered"),
-        t("connect.col.requests"),
-        t("connect.col.contractSum"),
-        t("connect.col.waiting"),
-        t("connect.col.checklist"),
-      ],
-      m.cities.map((c) => [
-        c.city,
-        c.stores,
-        c.checks,
-        pct(c.gapRate),
-        c.orders,
-        c.delivered,
-        c.requests,
-        formatMoney(c.contractSum),
-        c.waiting,
-        pct(c.checklist),
-      ]),
-      [2.2, 1, 1, 1, 1, 1, 1, 1.6, 1, 1],
-      cut(m.cities.length, 12),
-    );
-    tableSlides(
-      pptx,
-      t("connect.manager.waiting"),
-      subtitle,
-      [
-        t("connect.col.store"),
-        t("connect.col.city"),
-        t("connect.col.person"),
-        t("connect.col.stage"),
         t("connect.col.sum"),
-        t("connect.col.days"),
       ],
-      m.waitingPayments
-        .slice(0, 24)
-        .map((p) => [
-          p.store,
-          p.city,
-          p.person,
-          t(`connect.paymentStage.${p.stage}`),
-          formatMoney(p.sum),
-          p.days,
+      rows
+        .slice(0, 48)
+        .map((r) => [
+          r.name ? `${r.code} · ${r.name}` : r.code,
+          r.planned,
+          pct(r.visitedRate),
+          pct(r.withMvRate),
+          pct(r.withOosRate),
+          pct(r.inTimeRate),
+          r.otherEmployee,
+          r.attention,
+          pct(r.mvFullRate),
+          r.oosFound,
+          r.orders,
+          formatMoney(r.sum),
         ]),
-      [3.5, 1.5, 3.5, 2, 1.5, 0.8],
-      [t("connect.manager.waitingHint"), cut(m.waitingPayments.length, 24)]
-        .filter(Boolean)
-        .join(" · "),
+      [4, 0.9, 1, 1, 1, 1, 1, 1, 1, 1, 0.9, 1.6],
+      cut(rows.length, 48),
     );
-    tableSlides(
-      pptx,
-      t("connect.manager.stuck"),
-      subtitle,
-      [
-        t("connect.col.store"),
-        t("connect.col.city"),
-        t("connect.col.person"),
-        t("connect.col.status"),
-        t("connect.col.sum"),
-        t("connect.col.days"),
-      ],
-      m.stuckOrders.slice(0, 24).map((o) => [o.store, o.city, o.person, o.status, o.sum, o.days]),
-      [3.5, 1.5, 3.5, 2.6, 1.2, 0.8],
-      cut(m.stuckOrders.length, 24),
-    );
-    if (m.skuCity.rows.length) {
-      const slide = pptx.addSlide();
-      header(
-        slide,
-        t("connect.manager.skuCity"),
-        `${subtitle} · ${t("connect.manager.skuCityHint")}`,
-      );
-      const head = [t("connect.col.sku"), ...m.skuCity.cities];
-      // One hue, light to dark, for the share of checks with a gap.
-      const shade = (rate: number) => {
-        const mix = Math.min(0.85, rate / 100);
-        const ch = (base: number) =>
-          Math.round(255 + (base - 255) * mix)
-            .toString(16)
-            .padStart(2, "0");
-        return `${ch(0xeb)}${ch(0x68)}${ch(0x34)}`.toUpperCase();
-      };
-      slide.addTable(
-        [
-          head.map((h) => ({
-            text: h,
-            options: { bold: true, color: C.muted, fill: { color: C.tile } },
-          })),
-          ...m.skuCity.rows.map((r) => [
-            { text: r.sku, options: {} },
-            ...r.cells.map((c) => ({
-              text: c.rate ? `${c.rate}%` : "·",
-              options: {
-                align: "center" as const,
-                fill: { color: shade(c.rate) },
-                color: c.rate >= 50 ? "FFFFFF" : C.ink,
-              },
-            })),
-          ]),
-        ],
-        {
-          x: 0.5,
-          y: 1.5,
-          w: W - 1,
-          colW: [3.6, ...m.skuCity.cities.map(() => (W - 1 - 3.6) / m.skuCity.cities.length)],
-          fontFace: FONT,
-          fontSize: 10,
-          color: C.ink,
-          border: { type: "solid", pt: 0.5, color: "FFFFFF" },
-          valign: "middle",
-        },
-      );
-    }
-    if (m.checklistFails.length || m.visitFails.length) {
-      const slide = pptx.addSlide();
-      header(slide, t("connect.manager.checklistFails"), subtitle);
-      barChart(
-        pptx,
-        slide,
-        { x: 0.5, y: 1.5, w: 6.2, h: 5.5 },
-        t("connect.manager.checklistFails"),
-        m.checklistFails.map((q) => ({ label: q.q.slice(0, 60), value: q.rate, color: C.red })),
-        { horizontal: true, percent: true },
-      );
-      barChart(
-        pptx,
-        slide,
-        { x: 6.9, y: 1.5, w: 5.9, h: 5.5 },
-        t("connect.manager.visitFails"),
-        m.visitFails.map((q) => ({ label: q.q.slice(0, 60), value: q.rate, color: C.red })),
-        { horizontal: true, percent: true },
-      );
-    }
-  }
 
-  if (report.executor && report.query.person) {
-    const x = report.executor;
-    const k = x.kpis;
+  if (report.exec) {
+    const e = report.exec;
+    const { visits: v, oos: o, mv: m } = e.sections;
     const s1 = pptx.addSlide();
-    header(s1, report.query.person, subtitle);
+    header(s1, t("connect.views.exec"), subtitle);
     tiles(s1, [
       {
-        label: t("connect.kpi.checks"),
-        value: formatNumber(k.checks),
-        note: `${t("connect.col.gaps")}: ${k.gaps}`,
-      },
-      { label: t("connect.col.ordersFromChecks"), value: formatNumber(k.ordersFromChecks) },
-      {
-        label: t("connect.kpi.orders"),
-        value: formatNumber(k.orders),
-        note: `${t("connect.col.noAnswer")}: ${k.noAnswer}`,
+        label: t("connect.tile.planDone"),
+        value: `${v.visitedRate}%`,
+        note: t("connect.tile.planDoneNote", {
+          visited: formatNumber(v.visited),
+          planned: formatNumber(v.planned),
+        }),
       },
       {
-        label: t("connect.kpi.requests"),
-        value: formatNumber(k.requests),
-        note: formatMoney(k.contractSum),
+        label: t("connect.tile.connectUsed"),
+        value: `${v.connectRate}%`,
+        note: t("connect.tile.connectUsedNote", { rate: v.allGoodRate }),
       },
-      { label: t("connect.col.paid"), value: formatNumber(k.paid) },
-      { label: t("connect.col.checklist"), value: pct(k.checklist) },
-      { label: t("connect.kpi.visits"), value: formatNumber(k.visits) },
-      { label: t("connect.col.open"), value: formatNumber(x.openCount) },
+      {
+        label: t("connect.tile.mvFull"),
+        value: `${m.fullRate}%`,
+        note: t("connect.tile.mvFullNote", { count: formatNumber(m.unique) }),
+      },
+      {
+        label: t("connect.tile.oosStores"),
+        value: formatNumber(o.withGap),
+        note: t("connect.tile.oosStoresNote", {
+          rate: o.gapRate,
+          checked: formatNumber(o.checked),
+        }),
+      },
+      {
+        label: t("connect.tile.orders"),
+        value: formatNumber(o.orders),
+        note: t("connect.packs", { count: formatNumber(o.packs) }),
+      },
+      { label: t("connect.tile.ordersSum"), value: formatMoney(o.sum) },
+      {
+        label: t("connect.visits.notVisited"),
+        value: formatNumber(v.notVisited),
+        note: `${t("connect.visits.unplanned")}: ${formatNumber(v.unplanned)}`,
+      },
+      {
+        label: t("connect.visits.mvWithoutVisit"),
+        value: formatNumber(v.mvWithoutVisit),
+      },
     ]);
     tableSlides(
       pptx,
-      t("connect.executor.gaps"),
+      t("connect.section.regions"),
       subtitle,
-      [t("connect.col.store"), t("connect.col.city"), t("connect.col.date"), t("connect.col.sku")],
-      x.gapsWithoutOrder.map((g) => [g.store, g.city, g.day, g.skus.join(", ")]),
-      [3.5, 1.5, 1.2, 6],
-      t("connect.executor.gapsHint"),
+      [
+        t("connect.col.region"),
+        t("connect.col.planned"),
+        t("connect.col.visitedRate"),
+        t("connect.col.connectRate"),
+        t("connect.col.withMvRate"),
+        t("connect.col.withOosRate"),
+        t("connect.col.inTimeRate"),
+        t("connect.col.mvFullRate"),
+        t("connect.col.oosFound"),
+        t("connect.col.orders"),
+        t("connect.col.sum"),
+      ],
+      e.regions.map((r) => [
+        r.region,
+        r.planned,
+        pct(r.visitedRate),
+        pct(r.connectRate),
+        pct(r.withMvRate),
+        pct(r.withOosRate),
+        pct(r.inTimeRate),
+        pct(r.mvFullRate),
+        r.oosFound,
+        r.orders,
+        formatMoney(r.sum),
+      ]),
+      [2.4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1.6],
+      t("connect.section.regionsHint"),
+    );
+    sectionSlides(e.sections);
+    ismSlide(e.ism);
+  }
+
+  if (report.manager) {
+    peopleTable(report.manager.people);
+    sectionSlides(report.manager.sections);
+    ismSlide(report.manager.ism);
+  }
+
+  if (report.executor) {
+    const x = report.executor;
+    const r = x.row;
+    const s1 = pptx.addSlide();
+    header(s1, person ?? r.code, period);
+    tiles(s1, [
+      {
+        label: t("connect.tile.planDone"),
+        value: `${r.visitedRate}%`,
+        note: t("connect.tile.planDoneNote", {
+          visited: formatNumber(r.visited),
+          planned: formatNumber(r.planned),
+        }),
+      },
+      { label: t("connect.tile.connectUsed"), value: `${r.connectRate}%` },
+      { label: t("connect.col.attention"), value: formatNumber(r.attention) },
+      { label: t("connect.tile.mvFull"), value: `${r.mvFullRate}%` },
+      { label: t("connect.tile.oosStores"), value: formatNumber(r.oosFound) },
+      {
+        label: t("connect.tile.orders"),
+        value: formatNumber(r.orders),
+        note: t("connect.packs", { count: formatNumber(r.packs) }),
+      },
+      { label: t("connect.tile.ordersSum"), value: formatMoney(r.sum) },
+      { label: t("connect.visits.mvWithoutVisit"), value: formatNumber(r.mvWithoutVisit) },
+    ]);
+    tableSlides(
+      pptx,
+      t("connect.executor.attention"),
+      subtitle,
+      [
+        t("connect.col.store"),
+        t("connect.col.date"),
+        t("connect.col.smartUp"),
+        t("connect.col.connect"),
+        t("connect.col.issue"),
+      ],
+      x.detail.attention
+        .slice(0, 48)
+        .map((a) => [
+          a.store,
+          a.day,
+          a.smartUp,
+          [a.mvAt && `MV ${a.mvAt}`, a.oosAt && `OOS ${a.oosAt}`].filter(Boolean).join(" · ") ||
+            null,
+          [
+            ...a.issues.map((i) => t(`connect.status.${i}`)),
+            a.result && a.result !== "full" && a.result !== "closed"
+              ? `${t("connect.section.mv")}: ${t(`connect.result.${a.result}`)}`
+              : null,
+          ]
+            .filter(Boolean)
+            .join("; "),
+        ]),
+      [3.6, 1.2, 1.4, 2, 4],
+      [t("connect.executor.attentionHint"), cut(x.detail.attention.length, 48)]
+        .filter(Boolean)
+        .join(" · "),
     );
     tableSlides(
       pptx,
@@ -672,56 +725,48 @@ export async function connectPptx(report: ConnectReport): Promise<Buffer> {
       subtitle,
       [
         t("connect.col.store"),
-        t("connect.col.city"),
         t("connect.col.date"),
         t("connect.col.status"),
+        t("connect.col.packs"),
         t("connect.col.sum"),
-        t("connect.col.days"),
       ],
-      x.openOrders.map((o) => [o.store, o.city, o.day, o.status, o.sum, o.days]),
-      [3.5, 1.5, 1.2, 3, 1.2, 0.8],
-      t("connect.executor.ordersHint"),
+      x.detail.orders
+        .slice(0, 24)
+        .map((o) => [o.store, o.day, o.status || t("connect.oos.noStatus"), o.packs, o.sum]),
+      [3.6, 1.2, 4, 1, 1.4],
+      cut(x.detail.orders.length, 24),
     );
     tableSlides(
       pptx,
-      t("connect.executor.payments"),
+      t("connect.executor.problems"),
+      subtitle,
+      [t("connect.col.store"), t("connect.col.date"), t("connect.col.problems")],
+      x.detail.problems.slice(0, 24).map((p) => [p.store, p.day, p.problems.join("; ")]),
+      [3.4, 1.2, 7.6],
+      cut(x.detail.problems.length, 24),
+    );
+    tableSlides(
+      pptx,
+      t("connect.ism.issues"),
       subtitle,
       [
         t("connect.col.store"),
-        t("connect.col.city"),
         t("connect.col.stage"),
         t("connect.col.status"),
         t("connect.col.sum"),
       ],
-      x.paymentIssues.map((p) => [
+      x.payments.map((p) => [
         p.store,
-        p.city,
         t(`connect.paymentStage.${p.stage}`),
         [p.note, ...p.failed].filter(Boolean).join("; ") || null,
         formatMoney(p.sum),
       ]),
-      [3.2, 1.4, 2, 4.5, 1.4],
-      t("connect.executor.paymentsHint"),
-    );
-    tableSlides(
-      pptx,
-      t("connect.executor.visits"),
-      subtitle,
-      [
-        t("connect.col.store"),
-        t("connect.col.city"),
-        t("connect.col.date"),
-        t("connect.col.problem"),
-      ],
-      x.openVisits.map((v) => [
-        v.store,
-        v.city,
-        v.day,
-        [v.done ? null : t("connect.executor.visitOpen"), ...v.problems].filter(Boolean).join("; "),
-      ]),
-      [3.2, 1.4, 1.2, 6.4],
+      [3.4, 2.2, 5, 1.6],
+      t("connect.section.ismHint", { months: monthsLabel(report.months) }),
     );
   }
 
   return Buffer.from((await pptx.write({ outputType: "nodebuffer" })) as ArrayBuffer);
 }
+
+type Day = VisitSections["visits"]["days"][number];

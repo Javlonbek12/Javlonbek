@@ -3,12 +3,14 @@ import ExcelJS from "exceljs";
 import { t } from "@/lib/i18n";
 import type { ru } from "@/lib/i18n/ru";
 
-import { insightText, monthLabel, periodLabel, type ConnectReport } from "./report";
+import type { IsmBlock, paymentIssues } from "./analytics";
+import { monthsLabel, periodLabel, type ConnectReport } from "./report";
+import { MV_RESULTS, VISIT_ISSUES, type TsmRow, type VisitSections } from "./visits";
 
 type Value = string | number | null;
 
-// The level on the screen as Excel: the same tables, one sheet each, ready to filter and sort.
-export async function connectXlsx(report: ConnectReport): Promise<Buffer> {
+// The level on the screen as Excel: the same sections, one sheet each, ready to filter and sort.
+export async function connectXlsx(report: ConnectReport, today: string): Promise<Buffer> {
   const book = new ExcelJS.Workbook();
   book.creator = t("app.name");
   const sheet = (name: string, columns: { header: string; width: number }[], rows: Value[][]) => {
@@ -25,280 +27,331 @@ export async function connectXlsx(report: ConnectReport): Promise<Buffer> {
     ws.addRows(rows);
     return ws;
   };
-  const col = (key: Parameters<typeof colName>[0], width = 14) => ({
-    header: colName(key),
+  const col = (key: keyof typeof ru.connect.col, width = 14) => ({
+    header: t(`connect.col.${key}`),
     width,
   });
-  const title = `${t("connect.title")} — ${t(`connect.views.${report.query.view}`)}`;
+  const metric = [col("metric", 50), col("value", 18)];
+  const period = periodLabel(report.period, today);
+  const title = (name: string) => `${t("connect.title")} — ${name}: ${period}`;
 
-  if (report.exec) {
-    const e = report.exec;
-    const k = e.kpis;
-    const summary = sheet(
-      t("connect.sheets.summary"),
-      [col("metric", 40), col("value", 18)],
-      [
-        [t("connect.kpi.stores"), k.stores],
-        [t("connect.kpi.checks"), k.checks],
-        [`${t("connect.kpi.gapRate")}, %`, k.gapRate],
-        [t("connect.kpi.avgGaps"), k.avgGaps],
-        [`${t("connect.kpi.conversion")}, %`, k.conversion],
-        [t("connect.kpi.orders"), k.orders],
-        [`${t("connect.kpi.deliveredRate")}, %`, k.deliveredRate],
-        [`${t("connect.kpi.noAnswerRate")}, %`, k.noAnswerRate],
-        [t("connect.kpi.requests"), k.requests],
-        [`${t("connect.kpi.contractSum")}, ${t("connect.sum")}`, k.contractSum],
-        [`${t("connect.kpi.paidSum")}, ${t("connect.sum")}`, k.paidSum],
-        [`${t("connect.kpi.waitingSum")}, ${t("connect.sum")}`, k.waitingSum],
-        [`${t("connect.kpi.checklist")}, %`, k.checklist],
-        [t("connect.kpi.visits"), k.visits],
-      ],
-    );
-    summary.insertRow(1, [`${title}: ${periodLabel(report)}`]);
+  // Sections 1–3 as metric lists, the orders by status, products and questions as tables.
+  const sections = (s: VisitSections, heading: string) => {
+    const v = s.visits;
+    const summary = sheet(t("connect.sheets.visits"), metric, [
+      [t("connect.visits.planned"), v.planned],
+      [t("connect.visits.visited"), v.visited],
+      [`${t("connect.visits.visited")}, %`, v.visitedRate],
+      [t("connect.visits.notVisited"), v.notVisited],
+      [t("connect.visits.unplanned"), v.unplanned],
+      [`${t("connect.visits.withMv")}, %`, v.withMvRate],
+      [`${t("connect.visits.withOos")}, %`, v.withOosRate],
+      [t("connect.visits.both"), v.both],
+      [`${t("connect.visits.inTime")}, % (${t("connect.visits.inTimeNote")})`, v.inTimeRate],
+      [t("connect.visits.otherEmployee"), v.otherEmployee],
+      [t("connect.visits.closed"), v.closed],
+      ...(["ok", ...VISIT_ISSUES] as const).map((s) => [t(`connect.status.${s}`), v.status[s]]),
+      [t("connect.visits.mvWithoutVisit"), v.mvWithoutVisit],
+      [`${t("connect.visits.duplicates")}: ${t("connect.col.mv")}`, v.mvCopiesRemoved],
+      [`${t("connect.visits.duplicates")}: ${t("connect.col.oos")}`, v.oosCopiesRemoved],
+    ]);
+    summary.insertRow(1, [heading]);
     summary.getRow(1).font = { bold: true, size: 14 };
-    summary.addRow([]);
-    summary.addRow([t("connect.exec.insights")]).font = { bold: true };
-    for (const insight of e.insights) summary.addRow([insightText(insight)]);
-
     sheet(
-      t("connect.sheets.funnel"),
-      [col("metric", 30), col("count")],
-      e.funnel.map((s) => [t(`connect.exec.funnelSteps.${s.id}`), s.value]),
-    );
-    sheet(
-      t("connect.sheets.trend"),
+      t("connect.sheets.days"),
       [
-        { header: t("connect.exec.trendCols.month"), width: 16 },
-        { header: t("connect.exec.trendCols.checks"), width: 12 },
-        { header: `${t("connect.exec.trendCols.gapRate")}, %`, width: 14 },
-        { header: t("connect.exec.trendCols.orders"), width: 12 },
-        { header: t("connect.exec.trendCols.delivered"), width: 12 },
-        { header: t("connect.exec.trendCols.requests"), width: 12 },
-        { header: t("connect.exec.trendCols.contractSum"), width: 16 },
-        { header: t("connect.exec.trendCols.paidSum"), width: 16 },
+        col("day", 14),
+        { header: t("connect.visits.legend.planned"), width: 14 },
+        { header: t("connect.visits.legend.visited"), width: 14 },
+        { header: t("connect.visits.legend.withConnect"), width: 14 },
       ],
-      e.trend.map((m) => [
-        monthLabel(m.month),
-        m.checks,
-        m.gapRate,
-        m.orders,
-        m.delivered,
-        m.requests,
-        m.contractSum,
-        m.paidSum,
-      ]),
+      v.days.map((d) => [d.day, d.planned, d.visited, d.withConnect]),
     );
+    const o = s.oos;
+    sheet(t("connect.sheets.oos"), metric, [
+      [t("connect.oos.checked"), o.checked],
+      [t("connect.oos.withGap"), o.withGap],
+      [`${t("connect.oos.withGap")}, %`, o.gapRate],
+      [`${t("connect.oos.ledToOrder")}, %`, o.orderRate],
+      [t("connect.oos.orders"), o.orders],
+      [t("connect.oos.packs"), o.packs],
+      [`${t("connect.oos.sum")}, ${t("connect.sum")}`, o.sum],
+    ]);
     sheet(
-      t("connect.sheets.payments"),
-      [col("stage", 30), col("count"), col("sum", 18)],
-      e.paymentStages.map((s) => [t(`connect.paymentStage.${s.id}`), s.value, s.sum]),
-    );
-    sheet(
-      t("connect.sheets.orders"),
-      [col("stage", 30), col("count")],
-      e.orderStages.map((s) => [t(`connect.orderStage.${s.id}`), s.value]),
+      t("connect.sheets.statuses"),
+      [col("status", 44), col("count"), col("packs"), col("sum", 18)],
+      o.byStatus.map((x) => [x.status || t("connect.oos.noStatus"), x.count, x.packs, x.sum]),
     );
     sheet(
       t("connect.sheets.skus"),
-      [col("sku", 34), col("brand"), col("out"), col("low"), col("total"), col("share")],
-      e.topSkus.map((s) => [s.sku, s.brand, s.out, s.low, s.total, s.rate]),
+      [col("sku", 34), col("count"), { header: `${t("connect.col.share")}, %`, width: 12 }],
+      o.topSkus.map((x) => [x.sku, x.total, x.rate]),
+    );
+    const m = s.mv;
+    sheet(t("connect.sheets.mv"), metric, [
+      [t("connect.mv.unique"), m.unique],
+      [`${t("connect.mv.fullRate")}, %`, m.fullRate],
+      [t("connect.mv.problems"), m.problems],
+      ...MV_RESULTS.map((r) => [t(`connect.result.${r}`), m.results[r]]),
+    ]);
+    sheet(
+      t("connect.sheets.questions"),
+      [col("question", 70), col("answer", 28), col("count"), col("problemRate")],
+      m.questions.flatMap((q) => [
+        ...q.answers.map((a, i): Value[] => [
+          q.q,
+          a.value,
+          a.count,
+          i === 0 ? q.problemRate : null,
+        ]),
+        ...(q.unanswered ? [[q.q, t("connect.mv.unanswered"), q.unanswered, null]] : []),
+      ]),
     );
     sheet(
-      t("connect.sheets.checklist"),
-      [col("question", 70), col("share"), col("count")],
-      e.checklistFails.map((f) => [f.q, f.rate, `${f.no}/${f.total}`]),
+      t("connect.sheets.equipment"),
+      [col("value", 50), col("count")],
+      m.equipment.map((e) => [e.type, e.count]),
     );
+  };
+
+  const people = (rows: TsmRow[]) =>
+    sheet(
+      t("connect.sheets.people"),
+      [
+        col("tsm", 26),
+        col("person", 30),
+        col("zone", 18),
+        col("region", 16),
+        col("planned", 10),
+        col("visitedRate", 10),
+        col("connectRate", 10),
+        col("withMvRate", 10),
+        col("withOosRate", 10),
+        col("inTimeRate", 10),
+        col("otherEmployee", 10),
+        col("closed", 10),
+        col("attention", 10),
+        col("mvFullRate", 10),
+        col("problems", 10),
+        col("oosFound", 10),
+        col("orders", 10),
+        col("packs", 10),
+        col("sum", 16),
+        col("statuses", 60),
+      ],
+      rows.map((r) => [
+        r.code,
+        r.name,
+        r.zone,
+        r.region,
+        r.planned,
+        r.visitedRate,
+        r.connectRate,
+        r.withMvRate,
+        r.withOosRate,
+        r.inTimeRate,
+        r.otherEmployee,
+        r.closed,
+        r.attention,
+        r.mvFullRate,
+        r.problems,
+        r.oosFound,
+        r.orders,
+        r.packs,
+        r.sum,
+        r.statuses.map((s) => `${s.status || t("connect.oos.noStatus")}: ${s.count}`).join("; "),
+      ]),
+    );
+
+  const ism = (block: IsmBlock | null, issues: ReturnType<typeof paymentIssues> | null) => {
+    const name = `${t("connect.sheets.ism")} ${monthsLabel(report.months)}`;
+    if (issues)
+      return sheet(
+        name,
+        [
+          col("store", 40),
+          col("city", 16),
+          col("date", 12),
+          col("stage", 24),
+          col("status", 40),
+          col("sum", 14),
+        ],
+        issues.map((p) => [
+          p.store,
+          p.city,
+          p.day,
+          t(`connect.paymentStage.${p.stage}`),
+          [p.note, ...p.failed].filter(Boolean).join("; ") || null,
+          p.sum,
+        ]),
+      );
+    if (!block) return;
+    const ws = sheet(
+      name,
+      [col("stage", 40), col("count"), col("sum", 18)],
+      [
+        [t("connect.kpi.requests"), block.requests, block.contractSum],
+        ...block.stages.map((s) => [t(`connect.paymentStage.${s.id}`), s.value, s.sum]),
+      ],
+    );
+    if (block.waitingList.length) {
+      ws.addRow([]);
+      ws.addRow([t("connect.ism.waiting")]).font = { bold: true };
+      ws.addRow([
+        t("connect.col.store"),
+        t("connect.col.person"),
+        t("connect.col.stage"),
+        t("connect.col.decider"),
+        t("connect.col.sum"),
+        t("connect.col.days"),
+      ]).font = { bold: true };
+      for (const p of block.waitingList)
+        ws.addRow([
+          p.store,
+          p.person,
+          t(`connect.paymentStage.${p.stage}`),
+          p.decider,
+          p.sum,
+          p.days,
+        ]);
+    }
+    if (block.checklistFails.length) {
+      ws.addRow([]);
+      ws.addRow([t("connect.ism.checklist")]).font = { bold: true };
+      for (const f of block.checklistFails) ws.addRow([f.q, `${f.no}/${f.total}`, `${f.rate}%`]);
+    }
+  };
+
+  if (report.exec) {
+    const e = report.exec;
+    const { visits: v, oos: o, mv: m } = e.sections;
+    const summary = sheet(t("connect.sheets.summary"), metric, [
+      [`${t("connect.tile.planDone")}, %`, v.visitedRate],
+      [`${t("connect.tile.connectUsed")}, %`, v.connectRate],
+      [`${t("connect.status.ok")}, %`, v.allGoodRate],
+      [`${t("connect.tile.mvFull")}, %`, m.fullRate],
+      [t("connect.tile.oosStores"), o.withGap],
+      [t("connect.tile.orders"), o.orders],
+      [t("connect.oos.packs"), o.packs],
+      [`${t("connect.tile.ordersSum")}, ${t("connect.sum")}`, o.sum],
+    ]);
+    summary.insertRow(1, [title(t("connect.views.exec"))]);
+    summary.getRow(1).font = { bold: true, size: 14 };
+    sheet(
+      t("connect.sheets.regions"),
+      [
+        col("region", 20),
+        col("people", 8),
+        col("planned", 10),
+        col("visitedRate", 10),
+        col("connectRate", 10),
+        col("withMvRate", 10),
+        col("withOosRate", 10),
+        col("inTimeRate", 10),
+        col("otherEmployee", 10),
+        col("closed", 10),
+        col("mvFullRate", 10),
+        col("oosFound", 10),
+        col("orders", 10),
+        col("packs", 10),
+        col("sum", 16),
+      ],
+      e.regions.map((r) => [
+        r.region,
+        r.people,
+        r.planned,
+        r.visitedRate,
+        r.connectRate,
+        r.withMvRate,
+        r.withOosRate,
+        r.inTimeRate,
+        r.otherEmployee,
+        r.closed,
+        r.mvFullRate,
+        r.oosFound,
+        r.orders,
+        r.packs,
+        r.sum,
+      ]),
+    );
+    sections(e.sections, title(t("connect.section.visits")));
+    ism(e.ism, null);
   }
 
   if (report.manager) {
     const m = report.manager;
-    sheet(
-      t("connect.sheets.people"),
-      [
-        col("person", 44),
-        col("open"),
-        col("checks"),
-        col("gaps"),
-        col("ordersFromChecks"),
-        col("orders"),
-        col("delivered"),
-        col("noAnswer"),
-        col("requests"),
-        col("contractSum", 16),
-        col("paid"),
-        col("checklist"),
-        col("visits"),
-        col("visitScore"),
-      ],
-      m.people.map((p) => [
-        p.person,
-        p.open,
-        p.checks,
-        p.gaps,
-        p.ordersFromChecks,
-        p.orders,
-        p.delivered,
-        p.noAnswer,
-        p.requests,
-        p.contractSum,
-        p.paid,
-        p.checklist,
-        p.visits,
-        p.visitScore,
-      ]),
-    );
-    sheet(
-      t("connect.sheets.cities"),
-      [
-        col("city", 20),
-        col("stores"),
-        col("checks"),
-        col("gapRate"),
-        col("orders"),
-        col("delivered"),
-        col("requests"),
-        col("contractSum", 16),
-        col("waiting"),
-        col("checklist"),
-        col("visitScore"),
-      ],
-      m.cities.map((c) => [
-        c.city,
-        c.stores,
-        c.checks,
-        c.gapRate,
-        c.orders,
-        c.delivered,
-        c.requests,
-        c.contractSum,
-        c.waiting,
-        c.checklist,
-        c.visitScore,
-      ]),
-    );
-    sheet(
-      t("connect.sheets.waiting"),
-      [
-        col("store", 40),
-        col("city", 16),
-        col("person", 40),
-        col("stage", 22),
-        col("sum", 14),
-        col("days", 8),
-      ],
-      m.waitingPayments.map((p) => [
-        p.store,
-        p.city,
-        p.person,
-        t(`connect.paymentStage.${p.stage}`),
-        p.sum,
-        p.days,
-      ]),
-    );
-    sheet(
-      t("connect.sheets.stuck"),
-      [
-        col("store", 40),
-        col("city", 16),
-        col("person", 40),
-        col("status", 32),
-        col("agent", 22),
-        col("sum", 12),
-        col("days", 8),
-      ],
-      m.stuckOrders.map((o) => [o.store, o.city, o.person, o.status, o.agentAnswer, o.sum, o.days]),
-    );
-    sheet(
-      t("connect.sheets.skuCity"),
-      [col("sku", 34), ...m.skuCity.cities.map((city) => ({ header: `${city}, %`, width: 14 }))],
-      m.skuCity.rows.map((r) => [r.sku, ...r.cells.map((c) => c.rate)]),
-    );
-    sheet(
-      t("connect.sheets.checklist"),
-      [col("question", 70), col("share"), col("count")],
-      m.checklistFails.map((f) => [f.q, f.rate, `${f.no}/${f.total}`]),
-    );
-    sheet(
-      t("connect.sheets.visits"),
-      [col("question", 70), col("share"), col("count")],
-      m.visitFails.map((f) => [f.q, f.rate, `${f.no}/${f.total}`]),
-    );
+    people(m.people);
+    sections(m.sections, title(t("connect.views.manager")));
+    ism(m.ism, null);
   }
 
-  if (report.executor && report.query.person) {
+  if (report.executor) {
     const x = report.executor;
-    const k = x.kpis;
-    const summary = sheet(
-      t("connect.sheets.summary"),
-      [col("metric", 40), col("value", 18)],
-      [
-        [t("connect.col.checks"), k.checks],
-        [t("connect.col.gaps"), k.gaps],
-        [t("connect.col.ordersFromChecks"), k.ordersFromChecks],
-        [t("connect.col.orders"), k.orders],
-        [t("connect.col.delivered"), k.delivered],
-        [t("connect.col.noAnswer"), k.noAnswer],
-        [t("connect.col.requests"), k.requests],
-        [`${t("connect.col.contractSum")}, ${t("connect.sum")}`, k.contractSum],
-        [t("connect.col.paid"), k.paid],
-        [`${t("connect.col.checklist")}, %`, k.checklist],
-        [t("connect.col.visits"), k.visits],
-        [`${t("connect.col.visitScore")}, %`, k.visitScore],
-      ],
-    );
-    summary.insertRow(1, [`${report.query.person}: ${periodLabel(report)}`]);
-    summary.getRow(1).font = { bold: true, size: 14 };
+    const d = x.detail;
+    const heading = `${x.row.code}${x.row.name ? ` · ${x.row.name}` : ""}: ${period}`;
+    people([x.row]).insertRow(1, [heading]);
     sheet(
-      t("connect.sheets.gaps"),
-      [col("store", 40), col("city", 16), col("date", 12), col("sku", 80)],
-      x.gapsWithoutOrder.map((g) => [g.store, g.city, g.day, g.skus.join(", ")]),
-    );
-    sheet(
-      t("connect.sheets.openOrders"),
+      t("connect.sheets.attention"),
       [
         col("store", 40),
-        col("city", 16),
         col("date", 12),
-        col("status", 32),
-        col("sum", 12),
-        col("days", 8),
+        col("smartUp", 14),
+        col("mv", 8),
+        col("oos", 8),
+        col("issue", 60),
       ],
-      x.openOrders.map((o) => [o.store, o.city, o.day, o.status, o.sum, o.days]),
-    );
-    sheet(
-      t("connect.sheets.paymentIssues"),
-      [
-        col("store", 40),
-        col("city", 16),
-        col("date", 12),
-        col("stage", 24),
-        col("status", 30),
-        col("sum", 14),
-        col("problem", 70),
-      ],
-      x.paymentIssues.map((p) => [
-        p.store,
-        p.city,
-        p.day,
-        t(`connect.paymentStage.${p.stage}`),
-        p.note,
-        p.sum,
-        p.failed.join("; "),
+      d.attention.map((a) => [
+        a.store,
+        a.day,
+        a.smartUp,
+        a.mvAt,
+        a.oosAt,
+        [
+          ...a.issues.map((i) => t(`connect.status.${i}`)),
+          a.result && a.result !== "full" && a.result !== "closed"
+            ? `${t("connect.section.mv")}: ${t(`connect.result.${a.result}`)}`
+            : null,
+          a.closed ? t("connect.status.closed") : null,
+          a.by ? t("connect.executor.byOther", { person: a.by }) : null,
+        ]
+          .filter(Boolean)
+          .join("; "),
       ]),
     );
     sheet(
-      t("connect.sheets.openVisits"),
-      [col("store", 40), col("city", 16), col("date", 12), col("visitScore"), col("problem", 80)],
-      x.openVisits.map((v) => [
-        v.store,
-        v.city,
-        v.day,
-        v.percent,
-        [v.done ? null : t("connect.executor.visitOpen"), ...v.problems].filter(Boolean).join("; "),
-      ]),
+      t("connect.sheets.notVisited"),
+      [col("store", 40), col("date", 12)],
+      d.notVisited.map((n) => [n.store, n.day]),
     );
+    sheet(
+      t("connect.sheets.withoutVisit"),
+      [col("store", 40), col("date", 12), col("time", 8)],
+      d.withoutVisit.map((w) => [w.store, w.day, w.at]),
+    );
+    sheet(
+      t("connect.sheets.duplicates"),
+      [col("store", 40), col("date", 12), col("mv", 8), col("oos", 8)],
+      d.duplicates.map((w) => [w.store, w.day, w.mv || null, w.oos || null]),
+    );
+    sheet(
+      t("connect.sheets.problems"),
+      [col("store", 40), col("date", 12), col("problems", 90)],
+      d.problems.map((p) => [p.store, p.day, p.problems.join("; ")]),
+    );
+    sheet(
+      t("connect.sheets.orders"),
+      [
+        col("order", 14),
+        col("store", 40),
+        col("date", 12),
+        col("status", 40),
+        col("packs"),
+        col("sum"),
+      ],
+      d.orders.map((o) => [o.id, o.store, o.day, o.status, o.packs, o.sum]),
+    );
+    sections(x.sections, heading);
+    ism(null, x.payments);
   }
   return Buffer.from(await book.xlsx.writeBuffer());
 }
-
-const colName = (key: keyof typeof ru.connect.col) => t(`connect.col.${key}`);

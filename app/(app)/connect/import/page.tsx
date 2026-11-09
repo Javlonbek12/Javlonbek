@@ -9,7 +9,7 @@ import { ConfirmAction } from "@/components/ui/confirm-action";
 import { PageHeader } from "@/components/ui/page-header";
 import type { ConnectKind } from "@/lib/generated/prisma/enums";
 import { dateFormat, t } from "@/lib/i18n";
-import { canLeadConnect, connectFacets, lastImports } from "@/modules/connect/service";
+import { canLeadConnect, connectTotal, lastImports } from "@/modules/connect/service";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getSettings } from "@/modules/core/settings/service";
 import { formatRange } from "@/modules/reports/format";
@@ -18,18 +18,26 @@ import { todayInTimezone } from "@/lib/dates";
 import { clearConnectAction, importConnectFileAction } from "../actions";
 
 const ERRORS = ["forbidden", "empty", "unknown", "tooBig"] as const;
-const KINDS = ["OOS", "ORDER", "PAYMENT", "VISIT"] as const satisfies ConnectKind[];
+const KINDS = [
+  "SU_VISIT",
+  "SU_PERSON",
+  "VISIT",
+  "OOS",
+  "ORDER",
+  "PAYMENT",
+] as const satisfies ConnectKind[];
 
-// Upload the Connect bot's Excel exports; recent uploads and (for the owner) a full reset.
+// Upload the Connect bot's and Smart Up's Excel exports; recent uploads and (for the owner) a full
+// reset.
 export default async function ConnectImportPage({ searchParams }: PageProps<"/connect/import">) {
   const user = await requireUser();
   if (!canLeadConnect(user)) redirect("/connect");
   const params = await searchParams;
   const error = ERRORS.find((e) => e === params.error);
   const done = typeof params.done === "string" ? params.done.split("\n").filter(Boolean) : [];
-  const [imports, facets, { timezone }] = await Promise.all([
+  const [imports, total, { timezone }] = await Promise.all([
     lastImports(),
-    connectFacets(),
+    connectTotal(),
     getSettings(user.id),
   ]);
   // Times in the viewer's time zone, not the server's.
@@ -72,17 +80,25 @@ export default async function ConnectImportPage({ searchParams }: PageProps<"/co
                 from = "",
                 to = "",
                 test = "0",
+                replaced = "",
               ] = line.split("|");
+              const range = from && to ? formatRange(from, to, today) : null;
               return (
                 <li key={line}>
-                  {t("connect.import.result", { file, kind: kindName(kind), created, updated })}
+                  {kind === "SU_VISIT"
+                    ? t("connect.import.resultSmartUp", { file, kind: kindName(kind), created })
+                    : t("connect.import.result", { file, kind: kindName(kind), created, updated })}
                   {skipped !== "0" && `; ${t("connect.import.skipped", { count: skipped })}`}
-                  {(from || test !== "0") && (
+                  {(range || test !== "0") && (
                     <span className="text-muted-foreground block text-xs">
                       {[
-                        from &&
-                          to &&
-                          t("connect.import.range", { range: formatRange(from, to, today) }),
+                        range &&
+                          (replaced
+                            ? t("connect.import.replaced", { range })
+                            : t("connect.import.range", { range })),
+                        replaced &&
+                          replaced !== "0" &&
+                          t("connect.import.replacedRows", { count: replaced }),
                         test !== "0" && t("connect.import.testRows", { count: test }),
                       ]
                         .filter(Boolean)
@@ -121,7 +137,7 @@ export default async function ConnectImportPage({ searchParams }: PageProps<"/co
 
       <Card className="gap-3">
         <CardTitle>{t("connect.import.history")}</CardTitle>
-        <CardDescription>{t("connect.import.total", { count: facets.total })}</CardDescription>
+        <CardDescription>{t("connect.import.total", { count: total })}</CardDescription>
         {imports.length === 0 ? (
           <p className="text-muted-foreground text-sm">{t("connect.import.none")}</p>
         ) : (
@@ -140,13 +156,13 @@ export default async function ConnectImportPage({ searchParams }: PageProps<"/co
         )}
       </Card>
 
-      {user.role === "OWNER" && facets.total > 0 && (
+      {user.role === "OWNER" && total > 0 && (
         <Card className="gap-3">
           <CardTitle>{t("connect.import.clear")}</CardTitle>
           <CardDescription>{t("connect.import.clearHint")}</CardDescription>
           <ConfirmAction
             label={t("connect.import.clearConfirm")}
-            title={t("connect.import.clearQuestion", { count: facets.total })}
+            title={t("connect.import.clearQuestion", { count: total })}
             hint={t("connect.import.clearHint")}
             confirm={t("connect.import.clearYes")}
             action={clearConnectAction}

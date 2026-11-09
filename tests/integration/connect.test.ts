@@ -135,7 +135,7 @@ describe("Connect analytics: upload and downloads", () => {
       { name: "oos.xlsx", buffer: oos },
       { name: "ism.xlsx", buffer: payments },
     ]);
-    const sheet = { updated: 0, skipped: 0, kept: 0, newer: null, test: 0 };
+    const sheet = { updated: 0, skipped: 0, kept: 0, newer: null, test: 0, replaced: null };
     const oct5 = { from: "2026-10-05", to: "2026-10-05" };
     // The result says which days the file covers and how many test-store rows were left out.
     expect(result).toEqual([
@@ -189,53 +189,45 @@ describe("Connect analytics: upload and downloads", () => {
     expect(data.payments[0]?.checks).toEqual([{ q: "Тестовый пункт чек-листа", ok: false }]);
     expect(await loadDataset({ city: "Другой город" })).toMatchObject({ oos: [], payments: [] });
 
-    // All three levels download as Excel and PowerPoint.
+    // The old exports still make a report (stock checks of the week of 5 Oct, ISM by months) and
+    // download as Excel and PowerPoint.
     for (const view of ["exec", "manager", "executor"]) {
-      const query = parseConnectQuery({ view, person: PERSON }, true);
+      const query = parseConnectQuery({ view, person: "TSM_TEST_1" }, true);
       const report = await buildConnectReport(query, "2026-10-21");
       expect(report.empty).toBe(false);
-      const xlsx = await connectXlsx(report);
+      const xlsx = await connectXlsx(report, "2026-10-21");
       const book = new ExcelJS.Workbook();
       await book.xlsx.load(xlsx as unknown as ArrayBuffer);
       expect(book.worksheets.length).toBeGreaterThan(1);
-      const pptx = await connectPptx(report);
+      const pptx = await connectPptx(report, "2026-10-21");
       expect(pptx.subarray(0, 2).toString()).toBe("PK");
     }
     const exec = await buildConnectReport(parseConnectQuery({}, true), "2026-10-21");
-    expect(exec.exec?.kpis).toMatchObject({ checks: 2, gapRate: 100, requests: 1, waiting: 1 });
-    const mine = await buildConnectReport(
-      parseConnectQuery({ view: "executor", person: PERSON }, true),
-      "2026-10-21",
-    );
-    expect(mine.executor?.gapsWithoutOrder.map((g) => g.id)).toEqual(["1", "2"]);
-    expect(mine.executor?.paymentIssues.map((p) => p.stage)).toEqual(["waitingBdm"]);
-    // Without a person: everyone's open items.
-    const everyone = await buildConnectReport(
-      parseConnectQuery({ view: "executor" }, true),
-      "2026-10-21",
-    );
-    expect(everyone.executors?.map((e) => [e.person, e.openCount])).toEqual([[PERSON, 3]]);
-    // October against September: no data before, so no comparison.
-    const october = await buildConnectReport(
-      parseConnectQuery({ from: "2026-10", to: "2026-10" }, true),
-      "2026-10-21",
-    );
-    expect(october.previous).toBeNull();
+    expect(exec.period).toEqual({ from: "2026-10-05", to: "2026-10-11", preset: null });
+    expect(exec.exec?.sections.oos).toMatchObject({ checked: 2, withGap: 2 });
+    expect(exec.exec?.ism).toMatchObject({ requests: 1, waiting: 1 });
 
     expect(await clearConnectData(owner)).toBe(4);
   });
 
-  it("an employee sees only their own list once names are linked to people", async () => {
+  it("an employee sees only their own list once TSM codes are linked to people", async () => {
     const owner = await withAccess(await createTestUser("OWNER"));
     const member = await withAccess(await createTestUser("MEMBER"));
-    const query = parseConnectQuery({ view: "executor", person: "Другой (тест)" }, false);
+    const query = parseConnectQuery({ view: "executor", person: "TSM_OTHER_9" }, false);
     // No links yet: works as before.
     expect(scopeConnectQuery(query, false, await connectPeopleLinks(), member.id).own).toBeNull();
     await expect(linkConnectPerson(member, PERSON, member.id)).rejects.toBeInstanceOf(ConnectError);
+    // A link saved before by the bot's full name means its code; linking again keeps the code.
+    await db.systemState.create({
+      data: { key: "connect.people", value: JSON.stringify({ [PERSON]: owner.id }) },
+    });
     await linkConnectPerson(owner, PERSON, member.id);
-    expect(await connectPeopleLinks()).toEqual({ [PERSON]: member.id });
+    expect(await connectPeopleLinks()).toEqual({ TSM_TEST_1: member.id });
     const scoped = scopeConnectQuery(query, false, await connectPeopleLinks(), member.id);
-    expect(scoped).toMatchObject({ own: [PERSON], query: { view: "executor", person: PERSON } });
+    expect(scoped).toMatchObject({
+      own: ["TSM_TEST_1"],
+      query: { view: "executor", person: "TSM_TEST_1" },
+    });
     // Somebody not linked sees nothing of others.
     const other = await createTestUser("MEMBER");
     expect(scopeConnectQuery(query, false, await connectPeopleLinks(), other.id)).toMatchObject({
