@@ -1,8 +1,16 @@
-import { currentLocale, intlLocale, t, type Locale, type TranslationKey } from "@/lib/i18n";
+import {
+  currentExportLocale,
+  currentLocale,
+  intlLocale,
+  t,
+  type ExportLocale,
+  type Locale,
+  type TranslationKey,
+} from "@/lib/i18n";
 
 // Number formats in the current (or given) language, made once per language and options.
 const numberFormats = new Map<string, Intl.NumberFormat>();
-function numberFormat(options: Intl.NumberFormatOptions, locale: Locale) {
+function numberFormat(options: Intl.NumberFormatOptions, locale: ExportLocale) {
   const key = `${locale}|${JSON.stringify(options)}`;
   let format = numberFormats.get(key);
   if (!format) {
@@ -14,12 +22,20 @@ function numberFormat(options: Intl.NumberFormatOptions, locale: Locale) {
 
 // A number in the reader's language: «7,3» and «12 500» in Russian, «7.3» and «12,500» in English.
 // Trailing zeros are dropped («7» not «7,0»).
-export function formatNumber(value: number, maxDecimals = 1, locale = currentLocale()): string {
+export function formatNumber(
+  value: number,
+  maxDecimals = 1,
+  locale: ExportLocale = currentExportLocale(),
+): string {
   return numberFormat({ maximumFractionDigits: maxDecimals }, locale).format(value);
 }
 
 // A share (0.173) as percent: «17 %» in Russian, «17%» in English.
-export function formatPercent(share: number, maxDecimals = 0, locale = currentLocale()): string {
+export function formatPercent(
+  share: number,
+  maxDecimals = 0,
+  locale: ExportLocale = currentExportLocale(),
+): string {
   return numberFormat({ style: "percent", maximumFractionDigits: maxDecimals }, locale).format(
     share,
   );

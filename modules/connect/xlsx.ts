@@ -4,12 +4,15 @@ import { t } from "@/lib/i18n";
 import type { ru } from "@/lib/i18n/ru";
 
 import type { IsmBlock, paymentIssues } from "./analytics";
+import { localizeData } from "./localize";
 import { monthsLabel, periodLabel, type ConnectReport } from "./report";
 import { MV_RESULTS, VISIT_ISSUES, type TsmRow, type VisitSections } from "./visits";
 
 type Value = string | number | null;
 
 // The level on the screen as Excel: the same sections, one sheet each, ready to filter and sort.
+// Texts follow the language of the current work (see withExportLocale); known data values
+// (answers, statuses, questions, equipment) are translated with localizeData.
 export async function connectXlsx(report: ConnectReport, today: string): Promise<Buffer> {
   const book = new ExcelJS.Workbook();
   book.creator = t("app.name");
@@ -80,7 +83,12 @@ export async function connectXlsx(report: ConnectReport, today: string): Promise
     sheet(
       t("connect.sheets.statuses"),
       [col("status", 44), col("count"), col("packs"), col("sum", 18)],
-      o.byStatus.map((x) => [x.status || t("connect.oos.noStatus"), x.count, x.packs, x.sum]),
+      o.byStatus.map((x) => [
+        localizeData(x.status) || t("connect.oos.noStatus"),
+        x.count,
+        x.packs,
+        x.sum,
+      ]),
     );
     sheet(
       t("connect.sheets.skus"),
@@ -99,18 +107,20 @@ export async function connectXlsx(report: ConnectReport, today: string): Promise
       [col("question", 70), col("answer", 28), col("count"), col("problemRate")],
       m.questions.flatMap((q) => [
         ...q.answers.map((a, i): Value[] => [
-          q.q,
-          a.value,
+          localizeData(q.q),
+          localizeData(a.value),
           a.count,
           i === 0 ? q.problemRate : null,
         ]),
-        ...(q.unanswered ? [[q.q, t("connect.mv.unanswered"), q.unanswered, null]] : []),
+        ...(q.unanswered
+          ? [[localizeData(q.q), t("connect.mv.unanswered"), q.unanswered, null]]
+          : []),
       ]),
     );
     sheet(
       t("connect.sheets.equipment"),
       [col("value", 50), col("count")],
-      m.equipment.map((e) => [e.type, e.count]),
+      m.equipment.map((e) => [localizeData(e.type), e.count]),
     );
   };
 
@@ -159,7 +169,9 @@ export async function connectXlsx(report: ConnectReport, today: string): Promise
         r.orders,
         r.packs,
         r.sum,
-        r.statuses.map((s) => `${s.status || t("connect.oos.noStatus")}: ${s.count}`).join("; "),
+        r.statuses
+          .map((s) => `${localizeData(s.status) || t("connect.oos.noStatus")}: ${s.count}`)
+          .join("; "),
       ]),
     );
 
@@ -181,7 +193,10 @@ export async function connectXlsx(report: ConnectReport, today: string): Promise
           p.city,
           p.day,
           t(`connect.paymentStage.${p.stage}`),
-          [p.note, ...p.failed].filter(Boolean).join("; ") || null,
+          [p.note, ...p.failed]
+            .map((x) => localizeData(x))
+            .filter(Boolean)
+            .join("; ") || null,
           p.sum,
         ]),
       );
@@ -218,7 +233,8 @@ export async function connectXlsx(report: ConnectReport, today: string): Promise
     if (block.checklistFails.length) {
       ws.addRow([]);
       ws.addRow([t("connect.ism.checklist")]).font = { bold: true };
-      for (const f of block.checklistFails) ws.addRow([f.q, `${f.no}/${f.total}`, `${f.rate}%`]);
+      for (const f of block.checklistFails)
+        ws.addRow([localizeData(f.q), `${f.no}/${f.total}`, `${f.rate}%`]);
     }
   };
 
@@ -336,7 +352,7 @@ export async function connectXlsx(report: ConnectReport, today: string): Promise
     sheet(
       t("connect.sheets.problems"),
       [col("store", 40), col("date", 12), col("problems", 90)],
-      d.problems.map((p) => [p.store, p.day, p.problems.join("; ")]),
+      d.problems.map((p) => [p.store, p.day, p.problems.map((x) => localizeData(x)).join("; ")]),
     );
     sheet(
       t("connect.sheets.orders"),
@@ -348,7 +364,7 @@ export async function connectXlsx(report: ConnectReport, today: string): Promise
         col("packs"),
         col("sum"),
       ],
-      d.orders.map((o) => [o.id, o.store, o.day, o.status, o.packs, o.sum]),
+      d.orders.map((o) => [o.id, o.store, o.day, localizeData(o.status), o.packs, o.sum]),
     );
     sections(x.sections, heading);
     ism(null, x.payments);

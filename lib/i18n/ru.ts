@@ -3108,7 +3108,14 @@ export const ru = {
     sum: "сум",
     packs: "{count} пач.",
     more: "и ещё {count} — полный список в Excel",
-    download: { xlsx: "Excel", pptx: "PowerPoint" },
+    download: {
+      xlsx: "Excel",
+      pptx: "PowerPoint",
+      title: "Скачать",
+      language: "Язык файла",
+      // Each language in its own language.
+      languages: { ru: "Русский", en: "English", ko: "한국어" },
+    },
     kinds: {
       OOS: "Проверки остатков (OOS)",
       ORDER: "Заказы",

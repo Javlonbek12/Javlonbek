@@ -3097,7 +3097,14 @@ export const en: Dictionary = {
     sum: "UZS",
     packs: "{count} packs",
     more: "and {count} more — the full list is in Excel",
-    download: { xlsx: "Excel", pptx: "PowerPoint" },
+    download: {
+      xlsx: "Excel",
+      pptx: "PowerPoint",
+      title: "Download",
+      language: "File language",
+      // Each language in its own language.
+      languages: { ru: "Русский", en: "English", ko: "한국어" },
+    },
     kinds: {
       OOS: "Stock checks (OOS)",
       ORDER: "Orders",

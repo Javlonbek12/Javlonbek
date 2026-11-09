@@ -52,3 +52,47 @@ describe("languages", () => {
     expect(t("nav.tasks")).toBe("Задачи");
   });
 });
+
+describe("Korean (downloads only)", () => {
+  const holes = (text: string) => (text.match(/\{\w+\}/g) ?? []).sort();
+  const at = (node: object, key: string) =>
+    key.split(".").reduce<unknown>((n, part) => (n as Record<string, unknown>)?.[part], node);
+  const leaves = (node: object, prefix = ""): string[] =>
+    Object.entries(node).flatMap(([key, value]) =>
+      typeof value === "string" ? [`${prefix}${key}`] : leaves(value, `${prefix}${key}.`),
+    );
+
+  it("has every string of en.connect with the same placeholders", async () => {
+    const { en } = await import("./en");
+    const { ko } = await import("./ko");
+    for (const key of leaves(en.connect)) {
+      const korean = at(ko.connect, key);
+      expect(typeof korean, `connect.${key}`).toBe("string");
+      expect(holes(korean as string), `connect.${key}`).toEqual(
+        holes(at(en.connect, key) as string),
+      );
+    }
+    expect(ko.app.name).toBeTruthy();
+  });
+
+  it("is used inside withExportLocale: English for missing keys, Korean dates and numbers", async () => {
+    const { withExportLocale } = await import("./server");
+    const { currentLocale, dateFormat, intlLocale } = await import("./index");
+    withExportLocale("ko", () => {
+      expect(t("connect.title")).toBe("Connect 분석");
+      expect(t("connect.packs", { count: 5 })).toBe("5갑");
+      // Not in ko.ts: taken from English.
+      expect(t("nav.tasks")).toBe("Tasks");
+      // Code that asks for an interface language sees English.
+      expect(currentLocale()).toBe("en");
+      expect(intlLocale()).toBe("ko-KR");
+      expect(
+        dateFormat({ day: "numeric", month: "short", timeZone: "UTC" }).format(
+          new Date("2026-11-09T00:00:00Z"),
+        ),
+      ).toBe("11월 9일");
+    });
+    expect(currentLocale()).toBe("ru");
+    expect(t("connect.title")).toBe("Аналитика Connect");
+  });
+});
