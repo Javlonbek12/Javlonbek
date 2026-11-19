@@ -50,19 +50,22 @@ model User {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  invitedBy      User?          @relation("UserInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
-  invitedUsers   User[]         @relation("UserInvitedBy")
-  deactivatedBy  User?          @relation("UserDeactivatedBy", fields: [deactivatedById], references: [id], onDelete: SetNull)
-  deactivated    User[]         @relation("UserDeactivatedBy")
-  manager        User?          @relation("ManagerReports", fields: [managerId], references: [id], onDelete: SetNull)
-  reports        User[]         @relation("ManagerReports")
-  notesAbout     EmployeeNote[] @relation("NoteEmployee")
-  notesWritten   EmployeeNote[] @relation("NoteAuthor")
+  invitedBy      User?            @relation("UserInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
+  invitedUsers   User[]           @relation("UserInvitedBy")
+  deactivatedBy  User?            @relation("UserDeactivatedBy", fields: [deactivatedById], references: [id], onDelete: SetNull)
+  deactivated    User[]           @relation("UserDeactivatedBy")
+  manager        User?            @relation("ManagerReports", fields: [managerId], references: [id], onDelete: SetNull)
+  reports        User[]           @relation("ManagerReports")
+  notesAbout     EmployeeNote[]   @relation("NoteEmployee")
+  notesWritten   EmployeeNote[]   @relation("NoteAuthor")
+  duties         Responsibility[] @relation("ResponsibilityUser")
+  dutiesDeputy   Responsibility[] @relation("ResponsibilityDeputy")
+  dutiesCreated  Responsibility[] @relation("ResponsibilityCreator")
   orgNode        OrgNode?
   settings       UserSettings?
   notifications  Notification[]
-  invitesCreated Invite[]       @relation("InviteCreatedBy")
-  inviteUsed     Invite?        @relation("InviteUsedBy")
+  invitesCreated Invite[]         @relation("InviteCreatedBy")
+  inviteUsed     Invite?          @relation("InviteUsedBy")
   activity       ActivityLog[]
 
   tasksCreated       Task[]                  @relation("TaskCreator")
@@ -850,12 +853,58 @@ model OrgNode {
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
 
-  user     User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
-  parent   OrgNode?  @relation("OrgTree", fields: [parentId], references: [id], onDelete: SetNull)
-  children OrgNode[] @relation("OrgTree")
+  user     User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  parent   OrgNode?         @relation("OrgTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children OrgNode[]        @relation("OrgTree")
   invites  Invite[]
+  duties   Responsibility[]
 
   @@index([parentId])
+}
+
+// ============================================================
+// team: who is responsible for what («Команда» → «Обязанности»)
+// ============================================================
+
+enum ResponsibilityStatus {
+  CONFIRMED
+  // Proposed from the person's work in the app (scripts/responsibilities-suggest.ts): seen only by
+  // those who may confirm it.
+  SUGGESTED
+}
+
+// An area someone is responsible for, e.g. «Отправка POSM-материалов». Written for a person who
+// holds an org chart position, it is tied to the position: the responsible shown is whoever holds
+// it now, so the item stays with the place when people change (`userId` keeps who it was written
+// for). Without a position, `userId` alone.
+model Responsibility {
+  id          String               @id @default(cuid())
+  title       String
+  // Plain text with line breaks.
+  description String?
+  userId      String?
+  positionId  String?
+  // Who stands in while the responsible is away.
+  deputyId    String?
+  // A section of the app (registry id, e.g. "distribution"), shown as a link.
+  module      String?
+  status      ResponsibilityStatus @default(CONFIRMED)
+  // How a suggestion was made: «По данным за 01.10–19.11: 34 задачи, …».
+  source      String?
+  sortOrder   Int                  @default(0)
+  // Null for a suggestion made from the data.
+  createdById String?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  user      User?    @relation("ResponsibilityUser", fields: [userId], references: [id], onDelete: SetNull)
+  position  OrgNode? @relation(fields: [positionId], references: [id], onDelete: SetNull)
+  deputy    User?    @relation("ResponsibilityDeputy", fields: [deputyId], references: [id], onDelete: SetNull)
+  createdBy User?    @relation("ResponsibilityCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([positionId])
+  @@index([deputyId])
 }
 
 // ============================================================

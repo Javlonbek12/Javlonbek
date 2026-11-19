@@ -33,6 +33,7 @@ export const AI_FUNCTIONS = [
   "suggestLayout",
   "tagContent",
   "answerHelpQuestion",
+  "responsibilitiesSuggest",
 ] as const;
 export type AiFunction = (typeof AI_FUNCTIONS)[number];
 export const isKnownFunction = (fn: string): fn is AiFunction =>

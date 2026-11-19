@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { Avatar } from "@/components/team/avatar";
+import { DutiesCard } from "@/components/team/duties-card";
 import { LoadChart } from "@/components/team/load-chart";
 import { ProfileRadar } from "@/components/team/profile-radar";
 import { onTimeText, personTasksHref } from "@/components/team/stat-links";
@@ -31,6 +32,7 @@ import { orgPathOf } from "@/modules/org/service";
 import { listAssignableUsers } from "@/modules/tasks/service";
 import { canDeactivate } from "@/modules/team/deactivation";
 import { teamProfiles } from "@/modules/team/profile";
+import { dutiesOfPerson } from "@/modules/team/responsibilities";
 import { countOpenTasks, getEmployeeCard, listManagerCandidates } from "@/modules/team/service";
 import { PERCENT_FROM_TASKS } from "@/modules/team/stats";
 
@@ -111,13 +113,14 @@ export default async function EmployeePage({ params, searchParams }: PageProps<"
   );
   const deactivatable = canDeactivate(viewer, user);
   const off = user.deactivatedAt !== null;
-  const [{ timezone }, managers, orgPath, heirs, openTasks] = await Promise.all([
+  const [{ timezone }, managers, orgPath, heirs, openTasks, duties] = await Promise.all([
     getSettings(viewer.id),
     // The current manager stays in the list even if deactivated, so saving keeps them.
     listManagerCandidates(user.managerId),
     orgPathOf(user.id),
     deactivatable && !off ? listAssignableUsers() : Promise.resolve([]),
     deactivatable && !off ? countOpenTasks(user.id) : Promise.resolve(0),
+    dutiesOfPerson(viewer, user.id),
   ]);
   // The radar is shown to the same people who may see the statistics.
   const profiles = stats ? await teamProfiles(timezone) : null;
@@ -173,6 +176,12 @@ export default async function EmployeePage({ params, searchParams }: PageProps<"
         </Notice>
       )}
       {query.reactivated && <Notice>{t("team.deactivation.reactivated")}</Notice>}
+      {(query.duty === "saved" || query.duty === "confirmed" || query.duty === "deleted") && (
+        <Notice>{t(`team.duties.notices.${query.duty}`)}</Notice>
+      )}
+      {(query.dutyError === "forbidden" || query.dutyError === "notFound") && (
+        <Notice alert>{t(`team.duties.errors.${query.dutyError}`)}</Notice>
+      )}
       {typeof query.error === "string" && <Notice alert>{errorText}</Notice>}
 
       <header className="flex items-start gap-3">
@@ -470,6 +479,14 @@ export default async function EmployeePage({ params, searchParams }: PageProps<"
           </form>
           {!stats && <p className="text-muted-foreground text-xs">{t("team.stats.hidden")}</p>}
         </Card>
+      )}
+      {tab === "profile" && (
+        <DutiesCard
+          personId={user.id}
+          duties={duties}
+          viewer={viewer}
+          canAdd={duties.canAdd && !off}
+        />
       )}
 
       {tab === "notes" && notes && (

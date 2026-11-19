@@ -1,13 +1,15 @@
-import { BellOff } from "lucide-react";
+import { BellOff, Plus } from "lucide-react";
 import Link from "next/link";
 
 import { Avatar } from "@/components/team/avatar";
+import { DutiesList } from "@/components/team/duties-list";
 import { InviteSection } from "@/components/team/invite-section";
 import { LoadChart } from "@/components/team/load-chart";
 import { onTimeText, StatLinks } from "@/components/team/stat-links";
 import { TeamSearch } from "@/components/team/team-search";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { PageHeader } from "@/components/ui/page-header";
 import { Segmented } from "@/components/ui/segmented";
 import { t } from "@/lib/i18n";
@@ -15,8 +17,10 @@ import { cn } from "@/lib/utils";
 import { requireModule } from "@/modules/core/access/guard";
 import { canUseModule } from "@/modules/core/access/actor";
 import { invitableRoles } from "@/modules/core/permissions";
+import { MODULES } from "@/modules/core/registry";
 import { getSettings } from "@/modules/core/settings/service";
 import { displayName } from "@/modules/core/users/display-name";
+import { canAddDuties, isDutySection, listDuties } from "@/modules/team/responsibilities";
 import { listTeam, TEAM_FILTERS, type TeamFilter } from "@/modules/team/service";
 
 const FILTER_LABELS = {
@@ -28,6 +32,32 @@ const FILTER_LABELS = {
 } as const;
 
 type Card = Awaited<ReturnType<typeof listTeam>>["cards"][number];
+
+const VIEWS = ["list", "cards", "duties"] as const;
+const VIEW_LABELS = {
+  list: "team.viewList",
+  cards: "team.viewCards",
+  duties: "team.viewDuties",
+} as const;
+
+// A notice after a responsibility's form or button (`duty=…`, `dutyError=…`).
+function DutyNotice({ notice, error }: { notice: unknown; error: unknown }) {
+  if (error === "forbidden" || error === "notFound" || error === "invalid") {
+    return (
+      <p role="alert" className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
+        {t(`team.duties.errors.${error}`)}
+      </p>
+    );
+  }
+  if (notice === "saved" || notice === "confirmed" || notice === "deleted") {
+    return (
+      <p role="status" className="bg-secondary rounded-md p-3 text-sm">
+        {t(`team.duties.notices.${notice}`)}
+      </p>
+    );
+  }
+  return null;
+}
 
 // Who acts on «бот не подключён»: the owner and managers (they invite and follow up).
 const seesBot = (role: string) => role === "OWNER" || role === "MANAGER";
@@ -138,11 +168,16 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
   const user = await requireModule("team");
   const params = await searchParams;
   const filter: TeamFilter = TEAM_FILTERS.find((f) => f === params.filter) ?? "all";
-  const view = params.view === "cards" ? "cards" : "list";
+  const view = VIEWS.find((v) => v === params.view) ?? "list";
   const search = typeof params.q === "string" ? params.q.slice(0, 100) : "";
-  const [{ cards, counts, hasChart }, settings] = await Promise.all([
+  // «Обязанности»: the section filter (a registry id).
+  const section =
+    typeof params.section === "string" && isDutySection(params.section) ? params.section : "";
+  const duties = view === "duties";
+  const [{ cards, counts, hasChart }, settings, dutyList] = await Promise.all([
     listTeam(user, filter, search),
     getSettings(user.id),
+    duties ? listDuties(user, { q: search, section }) : null,
   ]);
   const showBot = seesBot(user.role);
   // «Отключённые» appears once somebody is deactivated; «Бот не подключён» for those who act on it.
@@ -159,22 +194,36 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
     if (f !== "all") query.set("filter", f);
     if (v !== "list") query.set("view", v);
     if (search) query.set("q", search);
+    if (v === "duties" && section) query.set("section", section);
     return `/team${query.size ? `?${query}` : ""}`;
   };
+  const here = href({});
   const grouped = view === "list" && hasChart && filter !== "deactivated";
 
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
         title={t("team.title")}
+        hint={duties ? t("team.duties.hint") : undefined}
         actions={
-          canUseModule(user, "structure") && (
-            <Button asChild size="sm" variant="outline">
-              <Link href="/team/structure">{t("team.org.open")}</Link>
-            </Button>
-          )
+          <>
+            {duties && canAddDuties(user) && (
+              <Button asChild size="sm" variant="outline">
+                <Link href={`/team/responsibilities/new?${new URLSearchParams({ back: here })}`}>
+                  <Plus />
+                  {t("team.duties.add")}
+                </Link>
+              </Button>
+            )}
+            {canUseModule(user, "structure") && (
+              <Button asChild size="sm" variant="outline">
+                <Link href="/team/structure">{t("team.org.open")}</Link>
+              </Button>
+            )}
+          </>
         }
       />
+      <DutyNotice notice={params.duty} error={params.dutyError} />
 
       {/* Inviting comes first: it is what a manager most often comes here for. */}
       {canInvite && (
@@ -196,60 +245,128 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
         <div className="flex flex-wrap items-center gap-2">
           <TeamSearch
             q={search}
+            placeholder={duties ? t("team.duties.search") : undefined}
             hidden={{
               ...(filter !== "all" ? { filter } : {}),
               ...(view !== "list" ? { view } : {}),
             }}
-          />
+          >
+            {dutyList && (dutyList.sections.length > 0 || section) && (
+              <NativeSelect
+                name="section"
+                defaultValue={section}
+                aria-label={t("team.duties.sectionFilter")}
+                className="h-11 max-w-full rounded-2xl"
+              >
+                <option value="">{t("team.duties.allSections")}</option>
+                {MODULES.filter((m) => dutyList.sections.includes(m.id) || m.id === section).map(
+                  (m) => (
+                    <option key={m.id} value={m.id}>
+                      {t(m.titleKey)}
+                    </option>
+                  ),
+                )}
+              </NativeSelect>
+            )}
+          </TeamSearch>
           <Segmented
             label={t("tasks.views.view")}
-            items={(["list", "cards"] as const).map((v) => ({
+            items={VIEWS.map((v) => ({
               key: v,
-              label: t(v === "list" ? "team.viewList" : "team.viewCards"),
+              label: t(VIEW_LABELS[v]),
               href: href({ view: v }),
               active: v === view,
             }))}
           />
         </div>
-        <div className="flex flex-wrap gap-1 text-sm">
-          {filters.map((f) => (
-            <Link
-              key={f}
-              href={href({ filter: f })}
-              className={cn(
-                "rounded-full border px-3 py-1",
-                f === filter ? "bg-primary text-primary-foreground" : "",
-              )}
-            >
-              {t(FILTER_LABELS[f])} <span className="opacity-70">{counts[f]}</span>
-            </Link>
-          ))}
-        </div>
-        {cards.length === 0 && <p className="text-muted-foreground text-sm">{t("team.empty")}</p>}
-        {view === "cards" ? (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {cards.map((card) => (
-              <CardView key={card.user.id} card={card} viewerId={user.id} showBot={showBot} />
-            ))}
-          </div>
-        ) : (
-          (grouped ? groupByTeam(cards) : ([[undefined, cards]] as const)).map(([team, list]) => (
-            <div key={team ?? "-"} className="flex flex-col gap-1.5">
-              {team !== undefined && (
-                <h2 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-                  {team === null ? t("team.groupOutside") : team || t("team.groupTop")}{" "}
-                  <span className="font-normal">· {list.length}</span>
-                </h2>
-              )}
-              <ul className="bg-card divide-y rounded-xl border">
-                {list.map((card) => (
-                  <Row key={card.user.id} card={card} viewerId={user.id} showBot={showBot} />
-                ))}
-              </ul>
-            </div>
-          ))
+        {dutyList && (
+          <DutiesList
+            groups={dutyList.groups}
+            viewer={user}
+            back={here}
+            filtered={Boolean(search || section)}
+          />
+        )}
+        {!duties && (
+          <TeamPeople
+            cards={cards}
+            counts={counts}
+            filters={filters}
+            filter={filter}
+            view={view}
+            grouped={grouped}
+            href={href}
+            viewerId={user.id}
+            showBot={showBot}
+          />
         )}
       </section>
     </div>
+  );
+}
+
+// The people: the filter chips, then the list (by team) or the cards.
+function TeamPeople({
+  cards,
+  counts,
+  filters,
+  filter,
+  view,
+  grouped,
+  href,
+  viewerId,
+  showBot,
+}: {
+  cards: Card[];
+  counts: Record<TeamFilter, number>;
+  filters: TeamFilter[];
+  filter: TeamFilter;
+  view: string;
+  grouped: boolean;
+  href: (next: { filter?: string }) => string;
+  viewerId: string;
+  showBot: boolean;
+}) {
+  return (
+    <>
+      <div className="flex flex-wrap gap-1 text-sm">
+        {filters.map((f) => (
+          <Link
+            key={f}
+            href={href({ filter: f })}
+            className={cn(
+              "rounded-full border px-3 py-1",
+              f === filter ? "bg-primary text-primary-foreground" : "",
+            )}
+          >
+            {t(FILTER_LABELS[f])} <span className="opacity-70">{counts[f]}</span>
+          </Link>
+        ))}
+      </div>
+      {cards.length === 0 && <p className="text-muted-foreground text-sm">{t("team.empty")}</p>}
+      {view === "cards" ? (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {cards.map((card) => (
+            <CardView key={card.user.id} card={card} viewerId={viewerId} showBot={showBot} />
+          ))}
+        </div>
+      ) : (
+        (grouped ? groupByTeam(cards) : ([[undefined, cards]] as const)).map(([team, list]) => (
+          <div key={team ?? "-"} className="flex flex-col gap-1.5">
+            {team !== undefined && (
+              <h2 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+                {team === null ? t("team.groupOutside") : team || t("team.groupTop")}{" "}
+                <span className="font-normal">· {list.length}</span>
+              </h2>
+            )}
+            <ul className="bg-card divide-y rounded-xl border">
+              {list.map((card) => (
+                <Row key={card.user.id} card={card} viewerId={viewerId} showBot={showBot} />
+              ))}
+            </ul>
+          </div>
+        ))
+      )}
+    </>
   );
 }
