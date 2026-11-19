@@ -14,11 +14,12 @@ import { canManagePlanograms } from "@/modules/planograms/access";
 import { planogramCards } from "@/modules/planograms/service";
 import { visibleProjectsWhere } from "@/modules/projects/service";
 import { visibleTasksWhere } from "@/modules/tasks/access";
+import { ownerText, searchDuties } from "@/modules/team/responsibilities";
 
 import { MAX_QUERY, MIN_QUERY, SEARCH_GROUPS, type SearchGroup, type SearchHit } from "./types";
 
-// The search in the top bar: sections and actions, people, tasks, meetings, projects, content
-// posts and planograms. Each kind is searched with its own module's access rules, so a person only
+// The search in the top bar: sections and actions, people, responsibilities, tasks, meetings,
+// projects, content posts and planograms. Each kind is searched with its own module's access rules, so a person only
 // finds what they may open.
 
 const LIMIT = 5;
@@ -97,6 +98,25 @@ async function people(actor: Searcher, query: string): Promise<SearchHit[]> {
     href: `/team/${user.id}`,
     kind: "person",
   }));
+}
+
+// Responsibilities («Команда» → «Обязанности») by title or description: a hit opens the
+// responsible person's card at its «Обязанности» block (a place nobody holds: the list).
+async function responsibilities(actor: Searcher, query: string): Promise<SearchHit[]> {
+  const duties = await searchDuties(actor, query, LIMIT);
+  return duties.map((duty) => {
+    const { owner } = duty;
+    return {
+      id: `responsibility:${duty.id}`,
+      title: duty.title,
+      subtitle: ownerText(owner),
+      href:
+        owner.kind === "person"
+          ? `/team/${owner.person.id}?tab=profile#responsibilities`
+          : `/team?${new URLSearchParams({ view: "duties", q: duty.title })}`,
+      kind: "responsibility",
+    };
+  });
 }
 
 // The tasks the person sees (modules/tasks/access.ts), by title or plan code («T01»).
@@ -217,6 +237,7 @@ export async function search(
   const found = await Promise.all([
     navigation(actor, query),
     people(actor, query),
+    responsibilities(actor, query),
     tasks(actor, query),
     meetings(actor, query, timezone),
     projects(actor, query),

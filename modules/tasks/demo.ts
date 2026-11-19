@@ -8,6 +8,10 @@ import type { TaskPriority, TaskStatus } from "@/lib/generated/prisma/client";
 // test employees use Telegram ids from DEMO_TELEGRAM_BASE and have no bot chat (no messages).
 export const DEMO_PROJECT = "Тестовые данные";
 const DEMO_TELEGRAM_BASE = 9_000_000_000n;
+// The test employees, for leaving them out of real work (e.g. responsibilities from the data).
+export const DEMO_PEOPLE = {
+  telegramId: { gt: DEMO_TELEGRAM_BASE, lte: DEMO_TELEGRAM_BASE + 100n },
+} as const;
 const PEOPLE = [
   {
     key: "boss",
@@ -349,7 +353,7 @@ export async function addDemoData(now = new Date()) {
 // Removes everything addDemoData created (and anything else linked to the test employees).
 export async function removeDemoData() {
   const people = await db.user.findMany({
-    where: { telegramId: { gt: DEMO_TELEGRAM_BASE, lte: DEMO_TELEGRAM_BASE + 100n } },
+    where: DEMO_PEOPLE,
     select: { id: true },
   });
   const peopleIds = people.map((p) => p.id);

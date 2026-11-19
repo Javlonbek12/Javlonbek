@@ -2,6 +2,7 @@
 
 import {
   CalendarClock,
+  ClipboardList,
   Compass,
   FolderKanban,
   LayoutGrid,
@@ -27,6 +28,7 @@ import { MIN_QUERY, type SearchGroup, type SearchHit } from "@/modules/search/ty
 const KIND_ICON: Record<Exclude<SearchHit["kind"], "section">, LucideIcon> = {
   action: Plus,
   person: UserRound,
+  responsibility: ClipboardList,
   task: ListTodo,
   meeting: CalendarClock,
   project: FolderKanban,
