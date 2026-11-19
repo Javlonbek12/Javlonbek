@@ -2869,7 +2869,7 @@ export const ru = {
         extractActionItems: "Задачи из итогов встречи",
         suggestLayout: "Раскладка планограммы",
         tagContent: "Метки контент-аналитики",
-        answerHelpQuestion: "Ответы справки",
+        help: "Ответы справки",
         responsibilitiesSuggest: "Обязанности по данным",
       },
     },

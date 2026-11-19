@@ -32,7 +32,7 @@ export const AI_FUNCTIONS = [
   "extractActionItems",
   "suggestLayout",
   "tagContent",
-  "answerHelpQuestion",
+  "help",
   "responsibilitiesSuggest",
 ] as const;
 export type AiFunction = (typeof AI_FUNCTIONS)[number];

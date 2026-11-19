@@ -2860,7 +2860,7 @@ export const en: Dictionary = {
         extractActionItems: "Tasks from meeting outcomes",
         suggestLayout: "Planogram layout",
         tagContent: "Content analytics tags",
-        answerHelpQuestion: "Help answers",
+        help: "Help answers",
         responsibilitiesSuggest: "Responsibilities from the data",
       },
     },
