@@ -34,6 +34,7 @@ export const AI_FUNCTIONS = [
   "tagContent",
   "help",
   "responsibilitiesSuggest",
+  "composeTask",
 ] as const;
 export type AiFunction = (typeof AI_FUNCTIONS)[number];
 export const isKnownFunction = (fn: string): fn is AiFunction =>

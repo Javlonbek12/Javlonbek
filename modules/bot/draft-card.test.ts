@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   assigneeButtons,
+  editMenuButtons,
   PEOPLE_PER_PAGE,
   renderCardButtons,
   renderCardText,
@@ -109,5 +110,55 @@ describe("confirmation card", () => {
     );
     expect(pick(2)).toContain("d:D1:as:0:1");
     expect(pick(2)).not.toContain("d:D1:as:0:3");
+  });
+});
+
+describe("confirmation card: the task written out by the AI", () => {
+  const written: DraftPayload = {
+    tasks: [
+      {
+        ...task,
+        title: "Отправить POSM в 12 магазинов",
+        assigneeId: "u1",
+        dueDate: `${THIS_YEAR}-11-22`,
+        description: "Что сделать: шелфтокеры и воблеры\nЗачем: акция с 25-го",
+        steps: [
+          { title: "Собрать комплекты", dueDate: `${THIS_YEAR}-11-20` },
+          { title: "Передать дистрибьютору", dueDate: null },
+        ],
+        missing: ["Как понять, что готово?"],
+      },
+    ],
+  };
+
+  it("shows the description, the steps and the questions under the task", () => {
+    const text = renderCardText(written, people);
+    expect(text).toContain(
+      "   📝 Что сделать: шелфтокеры и воблеры\n      Зачем: акция с 25-го\n   ☑️ Шаги:",
+    );
+    expect(text).toContain("      1) Собрать комплекты — до 20 нояб.");
+    expect(text).toContain("      2) Передать дистрибьютору\n");
+    expect(text).toContain("   ❓ Как понять, что готово?");
+  });
+
+  it("keeps only the step count when the card would be too long for Telegram", () => {
+    const long: DraftPayload = {
+      tasks: Array.from({ length: 6 }, (_, i) => ({
+        ...written.tasks[0],
+        title: `Задача ${i}`,
+        description: `Что сделать: ${"очень подробно ".repeat(40)}`,
+      })),
+    };
+    const text = renderCardText(long, people);
+    expect(text.length).toBeLessThan(3500);
+    expect(text).not.toContain("📝");
+    expect(text).not.toContain("❓");
+    expect(text).toContain("☑️ Шагов: 2");
+  });
+
+  it("offers «Без описания и шагов» only when there is something to drop", () => {
+    const data = (rows: { data: string }[][]) => rows.flat().map((b) => b.data);
+    expect(data(editMenuButtons("D1", 0, true))).toContain("d:D1:pl:0");
+    expect(data(editMenuButtons("D1", 0))).not.toContain("d:D1:pl:0");
   });
 });

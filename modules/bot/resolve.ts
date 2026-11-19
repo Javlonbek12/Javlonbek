@@ -26,6 +26,9 @@ export function resolveTasks(
       priority: task.priority,
       project: task.project,
       saidName: task.assigneeName,
+      description: task.description ?? null,
+      steps: task.steps ?? [],
+      missing: task.missing ?? [],
     };
     if (!task.assigneeName)
       return { ...base, assigneeId: null, unresolved: false, candidateIds: [] };

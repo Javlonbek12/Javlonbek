@@ -1,4 +1,5 @@
 import { formatDay } from "@/lib/dates";
+import type { DraftStep } from "@/modules/tasks/draft-steps";
 import type { TaskPriority } from "@/lib/generated/prisma/enums";
 import { t } from "@/lib/i18n";
 
@@ -18,6 +19,11 @@ export type DraftTask = {
   dueDate: string | null;
   priority: TaskPriority | null;
   project: string | null;
+  // The task written out by the AI: description (what / why / done when / materials), steps, and
+  // questions about what it still lacks (shown on the card, never saved). Absent in older drafts.
+  description?: string | null;
+  steps?: DraftStep[];
+  missing?: string[];
 };
 
 // meetingId: set when the tasks come from meeting minutes.
@@ -28,12 +34,20 @@ type Person = { id: string; firstName: string; lastName: string | null };
 const name = (p: { firstName: string; lastName: string | null }) =>
   [p.firstName, p.lastName].filter(Boolean).join(" ");
 
+// A card longer than this drops the written-out parts (a Telegram message holds 4096 characters).
+const MAX_CARD_TEXT = 3500;
+
 // routes: what will happen to each task (routing v2), shown under it before saving.
 export function renderCardText(
   payload: DraftPayload,
   people: Person[],
   routes: string[] = [],
 ): string {
+  const full = cardText(payload, people, routes, true);
+  return full.length <= MAX_CARD_TEXT ? full : cardText(payload, people, routes, false);
+}
+
+function cardText(payload: DraftPayload, people: Person[], routes: string[], full: boolean) {
   const lines = [t("bot.card.title")];
   payload.tasks.forEach((task, i) => {
     const who = task.unresolved
@@ -51,8 +65,32 @@ export function renderCardText(
     ].filter(Boolean);
     lines.push("", `${i + 1}. ${task.title}`, `   ${details.join(" · ")}`);
     if (routes[i] && !task.unresolved) lines.push(`   ${routes[i]}`);
+    lines.push(...writtenOut(task, full));
   });
   return lines.join("\n");
+}
+
+// The description, steps and questions under a task; `full: false` keeps only the step count.
+function writtenOut(task: DraftTask, full: boolean): string[] {
+  const steps = task.steps ?? [];
+  if (!full)
+    return steps.length > 0 ? [`   ☑️ ${t("bot.card.stepsCount", { count: steps.length })}`] : [];
+  const lines: string[] = [];
+  const description = (task.description ?? "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  description.forEach((line, i) => lines.push(`   ${i === 0 ? "📝" : "  "} ${line}`));
+  if (steps.length > 0) {
+    lines.push(`   ☑️ ${t("bot.card.steps")}`);
+    steps.forEach((step, i) =>
+      lines.push(
+        `      ${i + 1}) ${step.title}${step.dueDate ? ` — ${t("bot.card.stepUntil", { date: formatDay(step.dueDate) })}` : ""}`,
+      ),
+    );
+  }
+  for (const question of task.missing ?? []) lines.push(`   ❓ ${question}`);
+  return lines;
 }
 
 // Card buttons: first resolve unknown people, then save / edit / cancel.
@@ -126,18 +164,25 @@ export function assigneeButtons(
   return rows;
 }
 
-export function editMenuButtons(draftId: string, index: number): TelegramButton[][] {
-  return [
+// `writtenOut`: the task has a description or steps, which can be dropped («Без описания и шагов»).
+export function editMenuButtons(
+  draftId: string,
+  index: number,
+  writtenOut = false,
+): TelegramButton[][] {
+  const rows: TelegramButton[][] = [
     [
       { text: t("bot.edit.title"), data: `d:${draftId}:t:${index}` },
       { text: t("bot.edit.due"), data: `d:${draftId}:due:${index}` },
       { text: t("bot.edit.assignee"), data: `d:${draftId}:as:${index}` },
     ],
-    [
-      { text: t("bot.edit.remove"), data: `d:${draftId}:rm:${index}` },
-      { text: t("bot.edit.back"), data: `d:${draftId}:menu` },
-    ],
   ];
+  if (writtenOut) rows.push([{ text: t("bot.edit.plain"), data: `d:${draftId}:pl:${index}` }]);
+  rows.push([
+    { text: t("bot.edit.remove"), data: `d:${draftId}:rm:${index}` },
+    { text: t("bot.edit.back"), data: `d:${draftId}:menu` },
+  ]);
+  return rows;
 }
 
 export function dueButtons(

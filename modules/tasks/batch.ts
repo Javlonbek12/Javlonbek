@@ -2,8 +2,10 @@ import { t, type TranslationKey } from "@/lib/i18n";
 import type { TaskPriority } from "@/lib/generated/prisma/enums";
 import type { Actor } from "@/modules/core/permissions";
 
+import type { DraftStep } from "./draft-steps";
 import { TaskError } from "./errors";
 import { createTask } from "./service";
+import { addInitialSteps } from "./steps";
 
 export type ProposedTask = {
   title: string;
@@ -15,6 +17,9 @@ export type ProposedTask = {
   dueDate: string | null;
   priority: TaskPriority | null;
   project: string | null;
+  // Written out by the AI (the bot's card): saved with the task, the steps into «Работа».
+  description?: string | null;
+  steps?: DraftStep[];
 };
 
 // Creates tasks confirmed in a card (bot or meeting page). Every task goes along its route (routing
@@ -32,7 +37,7 @@ export async function createProposedTasks(actor: Actor, tasks: ProposedTask[], m
         actor,
         {
           title: task.title,
-          description: null,
+          description: task.description?.trim() || null,
           isPersonal: personal,
           assigneeId: personal ? null : self ? actor.id : task.assigneeId,
           startDate: null,
@@ -48,6 +53,7 @@ export async function createProposedTasks(actor: Actor, tasks: ProposedTask[], m
         personal ? "start" : "create",
         { startOwn: true },
       );
+      if (task.steps?.length) await addInitialSteps(actor, created.id, task.steps);
       saved += 1;
       if (created.status === "PENDING_APPROVAL") pending += 1;
     } catch (error) {

@@ -4,6 +4,7 @@ import { logActivity } from "@/modules/core/activity/service";
 import type { Actor } from "@/modules/core/permissions";
 
 import { canViewTask, type TaskAccessInfo } from "./access";
+import type { DraftStep } from "./draft-steps";
 import { TaskError } from "./errors";
 import { changeStatus } from "./service";
 import { availableTransitions } from "./status";
@@ -80,6 +81,22 @@ export async function addStep(actor: Actor, taskId: string, input: StepInput) {
   });
   await log(actor, taskId, "added", step.title);
   return step;
+}
+
+// Steps written together with a new task (the form's «Оформить с ИИ», the bot's card), added by its
+// author once the task exists; a step that does not fit (too many, a wrong date) is left out.
+export async function addInitialSteps(actor: Actor, taskId: string, steps: DraftStep[]) {
+  for (const step of steps) {
+    try {
+      await addStep(actor, taskId, {
+        title: step.title,
+        responsibleId: null,
+        dueDate: step.dueDate,
+      });
+    } catch (error) {
+      if (!(error instanceof TaskError)) throw error;
+    }
+  }
 }
 
 export async function updateStep(actor: Actor, stepId: string, input: StepInput) {

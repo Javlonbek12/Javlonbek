@@ -1,5 +1,6 @@
 "use client";
 
+import { X } from "lucide-react";
 import { useActionState, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -9,9 +10,10 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import type { TaskFormState } from "@/app/(app)/tasks/actions";
-import { addDays } from "@/lib/dates";
+import { addDays, formatDay } from "@/lib/dates";
 import { type TranslationKey } from "@/lib/i18n";
-import { useT } from "@/components/locale-provider";
+import { useLocale, useT } from "@/components/locale-provider";
+import { parseDraftSteps, type DraftStep } from "@/modules/tasks/draft-steps";
 import type { ProjectOption } from "@/modules/tasks/form-options";
 import type { RouteHint } from "@/modules/tasks/route-hints";
 
@@ -141,6 +143,53 @@ function RepeatFields({ values }: { values: Record<string, string> }) {
   );
 }
 
+// The steps a new task will start with, each can be taken out; sent as JSON in a hidden field.
+function DraftSteps({
+  steps,
+  onChange,
+}: {
+  steps: DraftStep[];
+  onChange: (steps: DraftStep[]) => void;
+}) {
+  const t = useT();
+  const locale = useLocale();
+  return (
+    <Card className="gap-2">
+      <input type="hidden" name="steps" value={JSON.stringify(steps)} />
+      <div>
+        <h3 className="text-sm font-medium">{t("tasks.draftSteps.title")}</h3>
+        <p className="text-muted-foreground text-xs">{t("tasks.draftSteps.hint")}</p>
+      </div>
+      <ol className="flex flex-col gap-1">
+        {steps.map((step, i) => (
+          <li key={i} className="flex items-start gap-2 text-sm">
+            <span className="text-muted-foreground w-5 shrink-0 tabular-nums">{i + 1}.</span>
+            <span className="min-w-0 flex-1 break-words">
+              {step.title}
+              {step.dueDate && (
+                <span className="text-muted-foreground">
+                  {" "}
+                  · {t("tasks.draftSteps.until", { date: formatDay(step.dueDate, locale) })}
+                </span>
+              )}
+            </span>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="size-7 shrink-0"
+              aria-label={t("tasks.draftSteps.remove")}
+              onClick={() => onChange(steps.filter((_, j) => j !== i))}
+            >
+              <X />
+            </Button>
+          </li>
+        ))}
+      </ol>
+    </Card>
+  );
+}
+
 export function TaskForm({
   action,
   initial,
@@ -162,6 +211,10 @@ export function TaskForm({
   const [needsApproval, setNeedsApproval] = useState(values.needsApproval === "on");
   const [dueDate, setDueDate] = useState(values.dueDate ?? "");
   const [project, setProject] = useState(values.project ?? "");
+  // Steps written with a new task («Оформить с ИИ»): added to «Работа» once it is created.
+  const [steps, setSteps] = useState<DraftStep[]>(() =>
+    isNew ? parseDraftSteps(values.steps) : [],
+  );
   const phases = projects.find((p) => p.name === project)?.phases ?? [];
   // The rarely needed fields wait under «Ещё» — open when one of them is already filled in.
   const moreFilled = ["startDate", "estimateHours", "project", "planId", "repeat", "labels"].some(
@@ -298,9 +351,15 @@ export function TaskForm({
         </div>
         <Label className="flex-col items-start">
           {t("tasks.fields.description")}
-          <Textarea name="description" maxLength={5000} defaultValue={values.description} />
+          <Textarea
+            name="description"
+            maxLength={5000}
+            rows={values.description ? 6 : undefined}
+            defaultValue={values.description}
+          />
         </Label>
       </Card>
+      {steps.length > 0 && <DraftSteps steps={steps} onChange={setSteps} />}
       <details open={moreFilled || undefined} className="group flex flex-col gap-4">
         <summary className="text-primary cursor-pointer list-none text-sm font-medium [&::-webkit-details-marker]:hidden">
           <span className="group-open:hidden">{t("tasks.form.more")}</span>
