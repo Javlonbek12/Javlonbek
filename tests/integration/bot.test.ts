@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { POST as webhook } from "@/app/api/telegram/webhook/route";
 import { db } from "@/lib/db";
-import { handleStart } from "@/modules/bot/start";
+import { handleStart, handleUnknownText, inviteCodeFromText } from "@/modules/bot/start";
 import { createInvite } from "@/modules/core/invites/service";
 import { createTestUser, resetDb, testProfile } from "@/tests/helpers/db";
 
@@ -47,6 +47,34 @@ describe("bot /start", () => {
     expect((await db.user.findUniqueOrThrow({ where: { id: member.id } })).botChatId).toBe(
       member.telegramId,
     );
+  });
+});
+
+describe("invite codes sent to the bot", () => {
+  beforeEach(resetDb);
+
+  it("finds the code in the invite link, the bot link or on its own", () => {
+    expect(inviteCodeFromText("https://site.test/invite/AbC_12-xyz09")).toBe("AbC_12-xyz09");
+    expect(inviteCodeFromText("Откройте: https://t.me/some_bot?start=AbC_12-xyz09 ")).toBe(
+      "AbC_12-xyz09",
+    );
+    expect(inviteCodeFromText("  AbC_12-xyz09 ")).toBe("AbC_12-xyz09");
+    expect(inviteCodeFromText("привет")).toBeNull();
+    expect(inviteCodeFromText("/today")).toBeNull();
+    expect(inviteCodeFromText("Assalomu alaykum")).toBeNull();
+  });
+
+  it("/start with a whole invite link registers too; plain text without an invite does nothing", async () => {
+    const owner = await createTestUser("OWNER");
+    const invite = await createInvite(owner, "MEMBER");
+    const reply = await handleStart(
+      testProfile(7000003n, "Тестовый сотрудник 3"),
+      7000003n,
+      `https://site.test/invite/${invite.code}`,
+    );
+    expect(reply.text).toContain("Добро пожаловать");
+    expect(await handleUnknownText(testProfile(7000004n), 7000004n, "здравствуйте")).toBeNull();
+    expect(await db.user.count()).toBe(2);
   });
 });
 

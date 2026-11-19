@@ -13,7 +13,8 @@ export async function handleStart(
   chatId: bigint,
   payload: string,
 ): Promise<BotReply & { userId?: string }> {
-  const result = await loginWithTelegram(profile, payload.trim() || undefined);
+  const code = payload.trim() ? (inviteCodeFromText(payload) ?? payload.trim()) : undefined;
+  const result = await loginWithTelegram(profile, code);
   if (!result.ok) {
     return {
       text:
@@ -38,4 +39,25 @@ export async function handleStart(
     open: "/",
     userId: result.user.id,
   };
+}
+
+// The invite code in what someone sent the bot: the invite link (…/invite/CODE), the bot link
+// (…?start=CODE) or the code itself.
+export function inviteCodeFromText(text: string): string | null {
+  const s = text.trim();
+  const link =
+    s.match(/\/invite\/([A-Za-z0-9_-]{6,64})/) ?? s.match(/[?&]start=([A-Za-z0-9_-]{6,64})/);
+  if (link) return link[1];
+  return /^[A-Za-z0-9_-]{8,64}$/.test(s) ? s : null;
+}
+
+// Someone the bot does not know yet sends a message: when it holds an invite (the link or the
+// code), they join or are linked as with /start CODE; otherwise null (the bot asks for the invite).
+export async function handleUnknownText(
+  profile: TelegramProfile,
+  chatId: bigint,
+  text: string,
+): Promise<(BotReply & { userId?: string }) | null> {
+  const code = inviteCodeFromText(text);
+  return code ? handleStart(profile, chatId, code) : null;
 }

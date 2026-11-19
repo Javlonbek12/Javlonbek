@@ -30,7 +30,7 @@ import {
 import { syncBotCommands } from "./commands";
 import { rememberReasonMessage } from "./decisions";
 import { escapeHtml, inlineKeyboard, openInAppRow, type KeyboardButton } from "./keyboard";
-import { handleStart } from "./start";
+import { handleStart, handleUnknownText } from "./start";
 import { withLocale } from "@/lib/i18n/server";
 
 const allowMessage = createRateLimiter({ limit: 20, windowMs: 60_000 });
@@ -158,11 +158,32 @@ export function createBot(
     await ctx.reply(t("bot.help"));
   });
 
-  // Everything below needs a known user.
+  // Everything below needs a known user. Someone unknown who sends the invite link or its code
+  // joins with it (as with /start CODE); anyone else is asked for the invite.
   bot.use(async (ctx, next) => {
     const user = await currentUser(ctx);
     if (!user) {
       if (ctx.callbackQuery) await ctx.answerCallbackQuery();
+      const text = ctx.message?.text;
+      const from = ctx.from;
+      const joined =
+        text && from && ctx.chat
+          ? await handleUnknownText(
+              {
+                telegramId: BigInt(from.id),
+                firstName: from.first_name,
+                lastName: from.last_name,
+                username: from.username,
+              },
+              BigInt(ctx.chat.id),
+              text,
+            )
+          : null;
+      if (joined) {
+        if (joined.userId) await syncBotCommands(joined.userId, undefined, ctx.api);
+        await send(ctx, joined);
+        return;
+      }
       await ctx.reply(t("bot.notLinked"));
       return;
     }
