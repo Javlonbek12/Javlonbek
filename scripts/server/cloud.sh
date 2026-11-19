@@ -62,7 +62,24 @@ case "${1:-}" in
         | tar -xf - -C "$work/files"
       # AES-256 with hidden file names: without the password the archive says nothing.
       (cd "$work/files" && 7z a -t7z -mhe=on -p"$BACKUP_PASSWORD" "$work/backup-$stamp.7z" . > /dev/null)
-      s3 s3 cp --only-show-errors "$work/backup-$stamp.7z" "s3://$BUCKET/$PREFIX/backup-$stamp.7z"
+      # A big archive goes up in parts, and the storage sometimes loses one (18.11.2026:
+      # «InvalidPart … One or more of the specified parts could not be found»): try again.
+      uploaded=""
+      for try in 1 2 3; do
+        if s3 s3 cp --only-show-errors "$work/backup-$stamp.7z" "s3://$BUCKET/$PREFIX/backup-$stamp.7z"; then
+          uploaded=1
+          break
+        fi
+        if [ "$try" -lt 3 ]; then
+          echo "Upload failed (try $try of 3), trying again in a minute"
+          sleep 60
+        fi
+      done
+      if [ -z "$uploaded" ]; then
+        rm -rf "$work"
+        echo "Upload failed 3 times: the copy stays on the server only."
+        exit 1
+      fi
       echo "Uploaded: backup-$stamp.7z ($(du -h "$work/backup-$stamp.7z" | cut -f1))"
       rm -rf "$work"
     fi
