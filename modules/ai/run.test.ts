@@ -163,7 +163,7 @@ describe("systemBlocks", () => {
 describe("extractTasks", () => {
   beforeEach(resetDb);
 
-  it("drops invalid dates and empty titles from the model answer", async () => {
+  it("drops invalid dates, empty titles and an empty description from the model answer", async () => {
     const user = await createTestUser("OWNER");
     const call: ModelCall = async () => ({
       output: {
@@ -175,6 +175,9 @@ describe("extractTasks", () => {
             priority: null,
             project: null,
             personal: false,
+            description: " ",
+            steps: [{ title: "Собрать данные", dueDate: "15.10" }],
+            missing: ["Когда срок?"],
           },
           {
             title: "  ",
@@ -183,6 +186,9 @@ describe("extractTasks", () => {
             priority: null,
             project: null,
             personal: false,
+            description: null,
+            steps: [],
+            missing: [],
           },
         ],
       },
@@ -197,6 +203,9 @@ describe("extractTasks", () => {
         priority: null,
         project: null,
         personal: false,
+        description: null,
+        steps: [{ title: "Собрать данные", dueDate: null }],
+        missing: ["Когда срок?"],
       },
     ]);
   });

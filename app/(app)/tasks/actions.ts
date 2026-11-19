@@ -28,6 +28,11 @@ import {
 import type { RepeatInput } from "@/modules/tasks/repeat";
 import { requestDueChange, resolveDueChange } from "@/modules/tasks/due-change";
 import { parseLabels, setTaskLabels } from "@/modules/tasks/labels";
+import { composeTask, MAX_COMPOSE_TEXT, type ComposeResult } from "@/modules/tasks/compose";
+import { parseDraftSteps } from "@/modules/tasks/draft-steps";
+import { getTaskFormOptions } from "@/modules/tasks/form-options";
+import { AiError } from "@/modules/ai/run";
+import type { TranslationKey } from "@/lib/i18n";
 import {
   addTime,
   correctTimeEntry,
@@ -44,6 +49,7 @@ import {
 } from "@/modules/tasks/co-assignees";
 import { MAX_NOTE_LENGTH, saveNote, type SaveNoteResult } from "@/modules/tasks/notes";
 import {
+  addInitialSteps,
   addStep,
   moveStep,
   removeStep,
@@ -143,12 +149,36 @@ export async function createTaskAction(
       },
     );
     taskId = task.id;
+    // Steps written with the task («Оформить с ИИ»).
+    await addInitialSteps(user, taskId, parseDraftSteps(str(formData, "steps")));
   } catch (error) {
     if (error instanceof TaskError) return { error: error.code, values: formValues(formData) };
     throw error;
   }
   revalidatePath("/", "layout");
   redirect(`/tasks/${taskId}`);
+}
+
+export type ComposeTaskResult =
+  ({ ok: true } & ComposeResult) | { ok: false; error: TranslationKey };
+
+// «Оформить с ИИ» on the new task form: the task in one's own words → the form's fields.
+export async function composeTaskAction(text: unknown): Promise<ComposeTaskResult> {
+  const user = await actor();
+  const parsed = z.string().trim().min(1).max(MAX_COMPOSE_TEXT).safeParse(text);
+  if (!parsed.success) return { ok: false, error: "tasks.compose.empty" };
+  try {
+    const options = await getTaskFormOptions(user);
+    const result = await composeTask(user, parsed.data, {
+      assignableIds: options.users.map((u) => u.id),
+      projects: options.projects.map((p) => p.name),
+    });
+    if (!result) return { ok: false, error: "tasks.compose.noTask" };
+    return { ok: true, ...result };
+  } catch (error) {
+    if (error instanceof AiError) return { ok: false, error: `ai.errors.${error.code}` };
+    throw error;
+  }
 }
 
 export async function updateTaskAction(

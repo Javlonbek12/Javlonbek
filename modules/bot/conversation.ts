@@ -216,7 +216,7 @@ async function handleDraftCallback(user: User, parts: string[], now?: Date): Pro
     case "e":
       return {
         text: t("bot.edit.menu", { title: task.title }),
-        buttons: editMenuButtons(draftId, index),
+        buttons: editMenuButtons(draftId, index, Boolean(task.description || task.steps?.length)),
         edit: true,
       };
     case "t":
@@ -267,6 +267,13 @@ async function handleDraftCallback(user: User, parts: string[], now?: Date): Pro
       await saveDraft(draftId, payload);
       return cardReply(draftId, payload, true);
     }
+    case "pl":
+      // «Без описания и шагов»: the task as a bare title (the questions go too).
+      task.description = null;
+      task.steps = [];
+      task.missing = [];
+      await saveDraft(draftId, payload);
+      return cardReply(draftId, payload, true);
     case "rm":
       payload.tasks.splice(index, 1);
       if (payload.tasks.length === 0) {

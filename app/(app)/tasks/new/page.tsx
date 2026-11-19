@@ -1,18 +1,20 @@
-import { TaskForm } from "@/components/tasks/task-form";
+import { NewTaskForm } from "@/components/tasks/new-task-form";
 import { db } from "@/lib/db";
 import { isDateString } from "@/lib/dates";
 import { t } from "@/lib/i18n";
+import { isAiConfigured } from "@/modules/ai/client";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getUserToday } from "@/modules/core/settings/service";
 import { canViewMeeting } from "@/modules/meetings/access";
 import { getTaskFormOptions } from "@/modules/tasks/form-options";
 import { routeHints } from "@/modules/tasks/route-hints";
 
-import { createTaskAction } from "../actions";
+import { composeTaskAction, createTaskAction } from "../actions";
 
 // ?due=YYYY-MM-DD fills the due date (the calendar); ?meeting=<id> makes it a task for that
 // meeting (its page's «+ Добавить задачу»); ?assignee=<id> picks the assignee (the employee
-// card's «Поставить задачу») when that person can be given work.
+// card's «Поставить задачу») when that person can be given work. «Оформить с ИИ» above the form
+// fills it from the task written in one's own words.
 export default async function NewTaskPage({ searchParams }: PageProps<"/tasks/new">) {
   const user = await requireUser();
   const { due, meeting: meetingId, assignee } = await searchParams;
@@ -45,8 +47,9 @@ export default async function NewTaskPage({ searchParams }: PageProps<"/tasks/ne
     <div className="flex flex-col gap-3">
       {/* On a phone the title is in the short header above (← Назад). */}
       <h2 className="hidden text-lg font-medium md:block">{t("tasks.newTask")}</h2>
-      <TaskForm
+      <NewTaskForm
         action={createTaskAction}
+        compose={isAiConfigured() ? composeTaskAction : undefined}
         isNew
         routes={routes}
         today={today}

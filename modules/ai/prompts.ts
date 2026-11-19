@@ -8,6 +8,8 @@ import { currentLocale } from "@/lib/i18n";
 
 // ---------- extractTasks ----------
 
+const extractedStepSchema = z.object({ title: z.string(), dueDate: z.string().nullable() });
+
 const extractedTaskSchema = z.object({
   title: z.string(),
   assigneeName: z.string().nullable(),
@@ -17,22 +19,55 @@ const extractedTaskSchema = z.object({
   // The speaker asks for a personal task (only they see it); otherwise their own tasks are team
   // tasks their manager sees.
   personal: z.boolean(),
+  // The task written out properly («Оформить с ИИ»): what / why / done when / materials, only
+  // from what the message says; steps when the work has stages; questions about what is missing.
+  description: z.string().nullable(),
+  steps: z.array(extractedStepSchema),
+  missing: z.array(z.string()),
 });
 
 export const extractTasksSchema = z.object({ tasks: z.array(extractedTaskSchema) });
 
-export type ExtractedTask = z.infer<typeof extractedTaskSchema>;
+export type ExtractedStep = z.infer<typeof extractedStepSchema>;
 
-// Never trust a malformed date or empty title from the model.
-function cleanTasks(tasks: ExtractedTask[]): ExtractedTask[] {
+type FullTask = z.infer<typeof extractedTaskSchema>;
+// The written-out parts are optional for callers (tests, older drafts): none means none.
+export type ExtractedTask = Omit<FullTask, "description" | "steps" | "missing"> &
+  Partial<Pick<FullTask, "description" | "steps" | "missing">>;
+
+export const MAX_DESCRIPTION = 1500;
+export const MAX_COMPOSED_STEPS = 6;
+export const MAX_MISSING = 4;
+
+// Never trust a malformed date or empty title from the model. A step's date must be a real date
+// no later than the task's own due date (else it has none).
+export function cleanTasks(tasks: ExtractedTask[]): ExtractedTask[] {
   return tasks
-    .map((task) => ({
-      ...task,
-      title: task.title.trim().slice(0, 200),
-      dueDate: task.dueDate && isDateString(task.dueDate) ? task.dueDate : null,
-      assigneeName: task.assigneeName?.trim() || null,
-      project: task.project?.trim().slice(0, 60) || null,
-    }))
+    .map((task) => {
+      const dueDate = task.dueDate && isDateString(task.dueDate) ? task.dueDate : null;
+      return {
+        ...task,
+        title: task.title.trim().slice(0, 200),
+        dueDate,
+        assigneeName: task.assigneeName?.trim() || null,
+        project: task.project?.trim().slice(0, 60) || null,
+        description: task.description?.trim().slice(0, MAX_DESCRIPTION) || null,
+        steps: (task.steps ?? [])
+          .map((step) => {
+            const date = step.dueDate && isDateString(step.dueDate) ? step.dueDate : null;
+            return {
+              title: step.title.trim().replace(/\s+/g, " ").slice(0, 200),
+              dueDate: date && (!dueDate || date <= dueDate) ? date : null,
+            };
+          })
+          .filter((step) => step.title.length > 0)
+          .slice(0, MAX_COMPOSED_STEPS),
+        missing: (task.missing ?? [])
+          .map((question) => question.trim().slice(0, 300))
+          .filter(Boolean)
+          .slice(0, MAX_MISSING),
+      };
+    })
     .filter((task) => task.title.length > 0);
 }
 
@@ -52,6 +87,18 @@ For each separate task return:
 - project: a project from "Known projects" if the message clearly refers to it, otherwise a short brand or campaign name if one is explicitly named as the project (e.g. "по проекту ESSE Change"), otherwise null.
 - personal: true only when the speaker explicitly calls their own task personal or private ("личная задача", "лично", "личное", "shaxsiy", "shaxsiy vazifa", "personal"); remove that word from the title. Otherwise false. Always false for a task given to someone else.
 
+- description: the task written out for the person who will do it, in the language of the message, as up to four lines, each starting with its label:
+  "Что сделать: ..." - what exactly, with the numbers, places, brands and items from the message (skip this line if it would only repeat the title);
+  "Зачем: ..." - the reason or the event it is tied to, only if the message gives one;
+  "Готово, когда: ..." - the checkable result, only if the message says how to tell the work is done;
+  "Материалы: ..." - files, lists or samples to use, only if the message names them.
+  Write only facts from the message, never guesses; leave a line out when the message says nothing about it. null when no line is left.
+  For an Uzbek message use the same labels in Uzbek: "Nima qilish kerak:", "Nima uchun:", "Tayyor, qachonki:", "Materiallar:".
+- steps: when the work clearly has several stages (prepare, hand over, check...), 2-6 short imperative steps in order, each with dueDate (YYYY-MM-DD, not later than the task's dueDate) or null; you may break the work into the obvious stages it needs, but add nothing the task does not need. An empty list for a simple one-action task.
+- missing: up to 4 short questions, in the language of the message, about what the task still lacks to be clear: no deadline, no assignee, no quantity or list, no way to tell it is done (then suggest one, e.g. "Как понять, что готово? Например: отгрузки записаны и есть фото накладных"). Ask only about what really matters for this task; an empty list when everything is clear.
+
+Russian typed in Latin letters (translit, e.g. "otpravit posm do pyatnicy") is Russian: write the title, description, steps and questions in proper Russian Cyrillic.
+
 One sentence can contain several tasks ("Азизу подготовить отчёт, а Дильнозе созвониться с дистрибьютором") - split them. A task given to several people is one task per person. Do not invent tasks that are not in the message. If the message contains no task at all, return an empty list.`;
 
 export async function extractTasks(
@@ -59,10 +106,12 @@ export async function extractTasks(
   text: string,
   ctx: PromptContext,
   call?: ModelCall,
+  // The usage log name: the bot's messages, or the task form's «Оформить с ИИ» (composeTask).
+  fn: "extractTasks" | "composeTask" = "extractTasks",
 ): Promise<ExtractedTask[]> {
   const result = await runStructured({
     userId,
-    fn: "extractTasks",
+    fn,
     system: EXTRACT_TASKS_SYSTEM,
     prompt: `${contextBlock(ctx)}\n\nMessage:\n"""\n${text}\n"""`,
     schema: extractTasksSchema,
