@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { db } from "@/lib/db";
 import { createBot } from "@/modules/bot/bot";
+import { createInvite } from "@/modules/core/invites/service";
 import type { ConversationDeps } from "@/modules/bot/conversation";
 import { PHRASES, TODAY } from "@/tests/fixtures/phrases";
 import { resetDb } from "@/tests/helpers/db";
@@ -109,6 +110,30 @@ describe("Telegram bot wiring", () => {
 
     await bot.handleUpdate(textUpdate(123456789n, "привет"));
     expect(calls.at(-1)?.payload.text).toContain("Я вас пока не знаю");
+    expect(calls.at(-1)?.payload.text).toContain("ссылку-приглашение");
+  });
+
+  it("a stranger who sends the invite link joins with it; the code alone works too", async () => {
+    const users = await createFixtureTeam();
+    const { bot, calls } = testBot(deps);
+    const first = await createInvite(users.owner, "MEMBER");
+    await bot.handleUpdate(
+      textUpdate(123456789n, `Вот ссылка: https://example.test/invite/${first.code}`),
+    );
+    expect(calls.at(-1)?.payload.text).toContain("Добро пожаловать в Assistant");
+    expect(await db.user.findUnique({ where: { telegramId: 123456789n } })).toMatchObject({
+      role: "MEMBER",
+      botChatId: 123456789n,
+    });
+
+    const second = await createInvite(users.owner, "MEMBER");
+    await bot.handleUpdate(textUpdate(123456790n, second.code));
+    expect(calls.at(-1)?.payload.text).toContain("Добро пожаловать в Assistant");
+
+    // A used invite says so.
+    await bot.handleUpdate(textUpdate(123456791n, `https://example.test/invite/${first.code}`));
+    expect(calls.at(-1)?.payload.text).toContain("уже использовано");
+    expect(await db.user.findUnique({ where: { telegramId: 123456791n } })).toBeNull();
   });
 
   it("/start links the chat", async () => {

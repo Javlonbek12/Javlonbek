@@ -14,9 +14,20 @@ import { INVITE_TTL_DAYS, listActiveInvites } from "@/modules/core/invites/servi
 import { invitableRoles, type Actor } from "@/modules/core/permissions";
 import { displayName } from "@/modules/core/users/display-name";
 
-// The message to send with an invite: what to do, and the link.
-export function inviteMessage(link: string, forName?: string | null) {
-  return t("team.shareText", { name: forName ? `${forName}, ` : "", link });
+export const inviteLink = (code: string) => `${getEnv().APP_URL}/invite/${code}`;
+
+// Straight to the bot with the code: Start there lets the newcomer in even when the sign-in button
+// on the site does not work. Null when the bot is not set up.
+export function inviteBotLink(code: string) {
+  const { TELEGRAM_BOT_USERNAME } = getEnv();
+  return TELEGRAM_BOT_USERNAME ? `https://t.me/${TELEGRAM_BOT_USERNAME}?start=${code}` : null;
+}
+
+// The message to send with an invite: what to do, the link, and the bot link as a way round.
+export function inviteMessage(code: string, forName?: string | null) {
+  const text = t("team.shareText", { name: forName ? `${forName}, ` : "", link: inviteLink(code) });
+  const bot = inviteBotLink(code);
+  return bot ? `${text}\n\n${t("team.shareBotText", { link: bot })}` : text;
 }
 
 // Creating and cancelling invitations. On the team page, and in Settings → Приглашения for managers
@@ -36,7 +47,6 @@ export async function InviteSection({
   const roles = invitableRoles(user.role);
   if (roles.length === 0) return null;
   const invites = await listActiveInvites(user);
-  const { APP_URL, TELEGRAM_BOT_USERNAME } = getEnv();
 
   return (
     <section id="invites" className="flex scroll-mt-20 flex-col gap-3">
@@ -74,7 +84,8 @@ export async function InviteSection({
         <p className="text-muted-foreground text-sm">{t("team.noInvites")}</p>
       )}
       {invites.map((invite) => {
-        const link = `${APP_URL}/invite/${invite.code}`;
+        const link = inviteLink(invite.code);
+        const botLink = inviteBotLink(invite.code);
         const isNew = invite.id === fresh;
         return (
           <Card
@@ -92,7 +103,7 @@ export async function InviteSection({
             </div>
             <p className="text-muted-foreground text-sm break-all">{link}</p>
             <div className="flex flex-wrap gap-2">
-              <ShareButton text={inviteMessage(link, invite.forName)} />
+              <ShareButton text={inviteMessage(invite.code, invite.forName)} />
               <CopyButton value={link} label={t("team.copyLink")} />
               <form action={revokeInviteAction}>
                 <input type="hidden" name="inviteId" value={invite.id} />
@@ -101,15 +112,14 @@ export async function InviteSection({
                 </Button>
               </form>
             </div>
-            {TELEGRAM_BOT_USERNAME && (
-              <details className="text-xs">
-                <summary className="text-muted-foreground w-fit cursor-pointer hover:underline">
-                  {t("team.inviteBotLinkHint")}
-                </summary>
-                <p className="mt-1 break-all">
-                  https://t.me/{TELEGRAM_BOT_USERNAME}?start={invite.code}
-                </p>
-              </details>
+            {botLink && (
+              <div className="bg-muted/40 flex flex-col gap-1.5 rounded-lg p-2.5 text-xs">
+                <span className="text-muted-foreground">{t("team.inviteBotLinkHint")}</span>
+                <span className="break-all">{botLink}</span>
+                <div>
+                  <CopyButton value={botLink} label={t("team.copyBotLink")} />
+                </div>
+              </div>
             )}
           </Card>
         );

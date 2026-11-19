@@ -5,12 +5,11 @@ import { ChartViewport } from "@/components/org/chart-viewport";
 import { OrgChart, type PersonLoad } from "@/components/org/org-chart";
 import { OrgPhoneList } from "@/components/org/org-phone-list";
 import { OrgNodeForm, OrgTree } from "@/components/org/org-tree";
-import { inviteMessage } from "@/components/team/invite-section";
+import { inviteLink, inviteMessage } from "@/components/team/invite-section";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { db } from "@/lib/db";
-import { getEnv } from "@/lib/env";
 import { toDateString, todayInTimezone } from "@/lib/dates";
 import { t, type TranslationKey } from "@/lib/i18n";
 import { requireModule } from "@/modules/core/access/guard";
@@ -71,12 +70,14 @@ export default async function StructurePage({ searchParams }: PageProps<"/team/s
   const collapsed = params.collapse === "1";
   const load =
     user.role === "OWNER" || user.role === "MANAGER" ? await loadByPerson(timezone) : undefined;
-  const { APP_URL } = getEnv();
   const placeInvites = editable ? await activePlaceInvites() : new Map();
   const invites = new Map(
     [...placeInvites].map(([nodeId, invite]) => {
-      const link = `${APP_URL}/invite/${invite.code}`;
-      return [nodeId, { id: invite.id, role: invite.role, link, message: inviteMessage(link) }];
+      const link = inviteLink(invite.code);
+      return [
+        nodeId,
+        { id: invite.id, role: invite.role, link, message: inviteMessage(invite.code) },
+      ];
     }),
   );
   const options = {

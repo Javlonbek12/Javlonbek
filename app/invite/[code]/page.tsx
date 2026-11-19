@@ -71,7 +71,11 @@ export default async function InvitePage({ params, searchParams }: PageProps<"/i
     <>
       {beforeBot}
       {telegram && (
-        <a className="text-primary underline" href={`https://t.me/${TELEGRAM_BOT_USERNAME}`}>
+        // With the code: Start in the bot also lets the newcomer in when the sign-in button fails.
+        <a
+          className="text-primary underline"
+          href={`https://t.me/${TELEGRAM_BOT_USERNAME}?start=${encodeURIComponent(code)}`}
+        >
           {bot}
         </a>
       )}

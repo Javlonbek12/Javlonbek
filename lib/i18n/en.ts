@@ -478,7 +478,10 @@ export const en: Dictionary = {
     inviteForPlaceholder: "Who it is for (a name)",
     inviteNoName: "No name",
     inviteNew: "New",
-    inviteBotLinkHint: "A link straight to the bot",
+    inviteBotLinkHint:
+      "A link straight to the bot — if the sign-in button on the site doesn't work, the person opens it and presses Start:",
+    copyBotLink: "Copy the bot link",
+    shareBotText: "If signing in on the site doesn't work, open the bot and press Start:\n{link}",
     share: "Share",
     shareCopied: "Message copied",
     shareText:
@@ -2894,10 +2897,11 @@ export const en: Dictionary = {
     welcomeNew: "Welcome to Assistant, {name}! Your role: {role}.",
     welcomeBack: "Hello, {name}! The bot is connected — notifications will come here.",
     inviteRequired:
-      "Sign-in is by invitation only. Ask your manager for an invite link and open it.",
+      "Sign-in is by invitation only. Send me the invite link from your manager (or the code in it) and I'll connect you. No invite? Ask your manager for one.",
     help: "I'm the bot of the Assistant platform.\n\nJust write or say your tasks, for example:\n“The employee to prepare the report by Friday, and me to call the distributor tomorrow” (name the employee) — I'll show a card to confirm. A task for yourself is a team task (your manager sees it); a personal one — if you write “personal”.\n\nYou can ask: “what do I have today”, “move the report to Thursday”, “close the report task”.\n\n/today — tasks for today and overdue\n/week — for the next 7 days\n/overdue — overdue\n/pending — waiting for your decision: approve, accept work, deletion, due-date moves, planograms and posts\n/notes — send meeting outcomes (text or voice)\n/content — today's approved content plan posts (to forward to the bots)\n/start — connect the bot\n/help — this help\n/help question — ask the AI how to do something in the app",
     tooManyRequests: "Too many messages. Wait a minute.",
-    notLinked: "I don't know you yet. Open the invite link from your manager or press /start.",
+    notLinked:
+      "I don't know you yet. Send me the invite link from your manager (or the code in it) and I'll connect you.",
     recognized: "🎙 Recognized: “{text}”",
     voiceTooLong: "The voice message is too long (5 minutes at most).",
     voiceFailed: "Couldn't recognize the voice message. Try again or write it as text.",
