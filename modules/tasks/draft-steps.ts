@@ -20,6 +20,12 @@ export function parseDraftSteps(raw: string | null | undefined): DraftStep[] {
   } catch {
     return [];
   }
+  return cleanDraftSteps(data);
+}
+
+// Steps from any source (the hidden field, a list sent by the page): titles tidied, wrong dates
+// dropped, at most MAX_DRAFT_STEPS; anything of the wrong shape gives none.
+export function cleanDraftSteps(data: unknown): DraftStep[] {
   const parsed = schema.safeParse(data);
   if (!parsed.success) return [];
   return parsed.data

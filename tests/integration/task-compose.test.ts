@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/lib/db";
 import type { ExtractedTask, InterpretedCommand } from "@/modules/ai/prompts";
 import { handleCallback, handleText, type ConversationDeps } from "@/modules/bot/conversation";
-import { composeTask } from "@/modules/tasks/compose";
+import { createProposedTasks } from "@/modules/tasks/batch";
+import { composeTask, parseTasksToCreate } from "@/modules/tasks/compose";
 import { addInitialSteps } from "@/modules/tasks/steps";
 import { createTask } from "@/modules/tasks/service";
 import { TODAY } from "@/tests/fixtures/phrases";
@@ -97,7 +98,9 @@ describe("form: composeTask", () => {
       [written({ project: "акция esse ноябрь" })],
       ["Акция ESSE ноябрь"],
     );
-    expect(result?.values).toEqual({
+    expect(result?.tasks).toHaveLength(1);
+    const [task] = result!.tasks;
+    expect(task.values).toEqual({
       title: "Отправить POSM в 12 магазинов",
       assigneeId: users.aziz.id,
       dueDate: "2026-10-10",
@@ -106,37 +109,105 @@ describe("form: composeTask", () => {
       description: "Что сделать: шелфтокеры и воблеры\nЗачем: акция с 25-го",
       steps: JSON.stringify(written().steps),
     });
-    expect(result?.missing).toEqual(["Как понять, что готово?"]);
-    expect(result?.notes).toEqual([]);
+    expect(task.missing).toEqual(["Как понять, что готово?"]);
+    expect(task.notes).toEqual([]);
   });
 
-  it("says what the form could not fill: an unknown person and project, several tasks", async () => {
-    const { result } = await compose([
+  it("gives every task of the text, each saying what the form could not fill", async () => {
+    const { users, result } = await compose([
       written({ assigneeName: "Бобуру", project: "Неизвестный" }),
-      written({ title: "Вторая" }),
+      written({ title: "Созвониться с дистрибьютором", assigneeName: "Дильнозе", steps: [] }),
     ]);
-    expect(result?.values.assigneeId).toBeUndefined();
-    expect(result?.values.project).toBeUndefined();
-    expect(result?.notes).toEqual([
-      "В тексте задач: 2. Оформлена первая, остальные поставьте отдельно.",
+    expect(result?.tasks.map((task) => task.values.title)).toEqual([
+      "Отправить POSM в 12 магазинов",
+      "Созвониться с дистрибьютором",
+    ]);
+    const [first, second] = result!.tasks;
+    expect(first.values.assigneeId).toBeUndefined();
+    expect(first.values.project).toBeUndefined();
+    expect(first.notes).toEqual([
       "Не нашёл сотрудника «Бобуру» — выберите исполнителя.",
       "Проекта «Неизвестный» нет в списке — выберите проект под «Ещё».",
     ]);
+    expect(second.values.assigneeId).toBe(users.dilnoza.id);
+    expect(second.values.steps).toBeUndefined();
   });
 
   it("one's own task goes to oneself; a personal one ticks «Личная задача»", async () => {
     const own = await compose([written({ assigneeName: null, steps: [], description: null })]);
-    expect(own.result?.values).toMatchObject({ assigneeId: own.users.owner.id });
-    expect(own.result?.values.steps).toBeUndefined();
-    expect(own.result?.values.description).toBeUndefined();
+    const [ownTask] = own.result!.tasks;
+    expect(ownTask.values).toMatchObject({ assigneeId: own.users.owner.id });
+    expect(ownTask.values.steps).toBeUndefined();
+    expect(ownTask.values.description).toBeUndefined();
     await resetDb();
     const personal = await compose([written({ assigneeName: null, personal: true })]);
-    expect(personal.result?.values.isPersonal).toBe("on");
-    expect(personal.result?.values.assigneeId).toBeUndefined();
+    expect(personal.result!.tasks[0].values.isPersonal).toBe("on");
+    expect(personal.result!.tasks[0].values.assigneeId).toBeUndefined();
   });
 
   it("no task in the text: nothing to fill", async () => {
     expect((await compose([])).result).toBeNull();
+  });
+});
+
+describe("form: «Создать все»", () => {
+  beforeEach(resetDb);
+
+  const item = (over: Record<string, unknown> = {}) => ({
+    title: "  Отправить   POSM ",
+    assigneeId: null as string | null,
+    personal: false,
+    dueDate: "2026-10-10",
+    priority: "HIGH",
+    project: null,
+    description: "Что сделать: 12 магазинов",
+    steps: [
+      { title: "Собрать комплекты", dueDate: "2026-10-08" },
+      { title: "Передать", dueDate: "не дата" },
+    ],
+    ...over,
+  });
+
+  it("checks the list: a task needs a title and an assignee (or is personal)", () => {
+    expect(parseTasksToCreate([])).toBeNull();
+    expect(parseTasksToCreate("x")).toBeNull();
+    expect(parseTasksToCreate([item({ assigneeId: "u1", title: "  " })])).toBeNull();
+    expect(parseTasksToCreate([item()])).toBeNull();
+    expect(parseTasksToCreate([item({ personal: true, assigneeId: "u1" })])).toEqual([
+      {
+        title: "Отправить POSM",
+        assigneeId: null,
+        personal: true,
+        dueDate: "2026-10-10",
+        priority: "HIGH",
+        project: null,
+        description: "Что сделать: 12 магазинов",
+        steps: [
+          { title: "Собрать комплекты", dueDate: "2026-10-08" },
+          { title: "Передать", dueDate: null },
+        ],
+      },
+    ]);
+  });
+
+  it("creates every task along its route, each with its description and steps", async () => {
+    const users = await createFixtureTeam();
+    const tasks = parseTasksToCreate([
+      item({ assigneeId: users.aziz.id }),
+      item({ title: "Созвониться", assigneeId: users.owner.id, steps: [], description: null }),
+    ])!;
+    const result = await createProposedTasks(users.owner, tasks);
+    expect(result).toEqual({ saved: 2, pending: 0, errors: [] });
+    const created = await db.task.findMany({
+      orderBy: { createdAt: "asc" },
+      include: { steps: { orderBy: { position: "asc" } } },
+    });
+    expect(created.map((task) => [task.title, task.assigneeId, task.steps.length])).toEqual([
+      ["Отправить POSM", users.aziz.id, 2],
+      ["Созвониться", users.owner.id, 0],
+    ]);
+    expect(created[0].description).toBe("Что сделать: 12 магазинов");
+    expect(created[0].priority).toBe("HIGH");
   });
 });
 

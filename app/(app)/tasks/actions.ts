@@ -28,7 +28,13 @@ import {
 import type { RepeatInput } from "@/modules/tasks/repeat";
 import { requestDueChange, resolveDueChange } from "@/modules/tasks/due-change";
 import { parseLabels, setTaskLabels } from "@/modules/tasks/labels";
-import { composeTask, MAX_COMPOSE_TEXT, type ComposeResult } from "@/modules/tasks/compose";
+import {
+  composeTask,
+  MAX_COMPOSE_TEXT,
+  parseTasksToCreate,
+  type ComposeResult,
+} from "@/modules/tasks/compose";
+import { createProposedTasks } from "@/modules/tasks/batch";
 import { parseDraftSteps } from "@/modules/tasks/draft-steps";
 import { getTaskFormOptions } from "@/modules/tasks/form-options";
 import { AiError } from "@/modules/ai/run";
@@ -179,6 +185,20 @@ export async function composeTaskAction(text: unknown): Promise<ComposeTaskResul
     if (error instanceof AiError) return { ok: false, error: `ai.errors.${error.code}` };
     throw error;
   }
+}
+
+export type CreateComposedResult =
+  | { ok: true; saved: number; pending: number; errors: string[] }
+  | { ok: false; error: TranslationKey };
+
+// «Создать все»: the tasks «Оформить с ИИ» found in one text, each along its route, with its steps.
+export async function createComposedTasksAction(input: unknown): Promise<CreateComposedResult> {
+  const user = await actor();
+  const tasks = parseTasksToCreate(input);
+  if (!tasks) return { ok: false, error: "tasks.composeMany.invalid" };
+  const result = await createProposedTasks(user, tasks);
+  revalidatePath("/", "layout");
+  return { ok: true, ...result };
 }
 
 export async function updateTaskAction(

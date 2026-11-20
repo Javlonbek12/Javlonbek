@@ -9,7 +9,7 @@ import { canViewMeeting } from "@/modules/meetings/access";
 import { getTaskFormOptions } from "@/modules/tasks/form-options";
 import { routeHints } from "@/modules/tasks/route-hints";
 
-import { composeTaskAction, createTaskAction } from "../actions";
+import { composeTaskAction, createComposedTasksAction, createTaskAction } from "../actions";
 
 // ?due=YYYY-MM-DD fills the due date (the calendar); ?meeting=<id> makes it a task for that
 // meeting (its page's «+ Добавить задачу»); ?assignee=<id> picks the assignee (the employee
@@ -50,6 +50,7 @@ export default async function NewTaskPage({ searchParams }: PageProps<"/tasks/ne
       <NewTaskForm
         action={createTaskAction}
         compose={isAiConfigured() ? composeTaskAction : undefined}
+        createMany={createComposedTasksAction}
         isNew
         routes={routes}
         today={today}

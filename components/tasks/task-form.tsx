@@ -144,7 +144,7 @@ function RepeatFields({ values }: { values: Record<string, string> }) {
 }
 
 // The steps a new task will start with, each can be taken out; sent as JSON in a hidden field.
-function DraftSteps({
+export function DraftSteps({
   steps,
   onChange,
 }: {
