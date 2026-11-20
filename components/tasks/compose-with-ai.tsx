@@ -8,24 +8,29 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { ComposeTaskResult } from "@/app/(app)/tasks/actions";
 import type { TranslationKey } from "@/lib/i18n";
+import type { ComposedTask } from "@/modules/tasks/compose";
 
 const MAX_TEXT = 2000;
 
 // «Оформить с ИИ» above the new task form: the task in one's own words → the form's fields, and
-// what the task still lacks. The person then checks the form and creates the task as usual.
+// what the task still lacks; several tasks in the text → a list to check and «Создать все».
 export function ComposeWithAi({
   compose,
   onComposed,
 }: {
   compose: (text: string) => Promise<ComposeTaskResult>;
-  onComposed: (values: Record<string, string>) => void;
+  onComposed: (tasks: ComposedTask[]) => void;
 }) {
   const t = useT();
   const id = useId();
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [error, setError] = useState<TranslationKey | null>(null);
-  const [result, setResult] = useState<{ missing: string[]; notes: string[] } | null>(null);
+  const [result, setResult] = useState<{
+    count: number;
+    missing: string[];
+    notes: string[];
+  } | null>(null);
   const [pending, startTransition] = useTransition();
 
   function run() {
@@ -37,8 +42,9 @@ export function ComposeWithAi({
         setError(response.error);
         return;
       }
-      setResult({ missing: response.missing, notes: response.notes });
-      onComposed(response.values);
+      const [first] = response.tasks;
+      setResult({ count: response.tasks.length, missing: first.missing, notes: first.notes });
+      onComposed(response.tasks);
     });
   }
 
@@ -79,7 +85,12 @@ export function ComposeWithAi({
               {t(error)}
             </p>
           )}
-          {result && (
+          {result && result.count > 1 && (
+            <p role="status" className="text-muted-foreground">
+              {t("tasks.compose.foundMany", { count: result.count })}
+            </p>
+          )}
+          {result && result.count === 1 && (
             <div role="status" className="flex flex-col gap-2">
               <p className="text-muted-foreground">{t("tasks.compose.done")}</p>
               {(result.notes.length > 0 || result.missing.length > 0) && (

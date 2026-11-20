@@ -94,12 +94,12 @@ For each separate task return:
   "Материалы: ..." - files, lists or samples to use, only if the message names them.
   Write only facts from the message, never guesses; leave a line out when the message says nothing about it. null when no line is left.
   For an Uzbek message use the same labels in Uzbek: "Nima qilish kerak:", "Nima uchun:", "Tayyor, qachonki:", "Materiallar:".
-- steps: when the work clearly has several stages (prepare, hand over, check...), 2-6 short imperative steps in order, each with dueDate (YYYY-MM-DD, not later than the task's dueDate) or null; you may break the work into the obvious stages it needs, but add nothing the task does not need. An empty list for a simple one-action task.
+- steps: when the work has several stages - named in the message, or obvious from the work itself (prepare, hand over, check...) - 2-6 short imperative steps in order, each with dueDate (YYYY-MM-DD, not later than the task's dueDate) or null; add nothing the task does not need. An empty list for a simple one-action task.
 - missing: up to 4 short questions, in the language of the message, about what the task still lacks to be clear: no deadline, no assignee, no quantity or list, no way to tell it is done (then suggest one, e.g. "Как понять, что готово? Например: отгрузки записаны и есть фото накладных"). Ask only about what really matters for this task; an empty list when everything is clear.
 
 Russian typed in Latin letters (translit, e.g. "otpravit posm do pyatnicy") is Russian: write the title, description, steps and questions in proper Russian Cyrillic.
 
-One sentence can contain several tasks ("Азизу подготовить отчёт, а Дильнозе созвониться с дистрибьютором") - split them. A task given to several people is one task per person. Do not invent tasks that are not in the message. If the message contains no task at all, return an empty list.`;
+Tasks or steps: several actions toward one result by one person ("собрать комплекты, передать дистрибьютору и проверить, что дошли") are ONE task with those actions as steps. Independent results - different people, different deadlines or unrelated work ("Азизу подготовить отчёт, а Дильнозе созвониться с дистрибьютором") - are separate tasks, each with its own steps if it has stages. A task given to several people is one task per person. A long message may hold many tasks: return each of them. Do not invent tasks that are not in the message. If the message contains no task at all, return an empty list.`;
 
 export async function extractTasks(
   userId: string,

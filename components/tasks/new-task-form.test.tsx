@@ -1,7 +1,7 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ComposeTaskResult } from "@/app/(app)/tasks/actions";
+import type { ComposeTaskResult, CreateComposedResult } from "@/app/(app)/tasks/actions";
 import { LocaleProvider } from "@/components/locale-provider";
 
 import { NewTaskForm } from "./new-task-form";
@@ -11,12 +11,16 @@ const users = [
   { id: "aziz", label: "Азиз" },
 ];
 
-function setUp(compose?: (text: string) => Promise<ComposeTaskResult>) {
+function setUp(
+  compose?: (text: string) => Promise<ComposeTaskResult>,
+  createMany: (tasks: unknown) => Promise<CreateComposedResult> = vi.fn(),
+) {
   const { container } = render(
     <LocaleProvider locale="ru">
       <NewTaskForm
         action={vi.fn()}
         compose={compose}
+        createMany={createMany}
         isNew
         today="2026-11-19"
         initial={{ assigneeId: "me", priority: "MEDIUM", dueDate: "" }}
@@ -30,8 +34,7 @@ function setUp(compose?: (text: string) => Promise<ComposeTaskResult>) {
   return { field };
 }
 
-const composed: ComposeTaskResult = {
-  ok: true,
+const posm = {
   values: {
     title: "Отправить POSM в 12 магазинов",
     assigneeId: "aziz",
@@ -47,6 +50,7 @@ const composed: ComposeTaskResult = {
   missing: ["Как понять, что готово?"],
   notes: [],
 };
+const composed: ComposeTaskResult = { ok: true, tasks: [posm] };
 
 async function writeUp(text: string) {
   fireEvent.click(screen.getByRole("button", { name: /Оформить с ИИ/ }));
@@ -89,5 +93,69 @@ describe("NewTaskForm: «Оформить с ИИ»", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Дневной лимит обращений к ИИ исчерпан");
     expect(field("title")?.value).toBe("");
     expect(field("steps")).toBeNull();
+  });
+
+  it("several tasks in the text: a list to check, then «Создать все»", async () => {
+    const createMany = vi.fn(async () => ({ ok: true as const, saved: 2, pending: 1, errors: [] }));
+    setUp(
+      async (): Promise<ComposeTaskResult> => ({
+        ok: true,
+        tasks: [
+          posm,
+          {
+            values: { title: "Созвониться с дистрибьютором", dueDate: "2026-11-20" },
+            missing: [],
+            notes: ["Не нашёл сотрудника «Бобуру» — выберите исполнителя."],
+          },
+          { values: { title: "Лишняя", assigneeId: "me" }, missing: [], notes: [] },
+        ],
+      }),
+      createMany,
+    );
+    await writeUp("три дела");
+    expect(screen.getByRole("status")).toHaveTextContent("Найдено задач: 3");
+    // The one-task form gives way to the list.
+    expect(screen.queryByRole("button", { name: "Создать" })).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Не нашёл сотрудника «Бобуру» — выберите исполнителя."),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Убрать задачу 3" }));
+    // The second task has nobody yet: asked for before anything is sent.
+    fireEvent.click(screen.getByRole("button", { name: "Создать все (2)" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("У задачи 2 не выбран исполнитель.");
+    expect(createMany).not.toHaveBeenCalled();
+
+    const second = within(screen.getByRole("group", { name: "Задача 2" }));
+    fireEvent.change(second.getByLabelText("Исполнитель"), { target: { value: "me" } });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Создать все (2)" })));
+    expect(createMany).toHaveBeenCalledWith([
+      {
+        title: "Отправить POSM в 12 магазинов",
+        assigneeId: "aziz",
+        personal: false,
+        dueDate: "2026-11-22",
+        priority: "URGENT",
+        project: "Акция ESSE",
+        description: "Что сделать: шелфтокеры\nЗачем: акция с 25-го",
+        steps: [
+          { title: "Собрать комплекты", dueDate: "2026-11-20" },
+          { title: "Передать дистрибьютору", dueDate: null },
+        ],
+      },
+      {
+        title: "Созвониться с дистрибьютором",
+        assigneeId: "me",
+        personal: false,
+        dueDate: "2026-11-20",
+        priority: "MEDIUM",
+        project: null,
+        description: null,
+        steps: [],
+      },
+    ]);
+    expect(screen.getByText("Создано задач: 2.")).toBeInTheDocument();
+    expect(screen.getByText("Отправлено на утверждение: 1.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "К задачам" })).toHaveAttribute("href", "/tasks");
   });
 });
