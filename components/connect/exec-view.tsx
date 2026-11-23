@@ -2,15 +2,19 @@ import { formatDay } from "@/lib/dates";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { formatMoney, formatNumber, type ConnectReport } from "@/modules/connect/report";
+import { DEFAULT_RULES } from "@/modules/connect/rules";
 import { NO_VISITS_REGION } from "@/modules/connect/visits";
 
 import { AttentionSection } from "./attention";
 import { IsmSection } from "./ism";
-import { DataTable, Kpi, Section } from "./parts";
+import { DataTable, Kpi, Section, ToneValue } from "./parts";
 import { FollowUpBlock, RecoveryBlock } from "./recovery-section";
 import { RoutesSection } from "./routes-section";
 import { MvSection, OosSection, VisitsSection } from "./sections";
+import { lineTone, toneRank as toneOrder, type Tone } from "./tone";
 import { Trend } from "./trend";
+import { WorstSection } from "./worst";
+import { worstLists } from "./worst-lists";
 
 const pct = (value: number) => `${value}%`;
 
@@ -35,6 +39,15 @@ export function ExecView({
   const changes = insights?.trend?.changes;
   const previous = insights?.trend?.previous;
   const recovery = insights?.recovery.totals;
+  // The tiles and the regions are coloured against the owner's norms («Нормы»).
+  const rules = insights?.rules ?? DEFAULT_RULES;
+  // A region as bad as the worse of its two shares; those without Smart Up visits have neither.
+  const regionTone = (r: (typeof data.regions)[number]): Tone | null =>
+    r.region === NO_VISITS_REGION || !r.planned
+      ? null
+      : ([lineTone(r.visitedRate, rules.visited), lineTone(r.connectRate, rules.connect)].sort(
+          (a, b) => toneOrder(a) - toneOrder(b),
+        )[0] ?? null);
   return (
     <div className="flex flex-col gap-4 [&>*]:min-w-0">
       <div
@@ -47,6 +60,7 @@ export function ExecView({
           label={t("connect.tile.planDone")}
           value={pct(v.visitedRate)}
           meter={v.visitedRate}
+          tone={(v.planned ? lineTone(v.visitedRate, rules.visited) : null) ?? undefined}
           trend={<Trend change={changes?.planDone} />}
           note={t("connect.tile.planDoneNote", {
             visited: formatNumber(v.visited),
@@ -57,6 +71,7 @@ export function ExecView({
           label={t("connect.tile.connectUsed")}
           value={pct(v.connectRate)}
           meter={v.connectRate}
+          tone={(v.visited ? lineTone(v.connectRate, rules.connect) : null) ?? undefined}
           trend={<Trend change={changes?.connectUsed} />}
           note={t("connect.tile.connectUsedNote", { rate: v.allGoodRate })}
         />
@@ -82,6 +97,7 @@ export function ExecView({
             label={t("connect.recovery.tile")}
             value={recovery.rate === null ? "—" : pct(recovery.rate)}
             meter={recovery.rate ?? undefined}
+            tone={lineTone(recovery.rate, rules.recovery) ?? undefined}
             trend={<Trend change={changes?.recovery} />}
             note={t("connect.recovery.tileNote", {
               restored: formatNumber(recovery.restored),
@@ -114,11 +130,14 @@ export function ExecView({
         />
       )}
 
+      <WorstSection lists={worstLists({ routes: data.routes, insights, regions: data.regions })} />
+
       {data.regions.length > 0 && (
         <Section title={t("connect.section.regions")} hint={t("connect.section.regionsHint")}>
           <DataTable
             rows={data.regions}
             rowKey={(r) => r.region}
+            rowTone={regionTone}
             limit={30}
             columns={[
               {
@@ -143,13 +162,21 @@ export function ExecView({
                 key: "visited",
                 header: t("connect.col.visitedRate"),
                 numeric: true,
-                cell: (r) => pct(r.visitedRate),
+                cell: (r) => (
+                  <ToneValue tone={r.planned ? lineTone(r.visitedRate, rules.visited) : null}>
+                    {pct(r.visitedRate)}
+                  </ToneValue>
+                ),
               },
               {
                 key: "connect",
                 header: t("connect.col.connectRate"),
                 numeric: true,
-                cell: (r) => pct(r.connectRate),
+                cell: (r) => (
+                  <ToneValue tone={r.visited ? lineTone(r.connectRate, rules.connect) : null}>
+                    {pct(r.connectRate)}
+                  </ToneValue>
+                ),
               },
               {
                 key: "mv",

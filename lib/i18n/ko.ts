@@ -28,6 +28,8 @@ export const ko: PartialDictionary & {
     download: {
       xlsx: "Excel",
       pptx: "PowerPoint",
+      pdf: "PDF (A4) — 화면 그대로",
+      pdfHint: "인쇄 창에서 “PDF로 저장”을 선택하세요",
       title: "다운로드",
       language: "파일 언어",
       languages: { ru: "Русский", en: "English", ko: "한국어" },
@@ -105,6 +107,12 @@ export const ko: PartialDictionary & {
       oosStoresNote: "점검 {checked}곳 중 {rate}%",
       orders: "주문",
       ordersSum: "주문 금액",
+    },
+    print: {
+      view: "수준: {view}",
+      period: "기간: {period}",
+      dataDate: "{date}까지의 데이터",
+      made: "{date} 작성",
     },
     sectionNav: {
       label: "페이지 섹션",
@@ -467,6 +475,39 @@ export const ko: PartialDictionary & {
         zones: "루트",
         missed: "미방문",
         noOrder: "DR 주문 없음",
+      },
+    },
+    worst: {
+      title: "최저 실적",
+      hint: "항목별 최저 5개 — 대화를 시작할 곳입니다. 색상은 기준을 따릅니다: 빨강은 기준에 크게 미달, 노랑은 근접, 초록은 달성.",
+      attendance: "TSM 방문율",
+      hitRate: "DR 히트율",
+      recovery: "OOS 회복",
+      connect: "방문 중 Connect",
+      connectRegions: "방문 중 Connect — 지역",
+      target: "목표 {value}%",
+      line: "기준: {value}% 이상",
+      of: "{whole} 중 {part}",
+      people: "직원: {count}",
+    },
+    calendar: {
+      more: "외 {count}개 — 아래 표와 Excel에 있음",
+      attendanceTitle: "TSM 방문율 캘린더",
+      attendanceHint:
+        "행은 구역, 열은 날짜입니다. 셀에는 수행한 계획 방문 수가 표시되고, 색상은 그날 계획 대비 수행 비율입니다. 방문율이 가장 낮은 구역부터 표시됩니다.",
+      hitRateTitle: "DR 히트율 캘린더",
+      hitRateHint:
+        "행은 영업 담당자의 구역, 열은 날짜입니다. 셀에는 주문이 있는 방문 수가 표시되고, 색상은 그날 방문 중 주문이 있는 비율입니다. 히트율이 가장 낮은 구역부터 표시됩니다.",
+      total: { attendance: "방문율", hitRate: "히트율" },
+      legend: {
+        good: "목표 {target}% 달성",
+        warn: "목표에 근접",
+        bad: "목표에 크게 미달",
+        none: { attendance: "해당일 계획 없음", hitRate: "해당일 방문 없음" },
+      },
+      cell: {
+        attendance: "“+” — 계획 외 방문만 있음",
+        hitRate: "숫자는 주문이 있는 방문 수",
       },
     },
     rules: {
