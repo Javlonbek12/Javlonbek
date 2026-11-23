@@ -1,11 +1,6 @@
 import { formatNumber } from "@/lib/format";
 import { t } from "@/lib/i18n";
-import {
-  MATRIX_CLASSES,
-  ROUTE_TARGETS,
-  type MatrixClass,
-  type RouteAnalysis,
-} from "@/modules/connect/routes";
+import { MATRIX_CLASSES, type MatrixClass, type RouteAnalysis } from "@/modules/connect/routes";
 
 // Both targets reached is good, one missed a warning, both missed a real problem.
 export const CLASS_COLOR: Record<MatrixClass, string> = {
@@ -23,7 +18,10 @@ const PAD = { left: 34, right: 10, top: 10, bottom: 30 };
 export function RoutesMatrix({
   zones,
   average,
+  targets,
 }: {
+  // The owner's targets: the solid lines.
+  targets: RouteAnalysis["targets"];
   zones: RouteAnalysis["zones"];
   average: NonNullable<RouteAnalysis["matrix"]>["average"];
 }) {
@@ -32,7 +30,7 @@ export function RoutesMatrix({
       z.class !== null && z.attendance !== null && z.hitRate !== null,
   );
   // Attendance is mostly close to 100%: the axis starts at the lowest ten below every point.
-  const lowest = Math.min(ROUTE_TARGETS.attendance, ...points.map((p) => p.attendance));
+  const lowest = Math.min(targets.attendance, ...points.map((p) => p.attendance));
   const from = Math.max(0, Math.floor(lowest / 10) * 10 - (lowest % 10 === 0 ? 10 : 0));
   const x = (value: number) =>
     PAD.left + ((value - from) / (100 - from)) * (WIDTH - PAD.left - PAD.right);
@@ -107,8 +105,8 @@ export function RoutesMatrix({
         </text>
         {/* The targets. */}
         <line
-          x1={x(ROUTE_TARGETS.attendance)}
-          x2={x(ROUTE_TARGETS.attendance)}
+          x1={x(targets.attendance)}
+          x2={x(targets.attendance)}
           y1={PAD.top}
           y2={HEIGHT - PAD.bottom}
           stroke="currentColor"
@@ -117,8 +115,8 @@ export function RoutesMatrix({
         <line
           x1={PAD.left}
           x2={WIDTH - PAD.right}
-          y1={y(ROUTE_TARGETS.hitRate)}
-          y2={y(ROUTE_TARGETS.hitRate)}
+          y1={y(targets.hitRate)}
+          y2={y(targets.hitRate)}
           stroke="currentColor"
           strokeOpacity={0.7}
         />
@@ -170,8 +168,8 @@ export function RoutesMatrix({
           <li className="flex items-center gap-1.5">
             <span className="h-px w-4 bg-current" />
             {t("connect.routes.matrix.targets", {
-              attendance: ROUTE_TARGETS.attendance,
-              hitRate: ROUTE_TARGETS.hitRate,
+              attendance: targets.attendance,
+              hitRate: targets.hitRate,
             })}
           </li>
           <li className="flex items-center gap-1.5">

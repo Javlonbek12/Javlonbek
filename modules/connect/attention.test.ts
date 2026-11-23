@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ATTENTION_RULES, attentionList, managerOf } from "./attention";
+import { DEFAULT_RULES } from "./rules";
 import { buildHierarchy } from "./hierarchy";
 import type { PositionRecord } from "./parse";
 import { salesCounts } from "./sales";
@@ -72,6 +73,47 @@ describe("attentionList", () => {
         followUp: [followed("TSM_TST_1", 30, 50)],
         sales: true,
         attendance: new Map([["TSM_TST_1", 85]]),
+      }),
+    ).toEqual([]);
+  });
+
+  it("judges by the owner's lines when they are set", () => {
+    const input = {
+      rows: [row("TSM_TST_1", { connectRate: 90, checked: 4, anySold: 3 })],
+      recovery: [restored("TSM_TST_1", 40, 30)],
+      followUp: [followed("TSM_TST_1", 30, 60)],
+      sales: true,
+      attendance: new Map([["TSM_TST_1", 90]]),
+    };
+    // Within the standard lines.
+    expect(attentionList(input)).toEqual([]);
+    // Stricter lines: every reason shows.
+    const strict = {
+      ...DEFAULT_RULES,
+      connect: 95,
+      recovery: 40,
+      followUp: 70,
+      unsold: 1,
+      visited: 95,
+    };
+    expect(
+      attentionList({ ...input, rules: strict })[0]!.reasons.map((r) => [r.kind, r.value]),
+    ).toEqual([
+      ["connect", 90],
+      ["recovery", 30],
+      ["followUp", 60],
+      ["unsold", 1],
+      ["attendance", 90],
+    ]);
+    // A line of 0% is never crossed: the reason is switched off.
+    const off = { ...DEFAULT_RULES, connect: 0, recovery: 0, followUp: 0, visited: 0 };
+    expect(
+      attentionList({
+        rows: [row("TSM_TST_1", { connectRate: 0 })],
+        recovery: [restored("TSM_TST_1", 40, 0)],
+        followUp: [followed("TSM_TST_1", 30, 0)],
+        attendance: new Map([["TSM_TST_1", 0]]),
+        rules: off,
       }),
     ).toEqual([]);
   });

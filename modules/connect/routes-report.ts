@@ -8,6 +8,7 @@ import {
   gradeRouteLists,
   listStoreCodes,
   type RouteAnalysis,
+  type RouteTargets,
   type RouteZone,
   type StaffFilter,
 } from "./routes";
@@ -74,6 +75,8 @@ export async function buildRoutesBlock(
     query: ConnectQuery;
     scope: Set<string> | null;
     visitDays?: string[];
+    // The owner's targets (the standard ones without them).
+    targets?: RouteTargets;
   },
 ): Promise<RoutesBlock | null> {
   const { period, query, scope } = options;
@@ -86,6 +89,7 @@ export async function buildRoutesBlock(
     scope:
       query.view === "exec" ? null : query.view === "executor" ? new Set([query.person!]) : scope,
     staff,
+    targets: options.targets,
   });
   if (!analysis.totals.all.clients) return null;
   const codes = listStoreCodes(analysis);

@@ -16,6 +16,7 @@ import {
   connectPeopleLinks,
   connectPositionLinks,
   loadHierarchy,
+  loadConnectRules,
   loadPayments,
   loadVisitData,
 } from "./service";
@@ -205,9 +206,11 @@ export async function buildConnectReport(
   // visit detail is loaded for.
   const routeSource = await loadRouteSource(period, options.hierarchy);
   const { hierarchy } = routeSource;
-  const [data, payments] = await Promise.all([
+  // The owner's lines («Нормы»): the targets of the routes and of «Требует внимания».
+  const [data, payments, rules] = await Promise.all([
     loadVisitData(period, routeSource),
     loadPayments(months),
+    loadConnectRules(),
   ]);
   const analysis = analyzeVisits(data);
   const codes = tsmCodes(data).filter((code) => inScope(scope, code));
@@ -230,6 +233,7 @@ export async function buildConnectReport(
     query: { ...query, person },
     scope,
     visitDays: data.routeDays,
+    targets: { attendance: rules.attendance, hitRate: rules.hitRate },
   });
   const paymentsOf = (allowed: Set<string> | null) =>
     payments.filter((p) => inScope(allowed, personCode(p.person)));
@@ -257,6 +261,7 @@ export async function buildConnectReport(
         rows: query.view === "exec" ? execRows : managerRows,
         sections: execSections,
         attendance,
+        rules,
       });
   return {
     query: { ...query, person },

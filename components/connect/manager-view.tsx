@@ -24,7 +24,10 @@ export function ManagerView({
   link,
   insights,
   href,
+  rulesHref,
 }: {
+  // Where the owner changes the lines the blocks are counted against (others have no link).
+  rulesHref?: string;
   data: NonNullable<ConnectReport["manager"]>;
   months: string;
   // Recovery of stock, the distributor's orders and who needs attention, for the TSMs they see.
@@ -48,6 +51,8 @@ export function ManagerView({
         <AttentionSection
           rows={insights.attention}
           attendance={insights.attendance}
+          rules={insights.rules}
+          rulesHref={rulesHref}
           personHref={personHref}
         />
       )}
@@ -72,7 +77,7 @@ export function ManagerView({
         </Section>
       )}
 
-      <RoutesSection block={data.routes} />
+      <RoutesSection block={data.routes} rulesHref={rulesHref} />
       <VisitsSection data={data.sections.visits} />
       <OosSection data={data.sections.oos}>
         {insights && href && data.sections.oos.checked > 0 && (

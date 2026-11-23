@@ -17,6 +17,7 @@ import {
   type SaleRecord,
 } from "./parse";
 import { visitsFromRoutes } from "./route-visits";
+import { DEFAULT_RULES, parseRules, type ConnectRules } from "./rules";
 import { SALES_WINDOW_DAYS } from "./sales";
 import type { VisitData } from "./visits";
 
@@ -236,6 +237,45 @@ async function readLinks(key: string): Promise<Record<string, string>> {
   } catch {
     return {};
   }
+}
+
+// The lines «Аналитика Connect» measures against («Нормы»): the standard ones until the owner
+// saves their own.
+const RULES_KEY = "connect.rules";
+
+export async function loadConnectRules(): Promise<ConnectRules> {
+  const row = await db.systemState.findUnique({ where: { key: RULES_KEY } });
+  if (!row) return { ...DEFAULT_RULES };
+  try {
+    return parseRules(JSON.parse(row.value));
+  } catch {
+    return { ...DEFAULT_RULES };
+  }
+}
+
+// The lines are the company's, so only the owner sets them.
+export const canSetConnectRules = (user: Viewer) => user.role === "OWNER" && canSeeConnect(user);
+
+// Saves the lines (`null`: back to the standard ones). The owner only.
+export async function saveConnectRules(actor: Actor, rules: ConnectRules | null) {
+  if (!canSetConnectRules(actor)) throw new ConnectError("forbidden");
+  if (rules) {
+    const value = JSON.stringify(parseRules(rules));
+    await db.systemState.upsert({
+      where: { key: RULES_KEY },
+      create: { key: RULES_KEY, value },
+      update: { value },
+    });
+  } else {
+    await db.systemState.deleteMany({ where: { key: RULES_KEY } });
+  }
+  await logActivity({
+    actorId: actor.id,
+    action: "connect.rules_saved",
+    entityType: "SystemState",
+    entityId: RULES_KEY,
+    details: rules ? { ...rules } : { reset: true },
+  });
 }
 
 export const connectPeopleLinks = () => readLinks(PEOPLE_KEY);

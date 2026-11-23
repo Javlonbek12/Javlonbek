@@ -3668,6 +3668,55 @@ export const en: Dictionary = {
         noOrder: "DR no order",
       },
     },
+    rules: {
+      link: "Set the norms",
+      menu: "Norms",
+      title: "Connect analytics norms",
+      back: "Back to the analytics",
+      intro:
+        "The matrix and the colours in “Routes and discipline” and the “Needs attention” list are counted against these norms. They are the same for everyone and only the owner can change them. The data does not change, only what counts as below the line.",
+      group: {
+        targets: "Targets in “Routes and discipline”",
+        attention: "“Needs attention”: when an employee gets on the list",
+      },
+      groupHint: {
+        targets:
+          "A target is met when the figure is not below it. The targets decide a zone's class in the DR matrix (both met, one below, both below) and the colour of the numbers.",
+        attention:
+          "An employee gets on the list when their figure is worse than the norm. The stricter the norm, the longer the list.",
+      },
+      field: {
+        attendance: "Attendance — target",
+        hitRate: "DR hit rate — target",
+        connect: "Connect on visits — below",
+        recovery: "OOS restored — below",
+        followUp: "Distributor's order after an OOS — below",
+        visited: "Planned visits made — below",
+        unsold: "Orders with nothing sold — from",
+      },
+      fieldHint: {
+        attendance: "Planned visits made out of those planned, TSM and DR.",
+        hitRate: "Visits with an order out of all visits a sales rep made.",
+        connect: "The share of planned stores visited with everything done in Connect Bot.",
+        recovery: "The share of products that came back to the shelf (counted from 10 products).",
+        followUp:
+          "The share of checks with an OOS followed by a DR's order within 3 days (from 10 checks).",
+        visited: "The share of planned visits made, by the route analysis.",
+        unsold: "Auto-stock orders with nothing sold in 3 days (when sales are loaded).",
+      },
+      unit: { percent: "%", count: "pcs" },
+      range: "from {min} to {max}",
+      standard: "standard: {value}",
+      save: "Save",
+      reset: "Back to the standard ones",
+      saved: "The norms are saved. The analytics is already counted against them.",
+      resetDone: "The standard norms are back.",
+      invalid:
+        "Not saved. Check the fields: {fields}. Each needs a whole number within its limits.",
+      forbidden: "Only the owner can change the norms.",
+      custom: "Your own norms are in use now (they differ from the standard ones).",
+      standardNow: "The standard norms are in use now.",
+    },
     recovery: {
       moreSkus: "and {count} more",
       title: "Stock recovery",

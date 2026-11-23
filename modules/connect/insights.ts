@@ -13,6 +13,7 @@ import {
   recoveryFrom,
   type RecoveryBase,
 } from "./recovery";
+import { DEFAULT_RULES, type ConnectRules } from "./rules";
 import { loadRoutes, loadVisitData } from "./service";
 import { headline, trendOf } from "./trend";
 import {
@@ -57,6 +58,8 @@ export async function connectInsights(input: {
   sections: VisitSections | null;
   // Planned visits made, % by TSM code, when the route analysis gives it.
   attendance?: Map<string, number> | null;
+  // The owner's lines of «Требует внимания» (the standard ones without them).
+  rules?: ConnectRules;
 }) {
   const { view, base, period, data, hierarchy } = input;
   if (view === "executor" && !input.person) return null;
@@ -85,6 +88,7 @@ export async function connectInsights(input: {
         sales: Boolean(data.salesRange),
         attendance: input.attendance,
         hierarchy,
+        rules: input.rules,
       }).map((row) => ({
         ...row,
         // Leadership sees everyone here, but opens only the TSMs of their own scope.
@@ -111,6 +115,8 @@ export async function connectInsights(input: {
     attention,
     // Whether the share of planned visits made was among the attention rules.
     attendance: Boolean(input.attendance),
+    // The lines the list was made with.
+    rules: input.rules ?? DEFAULT_RULES,
     trend,
   };
 }

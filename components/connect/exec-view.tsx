@@ -20,7 +20,10 @@ export function ExecView({
   months,
   insights,
   href,
+  rulesHref,
 }: {
+  // Where the owner changes the lines the blocks are counted against (others have no link).
+  rulesHref?: string;
   data: NonNullable<ConnectReport["exec"]>;
   months: string;
   // Recovery of stock, the distributor's orders, who needs attention, the change of the tiles.
@@ -105,6 +108,8 @@ export function ExecView({
         <AttentionSection
           rows={insights.attention}
           attendance={insights.attendance}
+          rules={insights.rules}
+          rulesHref={rulesHref}
           personHref={(person) => href({ view: "executor", person })}
         />
       )}
@@ -199,7 +204,7 @@ export function ExecView({
         </Section>
       )}
 
-      <RoutesSection block={data.routes} />
+      <RoutesSection block={data.routes} rulesHref={rulesHref} />
       <VisitsSection data={v} />
       <OosSection data={o}>
         {insights && href && o.checked > 0 && (

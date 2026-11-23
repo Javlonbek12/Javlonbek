@@ -3,12 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { readRules } from "@/modules/connect/rules";
 import {
   clearConnectData,
   ConnectError,
   importConnectFiles,
   linkConnectPerson,
   linkConnectPosition,
+  saveConnectRules,
 } from "@/modules/connect/service";
 import { requireUser } from "@/modules/core/auth/current-user";
 
@@ -102,6 +104,28 @@ export async function clearConnectAction() {
   } catch (error) {
     if (!(error instanceof ConnectError)) throw error;
     target = `/connect/import?error=${error.code}`;
+  }
+  revalidatePath("/connect", "layout");
+  redirect(target);
+}
+
+// «Нормы»: the owner saves the lines the analytics is counted against, or takes the standard ones
+// back. Fields that are not a value of theirs save nothing and are named on the page.
+export async function saveConnectRulesAction(form: FormData) {
+  const actor = await requireUser();
+  let target = "/connect/rules?saved=1";
+  try {
+    if (form.get("reset")) {
+      await saveConnectRules(actor, null);
+      target = "/connect/rules?reset=1";
+    } else {
+      const read = readRules(Object.fromEntries(form.entries()));
+      if (read.rules) await saveConnectRules(actor, read.rules);
+      else target = `/connect/rules?invalid=${read.invalid.join(",")}`;
+    }
+  } catch (error) {
+    if (!(error instanceof ConnectError)) throw error;
+    target = `/connect/rules?error=${error.code}`;
   }
   revalidatePath("/connect", "layout");
   redirect(target);
