@@ -1114,6 +1114,18 @@ enum ConnectKind {
   // The CRM's sales: one store, delivery day and SKU (ID — store|day|SKU); an upload replaces the
   // sales of its days.
   SALE
+  // Smart Up's «Анализ маршрута»: one client of a working zone (a TSM's or a distributor rep's)
+  // for a month, with what happened on each day (ID — month|zone|client); an upload replaces its
+  // month.
+  ROUTE
+  // Smart Up's client base: one store with its coordinates, grade, equipment and the people
+  // responsible; every upload replaces all of them.
+  CLIENT
+  // An ISM checklist of the bot (LEGO, Backwall, POG): ID — the checklist's.
+  ISM_CHECK
+  // A BDM's audit visit (the bot's «BDM Audit» questionnaire): kept apart from the TSMs' Market
+  // Visits.
+  AUDIT
 }
 
 // One row of an export. Uploading a newer export updates the rows with the same ID; a Smart Up

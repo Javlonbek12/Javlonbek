@@ -41,6 +41,10 @@ export const ko: PartialDictionary & {
       VISIT: "Market Visit(방문 설문)",
       SU_VISIT: "Smart Up 방문(상세)",
       SU_PERSON: "Smart Up 직원(TSM별 합계)",
+      ROUTE: "Smart Up 경로 분석(TSM·DR 일별 방문)",
+      CLIENT: "Smart Up 고객(매장 기준 정보)",
+      ISM_CHECK: "ISM 체크리스트(LEGO, Backwall, POG)",
+      AUDIT: "BDM 감사(동행 방문)",
     },
     import: {
       resultPositions: "{file} — 조직 계층: {count}(대체됨)",

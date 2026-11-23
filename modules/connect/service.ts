@@ -132,7 +132,8 @@ export async function connectTotal() {
 export async function connectDataDate(): Promise<string | null> {
   const { _max } = await db.connectRecord.aggregate({
     // People and positions have no day; sales have their own date in the orders block.
-    where: { kind: { notIn: ["SU_PERSON", "SU_POSITION", "SALE"] } },
+    // …and the client base none; a route analysis is a month so far, not the bot's data.
+    where: { kind: { notIn: ["SU_PERSON", "SU_POSITION", "SALE", "CLIENT", "ROUTE"] } },
     _max: { day: true },
   });
   return _max.day;
@@ -288,7 +289,7 @@ export async function importConnectFiles(
   if (files.some((f) => f.buffer.length > MAX_FILE)) throw new ConnectError("tooBig");
   const parsed = [];
   for (const file of files) {
-    const sheets = await parseWorkbook(file.buffer).catch(() => []);
+    const sheets = await parseWorkbook(file.buffer, { name: file.name }).catch(() => []);
     if (!sheets.length) throw new ConnectError("unknown");
     parsed.push({ name: file.name, sheets });
   }
@@ -419,20 +420,43 @@ async function replaceSmartUpVisits(rows: ParsedRow[], importId: string) {
   return { created: byId.size, updated: 0, kept: 0, newer: null, replaced: removed.count };
 }
 
-// The employee info is a snapshot of the CRM: it replaces every position. A sheet without a
-// position changes nothing.
-async function replacePositions(rows: ParsedRow[], importId: string) {
+const inChunks = <T>(list: T[], size = 5000) => {
+  const chunks: T[][] = [];
+  for (let i = 0; i < list.length; i += size) chunks.push(list.slice(i, i + size));
+  return chunks;
+};
+
+// The employee info and the client base are snapshots of the CRM: an upload replaces every row of
+// its kind. A sheet without a row changes nothing.
+async function replaceAll(kind: "SU_POSITION" | "CLIENT", rows: ParsedRow[], importId: string) {
   const byId = new Map(rows.map((r) => [r.record.id, r.record]));
   if (!byId.size) return { created: 0, updated: 0, kept: 0, newer: null, replaced: 0 };
+  const data = [...byId.values()].map((r) => ({
+    kind,
+    externalId: r.id,
+    ...recordFields(r, importId, null),
+  }));
   const [removed] = await db.$transaction([
-    db.connectRecord.deleteMany({ where: { kind: "SU_POSITION" } }),
-    db.connectRecord.createMany({
-      data: [...byId.values()].map((r) => ({
-        kind: "SU_POSITION" as const,
-        externalId: r.id,
-        ...recordFields(r, importId, null),
-      })),
-    }),
+    db.connectRecord.deleteMany({ where: { kind } }),
+    ...inChunks(data).map((chunk) => db.connectRecord.createMany({ data: chunk })),
+  ]);
+  return { created: byId.size, updated: 0, kept: 0, newer: null, replaced: removed.count };
+}
+
+// A route analysis is its month so far: it replaces the routes of that month (a later export has
+// more days and turns visits still ahead into made or missed ones).
+async function replaceRoutes(rows: ParsedRow[], importId: string) {
+  const byId = new Map(rows.map((r) => [r.record.id, r.record]));
+  const months = [...new Set([...byId.values()].map((r) => r.month))];
+  if (!byId.size) return { created: 0, updated: 0, kept: 0, newer: null, replaced: 0 };
+  const data = [...byId.values()].map((r) => ({
+    kind: "ROUTE" as const,
+    externalId: r.id,
+    ...recordFields(r, importId, null),
+  }));
+  const [removed] = await db.$transaction([
+    db.connectRecord.deleteMany({ where: { kind: "ROUTE", month: { in: months } } }),
+    ...inChunks(data).map((chunk) => db.connectRecord.createMany({ data: chunk })),
   ]);
   return { created: byId.size, updated: 0, kept: 0, newer: null, replaced: removed.count };
 }
@@ -466,8 +490,14 @@ async function replaceSales(rows: ParsedRow[], importId: string) {
 
 async function saveRows(kind: ConnectKind, rows: ParsedRow[], importId: string) {
   if (kind === "SU_VISIT") return replaceSmartUpVisits(rows, importId);
-  if (kind === "SU_POSITION") return replacePositions(rows, importId);
+  if (kind === "SU_POSITION" || kind === "CLIENT") return replaceAll(kind, rows, importId);
   if (kind === "SALE") return replaceSales(rows, importId);
+  if (kind === "ROUTE") return replaceRoutes(rows, importId);
+  // BDM audits were saved as Market Visits before 23.11.2026: an audit takes its row from there.
+  if (kind === "AUDIT")
+    await db.connectRecord.deleteMany({
+      where: { kind: "VISIT", externalId: { in: rows.map((r) => r.record.id) } },
+    });
   // The last row wins when an export repeats an ID.
   const byId = new Map(rows.map((r) => [r.record.id, r.record]));
   // Smart Up's people have no dates: a later file always writes them.
