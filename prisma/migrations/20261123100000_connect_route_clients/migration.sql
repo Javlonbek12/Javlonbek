@@ -1,0 +1,5 @@
+-- AlterEnum
+ALTER TYPE "ConnectKind" ADD VALUE 'ROUTE';
+ALTER TYPE "ConnectKind" ADD VALUE 'CLIENT';
+ALTER TYPE "ConnectKind" ADD VALUE 'ISM_CHECK';
+ALTER TYPE "ConnectKind" ADD VALUE 'AUDIT';

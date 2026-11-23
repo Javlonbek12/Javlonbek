@@ -30,6 +30,10 @@ const KINDS = [
   "OOS",
   "ORDER",
   "PAYMENT",
+  "AUDIT",
+  "ISM_CHECK",
+  "ROUTE",
+  "CLIENT",
   "SU_POSITION",
   "SALE",
 ] as const satisfies ConnectKind[];
@@ -117,7 +121,7 @@ export default async function ConnectImportPage({ searchParams }: PageProps<"/co
                           count: plural("connect.words.rows", Number(created)),
                           range: range ?? "—",
                         })
-                      : kind === "SU_VISIT"
+                      : kind === "SU_VISIT" || kind === "ROUTE" || kind === "CLIENT"
                         ? t("connect.import.resultSmartUp", { file, kind: kindName(kind), created })
                         : t("connect.import.result", {
                             file,
