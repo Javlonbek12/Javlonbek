@@ -3,6 +3,7 @@ import { formatMoney, formatNumber, type ConnectReport } from "@/modules/connect
 
 import { IsmSection } from "./ism";
 import { DataTable, Kpi, Section } from "./parts";
+import { RoutesSection } from "./routes-section";
 import { MvSection, OosSection, VisitsSection } from "./sections";
 
 const pct = (value: number) => `${value}%`;
@@ -104,7 +105,7 @@ export function ExecView({
                 key: "inTime",
                 header: t("connect.col.inTimeRate"),
                 numeric: true,
-                cell: (r) => pct(r.inTimeRate),
+                cell: (r) => (r.timed ? pct(r.inTimeRate) : "—"),
               },
               {
                 key: "other",
@@ -141,6 +142,7 @@ export function ExecView({
         </Section>
       )}
 
+      <RoutesSection block={data.routes} />
       <VisitsSection data={v} />
       <OosSection data={o} />
       <MvSection data={m} />

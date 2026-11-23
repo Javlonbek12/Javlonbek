@@ -8,6 +8,7 @@ import type { IsmBlock, paymentIssues } from "./analytics";
 import type { TreeNode } from "./hierarchy";
 import { localizeData } from "./localize";
 import { monthsLabel, periodLabel, type ConnectReport } from "./report";
+import { routeSheets } from "./routes-xlsx";
 import {
   aggregateRows,
   MV_RESULTS,
@@ -59,7 +60,10 @@ export async function connectXlsx(report: ConnectReport, today: string): Promise
       [`${t("connect.visits.withMv")}, %`, v.withMvRate],
       [`${t("connect.visits.withOos")}, %`, v.withOosRate],
       [t("connect.visits.both"), v.both],
-      [`${t("connect.visits.inTime")}, % (${t("connect.visits.inTimeNote")})`, v.inTimeRate],
+      [
+        `${t("connect.visits.inTime")}, % (${t("connect.visits.inTimeNote")})`,
+        v.timed ? v.inTimeRate : null,
+      ],
       [t("connect.visits.otherEmployee"), v.otherEmployee],
       [t("connect.visits.closed"), v.closed],
       ...(["ok", ...VISIT_ISSUES] as const).map((s) => [t(`connect.status.${s}`), v.status[s]]),
@@ -248,7 +252,7 @@ export async function connectXlsx(report: ConnectReport, today: string): Promise
         r.connectRate,
         r.withMvRate,
         r.withOosRate,
-        r.inTimeRate,
+        r.timed ? r.inTimeRate : null,
         r.otherEmployee,
         r.closed,
         r.attention,
@@ -306,7 +310,7 @@ export async function connectXlsx(report: ConnectReport, today: string): Promise
               totals.planned,
               totals.visitedRate,
               totals.connectRate,
-              totals.inTimeRate,
+              totals.timed ? totals.inTimeRate : null,
               totals.mvFullRate,
               totals.oosFound,
               totals.orders,
@@ -448,7 +452,7 @@ export async function connectXlsx(report: ConnectReport, today: string): Promise
         r.connectRate,
         r.withMvRate,
         r.withOosRate,
-        r.inTimeRate,
+        r.timed ? r.inTimeRate : null,
         r.otherEmployee,
         r.closed,
         r.mvFullRate,
@@ -544,5 +548,8 @@ export async function connectXlsx(report: ConnectReport, today: string): Promise
     sections(x.sections, heading);
     ism(null, x.payments);
   }
+  // «Маршруты и дисциплина» of the level on the screen.
+  const routes = report.exec?.routes ?? report.manager?.routes ?? report.executor?.routes;
+  if (routes) routeSheets(sheet, routes);
   return Buffer.from(await book.xlsx.writeBuffer());
 }

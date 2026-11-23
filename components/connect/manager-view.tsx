@@ -7,6 +7,7 @@ import type { TsmRow } from "@/modules/connect/visits";
 import { IsmSection } from "./ism";
 import { ManagerTreeView } from "./manager-tree";
 import { DataTable, Section } from "./parts";
+import { RoutesSection } from "./routes-section";
 import { MvSection, OosSection, statusLabel, TsmName, VisitsSection } from "./sections";
 
 const pct = (value: number) => `${value}%`;
@@ -56,6 +57,7 @@ export function ManagerView({
         </Section>
       )}
 
+      <RoutesSection block={data.routes} />
       <VisitsSection data={data.sections.visits} />
       <OosSection data={data.sections.oos} />
       <MvSection data={data.sections.mv} />
@@ -122,7 +124,7 @@ function PeopleTable({
           key: "inTime",
           header: t("connect.col.inTimeRate"),
           numeric: true,
-          cell: (r) => (r.withConnect ? pct(r.inTimeRate) : "—"),
+          cell: (r) => (r.timed ? pct(r.inTimeRate) : "—"),
         },
         {
           key: "other",
