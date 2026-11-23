@@ -55,8 +55,28 @@ export const EQUIPMENT_QUESTIONS = [
   "Установлены ли фирменные ценники KT&G с актуальными на момент визита ценами?",
   "Оборудование KT&G в чистом состоянии на момент завершения визита?",
 ];
-// Question 1.1 is always blank in the export and is ignored.
-const IGNORED_QUESTION = /^1\.1\s/;
+// The bot's Russian questionnaire (09.2026) asks first whether there is KT&G equipment at all and
+// then goes one of two ways: these questions are asked only where there is equipment…
+export const HAS_EQUIPMENT_QUESTION = "Установлено ли оборудование KT&G в торговой точке?";
+export const NO_EQUIPMENT_ANSWER = "Нет оборудования";
+const WITH_EQUIPMENT_ONLY = [
+  "Какой тип оборудования KT&G установлен",
+  "Фото оборудование",
+  "Подсветка оборудования",
+  "Цена на полке на продукцию KT&G",
+  "Соблюдаются ли условия контракта",
+  "Выставлен ли весь обязательный ассортимент",
+  "Все необходимые документы от торговой точки",
+  "Установлены ли актуальные вставки",
+  "Установлены ли фирменные ценники",
+  "Оборудование KT&G в чистом состоянии",
+];
+// …and this one only where there is none.
+const WITHOUT_EQUIPMENT_ONLY = ["Фото оборудования конкурентов"];
+const startsWithAny = (q: string, starts: string[]) => starts.some((s) => q.startsWith(s));
+// Question 1.1 is always blank in the export and is ignored; so is the misspelt copy of the
+// contacts question («…что и зачем вы делайте…»), which the bot never asks.
+const IGNORED_QUESTION = /^1\.1\s|зачем вы делайте во время визита/;
 const CLOSED_COMMENT = /закрыт|closed/i;
 
 export const storeDay = (storeCode: string, day: string) => `${storeCode}|${day}`;
@@ -75,8 +95,10 @@ export function questionsOf(v: VisitRecord): string[] {
   );
 }
 
-// «No BWD» alone (a list with an installed type besides it is equipment).
+// «Нет оборудования» to the first equipment question, or «No BWD» alone as the type (a list with
+// an installed type besides it is equipment).
 export function hasNoEquipment(v: VisitRecord) {
+  if (answerOf(v, HAS_EQUIPMENT_QUESTION) === NO_EQUIPMENT_ANSWER) return true;
   const answer = answerOf(v, EQUIPMENT_QUESTION);
   if (!answer) return false;
   const parts = answer
@@ -113,9 +135,18 @@ function mvInfo(v: VisitRecord): MvInfo {
   const questions = questionsOf(v);
   // Every question except the store status (judged on its own); the equipment questions are not
   // required when there is no equipment.
+  // …and a question the questionnaire does not ask on this store's way (with equipment or
+  // without) is not required either.
   const noEquipment = hasNoEquipment(v);
+  const hasEquipment = !noEquipment && answerOf(v, HAS_EQUIPMENT_QUESTION) !== null;
   const required = questions.filter(
-    (q) => q !== STORE_OPEN_QUESTION && !(noEquipment && EQUIPMENT_QUESTIONS.includes(q)),
+    (q) =>
+      q !== STORE_OPEN_QUESTION &&
+      !(
+        noEquipment &&
+        (EQUIPMENT_QUESTIONS.includes(q) || startsWithAny(q, WITH_EQUIPMENT_ONLY))
+      ) &&
+      !(hasEquipment && startsWithAny(q, WITHOUT_EQUIPMENT_ONLY)),
   );
   const given = new Set(v.answers.map((a) => a.q));
   const answered = required.filter((q) => given.has(q)).length;

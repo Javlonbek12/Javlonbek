@@ -6,6 +6,7 @@ import {
   checkVisit,
   EQUIPMENT_QUESTION,
   EQUIPMENT_QUESTIONS,
+  HAS_EQUIPMENT_QUESTION,
   finalMarketVisits,
   finalOosChecks,
   inVisitWindow,
@@ -220,6 +221,31 @@ describe("Market Visit: the final questionnaire of a store-day", () => {
     expect(
       mvResult(mv("1", { ...noEquipment, [EQUIPMENT_QUESTION]: "Тестовое оборудование, No BWD" })),
     ).toBe("partial");
+  });
+
+  it("the questionnaire's two ways: what is not asked with (or without) equipment is not required", () => {
+    const WITH = "Подсветка оборудования KT&G включена?";
+    const WITHOUT = "Фото оборудования конкурентов:";
+    const NEVER = "Тест: что и зачем вы делайте во время визита?";
+    const TEST = "Тестовый вопрос 1";
+    // The questionnaire's columns; the ones not answered are left blank.
+    const filled = (answers: Record<string, string>): VisitRecord => {
+      const questions = [STORE_OPEN_QUESTION, HAS_EQUIPMENT_QUESTION, WITH, WITHOUT, NEVER, TEST];
+      return {
+        ...mv("1", {}),
+        answers: questions.filter((q) => answers[q]).map((q) => ({ q, a: answers[q]! })),
+        unanswered: questions.filter((q) => !answers[q]),
+      };
+    };
+    const open = { [STORE_OPEN_QUESTION]: "Да", [TEST]: "Да" };
+    // No equipment: the equipment questions stay blank, and the visit is still full.
+    const none = { ...open, [HAS_EQUIPMENT_QUESTION]: "Нет оборудования", [WITHOUT]: "1 фото" };
+    expect(mvResult(filled(none))).toBe("full");
+    expect(mvResult(filled(without(none, WITHOUT)))).toBe("partial");
+    // With equipment: the competitors' photo is not asked; a blank equipment question is a gap.
+    const some = { ...open, [HAS_EQUIPMENT_QUESTION]: "Да", [WITH]: "Да" };
+    expect(mvResult(filled(some))).toBe("full");
+    expect(mvResult(filled(without(some, WITH)))).toBe("partial");
   });
 });
 
