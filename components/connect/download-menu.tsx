@@ -1,6 +1,6 @@
 "use client";
 
-import { FileSpreadsheet, Presentation } from "lucide-react";
+import { FileSpreadsheet, FileText, Presentation } from "lucide-react";
 import { useId, useState } from "react";
 
 import { menuItem } from "@/components/content/more-menu";
@@ -55,6 +55,23 @@ export function ConnectDownloads({ xlsx, pptx }: { xlsx: string; pptx: string })
         <Presentation />
         {t("connect.download.pptx")}
       </a>
+      {/* The page itself on A4 sheets, through the browser's «Сохранить как PDF»: exactly what is
+          on the screen (in the interface's language). The menu is closed first, so it is not on
+          the first sheet. */}
+      <button
+        type="button"
+        className={menuItem}
+        onClick={(event) => {
+          event.currentTarget.closest("details")?.removeAttribute("open");
+          setTimeout(() => window.print(), 50);
+        }}
+      >
+        <FileText />
+        <span className="flex flex-col">
+          {t("connect.download.pdf")}
+          <span className="text-muted-foreground text-xs">{t("connect.download.pdfHint")}</span>
+        </span>
+      </button>
     </div>
   );
 }

@@ -754,8 +754,9 @@ export type RowTotals = ReturnType<typeof aggregateRows>;
 // known for them is a store's city, which is not theirs.
 export const NO_VISITS_REGION = "__no_visits__";
 
-// The TSM rows summed by region (rates counted again from the sums); the row of those with no
-// Smart Up visit goes last. Without any Smart Up visit at all the bot's cities are all there is.
+// The TSM rows summed by region (rates counted again from the sums), the lowest share of the
+// plan visited first; the row of those with no Smart Up visit goes last. Without any Smart Up
+// visit at all the bot's cities are all there is.
 export function regionRows(rows: TsmRow[]) {
   const inSmartUp = (r: TsmRow) => r.planned > 0 || r.unplanned > 0;
   const split = rows.some(inSmartUp);
@@ -770,6 +771,9 @@ export function regionRows(rows: TsmRow[]) {
     .sort(
       (a, b) =>
         last(a.region) - last(b.region) ||
+        // A region without a plan has no share to be low.
+        Number(a.planned === 0) - Number(b.planned === 0) ||
+        a.visitedRate - b.visitedRate ||
         b.planned - a.planned ||
         a.region.localeCompare(b.region),
     );

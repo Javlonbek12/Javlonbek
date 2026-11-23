@@ -377,6 +377,39 @@ describe("route analysis: the DRs' matrix", () => {
   });
 });
 
+describe("route analysis: the calendar of zones × days", () => {
+  it("gives each shown zone its days: planned, made, all visits and those with an order", () => {
+    const { calendar } = analyze();
+    // DR_TST_2: four planned visits, each made with an order.
+    expect(calendar["DR_TST_2"]).toEqual({
+      "2026-11-09": { planned: 1, visited: 1, visits: 1, orders: 1 },
+      "2026-11-10": { planned: 1, visited: 1, visits: 1, orders: 1 },
+      "2026-11-11": { planned: 1, visited: 1, visits: 1, orders: 1 },
+      "2026-11-12": { planned: 1, visited: 1, visits: 1, orders: 1 },
+    });
+    // A zone's days add up to its totals, and only the period's days are there.
+    const { zones } = analyze();
+    for (const zone of zones) {
+      const days = Object.entries(calendar[zone.zone]!);
+      expect(days.every(([day]) => day >= WEEK.from && day <= WEEK.to)).toBe(true);
+      const sum = (pick: (d: (typeof days)[number][1]) => number) =>
+        days.reduce((a, [, d]) => a + pick(d), 0);
+      expect([sum((d) => d.planned), sum((d) => d.visited), sum((d) => d.visits)]).toEqual([
+        zone.planned,
+        zone.visited,
+        zone.visits,
+      ]);
+    }
+    // Nobody's route and the zones a filter leaves out have no row.
+    expect(Object.keys(calendar)).toEqual(expect.arrayContaining(zones.map((z) => z.zone)));
+    expect(Object.keys(calendar)).toHaveLength(zones.length);
+    expect(Object.keys(analyze({ staff: "TSM" }).calendar).sort()).toEqual([
+      "TSM_TST_1",
+      "TSM_TST_2",
+    ]);
+  });
+});
+
 describe("route analysis: the lists", () => {
   it("lists the stores missed twice or more in a row at the end of the period", () => {
     const { missed } = analyze();

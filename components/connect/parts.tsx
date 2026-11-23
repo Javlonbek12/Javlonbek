@@ -6,6 +6,7 @@ import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 import { SECTION_ATTRIBUTE } from "./section-anchor";
+import { TONE_CELL, TONE_COLOR, type Tone } from "./tone";
 
 // Building blocks of the Connect analytics pages: tiles, bars, tables and small column charts.
 // Colors follow the validated chart palette (blue #2a78d6, orange #eb6834) and the status scale.
@@ -46,17 +47,25 @@ export function StatGrid({
     label: string;
     value: string | number;
     note?: string;
-    tone?: "warn" | "good";
+    tone?: Tone;
   }[];
 }) {
   return (
     <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 lg:grid-cols-4">
       {items.map((item) => (
-        <div key={item.key} className="flex min-w-0 flex-col border-l-2 pl-3">
+        <div
+          key={item.key}
+          className={cn(
+            "flex min-w-0 flex-col border-l-2 pl-3",
+            // Far below the norm: the number's own edge says so.
+            item.tone === "bad" && "border-l-4 border-l-red-500",
+          )}
+        >
           <dt className="text-muted-foreground text-xs">{item.label}</dt>
           <dd
             className={cn(
               "font-display text-xl font-semibold tabular-nums",
+              item.tone === "bad" && "text-red-600 dark:text-red-400",
               item.tone === "warn" && "text-amber-600 dark:text-amber-400",
               item.tone === "good" && "text-emerald-700 dark:text-emerald-400",
             )}
@@ -207,7 +216,10 @@ export function Section({
 // «Настроить нормы» next to a block that is counted against them (shown to the owner).
 export function RulesLink({ href }: { href: string }) {
   return (
-    <Link href={href} className="text-primary shrink-0 text-xs underline underline-offset-2">
+    <Link
+      href={href}
+      className="text-primary shrink-0 text-xs underline underline-offset-2 print:hidden"
+    >
       {t("connect.rules.link")}
     </Link>
   );
@@ -234,7 +246,14 @@ export function Kpi({
   compare?: { text: string; trend: "better" | "worse" | "same" };
 }) {
   return (
-    <Card className="gap-1 p-4 md:p-5">
+    <Card
+      className={cn(
+        "gap-1 p-4 md:p-5",
+        // Below the norm: the tile itself is outlined, so it is seen before it is read.
+        tone === "bad" && "border-red-400 ring-2 ring-red-500/40 dark:border-red-500",
+        tone === "warn" && "border-amber-400 ring-1 ring-amber-400/50",
+      )}
+    >
       <span className="text-muted-foreground text-xs">{label}</span>
       <span
         className={cn(
@@ -253,8 +272,11 @@ export function Kpi({
       {meter !== undefined && (
         <span className="bg-muted h-1.5 overflow-hidden rounded-full">
           <span
-            className="block h-full rounded-full bg-[#2a78d6]"
-            style={{ width: `${Math.max(0, Math.min(100, meter))}%` }}
+            className="block h-full rounded-full"
+            style={{
+              width: `${Math.max(0, Math.min(100, meter))}%`,
+              background: tone ? TONE_COLOR[tone] : "#2a78d6",
+            }}
           />
         </span>
       )}
@@ -388,6 +410,42 @@ export function StageBar({
   );
 }
 
+// A number with its colour against the norm: a tinted cell («41,4%» on red), as in a heat table.
+export function ToneValue({ tone, children }: { tone: Tone | null; children: ReactNode }) {
+  if (!tone) return <>{children}</>;
+  return (
+    <span
+      className={cn(
+        "inline-block rounded-md px-1.5 py-0.5 font-medium tabular-nums",
+        TONE_CELL[tone],
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+// A share as a short bar with its number, coloured against the norm (the row of a «worst» list).
+export function ToneBar({ value, tone }: { value: number; tone: Tone | null }) {
+  return (
+    <span className="bg-muted/70 block h-2 w-full overflow-hidden rounded-full">
+      <span
+        className="block h-full rounded-full"
+        style={{
+          width: `${Math.max(2, Math.min(100, value))}%`,
+          background: tone ? TONE_COLOR[tone] : "#2a78d6",
+        }}
+      />
+    </span>
+  );
+}
+
+const ROW_TONE: Record<Tone, string> = {
+  bad: "border-l-4 border-l-red-500",
+  warn: "border-l-4 border-l-amber-400",
+  good: "",
+};
+
 export type Column<T> = {
   key: string;
   header: string;
@@ -404,20 +462,30 @@ export function DataTable<T>({
   columns,
   limit = 50,
   rowKey,
+  rowTone,
 }: {
   rows: T[];
   columns: Column<T>[];
   limit?: number;
   rowKey: (row: T) => string;
+  // A row below the norm is marked on its left edge (red: far below, amber: close).
+  rowTone?: (row: T) => Tone | null;
 }) {
   if (!rows.length)
     return <p className="text-muted-foreground text-sm">{t("connect.manager.noRows")}</p>;
   const [head, ...rest] = columns;
   return (
     <div className="flex flex-col gap-2">
-      <ul className="flex flex-col gap-2 md:hidden">
+      {/* On paper the table always fits: the page is printed wide. */}
+      <ul className="flex flex-col gap-2 md:hidden print:hidden">
         {rows.slice(0, limit).map((row) => (
-          <li key={rowKey(row)} className="flex flex-col gap-1.5 rounded-xl border p-3 text-sm">
+          <li
+            key={rowKey(row)}
+            className={cn(
+              "flex flex-col gap-1.5 rounded-xl border p-3 text-sm",
+              ROW_TONE[rowTone?.(row) ?? "good"],
+            )}
+          >
             {head && <div className="font-medium">{head.cell(row)}</div>}
             <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-xs">
               {rest.map((c) => (
@@ -432,7 +500,7 @@ export function DataTable<T>({
           </li>
         ))}
       </ul>
-      <div className="-mx-1 hidden overflow-x-auto px-1 md:block">
+      <div className="-mx-1 hidden overflow-x-auto px-1 md:block print:block print:overflow-visible">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-muted-foreground border-b text-left text-xs">
@@ -452,7 +520,13 @@ export function DataTable<T>({
           </thead>
           <tbody>
             {rows.slice(0, limit).map((row) => (
-              <tr key={rowKey(row)} className="border-b last:border-b-0">
+              <tr
+                key={rowKey(row)}
+                className={cn(
+                  "border-b last:border-b-0 print:break-inside-avoid",
+                  ROW_TONE[rowTone?.(row) ?? "good"],
+                )}
+              >
                 {columns.map((c) => (
                   <td
                     key={c.key}

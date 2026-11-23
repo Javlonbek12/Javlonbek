@@ -103,6 +103,31 @@ export function RoutesMatrix({
         >
           {t("connect.routes.matrix.axisHitRate")}
         </text>
+        {/* The four corners: both targets reached (top right), one missed, both missed. */}
+        {(
+          [
+            ["ok", x(targets.attendance), PAD.top, WIDTH - PAD.right, y(targets.hitRate)],
+            ["both", PAD.left, y(targets.hitRate), x(targets.attendance), HEIGHT - PAD.bottom],
+            ["one", PAD.left, PAD.top, x(targets.attendance), y(targets.hitRate)],
+            [
+              "one",
+              x(targets.attendance),
+              y(targets.hitRate),
+              WIDTH - PAD.right,
+              HEIGHT - PAD.bottom,
+            ],
+          ] as const
+        ).map(([kind, x1, y1, x2, y2], i) => (
+          <rect
+            key={i}
+            x={Math.min(x1, x2)}
+            y={Math.min(y1, y2)}
+            width={Math.abs(x2 - x1)}
+            height={Math.abs(y2 - y1)}
+            fill={CLASS_COLOR[kind]}
+            fillOpacity={0.07}
+          />
+        ))}
         {/* The targets. */}
         <line
           x1={x(targets.attendance)}

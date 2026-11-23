@@ -41,6 +41,27 @@ import { presetPeriod } from "@/modules/reports/period";
 
 import { linkConnectPersonAction, linkConnectPositionAction } from "./actions";
 
+// «PDF (A4)» is the page itself printed: a wide A4 sheet takes the same columns as a computer
+// screen, colours are kept, a row or a chart is not cut between two sheets, and what is only for
+// clicking (switches, forms, links' underlines) is left out.
+const PRINT_CSS = `
+@media print {
+  @page { size: A4 landscape; margin: 8mm; }
+  .connect-page { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .connect-page nav, .connect-page form { display: none !important; }
+  .connect-page [data-slot="card"] { break-inside: auto; padding: 12px !important; }
+  .connect-page tr, .connect-page li, .connect-page svg, .connect-page dl > div { break-inside: avoid; }
+  .connect-page h2, .connect-page h3 { break-after: avoid; }
+  .connect-page a { color: inherit !important; text-decoration: none !important; }
+  /* The sheet is a little narrower than the widths the columns appear at on a screen: the same
+     columns as on a computer all the same. */
+  .connect-page .lg\\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .connect-page .lg\\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .connect-page .lg\\:grid-cols-4, .connect-page .xl\\:grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .connect-page .xl\\:grid-cols-6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
+`;
+
 // Smart Up visits × Connect Bot on three levels: leadership, managers, executors.
 export default async function ConnectPage({ searchParams }: PageProps<"/connect">) {
   const user = await requireUser();
@@ -95,7 +116,27 @@ export default async function ConnectPage({ searchParams }: PageProps<"/connect"
   const href = (change: Record<string, string | null>) => connectHref("/connect", q, change);
 
   return (
-    <div className="flex flex-col gap-5 [&>*]:min-w-0">
+    <div className="connect-page flex flex-col gap-5 print:gap-3 [&>*]:min-w-0">
+      <style>{PRINT_CSS}</style>
+      {/* The sheet's own heading: what is printed and for which days. */}
+      <div className="hidden flex-col gap-0.5 print:flex">
+        <h1 className="text-xl font-semibold">{t("connect.title")}</h1>
+        <p className="text-xs">
+          {[
+            t("connect.print.view", {
+              view: [t(`connect.views.${q.view}`), q.person, q.staff].filter(Boolean).join(" · "),
+            }),
+            t("connect.print.period", { period: periodLabel(report.period, today) }),
+            report.dataDate &&
+              t("connect.print.dataDate", {
+                date: periodLabel({ from: report.dataDate, to: report.dataDate }, today),
+              }),
+            t("connect.print.made", { date: periodLabel({ from: today, to: today }, today) }),
+          ]
+            .filter(Boolean)
+            .join("  ·  ")}
+        </p>
+      </div>
       <PageHeader
         title={t("connect.title")}
         hint={
@@ -104,6 +145,8 @@ export default async function ConnectPage({ searchParams }: PageProps<"/connect"
           </>
         }
         hintClassName="max-w-2xl"
+        // The sheet has its own heading above.
+        className="print:hidden"
         actions={
           (canLead || downloadable) && (
             <MoreMenu label={t("connect.moreMenu")}>
@@ -151,7 +194,7 @@ export default async function ConnectPage({ searchParams }: PageProps<"/connect"
           {views.length > 1 && (
             <Segmented
               label={t("connect.viewsLabel")}
-              className="self-start"
+              className="self-start print:hidden"
               items={views.map((view) => ({
                 key: view,
                 label: t(`connect.views.${view}`),
@@ -161,7 +204,7 @@ export default async function ConnectPage({ searchParams }: PageProps<"/connect"
             />
           )}
 
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2" data-print="hide">
             <PeriodPicker
               chips={PERIOD_PRESETS.map((preset) => {
                 const range = presetPeriod(preset, today);
