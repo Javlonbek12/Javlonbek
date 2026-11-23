@@ -30,7 +30,7 @@ const metrics = (sales: boolean): Metric[] => [
   {
     key: "inTime",
     header: t("connect.col.inTimeRate"),
-    cell: (r) => (r.withConnect ? pct(r.inTimeRate) : "—"),
+    cell: (r) => (r.timed ? pct(r.inTimeRate) : "—"),
   },
   {
     key: "full",

@@ -767,10 +767,14 @@ function parseRouteSheet(
       const code = String(cells[c.index] ?? "").trim() as RouteCode;
       if (ROUTE_CODES.includes(code)) days[String(c.day).padStart(2, "0")] = code;
     }
+    // A client of a zone has a row per employee who visits it (the zone's own, and a supervisor
+    // on a joint visit): each row keeps its own ID, or the last one would replace the others.
+    const staff = staffAt < 0 ? null : str(cells[staffAt] ?? null);
+    const other = staff && titleKey(staff) !== titleKey(zone) ? `|${staff}` : "";
     rows.push({
       kind: "ROUTE",
       record: {
-        id: `${month}|${zone}|${client}`,
+        id: `${month}|${zone}|${client}${other}`,
         storeCode: client,
         storeName: str(cells[nameAt] ?? null) ?? client,
         city: orgAt < 0 ? null : str(cells[orgAt] ?? null),
@@ -779,7 +783,7 @@ function parseRouteSheet(
         day,
         month,
         person: zone,
-        staff: staffAt < 0 ? null : str(cells[staffAt] ?? null),
+        staff,
         days,
       },
     });

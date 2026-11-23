@@ -79,8 +79,8 @@ export default async function ConnectPage({ searchParams }: PageProps<"/connect"
   const downloadable = !report.empty && (q.view !== "executor" || q.person);
   // The period chosen: chips and own dates keep the level and the TSM.
   const keep = Object.fromEntries(
-    Object.entries({ view: q.view, person: q.person }).filter((e): e is [string, string] =>
-      Boolean(e[1]),
+    Object.entries({ view: q.view, person: q.person, staff: q.staff }).filter(
+      (e): e is [string, string] => Boolean(e[1]),
     ),
   );
   const people = report.people;

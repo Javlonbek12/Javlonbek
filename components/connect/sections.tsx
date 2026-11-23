@@ -98,8 +98,11 @@ export function VisitsSection({
           {
             key: "inTime",
             label: t("connect.visits.inTime"),
-            value: pct(v.inTimeRate),
-            note: t("connect.visits.inTimeNote"),
+            // Visits read from the route analysis have no time to check against.
+            value: v.timed || !v.withConnect ? pct(v.inTimeRate) : "—",
+            note: t(
+              v.timed || !v.withConnect ? "connect.visits.inTimeNote" : "connect.routes.noTimes",
+            ),
           },
           {
             key: "other",

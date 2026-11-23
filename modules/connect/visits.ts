@@ -9,6 +9,7 @@ import {
   type SuVisitRecord,
   type VisitRecord,
 } from "./parse";
+import { isRouteVisit } from "./route-visits";
 import {
   checkOrders,
   indexSales,
@@ -28,6 +29,8 @@ import {
 
 export type VisitData = {
   suVisits: SuVisitRecord[];
+  // The days whose visits are read from the route analysis (no visit detail loaded for them).
+  routeDays?: string[];
   mv: VisitRecord[];
   oos: OosRecord[];
   orders: OrderRecord[];
@@ -244,8 +247,10 @@ export function checkVisit(
   const closed =
     (mv ? storeStatus(mv.final) === "closed" : false) || CLOSED_COMMENT.test(visit.comment ?? "");
   const window = (at: string) => inVisitWindow(at, visit.start, visit.finish, tolerance);
-  const mvInTime = mv ? window(mv.final.at) : null;
-  const oosInTime = oos ? window(oos.final.at) : null;
+  // A visit read from the route analysis has no times: the day is enough, nothing to check.
+  const timed = !isRouteVisit(visit);
+  const mvInTime = mv && timed ? window(mv.final.at) : null;
+  const oosInTime = oos && timed ? window(oos.final.at) : null;
   const byOther = (person: string | null) => !sameCode(personCode(person), visit.person);
   const otherEmployee = Boolean(
     (mv && byOther(mv.final.person)) || (oos && byOther(oos.final.person)),
@@ -319,6 +324,8 @@ const scopeTest = (scope: Scope) => {
 function visitCounts(checks: VisitCheck[]) {
   const planned = checks.filter((c) => c.visit.planned);
   const connected = planned.filter((c) => c.mv || c.oos);
+  // Those whose time can be checked (not the visits read from the route analysis).
+  const timed = connected.filter((c) => !isRouteVisit(c.visit));
   const status = Object.fromEntries(
     (["ok", ...VISIT_ISSUES] as VisitStatus[]).map((s) => [
       s,
@@ -332,8 +339,10 @@ function visitCounts(checks: VisitCheck[]) {
     both: planned.filter((c) => c.mv && c.oos).length,
     withConnect: connected.length,
     allGood: status.ok,
-    // Of the visits with something in Connect: all of it in time / by someone else.
-    inTime: connected.filter((c) => !c.issues.includes("notInTime")).length,
+    // Of the visits with something in Connect: all of it in time (of those with a time to check
+    // against) / by someone else.
+    timed: timed.length,
+    inTime: timed.filter((c) => !c.issues.includes("notInTime")).length,
     otherEmployee: connected.filter((c) => c.otherEmployee).length,
     closed: planned.filter((c) => c.closed).length,
     attention: planned.filter(needsAttention).length,
@@ -350,7 +359,7 @@ export function visitRates(c: ReturnType<typeof visitCounts> & { planned: number
     withOosRate: percent(c.withOos, c.visited),
     connectRate: percent(c.withConnect, c.visited),
     allGoodRate: percent(c.allGood, c.visited),
-    inTimeRate: percent(c.inTime, c.withConnect),
+    inTimeRate: percent(c.inTime, c.timed),
     otherRate: percent(c.otherEmployee, c.withConnect),
   };
 }
@@ -635,6 +644,7 @@ export function tsmRows(a: Analysis, codes: string[]) {
       withOosRate: s.visits.withOosRate,
       withConnect: s.visits.withConnect,
       connectRate: s.visits.connectRate,
+      timed: s.visits.timed,
       inTime: s.visits.inTime,
       inTimeRate: s.visits.inTimeRate,
       otherEmployee: s.visits.otherEmployee,
@@ -687,9 +697,10 @@ export function aggregateRows(list: TsmRow[]) {
       total((r) => r.withOos),
       visited,
     ),
+    timed: total((r) => r.timed),
     inTimeRate: percent(
       total((r) => r.inTime),
-      withConnect,
+      total((r) => r.timed),
     ),
     otherEmployee: total((r) => r.otherEmployee),
     closed: total((r) => r.closed),
