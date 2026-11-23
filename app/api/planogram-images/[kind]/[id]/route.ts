@@ -22,9 +22,10 @@ export async function GET(
   if (!(await requireRequestUser(request))) return new Response(null, { status: 401 });
   const { kind, id } = await params;
   const k = kindOf(kind);
-  const image = k ? await readImage(await imagePath(k, id)) : null;
-  if (!image) return new Response(null, { status: 404 });
-  return pictureResponse(image, request.url);
+  const relative = k ? await imagePath(k, id) : null;
+  const image = await readImage(relative);
+  if (!image || !relative) return new Response(null, { status: 404 });
+  return pictureResponse(image, request.url, relative);
 }
 
 // Upload form posts here; redirects back to the SKU / POSM page.

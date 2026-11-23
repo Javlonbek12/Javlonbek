@@ -1,5 +1,6 @@
 import { access } from "node:fs/promises";
 
+import sharp from "sharp";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { db } from "@/lib/db";
@@ -21,8 +22,11 @@ import {
   submitForReview,
 } from "@/modules/content/service";
 import { addPostFile, getPostFile } from "@/modules/content/files";
+import { createSessionToken, SESSION_COOKIE } from "@/modules/core/auth/session";
+import { GET as getContentFile } from "@/app/api/content/files/[id]/route";
 import { createTestUser, resetDb } from "@/tests/helpers/db";
 
+const SECRET = "test-session-secret-test-session-secret";
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
 
 describe("content plan", () => {
@@ -284,5 +288,34 @@ describe("content plan", () => {
 
     await deleteContentPost(owner, post.id);
     expect(await db.contentPost.count()).toBe(0);
+  });
+
+  it("serves a photo as a small WebP copy with ?w=, and the original without it", async () => {
+    const { author, post } = await setup();
+    const png = await sharp({
+      create: { width: 1600, height: 800, channels: 3, background: "#cc3366" },
+    })
+      .png()
+      .toBuffer();
+    const file = await addPostFile(author, post.id, "RU", new File([png], "фото.png"));
+    const ask = (query: string) =>
+      getContentFile(
+        new Request(`http://localhost:3000/api/content/files/${file.id}${query}`, {
+          headers: { cookie: `${SESSION_COOKIE}=${createSessionToken(author.id, SECRET)}` },
+        }),
+        { params: Promise.resolve({ id: file.id }) },
+      );
+
+    const small = await ask("?w=160");
+    expect(small.headers.get("content-type")).toBe("image/webp");
+    expect(small.headers.get("cache-control")).toContain("immutable");
+    const meta = await sharp(Buffer.from(await small.arrayBuffer())).metadata();
+    expect([meta.width, meta.height]).toEqual([160, 80]);
+
+    const original = await ask("");
+    expect(original.headers.get("content-type")).toBe("image/png");
+    expect(Buffer.from(await original.arrayBuffer()).equals(png)).toBe(true);
+    // A download is always the original.
+    expect((await ask("?w=160&download=1")).headers.get("content-type")).toBe("image/png");
   });
 });

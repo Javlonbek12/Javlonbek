@@ -57,10 +57,10 @@ export function StatusLegend() {
   );
 }
 
-// The thumbnail: the first photo (Russian first).
+// The thumbnail: the first photo (Russian first), as a small copy (thumbnails are 36–56 px).
 const imageOf = (post: Post) => {
   const photo = post.files.find((f) => f.kind === "PHOTO");
-  return photo ? `/api/content/files/${photo.id}` : null;
+  return photo ? `/api/content/files/${photo.id}?w=160` : null;
 };
 
 const weekdayShort = {

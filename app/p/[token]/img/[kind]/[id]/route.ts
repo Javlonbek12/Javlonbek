@@ -25,6 +25,6 @@ export async function GET(
     else if (used) relative = (await db.posm.findUnique({ where: { id } }))?.imagePath ?? null;
   }
   const image = await readImage(relative);
-  if (!image) return new Response(null, { status: 404 });
-  return pictureResponse(image, request.url);
+  if (!image || !relative) return new Response(null, { status: 404 });
+  return pictureResponse(image, request.url, relative);
 }
