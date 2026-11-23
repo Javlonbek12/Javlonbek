@@ -6,7 +6,9 @@ import { presetPeriod } from "@/modules/reports/period";
 
 import { ismBlock, paymentIssues } from "./analytics";
 import { linkedPositionCodes, managerTree, type Hierarchy } from "./hierarchy";
+import { connectInsights } from "./insights";
 import { personCode, titleKey } from "./parse";
+import type { RecoveryBase } from "./recovery";
 import {
   connectDataDate,
   connectPeopleLinks,
@@ -42,6 +44,9 @@ export type ConnectQuery = {
   to: string | null;
   // A TSM code.
   person: string | null;
+  // «Восстановление наличия» against the store's first check of the month; without it, against
+  // the check before.
+  base?: RecoveryBase;
 };
 
 export function parseConnectQuery(
@@ -66,6 +71,7 @@ export function parseConnectQuery(
     from: own ? from! : null,
     to: own ? to! : null,
     person: personCode(one("person")),
+    ...(one("base") === "month" ? { base: "month" as const } : {}),
   };
 }
 
@@ -207,6 +213,22 @@ export async function buildConnectReport(
     !data.orders.length &&
     !payments.length;
   const managerRows = query.view === "manager" ? tsmRows(analysis, codes) : [];
+  const execRows = query.view === "exec" ? tsmRows(analysis, tsmCodes(data)) : [];
+  const execSections = query.view === "exec" ? visitSections(analysis) : null;
+  // Recovery of stock, the distributor's orders after an OOS, who needs attention, the change.
+  const insights = empty
+    ? null
+    : await connectInsights({
+        view: query.view,
+        base: query.base ?? "prev",
+        period,
+        data,
+        scope,
+        person,
+        hierarchy,
+        rows: query.view === "exec" ? execRows : managerRows,
+        sections: execSections,
+      });
   return {
     query: { ...query, person },
     period,
@@ -215,12 +237,13 @@ export async function buildConnectReport(
     // The last day of the sales loaded (null: no sales, no cross-check).
     salesDate: data.salesRange?.to ?? null,
     empty,
+    insights,
     people: codes.map((code) => tsmInfo(data, code)),
     exec:
-      query.view === "exec"
+      query.view === "exec" && execSections
         ? {
-            sections: visitSections(analysis),
-            regions: regionRows(tsmRows(analysis, tsmCodes(data))),
+            sections: execSections,
+            regions: regionRows(execRows),
             ism: ismBlock(payments, today),
           }
         : null,
@@ -292,6 +315,7 @@ export function connectHref(
     from: query.from,
     to: query.to,
     person: query.person,
+    base: query.base,
     ...change,
   };
   for (const [key, value] of Object.entries(values)) if (value) params.set(key, value);

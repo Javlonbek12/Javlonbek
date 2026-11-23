@@ -4,9 +4,11 @@ import { t } from "@/lib/i18n";
 import { formatMoney, formatNumber, type ConnectReport } from "@/modules/connect/report";
 import type { TsmRow } from "@/modules/connect/visits";
 
+import { AttentionSection } from "./attention";
 import { IsmSection } from "./ism";
 import { ManagerTreeView } from "./manager-tree";
 import { DataTable, Section } from "./parts";
+import { FollowUpBlock, RecoveryBlock } from "./recovery-section";
 import { MvSection, OosSection, statusLabel, TsmName, VisitsSection } from "./sections";
 
 const pct = (value: number) => `${value}%`;
@@ -19,9 +21,15 @@ export function ManagerView({
   sales,
   personHref,
   link,
+  insights,
+  href,
 }: {
   data: NonNullable<ConnectReport["manager"]>;
   months: string;
+  // Recovery of stock, the distributor's orders and who needs attention, for the TSMs they see.
+  insights?: ConnectReport["insights"];
+  // The page with something changed (the recovery baseline).
+  href?: (change: Record<string, string | null>) => string;
   // Sales are loaded: the cross-check column.
   sales: boolean;
   personHref: (code: string) => string;
@@ -35,6 +43,13 @@ export function ManagerView({
 }) {
   return (
     <div className="flex flex-col gap-4 [&>*]:min-w-0">
+      {insights?.attention && (
+        <AttentionSection
+          rows={insights.attention}
+          attendance={insights.attendance}
+          personHref={personHref}
+        />
+      )}
       {data.tree ? (
         <>
           <Section title={t("connect.manager.tree")} hint={t("connect.manager.treeHint")}>
@@ -57,7 +72,15 @@ export function ManagerView({
       )}
 
       <VisitsSection data={data.sections.visits} />
-      <OosSection data={data.sections.oos} />
+      <OosSection data={data.sections.oos}>
+        {insights && href && data.sections.oos.checked > 0 && (
+          <RecoveryBlock
+            data={insights.recovery}
+            baseHref={(base) => href({ base: base === "month" ? base : null })}
+          />
+        )}
+        {insights?.followUp && <FollowUpBlock data={insights.followUp} />}
+      </OosSection>
       <MvSection data={data.sections.mv} />
       <IsmSection level="manager" months={months} block={data.ism} />
     </div>

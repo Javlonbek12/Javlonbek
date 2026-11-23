@@ -87,6 +87,8 @@ export default async function ConnectPage({ searchParams }: PageProps<"/connect"
   const choosePerson =
     q.view === "executor" && (own === null || people.length > 1) && people.length;
   const users = appUsers.map((u) => ({ id: u.id, name: displayName(u) }));
+  // The same page with something changed, for the blocks added to the sections.
+  const href = (change: Record<string, string | null>) => connectHref("/connect", q, change);
 
   return (
     <div className="flex flex-col gap-5 [&>*]:min-w-0">
@@ -210,12 +212,14 @@ export default async function ConnectPage({ searchParams }: PageProps<"/connect"
               <CardDescription>{t("connect.emptyPeriod")}</CardDescription>
             </Card>
           ) : report.exec ? (
-            <ExecView data={report.exec} months={months} />
+            <ExecView data={report.exec} months={months} insights={report.insights} href={href} />
           ) : report.manager ? (
             <ManagerView
               data={report.manager}
               months={months}
               sales={report.salesDate !== null}
+              insights={report.insights}
+              href={href}
               personHref={(person) => connectHref("/connect", q, { view: "executor", person })}
               link={
                 canLead
@@ -229,7 +233,12 @@ export default async function ConnectPage({ searchParams }: PageProps<"/connect"
               }
             />
           ) : report.executor ? (
-            <ExecutorView data={report.executor} months={months} />
+            <ExecutorView
+              data={report.executor}
+              months={months}
+              insights={report.insights}
+              href={href}
+            />
           ) : report.executors ? (
             <ExecutorsOverview
               rows={report.executors}

@@ -6,6 +6,7 @@ import type { ru } from "@/lib/i18n/ru";
 
 import type { IsmBlock, paymentIssues } from "./analytics";
 import type { TreeNode } from "./hierarchy";
+import { insightSheets } from "./insights-xlsx";
 import { localizeData } from "./localize";
 import { monthsLabel, periodLabel, type ConnectReport } from "./report";
 import {
@@ -544,5 +545,7 @@ export async function connectXlsx(report: ConnectReport, today: string): Promise
     sections(x.sections, heading);
     ism(null, x.payments);
   }
+  // Recovery of stock, the distributor's orders after an OOS, who needs attention.
+  insightSheets(sheet, report.insights, report.executor !== null);
   return Buffer.from(await book.xlsx.writeBuffer());
 }
