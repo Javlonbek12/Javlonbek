@@ -3218,6 +3218,8 @@ export const en: Dictionary = {
     download: {
       xlsx: "Excel",
       pptx: "PowerPoint",
+      pdf: "PDF (A4) — as on the screen",
+      pdfHint: "In the print window choose “Save as PDF”",
       title: "Download",
       language: "File language",
       // Each language in its own language.
@@ -3296,6 +3298,12 @@ export const en: Dictionary = {
       oosStoresNote: "{rate}% of {checked} checked",
       orders: "Orders",
       ordersSum: "Orders total",
+    },
+    print: {
+      view: "Level: {view}",
+      period: "Period: {period}",
+      dataDate: "Data up to {date}",
+      made: "Made on {date}",
     },
     sectionNav: {
       label: "Page sections",
@@ -3666,6 +3674,39 @@ export const en: Dictionary = {
         zones: "Routes",
         missed: "Missed visits",
         noOrder: "DR no order",
+      },
+    },
+    worst: {
+      title: "Worst results",
+      hint: "The five lowest figures of each kind — where to start the talk. The colours follow the norms: red is far below, amber is close, green is met.",
+      attendance: "TSM attendance",
+      hitRate: "DR hit rate",
+      recovery: "OOS recovery",
+      connect: "Connect on visits",
+      connectRegions: "Connect on visits — regions",
+      target: "target {value}%",
+      line: "norm: not below {value}%",
+      of: "{part} of {whole}",
+      people: "employees: {count}",
+    },
+    calendar: {
+      more: "and {count} more — in the tables below and in Excel",
+      attendanceTitle: "TSM attendance calendar",
+      attendanceHint:
+        "A row is a zone, a column is a day. A cell shows the planned visits made; its colour is the share of the day's plan made. The zones with the lowest attendance come first.",
+      hitRateTitle: "DR hit rate calendar",
+      hitRateHint:
+        "A row is a sales rep's zone, a column is a day. A cell shows the visits with an order; its colour is the share of the day's visits with an order. The zones with the lowest hit rate come first.",
+      total: { attendance: "Attendance", hitRate: "Hit rate" },
+      legend: {
+        good: "target {target}% met",
+        warn: "close to the target",
+        bad: "far from the target",
+        none: { attendance: "nothing planned that day", hitRate: "no visits that day" },
+      },
+      cell: {
+        attendance: "“+” — only visits out of plan",
+        hitRate: "the number is visits with an order",
       },
     },
     rules: {

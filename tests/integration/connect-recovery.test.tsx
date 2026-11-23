@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import ExcelJS from "exceljs";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -418,8 +418,18 @@ describe("Connect analytics: stock recovery, the distributor's orders, who needs
         href={href(exec.query)}
       />,
     );
-    expect(screen.getByText("Восстановление OOS")).toBeInTheDocument();
+    // The tile, and the list of the lowest in «Худшие результаты».
+    expect(screen.getAllByText("Восстановление OOS")).toHaveLength(2);
     expect(screen.getByText("3 из 13 товаров вернулись")).toBeInTheDocument();
+    expect(heading("Худшие результаты")).toBeInTheDocument();
+    const worst = screen
+      .getByRole("heading", { name: "Восстановление OOS" })
+      .closest("div")!.parentElement!;
+    // TSM_TST_1 restored 1 of 11 products: under the line of 15%, so the card is red.
+    expect(within(worst).getByText("9%")).toHaveClass("bg-red-500/20");
+    expect(within(worst).getByText("1 из 11")).toBeInTheDocument();
+    expect(within(worst).getByText("норма: не ниже 15%")).toBeInTheDocument();
+    expect(worst).toHaveClass("border-red-400");
     // Stores with an OOS: 100% → 75%, and fewer is better; recovery: 0% → 23%.
     expect(screen.getByText("▼ 25 п.п.")).toHaveClass("text-emerald-700");
     expect(screen.getByText("▲ 23 п.п.")).toHaveClass("text-emerald-700");

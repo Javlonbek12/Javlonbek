@@ -124,6 +124,9 @@ export type MissedStore = ListStore & {
 };
 export type NoOrderStore = ListStore & { visits: number; lastVisit: string | null };
 
+// A zone's day: planned visits, those made, all visits made and those with an order.
+export type DayCounts = Pick<RouteCounts, "planned" | "visited" | "visits" | "orders">;
+
 export type RouteAnalysis = {
   from: string;
   to: string;
@@ -147,6 +150,9 @@ export type RouteAnalysis = {
   } | null;
   // TSM zones by attendance, the lowest first (they have no matrix: no orders).
   ranking: RouteZone[];
+  // «Календарь»: each shown zone's counts day by day (by zone, then by day), for the grid of
+  // zones × days.
+  calendar: Record<string, Record<string, DayCounts>>;
   missed: MissedStore[];
   noOrder: NoOrderStore[];
 };
@@ -201,6 +207,7 @@ type ZoneState = {
   key: string;
   zone: string;
   kind: StaffKind;
+  days: Map<string, RouteCounts>;
   now: Bucket;
   before: Bucket;
   organizations: Map<string | null, number>;
@@ -268,6 +275,7 @@ export function analyzeRoutes(
         key,
         zone: route.person,
         kind,
+        days: new Map(),
         now: emptyBucket(),
         before: emptyBucket(),
         organizations: new Map(),
@@ -319,6 +327,9 @@ export function analyzeRoutes(
     for (const { day, code } of days) {
       addRouteCode(counts, code);
       addRouteCode(zone.now[zone.kind], code);
+      let ofDay = zone.days.get(day);
+      if (!ofDay) zone.days.set(day, (ofDay = emptyRouteCounts()));
+      addRouteCode(ofDay, code);
       if (shown(zone.kind)) {
         let bucket = byDay.get(day);
         if (!bucket) byDay.set(day, (bucket = emptyBucket()));
@@ -430,9 +441,14 @@ export function analyzeRoutes(
         classes: inClass,
       };
     })
+    // The worst first: the lowest attendance for the TSMs; for the reps, who visit nearly
+    // everything, the lowest hit rate.
     .sort(
       (a, b) =>
         Number(a.kind === "DR") - Number(b.kind === "DR") ||
+        (a.kind === "DR"
+          ? (a.hitRate ?? 101) - (b.hitRate ?? 101)
+          : (a.attendance ?? 101) - (b.attendance ?? 101)) ||
         b.planned - a.planned ||
         natural(a.organization ?? "", b.organization ?? ""),
     );
@@ -475,6 +491,17 @@ export function analyzeRoutes(
         }
       : null,
     ranking: zoneRows.filter((z) => z.kind === "TSM").sort(lowestFirst),
+    calendar: Object.fromEntries(
+      visible.map(({ state }) => [
+        state.zone,
+        Object.fromEntries(
+          [...state.days.entries()].map(([day, c]) => [
+            day,
+            { planned: c.planned, visited: c.visited, visits: c.visits, orders: c.orders },
+          ]),
+        ),
+      ]),
+    ),
     ...sortLists({ missed, noOrder }),
   };
 }

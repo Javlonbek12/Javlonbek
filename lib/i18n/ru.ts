@@ -3228,6 +3228,8 @@ export const ru = {
     download: {
       xlsx: "Excel",
       pptx: "PowerPoint",
+      pdf: "PDF (A4) — как на экране",
+      pdfHint: "В окне печати выберите «Сохранить как PDF»",
       title: "Скачать",
       language: "Язык файла",
       // Each language in its own language.
@@ -3306,6 +3308,12 @@ export const ru = {
       oosStoresNote: "{rate}% из {checked} проверенных",
       orders: "Заказов",
       ordersSum: "Сумма заказов",
+    },
+    print: {
+      view: "Уровень: {view}",
+      period: "Период: {period}",
+      dataDate: "Данные по {date}",
+      made: "Сформировано {date}",
     },
     sectionNav: {
       label: "Разделы страницы",
@@ -3671,6 +3679,39 @@ export const ru = {
         zones: "Маршруты",
         missed: "Пропущенные визиты",
         noOrder: "DR без заказа",
+      },
+    },
+    worst: {
+      title: "Худшие результаты",
+      hint: "По пять самых низких показателей каждого вида — с них стоит начинать разговор. Цвет — по нормам: красный — далеко от нормы, жёлтый — близко к ней, зелёный — норма выполнена.",
+      attendance: "Посещаемость TSM",
+      hitRate: "Hit rate DR",
+      recovery: "Восстановление OOS",
+      connect: "Connect на визитах",
+      connectRegions: "Connect на визитах — регионы",
+      target: "цель {value}%",
+      line: "норма: не ниже {value}%",
+      of: "{part} из {whole}",
+      people: "сотрудников: {count}",
+    },
+    calendar: {
+      more: "и ещё {count} — в таблицах ниже и в Excel",
+      attendanceTitle: "Календарь посещаемости TSM",
+      attendanceHint:
+        "Строка — зона, столбец — день. В ячейке — сколько плановых визитов сделано; цвет — доля сделанных от плана за этот день. Сначала зоны с самой низкой посещаемостью.",
+      hitRateTitle: "Календарь hit rate DR",
+      hitRateHint:
+        "Строка — зона торгового представителя, столбец — день. В ячейке — сколько визитов с заказом; цвет — доля визитов с заказом за этот день. Сначала зоны с самым низким hit rate.",
+      total: { attendance: "Посещаемость", hitRate: "Hit rate" },
+      legend: {
+        good: "цель {target}% выполнена",
+        warn: "близко к цели",
+        bad: "далеко от цели",
+        none: { attendance: "нет плана на этот день", hitRate: "нет визитов в этот день" },
+      },
+      cell: {
+        attendance: "«+» — только визиты вне плана",
+        hitRate: "число — визиты с заказом",
       },
     },
     rules: {

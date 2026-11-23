@@ -11,6 +11,8 @@ import { DataTable, Section } from "./parts";
 import { FollowUpBlock, RecoveryBlock } from "./recovery-section";
 import { RoutesSection } from "./routes-section";
 import { MvSection, OosSection, statusLabel, TsmName, VisitsSection } from "./sections";
+import { WorstSection } from "./worst";
+import { worstLists } from "./worst-lists";
 
 const pct = (value: number) => `${value}%`;
 
@@ -56,6 +58,14 @@ export function ManagerView({
           personHref={personHref}
         />
       )}
+      <WorstSection
+        lists={worstLists({
+          routes: data.routes,
+          insights,
+          people: data.people,
+          href: personHref,
+        })}
+      />
       {data.tree ? (
         <>
           <Section title={t("connect.manager.tree")} hint={t("connect.manager.treeHint")}>

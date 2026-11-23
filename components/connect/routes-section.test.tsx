@@ -94,6 +94,45 @@ describe("RoutesSection", () => {
     expect(screen.getByText(/Детализации визитов Smart Up за 9–11 нояб/)).toBeInTheDocument();
   });
 
+  it("shows the zones × days calendars coloured against the targets, the worst zones first", () => {
+    render(<RoutesSection block={block("exec")} />);
+    const grid = (title: string) => {
+      const card = screen.getByRole("heading", { name: title }).closest('[data-slot="card"]')!;
+      const [head, ...rows] = within(card as HTMLElement).getAllByRole("row");
+      return {
+        days: within(head!)
+          .getAllByRole("columnheader")
+          .map((th) => th.textContent),
+        rows: rows.map((row) =>
+          within(row)
+            .getAllByRole("cell")
+            .map((td) => [td.textContent, /bg-(emerald|amber|red)/.exec(td.className)?.[1] ?? ""]),
+        ),
+      };
+    };
+    // The TSM's week: the 9th made, the 10th and 11th missed — one of three planned visits.
+    const tsm = grid("Календарь посещаемости TSM");
+    expect(tsm.days.slice(1, -1)).toEqual(["пн9", "вт10", "ср11"]);
+    expect(tsm.rows).toHaveLength(1);
+    expect(tsm.rows[0]!.slice(0, 3)).toEqual([
+      ["1", "emerald"],
+      ["0", "red"],
+      ["0", "red"],
+    ]);
+    expect(tsm.rows[0]![3]![0]).toContain("33,3%");
+    expect(tsm.rows[0]![3]![0]).toContain("1 / 3");
+    // The rep's week by hit rate: one order of two visits on the 9th, none after.
+    const dr = grid("Календарь hit rate DR");
+    expect(dr.rows[0]!.slice(0, 3)).toEqual([
+      ["1", "red"],
+      ["0", "red"],
+      ["0", "red"],
+    ]);
+    expect(dr.rows[0]![3]![0]).toContain("16,7%");
+    expect(screen.getByText("цель 95% выполнена")).toBeInTheDocument();
+    expect(screen.getByText("цель 90% выполнена")).toBeInTheDocument();
+  });
+
   it("leaves the DRs' numbers out for the TSMs alone", () => {
     render(<RoutesSection block={block("exec", "TSM")} />);
     expect(screen.queryByText("Hit rate DR")).not.toBeInTheDocument();

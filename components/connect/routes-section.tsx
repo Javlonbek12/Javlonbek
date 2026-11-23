@@ -19,9 +19,11 @@ import {
 import type { RoutesBlock } from "@/modules/connect/routes-report";
 import { formatRange } from "@/modules/reports/format";
 
-import { DataTable, DayBars, RulesLink, Section, StatGrid, type Column } from "./parts";
+import { DataTable, DayBars, RulesLink, Section, StatGrid, ToneValue, type Column } from "./parts";
+import { RoutesCalendar } from "./routes-calendar";
 import { CLASS_COLOR, RoutesMatrix } from "./routes-matrix";
 import { TsmName } from "./sections";
+import { targetTone, type Tone } from "./tone";
 
 // «Маршруты и дисциплина»: Smart Up's route analysis on the three levels. Leadership sees the
 // whole picture (totals, days, weekdays, the DRs' matrix, organizations), managers their zones
@@ -50,9 +52,20 @@ function Delta({ value }: { value: number | null }) {
   );
 }
 
-const Rate = ({ value, change }: { value: number | null; change: number | null }) => (
+// A share coloured against its target (none: no colour), with the change under it.
+const Rate = ({
+  value,
+  change,
+  target,
+}: {
+  value: number | null;
+  change: number | null;
+  target?: number;
+}) => (
   <span className="inline-flex flex-col items-end">
-    <span>{percent(value)}</span>
+    <ToneValue tone={target === undefined ? null : targetTone(value, target)}>
+      {percent(value)}
+    </ToneValue>
     <Delta value={change} />
   </span>
 );
@@ -104,12 +117,7 @@ function totalsItems(
           visited: formatNumber(total.visited),
           planned: formatNumber(total.planned),
         }) + change(total.attendanceDelta),
-      tone:
-        total.attendance === null
-          ? undefined
-          : total.attendance >= targets.attendance
-            ? ("good" as const)
-            : ("warn" as const),
+      tone: targetTone(total.attendance, targets.attendance) ?? undefined,
     },
     {
       key: "missed",
@@ -135,12 +143,7 @@ function totalsItems(
             note:
               t("connect.routes.tile.hitRateNote", { target: targets.hitRate }) +
               change(total.hitRateDelta),
-            tone:
-              total.hitRate === null
-                ? undefined
-                : total.hitRate >= targets.hitRate
-                  ? ("good" as const)
-                  : ("warn" as const),
+            tone: targetTone(total.hitRate, targets.hitRate) ?? undefined,
           },
           {
             key: "noOrder",
@@ -155,6 +158,9 @@ function totalsItems(
       : []),
   ];
 }
+
+// How many zones a calendar shows (the rest are in the tables and in Excel).
+const CALENDAR_ROWS = { exec: 20, manager: 40 };
 
 export function RoutesSection({
   block,
@@ -195,6 +201,12 @@ export function RoutesSection({
         {dataDate}
         {visitNote}
         <StatGrid items={totalsItems(zone, { dr: zone.kind === "DR", targets: a.targets })} />
+        {/* The zone's own days: a rep's by hit rate, a TSM's by attendance. */}
+        <RoutesCalendar
+          analysis={a}
+          mode={zone.kind === "DR" ? "hitRate" : "attendance"}
+          zones={[zone]}
+        />
         <MissedList rows={a.missed} zones={false} />
         {zone.kind === "DR" && <NoOrderList rows={a.noOrder} zones={false} />}
       </Section>
@@ -202,9 +214,49 @@ export function RoutesSection({
   }
 
   const total = a.totals[block.staff];
+  const { targets } = a;
   const dr = block.staff !== "TSM" && a.totals.DR.zones > 0;
   const zoneHref = (zone: string) =>
     connectHref("/connect", block.query, { view: "executor", person: zone, staff: null });
+  // The zones × days grids, the worst zones first: the TSMs by attendance, the reps by hit rate.
+  const drByHitRate = a.zones
+    .filter((z) => z.kind === "DR" && z.hitRate !== null)
+    .sort((x, y) => x.hitRate! - y.hitRate! || y.visits - x.visits);
+  const calendarRows = block.level === "exec" ? CALENDAR_ROWS.exec : CALENDAR_ROWS.manager;
+  const calendars = total.clients > 0 && (
+    <>
+      {a.ranking.length > 0 && (
+        <Section
+          title={t("connect.calendar.attendanceTitle")}
+          hint={t("connect.calendar.attendanceHint")}
+          nav={false}
+        >
+          <RoutesCalendar
+            analysis={a}
+            mode="attendance"
+            zones={a.ranking}
+            limit={calendarRows}
+            href={block.level === "manager" ? zoneHref : undefined}
+          />
+        </Section>
+      )}
+      {drByHitRate.length > 0 && (
+        <Section
+          title={t("connect.calendar.hitRateTitle")}
+          hint={t("connect.calendar.hitRateHint")}
+          nav={false}
+        >
+          <RoutesCalendar
+            analysis={a}
+            mode="hitRate"
+            zones={drByHitRate}
+            limit={calendarRows}
+            href={block.level === "manager" ? zoneHref : undefined}
+          />
+        </Section>
+      )}
+    </>
+  );
   return (
     <>
       <Section
@@ -268,6 +320,8 @@ export function RoutesSection({
           </>
         )}
       </Section>
+
+      {calendars}
 
       {block.level === "exec" && dr && a.matrix && (
         <Section
@@ -337,6 +391,7 @@ export function RoutesSection({
           <DataTable
             rows={a.ranking}
             rowKey={(z) => z.zone}
+            rowTone={(z) => zoneTone(z, targets)}
             limit={15}
             columns={[
               {
@@ -360,7 +415,13 @@ export function RoutesSection({
                 key: "attendance",
                 header: t("connect.routes.col.attendance"),
                 numeric: true,
-                cell: (z) => <Rate value={z.attendance} change={z.attendanceDelta} />,
+                cell: (z) => (
+                  <Rate
+                    value={z.attendance}
+                    change={z.attendanceDelta}
+                    target={targets.attendance}
+                  />
+                ),
               },
               {
                 key: "missed",
@@ -418,7 +479,13 @@ export function RoutesSection({
                 key: "attendance",
                 header: t("connect.routes.col.attendance"),
                 numeric: true,
-                cell: (o) => <Rate value={o.attendance} change={o.attendanceDelta} />,
+                cell: (o) => (
+                  <Rate
+                    value={o.attendance}
+                    change={o.attendanceDelta}
+                    target={targets.attendance}
+                  />
+                ),
               },
               {
                 key: "missed",
@@ -439,7 +506,15 @@ export function RoutesSection({
                       header: t("connect.routes.col.hitRate"),
                       numeric: true,
                       cell: (o: (typeof a.organizations)[number]) =>
-                        o.kind === "DR" ? <Rate value={o.hitRate} change={o.hitRateDelta} /> : "—",
+                        o.kind === "DR" ? (
+                          <Rate
+                            value={o.hitRate}
+                            change={o.hitRateDelta}
+                            target={targets.hitRate}
+                          />
+                        ) : (
+                          "—"
+                        ),
                     },
                   ]
                 : []),
@@ -455,7 +530,7 @@ export function RoutesSection({
             nav={false}
             hint={t("connect.routes.changeHint", { previous })}
           >
-            <ZonesTable rows={a.zones} dr={dr} href={zoneHref} />
+            <ZonesTable rows={a.zones} dr={dr} href={zoneHref} targets={targets} />
           </Section>
           <Section
             title={t("connect.routes.missed.title")}
@@ -525,19 +600,32 @@ function WeekdayTable({
 }
 
 // The zones a manager sees: TSMs, then the distributor's reps, the lowest attendance first.
+// A zone's mark on the left edge: a rep by the class of the matrix, a TSM by attendance.
+const zoneTone = (z: RouteZone, targets: RouteTargets): Tone | null =>
+  z.kind === "DR" && z.class
+    ? z.class === "both"
+      ? "bad"
+      : z.class === "one"
+        ? "warn"
+        : "good"
+    : targetTone(z.attendance, targets.attendance);
+
 function ZonesTable({
   rows,
   dr,
   href,
+  targets,
 }: {
   rows: RouteZone[];
   dr: boolean;
   href: (zone: string) => string;
+  targets: RouteTargets;
 }) {
   return (
     <DataTable
       rows={rows}
       rowKey={(z) => z.zone}
+      rowTone={(z) => zoneTone(z, targets)}
       limit={100}
       columns={[
         {
@@ -578,7 +666,9 @@ function ZonesTable({
           key: "attendance",
           header: t("connect.routes.col.attendance"),
           numeric: true,
-          cell: (z) => <Rate value={z.attendance} change={z.attendanceDelta} />,
+          cell: (z) => (
+            <Rate value={z.attendance} change={z.attendanceDelta} target={targets.attendance} />
+          ),
         },
         {
           key: "missed",
@@ -599,7 +689,11 @@ function ZonesTable({
                 header: t("connect.routes.col.hitRate"),
                 numeric: true,
                 cell: (z: RouteZone) =>
-                  z.kind === "DR" ? <Rate value={z.hitRate} change={z.hitRateDelta} /> : "—",
+                  z.kind === "DR" ? (
+                    <Rate value={z.hitRate} change={z.hitRateDelta} target={targets.hitRate} />
+                  ) : (
+                    "—"
+                  ),
               },
               {
                 key: "noOrder",
