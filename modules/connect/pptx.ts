@@ -8,7 +8,14 @@ import { orderStage, type IsmBlock } from "./analytics";
 import { flattenTree, type TreeNode } from "./hierarchy";
 import { localizeData } from "./localize";
 import { formatMoney, formatNumber, monthsLabel, periodLabel, type ConnectReport } from "./report";
-import { MV_RESULTS, topAnswers, VISIT_ISSUES, type TsmRow, type VisitSections } from "./visits";
+import {
+  MV_RESULTS,
+  NO_VISITS_REGION,
+  topAnswers,
+  VISIT_ISSUES,
+  type TsmRow,
+  type VisitSections,
+} from "./visits";
 
 // The level on the screen as a 16:9 deck: native PowerPoint charts and tables, so numbers
 // stay editable. Colors: the validated chart palette (blue / orange) and the status scale.
@@ -711,7 +718,7 @@ export async function connectPptx(report: ConnectReport, today: string): Promise
         t("connect.col.sum"),
       ],
       e.regions.map((r) => [
-        r.region,
+        r.region === NO_VISITS_REGION ? t("connect.section.noVisitsRegion") : r.region,
         r.planned,
         pct(r.visitedRate),
         pct(r.connectRate),

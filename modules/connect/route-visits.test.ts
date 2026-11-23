@@ -91,7 +91,8 @@ const oos = (day: string, time: string): OosRecord => ({
 describe("Smart Up visits from the route analysis", () => {
   it("reads the TSMs' zones: planned made, not made, still ahead, out of plan", () => {
     const { visits, days } = visitsFromRoutes(ROUTES, PERIOD);
-    expect(days).toEqual(["2026-11-09", "2026-11-10", "2026-11-11", "2026-11-12"]);
+    // The 12th is still ahead (O): no visit yet, so not a plan missed.
+    expect(days).toEqual(["2026-11-09", "2026-11-10", "2026-11-11"]);
     expect(
       visits
         .map((v) => [v.id, v.planned, v.planDay, v.factDay])
@@ -103,8 +104,6 @@ describe("Smart Up visits from the route analysis", () => {
       ["route|TSM_TST_1|900001|2026-11-10", true, "2026-11-10", null],
       ["route|TSM_TST_1|900001|2026-11-10|u", false, null, "2026-11-10"],
       ["route|TSM_TST_1|900001|2026-11-11", false, null, "2026-11-11"],
-      // Still ahead: planned, not made yet.
-      ["route|TSM_TST_1|900001|2026-11-12", true, "2026-11-12", null],
       ["route|TSM_TST_1|900002|2026-11-09", true, "2026-11-09", "2026-11-09"],
     ]);
     expect(visits[0]).toMatchObject({
@@ -127,8 +126,8 @@ describe("Smart Up visits from the route analysis", () => {
       ...PERIOD,
       covered: new Set(["2026-11-09", "2026-11-10"]),
     });
-    expect(days).toEqual(["2026-11-11", "2026-11-12"]);
-    expect(visits.map((v) => v.day)).toEqual(["2026-11-11", "2026-11-12"]);
+    expect(days).toEqual(["2026-11-11"]);
+    expect(visits.map((v) => v.day)).toEqual(["2026-11-11"]);
   });
 
   it("never says «not during the visit»: there is no time to check against", () => {
@@ -171,10 +170,10 @@ describe("Smart Up visits from the route analysis", () => {
     });
     const v = visitSections(analysis).visits;
     expect(v).toMatchObject({
-      // 900001 on the 9th, 10th and 12th, 900002 on the 9th.
-      planned: 4,
+      // 900001 on the 9th and 10th, 900002 on the 9th; the 12th is still ahead.
+      planned: 3,
       visited: 2,
-      notVisited: 2,
+      notVisited: 1,
       unplanned: 2,
       withConnect: 1,
       allGood: 1,
@@ -183,7 +182,7 @@ describe("Smart Up visits from the route analysis", () => {
     });
     expect(v.status.notInTime).toBe(0);
     expect(tsmRows(analysis, ["TSM_TST_1"])[0]).toMatchObject({
-      planned: 4,
+      planned: 3,
       visited: 2,
       withConnect: 1,
       timed: 0,

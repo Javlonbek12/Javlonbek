@@ -3307,6 +3307,10 @@ export const ru = {
       orders: "Заказов",
       ordersSum: "Сумма заказов",
     },
+    sectionNav: {
+      label: "Разделы страницы",
+      top: "К списку разделов",
+    },
     section: {
       visits: "Визиты (Smart Up) и Connect Bot",
       visitsHint:
@@ -3320,7 +3324,9 @@ export const ru = {
       ism: "Оплаты ISM",
       ismHint: "По заявкам на оплату из Connect-бота, по месяцам: {months}.",
       regions: "По регионам",
-      regionsHint: "Регион — по сотруднику (Smart Up).",
+      regionsHint:
+        "Регион — по сотруднику (Smart Up). Те, у кого за период нет визитов в Smart Up, — одной строкой внизу.",
+      noVisitsRegion: "Без визитов в Smart Up",
     },
     visits: {
       planned: "По плану",
@@ -3668,6 +3674,7 @@ export const ru = {
       },
     },
     recovery: {
+      moreSkus: "и ещё {count}",
       title: "Восстановление наличия",
       hint: "Последняя проверка точки за период сравнивается с более ранней проверкой этой же точки в другой день: что из отсутствовавшего появилось на полке, а чего всё ещё нет. «Недостаточно» считается наличием, «Не было закупа» — не OOS.",
       baseLabel: "С чем сравнивать",

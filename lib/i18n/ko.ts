@@ -106,6 +106,10 @@ export const ko: PartialDictionary & {
       orders: "주문",
       ordersSum: "주문 금액",
     },
+    sectionNav: {
+      label: "페이지 섹션",
+      top: "섹션 목록으로",
+    },
     section: {
       visits: "방문(Smart Up)과 Connect Bot",
       visitsHint:
@@ -118,7 +122,9 @@ export const ko: PartialDictionary & {
       ism: "ISM 지급",
       ismHint: "Connect 봇의 지급 요청 기준, 월별: {months}.",
       regions: "지역별",
-      regionsHint: "지역은 직원 기준(Smart Up)입니다.",
+      regionsHint:
+        "지역은 직원 기준(Smart Up)입니다. 기간 중 Smart Up 방문이 없는 직원은 맨 아래 한 줄로 표시됩니다.",
+      noVisitsRegion: "Smart Up 방문 없음",
     },
     visits: {
       planned: "계획",
@@ -464,6 +470,7 @@ export const ko: PartialDictionary & {
       },
     },
     recovery: {
+      moreSkus: "외 {count}개",
       title: "재고 회복",
       hint: "기간 내 매장의 마지막 점검을 같은 매장의 다른 날 이전 점검과 비교합니다: 없던 제품 중 무엇이 진열대에 돌아왔고 무엇이 아직 없는지. «부족»은 재고 있음으로 보고, «미구매»는 OOS가 아닙니다.",
       baseLabel: "비교 기준",

@@ -11,6 +11,7 @@ import {
 import { formatNumber } from "@/modules/connect/report";
 
 import { DataTable, StatGrid } from "./parts";
+import { SECTION_ATTRIBUTE } from "./section-anchor";
 import { TsmName } from "./sections";
 
 const pct = (value: number | null) => (value === null ? "—" : `${value}%`);
@@ -34,7 +35,11 @@ export function RecoveryBlock({
 }) {
   const r = data.totals;
   return (
-    <div id={RECOVERY_ANCHOR} className="flex scroll-mt-20 flex-col gap-3 border-t pt-4">
+    <div
+      id={RECOVERY_ANCHOR}
+      className="flex scroll-mt-20 flex-col gap-3 border-t pt-4"
+      {...{ [SECTION_ATTRIBUTE]: t("connect.recovery.title") }}
+    >
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <div className="flex min-w-0 flex-col gap-0.5">
           <h3 className="text-sm font-medium">{t("connect.recovery.title")}</h3>
@@ -243,13 +248,20 @@ export function RecoveryBlock({
   );
 }
 
-// How many products and which: «3 · A, B, C».
+// The product names shown next to their number; the whole list is in the Excel file.
+const SKUS_SHOWN = 6;
+
+// How many products and which: «8 · A, B, C… и ещё 5».
 function SkuList({ skus }: { skus: string[] }) {
   if (!skus.length) return <span className="text-muted-foreground">—</span>;
+  const more = skus.length - SKUS_SHOWN;
   return (
     <span className="flex flex-col">
       <b className="tabular-nums">{skus.length}</b>
-      <span className="text-muted-foreground text-xs">{skus.join(", ")}</span>
+      <span className="text-muted-foreground text-xs">
+        {skus.slice(0, SKUS_SHOWN).join(", ")}
+        {more > 0 && ` ${t("connect.recovery.moreSkus", { count: more })}`}
+      </span>
     </span>
   );
 }

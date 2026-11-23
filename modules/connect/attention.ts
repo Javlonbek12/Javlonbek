@@ -107,7 +107,8 @@ export function attentionList(input: {
 
     const visited = attendance.get(key);
     if (visited !== undefined && visited < R.attendance.below)
-      add("attendance", visited, null, below(visited, R.attendance.below));
+      // Whole percents, as the other reasons; rounded down, so 84.6% does not read «85%, under 85%».
+      add("attendance", Math.floor(visited), null, below(visited, R.attendance.below));
 
     if (!reasons.length) continue;
     rows.push({

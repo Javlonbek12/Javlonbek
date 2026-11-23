@@ -13,6 +13,7 @@ import { routeSheets } from "./routes-xlsx";
 import {
   aggregateRows,
   MV_RESULTS,
+  NO_VISITS_REGION,
   VISIT_ISSUES,
   type RowTotals,
   type TsmRow,
@@ -446,7 +447,7 @@ export async function connectXlsx(report: ConnectReport, today: string): Promise
         col("sum", 16),
       ],
       e.regions.map((r) => [
-        r.region,
+        r.region === NO_VISITS_REGION ? t("connect.section.noVisitsRegion") : r.region,
         r.people,
         r.planned,
         r.visitedRate,

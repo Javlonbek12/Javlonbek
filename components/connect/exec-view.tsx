@@ -2,6 +2,7 @@ import { formatDay } from "@/lib/dates";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { formatMoney, formatNumber, type ConnectReport } from "@/modules/connect/report";
+import { NO_VISITS_REGION } from "@/modules/connect/visits";
 
 import { AttentionSection } from "./attention";
 import { IsmSection } from "./ism";
@@ -115,7 +116,12 @@ export function ExecView({
             rowKey={(r) => r.region}
             limit={30}
             columns={[
-              { key: "region", header: t("connect.col.region"), cell: (r) => r.region },
+              {
+                key: "region",
+                header: t("connect.col.region"),
+                cell: (r) =>
+                  r.region === NO_VISITS_REGION ? t("connect.section.noVisitsRegion") : r.region,
+              },
               {
                 key: "people",
                 header: t("connect.col.people"),

@@ -171,7 +171,18 @@ export async function loadClients(storeCodes?: string[]) {
 
 // The ISM payment requests of the months from..to (the ISM block keeps its months).
 export async function loadPayments(months: { from: string; to: string }) {
-  return (await loadDataset(months)).payments;
+  // Only the payments: the checks and questionnaires of the same months are many times more.
+  const rows = await db.connectRecord.findMany({
+    where: {
+      kind: "PAYMENT",
+      month: { gte: months.from || undefined, lte: months.to || undefined },
+    },
+    select: { data: true, storeName: true, storeCode: true },
+    orderBy: { day: "asc" },
+  });
+  return rows
+    .filter((r) => !isTestStore(r.storeName, r.storeCode))
+    .map((r) => r.data as RecordOf<"PAYMENT">);
 }
 
 export async function connectTotal() {

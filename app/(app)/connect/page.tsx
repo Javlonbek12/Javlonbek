@@ -5,6 +5,7 @@ import { ConnectDownloads } from "@/components/connect/download-menu";
 import { ExecView } from "@/components/connect/exec-view";
 import { ExecutorsOverview, ExecutorView } from "@/components/connect/executor-view";
 import { ManagerView } from "@/components/connect/manager-view";
+import { SectionNav } from "@/components/connect/section-nav";
 import { menuItem, MoreMenu } from "@/components/content/more-menu";
 import { AutoSubmitForm } from "@/components/ui/auto-submit-form";
 import { Card, CardDescription } from "@/components/ui/card";
@@ -77,9 +78,9 @@ export default async function ConnectPage({ searchParams }: PageProps<"/connect"
     );
   const months = monthsLabel(report.months);
   const downloadable = !report.empty && (q.view !== "executor" || q.person);
-  // The period chosen: chips and own dates keep the level and the TSM.
+  // The period chosen: chips and own dates keep the level, the TSM and the blocks' switches.
   const keep = Object.fromEntries(
-    Object.entries({ view: q.view, person: q.person, staff: q.staff }).filter(
+    Object.entries({ view: q.view, person: q.person, staff: q.staff, base: q.base }).filter(
       (e): e is [string, string] => Boolean(e[1]),
     ),
   );
@@ -182,6 +183,8 @@ export default async function ConnectPage({ searchParams }: PageProps<"/connect"
                 {q.preset && <input type="hidden" name="preset" value={q.preset} />}
                 {q.from && <input type="hidden" name="from" value={q.from} />}
                 {q.to && <input type="hidden" name="to" value={q.to} />}
+                {q.staff && <input type="hidden" name="staff" value={q.staff} />}
+                {q.base && <input type="hidden" name="base" value={q.base} />}
                 <label className="flex w-full flex-col gap-1 sm:w-auto">
                   <span className="text-muted-foreground text-xs">
                     {t("connect.executor.choose")}
@@ -197,6 +200,8 @@ export default async function ConnectPage({ searchParams }: PageProps<"/connect"
                 </label>
               </AutoSubmitForm>
             ) : null}
+            {/* A new list for every level, period and person: the blocks differ. */}
+            <SectionNav key={connectHref("/connect", q)} />
           </div>
 
           {own !== null && own.length === 0 ? (

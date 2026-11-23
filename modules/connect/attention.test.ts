@@ -142,7 +142,7 @@ describe("attentionList", () => {
       ]),
     });
     expect(list.map((r) => [r.code, r.reasons.map((x) => [x.kind, x.value])])).toEqual([
-      ["TSM_TST_1", [["attendance", 84.9]]],
+      ["TSM_TST_1", [["attendance", 84]]],
     ]);
   });
 

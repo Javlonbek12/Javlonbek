@@ -259,6 +259,7 @@ export function RoutesSection({ block }: { block: RoutesBlock | null | undefined
       {block.level === "exec" && dr && a.matrix && (
         <Section
           title={t("connect.routes.matrix.title")}
+          nav={false}
           hint={t("connect.routes.matrix.hint", {
             attendance: ROUTE_TARGETS.attendance,
             hitRate: ROUTE_TARGETS.hitRate,
@@ -315,7 +316,11 @@ export function RoutesSection({ block }: { block: RoutesBlock | null | undefined
       )}
 
       {block.level === "exec" && a.ranking.length > 0 && (
-        <Section title={t("connect.routes.ranking.title")} hint={t("connect.routes.ranking.hint")}>
+        <Section
+          title={t("connect.routes.ranking.title")}
+          nav={false}
+          hint={t("connect.routes.ranking.hint")}
+        >
           <DataTable
             rows={a.ranking}
             rowKey={(z) => z.zone}
@@ -364,6 +369,7 @@ export function RoutesSection({ block }: { block: RoutesBlock | null | undefined
       {block.level === "exec" && a.organizations.length > 0 && (
         <Section
           title={t("connect.routes.organizations.title")}
+          nav={false}
           hint={t("connect.routes.changeHint", { previous })}
         >
           <DataTable
@@ -433,16 +439,22 @@ export function RoutesSection({ block }: { block: RoutesBlock | null | undefined
         <>
           <Section
             title={t("connect.routes.zones.title")}
+            nav={false}
             hint={t("connect.routes.changeHint", { previous })}
           >
             <ZonesTable rows={a.zones} dr={dr} href={zoneHref} />
           </Section>
-          <Section title={t("connect.routes.missed.title")} hint={t("connect.routes.missed.hint")}>
+          <Section
+            title={t("connect.routes.missed.title")}
+            nav={false}
+            hint={t("connect.routes.missed.hint")}
+          >
             <MissedList rows={a.missed} zones />
           </Section>
           {dr && (
             <Section
               title={t("connect.routes.noOrder.title")}
+              nav={false}
               hint={t("connect.routes.noOrder.hint")}
             >
               <NoOrderList rows={a.noOrder} zones />

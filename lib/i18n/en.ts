@@ -3297,6 +3297,10 @@ export const en: Dictionary = {
       orders: "Orders",
       ordersSum: "Orders total",
     },
+    sectionNav: {
+      label: "Page sections",
+      top: "To the list of sections",
+    },
     section: {
       visits: "Visits (Smart Up) and Connect Bot",
       visitsHint:
@@ -3310,7 +3314,9 @@ export const en: Dictionary = {
       ism: "ISM payments",
       ismHint: "From the Connect bot's payment requests, by months: {months}.",
       regions: "By region",
-      regionsHint: "The region is the employee's (Smart Up).",
+      regionsHint:
+        "The region is the employee's (Smart Up). Those with no Smart Up visit in the period are one row at the bottom.",
+      noVisitsRegion: "No Smart Up visits",
     },
     visits: {
       planned: "Planned",
@@ -3663,6 +3669,7 @@ export const en: Dictionary = {
       },
     },
     recovery: {
+      moreSkus: "and {count} more",
       title: "Stock recovery",
       hint: "A store's last check of the period is compared with an earlier check of the same store on another day: which of the products that were out are back on the shelf, and which are still out. «Not enough» counts as in stock, «Not purchased» is not an OOS.",
       baseLabel: "Compare with",

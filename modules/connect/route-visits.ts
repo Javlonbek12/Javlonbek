@@ -11,8 +11,9 @@ export const isRouteVisit = (visit: Pick<SuVisitRecord, "id">) => visit.id.start
 
 const isMade = (code: RouteCode) => code === "P" || code === "PD";
 
-// One visit per zone, store and day: a planned visit made (P, PD), or one not made (X) or still
-// ahead (O); a visit out of plan (U, UD) — also next to a planned one not made. A joint visit (a
+// One visit per zone, store and day: a planned visit made (P, PD) or not made (X); a visit out of
+// plan (U, UD) — also next to a planned one not made. A visit still ahead (O) is no visit yet: as
+// in «Маршруты и дисциплина», it is not a plan missed. A joint visit (a
 // second row of the same client: the TSM's «P» and a supervisor's «U») is the planned visit.
 // `covered`: the days that have a visit detail, left to it.
 export function visitsFromRoutes(
@@ -47,7 +48,7 @@ export function visitsFromRoutes(
   const days = new Set<string>();
   for (const { route, day, codes } of groups.values()) {
     const made = codes.some(isMade);
-    const planned = made || codes.includes("X") || codes.includes("O");
+    const planned = made || codes.includes("X");
     const id = `${PREFIX}${route.person}|${route.storeCode}|${day}`;
     const visit = (plan: boolean, fact: boolean, suffix = ""): SuVisitRecord => ({
       id: `${id}${suffix}`,
@@ -70,8 +71,9 @@ export function visitsFromRoutes(
       organization: route.city,
     });
     if (planned) visits.push(visit(true, made));
-    if (!made && codes.some(isUnplanned)) visits.push(visit(false, true, planned ? "|u" : ""));
-    days.add(day);
+    const unplanned = !made && codes.some(isUnplanned);
+    if (unplanned) visits.push(visit(false, true, planned ? "|u" : ""));
+    if (planned || unplanned) days.add(day);
   }
   return { visits, days: [...days].sort() };
 }

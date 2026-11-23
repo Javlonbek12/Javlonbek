@@ -13,6 +13,7 @@ import {
   mvResult,
   needsAttention,
   ordersByStatus,
+  NO_VISITS_REGION,
   regionRows,
   STORE_OPEN_QUESTION,
   storeDay,
@@ -470,6 +471,21 @@ describe("Sections", () => {
       ["Тестоград", 3],
       ["Другой город", 1],
     ]);
+    // Someone with Connect Bot records only: the store's city is not their region, so they are
+    // one row at the bottom — unless nobody has a Smart Up visit, then the cities are all there is.
+    const botOnly = {
+      ...rows[1]!,
+      code: "TSM_TST_3",
+      region: "Город точки",
+      planned: 0,
+      unplanned: 0,
+    };
+    expect(regionRows([botOnly, ...rows]).map((r) => [r.region, r.people])).toEqual([
+      ["Тестоград", 1],
+      ["Другой город", 1],
+      [NO_VISITS_REGION, 1],
+    ]);
+    expect(regionRows([botOnly]).map((r) => r.region)).toEqual(["Город точки"]);
   });
 
   it("one TSM's lists", () => {

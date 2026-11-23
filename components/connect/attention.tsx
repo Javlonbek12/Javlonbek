@@ -36,6 +36,7 @@ export function AttentionSection({
   });
   return (
     <Section
+      nav={t("connect.attention.title")}
       title={
         rows.length
           ? `${t("connect.attention.title")} · ${rows.length}`
