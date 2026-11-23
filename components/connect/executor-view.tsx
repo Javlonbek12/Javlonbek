@@ -8,6 +8,7 @@ import type { TsmRow } from "@/modules/connect/visits";
 import { FilterSelect } from "./filter-select";
 import { IsmSection } from "./ism";
 import { DataTable, Kpi, STAGE_COLOR } from "./parts";
+import { RecoveryBlock } from "./recovery-section";
 import { RoutesSection } from "./routes-section";
 import {
   deliveryColor,
@@ -114,7 +115,19 @@ export function ExecutorsOverview({
 type Executor = NonNullable<ConnectReport["executor"]>;
 
 // One TSM: the numbers, then each section with the lists to act on.
-export function ExecutorView({ data, months }: { data: Executor; months: string }) {
+export function ExecutorView({
+  data,
+  months,
+  insights,
+  href,
+}: {
+  data: Executor;
+  months: string;
+  // The TSM's own recovery of stock and the stores where products are still out.
+  insights?: ConnectReport["insights"];
+  // The page with something changed (the recovery baseline).
+  href?: (change: Record<string, string | null>) => string;
+}) {
   const { row: r, sections: s, detail: d } = data;
   // A distributor's rep has a route and nothing in Connect Bot: the route is all there is.
   const zone = data.routes?.zone;
@@ -401,6 +414,13 @@ export function ExecutorView({ data, months }: { data: Executor; months: string 
               />
             </div>
           </details>
+        )}
+        {insights && href && s.oos.checked > 0 && (
+          <RecoveryBlock
+            own
+            data={insights.recovery}
+            baseHref={(base) => href({ base: base === "month" ? base : null })}
+          />
         )}
       </OosSection>
 

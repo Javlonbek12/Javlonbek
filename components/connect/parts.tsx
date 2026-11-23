@@ -191,10 +191,13 @@ export function Kpi({
   meter,
   tone,
   compare,
+  trend,
 }: {
   label: string;
   value: string | number;
   note?: string;
+  // Next to the number: the change against the previous period (see trend.tsx).
+  trend?: ReactNode;
   // 0..100: a thin bar under the number.
   meter?: number;
   tone?: "good" | "warn" | "bad";
@@ -212,9 +215,11 @@ export function Kpi({
           tone === "bad" && "text-red-600 dark:text-red-400",
           tone === "warn" && "text-amber-600 dark:text-amber-400",
           tone === "good" && "text-emerald-700 dark:text-emerald-400",
+          trend && "flex flex-wrap items-baseline gap-x-2",
         )}
       >
         {value}
+        {trend}
       </span>
       {meter !== undefined && (
         <span className="bg-muted h-1.5 overflow-hidden rounded-full">

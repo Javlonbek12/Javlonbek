@@ -6,9 +6,11 @@ import { presetPeriod } from "@/modules/reports/period";
 
 import { ismBlock, paymentIssues } from "./analytics";
 import { linkedPositionCodes, managerTree, type Hierarchy } from "./hierarchy";
+import { connectInsights } from "./insights";
 import { personCode, titleKey } from "./parse";
 import type { StaffFilter } from "./routes";
 import { buildRoutesBlock, loadRouteSource, routeZones } from "./routes-report";
+import type { RecoveryBase } from "./recovery";
 import {
   connectDataDate,
   connectPeopleLinks,
@@ -47,6 +49,9 @@ export type ConnectQuery = {
   // «Маршруты и дисциплина»: only KT&G's field staff or only the distributor's reps (no value:
   // everyone).
   staff?: Exclude<StaffFilter, "all">;
+  // «Восстановление наличия» against the store's first check of the month; without it, against
+  // the check before.
+  base?: RecoveryBase;
 };
 
 export function parseConnectQuery(
@@ -72,6 +77,7 @@ export function parseConnectQuery(
     to: own ? to! : null,
     person: personCode(one("person")),
     staff: (["TSM", "DR"] as const).find((s) => s === one("staff")?.toUpperCase()),
+    ...(one("base") === "month" ? { base: "month" as const } : {}),
   };
 }
 
@@ -206,9 +212,16 @@ export async function buildConnectReport(
   const analysis = analyzeVisits(data);
   const codes = tsmCodes(data).filter((code) => inScope(scope, code));
   // Zones known only by their route (the distributor's reps) can be chosen as well.
-  const routeOnly = routeZones(routeSource, period, scope).filter(
-    (z) => !codes.some((c) => titleKey(c) === titleKey(z.zone)),
-  );
+  const zones = routeZones(routeSource, period, scope);
+  const routeOnly = zones.filter((z) => !codes.some((c) => titleKey(c) === titleKey(z.zone)));
+  // «Требует внимания»: how much of their plan each TSM visited (none without routes).
+  const attendance = zones.length
+    ? new Map(
+        zones.flatMap((z) =>
+          z.kind === "TSM" && z.attendance !== null ? [[z.zone, z.attendance] as const] : [],
+        ),
+      )
+    : null;
   const choice = [...codes, ...routeOnly.map((z) => z.zone)];
   const chosen = query.person && choice.find((c) => titleKey(c) === titleKey(query.person!));
   const person = chosen || (options.own && query.view === "executor" ? (choice[0] ?? null) : null);
@@ -228,6 +241,23 @@ export async function buildConnectReport(
     !payments.length &&
     !routes;
   const managerRows = query.view === "manager" ? tsmRows(analysis, codes) : [];
+  const execRows = query.view === "exec" ? tsmRows(analysis, tsmCodes(data)) : [];
+  const execSections = query.view === "exec" ? visitSections(analysis) : null;
+  // Recovery of stock, the distributor's orders after an OOS, who needs attention, the change.
+  const insights = empty
+    ? null
+    : await connectInsights({
+        view: query.view,
+        base: query.base ?? "prev",
+        period,
+        data,
+        scope,
+        person,
+        hierarchy,
+        rows: query.view === "exec" ? execRows : managerRows,
+        sections: execSections,
+        attendance,
+      });
   return {
     query: { ...query, person },
     period,
@@ -236,6 +266,7 @@ export async function buildConnectReport(
     // The last day of the sales loaded (null: no sales, no cross-check).
     salesDate: data.salesRange?.to ?? null,
     empty,
+    insights,
     people: [
       ...codes.map((code) => tsmInfo(data, code)),
       ...routeOnly.map((z) => ({
@@ -246,11 +277,11 @@ export async function buildConnectReport(
       })),
     ],
     exec:
-      query.view === "exec"
+      query.view === "exec" && execSections
         ? {
             routes,
-            sections: visitSections(analysis),
-            regions: regionRows(tsmRows(analysis, tsmCodes(data))),
+            sections: execSections,
+            regions: regionRows(execRows),
             ism: ismBlock(payments, today),
           }
         : null,
@@ -325,6 +356,7 @@ export function connectHref(
     to: query.to,
     person: query.person,
     staff: query.staff,
+    base: query.base,
     ...change,
   };
   for (const [key, value] of Object.entries(values)) if (value) params.set(key, value);

@@ -6,6 +6,7 @@ import type { ru } from "@/lib/i18n/ru";
 
 import type { IsmBlock, paymentIssues } from "./analytics";
 import type { TreeNode } from "./hierarchy";
+import { insightSheets } from "./insights-xlsx";
 import { localizeData } from "./localize";
 import { monthsLabel, periodLabel, type ConnectReport } from "./report";
 import { routeSheets } from "./routes-xlsx";
@@ -551,5 +552,7 @@ export async function connectXlsx(report: ConnectReport, today: string): Promise
   // «Маршруты и дисциплина» of the level on the screen.
   const routes = report.exec?.routes ?? report.manager?.routes ?? report.executor?.routes;
   if (routes) routeSheets(sheet, routes);
+  // Recovery of stock, the distributor's orders after an OOS, who needs attention.
+  insightSheets(sheet, report.insights, report.executor !== null);
   return Buffer.from(await book.xlsx.writeBuffer());
 }
