@@ -1111,8 +1111,9 @@ enum ConnectKind {
   SU_PERSON
   // The CRM's employee info: one position (ID — its ИД); every upload replaces all of them.
   SU_POSITION
-  // The CRM's sales: one store, delivery day and SKU (ID — store|day|SKU); an upload replaces the
-  // sales of its days.
+  // The CRM's sales: one store and delivery day, its SKUs inside the row (ID — store|day); an
+  // upload replaces the sales of its days. Rows saved before 23.11.2026 are one store, day and
+  // SKU each (ID — store|day|SKU) and are read as they are.
   SALE
   // Smart Up's «Анализ маршрута»: one client of a working zone (a TSM's or a distributor rep's)
   // for a month, with what happened on each day (ID — month|zone|client); an upload replaces its

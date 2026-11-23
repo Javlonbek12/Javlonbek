@@ -3282,7 +3282,7 @@ export const en: Dictionary = {
         empty: "Choose at least one file.",
         unknown:
           "This doesn't look like a Connect bot or Smart Up export: no sheet with the expected columns.",
-        tooBig: "The file is too big (over 20 MB).",
+        tooBig: "The file is too big (over 50 MB).",
         fileTooBig: "Over {mb} MB: {names}. Such a file can't be uploaded — export it in parts.",
         failed: "Upload failed — check the connection and try again.",
       },

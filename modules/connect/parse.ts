@@ -2,6 +2,8 @@ import ExcelJS from "exceljs";
 
 import type { ConnectKind } from "@/lib/generated/prisma/enums";
 
+import { openLightXlsx, type LightCell, type LightSheet } from "./light-xlsx";
+
 // Reads the Connect bot's and Smart Up's Excel exports. Each export is a sheet with a header row;
 // the format is recognised by its columns, whatever the sheet or file is called:
 // - the bot's Russian exports: stock checks (OOS), express orders, ISM payment requests, visits;
@@ -129,10 +131,18 @@ export type PositionRecord = Base & {
 
 // One SKU sold to a store on a delivery day (the CRM's sales report): `storeCode` is the client ID,
 // `city` the organization, `channel` the POS channel. The quantity is in blocks of 10 packs;
-// rows of the same store, day and SKU are summed when saved.
+// rows of the same store, day and SKU are summed when saved. This is the line the cross-check
+// with orders works on, and how sales were stored before 23.11.2026 (a row per line).
 export type SaleRecord = Base & {
   sku: string;
   blocks: number;
+};
+
+// How sales are stored: a store's delivery day with every SKU sold on it (name → blocks); the ID
+// is «store|day». Three months of sales are 386 000 lines but 112 000 store-days, and the lines
+// of a day repeat the store's name and organization: a row per line made the table 350 MB.
+export type SaleDayRecord = Base & {
+  skus: Record<string, number>;
 };
 
 // What happened with a client on a day of Smart Up's «Анализ маршрута»: a planned visit made
@@ -203,7 +213,8 @@ export type ParsedRow =
   | { kind: "SU_VISIT"; record: SuVisitRecord }
   | { kind: "SU_PERSON"; record: SuPersonRecord }
   | { kind: "SU_POSITION"; record: PositionRecord }
-  | { kind: "SALE"; record: SaleRecord }
+  // A row of the report (and a row stored before 23.11.2026), or a store's day.
+  | { kind: "SALE"; record: SaleRecord | SaleDayRecord }
   | { kind: "ROUTE"; record: RouteRecord }
   | { kind: "CLIENT"; record: ClientRecord }
   | { kind: "ISM_CHECK"; record: IsmCheckRecord }
@@ -212,7 +223,7 @@ export type ParsedRow =
 export type RecordOf<K extends ConnectKind> = Extract<ParsedRow, { kind: K }>["record"];
 
 // The text of a cell: rich text, links and formulas become plain values; "—" means empty.
-export function cellValue(value: ExcelJS.CellValue): Cell {
+export function cellValue(value: ExcelJS.CellValue | LightCell): Cell {
   if (value === null || value === undefined) return null;
   if (value instanceof Date) return value.toISOString().slice(0, 16).replace("T", " ");
   if (typeof value === "number") return value;
@@ -628,6 +639,74 @@ function parseSale(headers: string[], cells: Cell[]): ParsedRow | null {
 // the sales report and the bot's order columns write some names differently.
 export const skuKey = (name: string) => name.toLowerCase().replace(/\s+/g, " ").trim();
 
+// The lines of a stored sale: a store's day gives one per SKU; a row stored before 23.11.2026 is
+// a line already.
+export function saleLines(record: SaleRecord | SaleDayRecord): SaleRecord[] {
+  if (!("skus" in record)) return [record];
+  const { skus, ...base } = record;
+  return Object.entries(skus).map(([sku, blocks]) => ({
+    ...base,
+    id: `${record.id}|${skuKey(sku)}`,
+    sku,
+    blocks,
+  }));
+}
+
+// Gathers sales into store-days, summing the lines of the same store, day and SKU. Takes rows of
+// the report and store-days alike; `lines` is how many store-day-SKU lines came out of them.
+export function collectSales() {
+  const days = new Map<string, SaleDayRecord>();
+  // Every text is kept once, as a copy of its own: a store's name comes with each of its rows,
+  // and a string cut out of a big file's text would keep that whole piece of the file in memory.
+  const pool = new Map<string, string>();
+  const once = (text: string) => {
+    let kept = pool.get(text);
+    if (kept === undefined) {
+      kept = Buffer.from(text).toString();
+      pool.set(kept, kept);
+    }
+    return kept;
+  };
+  // A product is written one way in all the days: the way it was first seen.
+  const names = new Map<string, string>();
+  let lines = 0;
+  const add = (base: Base, sku: string, blocks: number) => {
+    const id = `${base.storeCode}|${base.day}`;
+    let day = days.get(id);
+    if (!day) {
+      day = {
+        id,
+        storeCode: once(base.storeCode),
+        storeName: once(base.storeName),
+        city: base.city === null ? null : once(base.city),
+        channel: base.channel === null ? null : once(base.channel),
+        at: once(`${base.day}T00:00`),
+        day: once(base.day),
+        month: once(base.month),
+        person: null,
+        skus: {},
+      };
+      days.set(id, day);
+    }
+    const key = skuKey(sku);
+    let name = names.get(key);
+    if (name === undefined) names.set(key, (name = once(sku)));
+    if (!Object.hasOwn(day.skus, name)) lines++;
+    day.skus[name] = (day.skus[name] ?? 0) + blocks;
+  };
+  return {
+    add(record: SaleRecord | SaleDayRecord) {
+      if ("skus" in record)
+        for (const [sku, blocks] of Object.entries(record.skus)) add(record, sku, blocks);
+      else add(record, record.sku, record.blocks);
+    },
+    days: () => [...days.values()],
+    get lines() {
+      return lines;
+    },
+  };
+}
+
 const PHOTO_COLUMNS = ["Фото 1", "Фото 2", "Фото 3", "Фото 4", "Фото 5"];
 // The questionnaire a BDM fills in on a visit with (or after) a TSM: «BDM Audit Опросник 11.2026».
 const AUDIT_TEMPLATE = /audit|аудит/i;
@@ -939,14 +1018,107 @@ function dateInName(name: string | undefined): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+// The header is looked for in the first rows of a sheet.
+const HEADER_ROWS = 15;
+const headerOf = (cells: Cell[]) => cells.map((v) => String(v ?? "").trim());
+
+// The export that row `row` of a sheet is the header of. Only Smart Up's own reports start below
+// row 1: the route analysis (under its legend) and the sales report (under the lines of the
+// filters it was made with).
+function formatAt(row: number, cells: Cell[]): SheetFormat | null {
+  const format = detectFormat(headerOf(cells));
+  return row > 1 && format !== "ROUTE" && format !== "SALE" ? null : format;
+}
+
+// A totals row («Итого») is not data.
+const isTotals = (cells: Cell[]) =>
+  cells.some((c) => typeof c === "string" && /^(итого|total)$/i.test(c));
+
+// The rows of a sales sheet as store-days (the same store, day and SKU summed).
+function saleDays(rows: ParsedRow[]): ParsedRow[] {
+  const sales = collectSales();
+  for (const row of rows) if (row.kind === "SALE") sales.add(row.record);
+  return sales.days().map((record) => ({ kind: "SALE", record }));
+}
+
+// Is a merged range («A1:D1») harmless to read without merging: it lies in one row, not below the
+// header. exceljs gives every cell of a range the range's value, the light reader only the first.
+function mergeAbove(range: string, headerRow: number) {
+  const rows = [...range.matchAll(/\d+/g)].map((m) => Number(m[0]));
+  return rows.every((r) => r === rows[0] && r <= headerRow);
+}
+
+// A sales sheet read row by row, straight into store-days. Throws where it could read the sheet
+// differently from exceljs (the caller then reads the workbook with exceljs).
+async function parseSalesSheet(sheet: LightSheet): Promise<ParsedSheet> {
+  const sales = collectSales();
+  let headers: string[] | null = null;
+  let headerRow = 0;
+  let dateAt = -1;
+  let skipped = 0;
+  const merges = await sheet.rows((raw, row) => {
+    if (!headers) {
+      const cells = raw.map(cellValue);
+      if (formatAt(row, cells) !== "SALE") return;
+      headers = headerOf(cells);
+      headerRow = row;
+      dateAt = headers.indexOf("Дата доставки");
+      return;
+    }
+    // The table is as wide as its header.
+    const cells = headers.map((_, i) => cellValue(raw[i] ?? null));
+    if (cells.every((c) => c === null) || isTotals(cells)) return;
+    if (row === headerRow + 1 && headerOf(cells).join("|") === headers.join("|")) return;
+    // Smart Up writes the day as text («05.09.2026»). A real date cell is a number with a date
+    // format, and formats are not read here.
+    const date = raw[dateAt] ?? null;
+    if (date !== null && typeof date !== "string") throw new Error("sales: a date cell");
+    const sale = parseRow("SALE", headers, cells);
+    if (sale?.kind === "SALE") sales.add(sale.record);
+    else skipped++;
+  });
+  if (!merges.every((range) => mergeAbove(range, headerRow))) throw new Error("sales: merged");
+  return {
+    kind: "SALE",
+    rows: sales.days().map((record) => ({ kind: "SALE", record })),
+    skipped,
+  };
+}
+
+// Smart Up's sales report of three months is 388 000 rows in 21 MB, and exceljs needs about 3 GB
+// and half a minute to load it. So a workbook with nothing but sales reports in it is read with
+// the light reader. Null: not such a workbook — another export in it, or no sales at all.
+async function parseSalesWorkbook(buffer: Buffer): Promise<ParsedSheet[] | null> {
+  const sales: LightSheet[] = [];
+  for (const sheet of await openLightXlsx(buffer)) {
+    // A look at the top of the sheet: the reading stops at the header.
+    let format = null as SheetFormat | null;
+    await sheet.rows((cells, row) => {
+      if (row > HEADER_ROWS) return false;
+      format = formatAt(row, cells.map(cellValue));
+      if (format) return false;
+    });
+    if (format === "SALE") sales.push(sheet);
+    else if (format) return null;
+  }
+  if (!sales.length) return null;
+  const sheets: ParsedSheet[] = [];
+  for (const sheet of sales) sheets.push(await parseSalesSheet(sheet));
+  return sheets;
+}
+
 // All recognised sheets of a workbook; sheets of unknown shape are left out. A header row repeated
 // in row 2 (Smart Up's totals have a two-row header) is not data. The header is row 1, except in
-// Smart Up's route analysis (a legend comes first). A sheet with rows of two kinds (Market Visits
-// and BDM audits) gives a sheet per kind.
+// Smart Up's route analysis (a legend comes first) and its sales report (filter lines come first).
+// A sheet with rows of two kinds (Market Visits and BDM audits) gives a sheet per kind; a sales
+// sheet gives store-days, not rows.
 export async function parseWorkbook(
   buffer: Buffer,
   options: { name?: string; now?: Date } = {},
 ): Promise<ParsedSheet[]> {
+  // Whatever the light reader cannot read exactly as exceljs would goes the usual way.
+  const sales = await parseSalesWorkbook(buffer).catch(() => null);
+  if (sales) return sales;
   const book = new ExcelJS.Workbook();
   await book.xlsx.load(buffer as unknown as ArrayBuffer);
   const sheets: ParsedSheet[] = [];
@@ -958,11 +1130,9 @@ export async function parseWorkbook(
       const row = ws.getRow(r);
       return Array.from({ length: width }, (_, i) => cellValue(row.getCell(i + 1).value));
     };
-    for (; headerRow <= 15 && !format; headerRow++) {
+    for (; headerRow <= HEADER_ROWS && !format; headerRow++) {
       width = ws.getRow(headerRow).cellCount;
-      format = detectFormat(cellsOf(headerRow).map((v) => String(v ?? "").trim()));
-      // Only the route analysis starts below row 1.
-      if (headerRow > 1 && format !== "ROUTE") format = null;
+      format = formatAt(headerRow, cellsOf(headerRow));
     }
     if (!format) continue;
     headerRow -= 1;
@@ -978,24 +1148,34 @@ export async function parseWorkbook(
       sheets.push({ kind: "ROUTE", ...parseRouteSheet(ws.rowCount, cellsOf, headerRow, madeAt) });
       continue;
     }
-    const headers = cellsOf(1).map((v) => String(v ?? "").trim());
-    const second = cellsOf(2).map((v) => String(v ?? "").trim());
-    const first = second.join("|") === headers.join("|") ? 3 : 2;
+    const headers = headerOf(cellsOf(headerRow));
+    const second = headerOf(cellsOf(headerRow + 1));
+    const first = headerRow + (second.join("|") === headers.join("|") ? 2 : 1);
     const byKind = new Map<ConnectKind, ParsedRow[]>();
     let skipped = 0;
     for (let r = first; r <= ws.rowCount; r++) {
       const cells = cellsOf(r);
       if (cells.every((c) => c === null)) continue;
-      // A totals row («Итого») is not data and not a skipped row either.
-      if (cells.some((c) => typeof c === "string" && /^(итого|total)$/i.test(c))) continue;
+      // A totals row is not a skipped row either.
+      if (isTotals(cells)) continue;
       const row = parseRow(format, headers, cells);
-      if (row) byKind.set(row.kind, [...(byKind.get(row.kind) ?? []), row]);
-      else skipped++;
+      if (!row) {
+        skipped++;
+        continue;
+      }
+      // (A sales report has hundreds of thousands of rows: added to, never copied.)
+      const rows = byKind.get(row.kind);
+      if (rows) rows.push(row);
+      else byKind.set(row.kind, [row]);
     }
     if (!byKind.size) byKind.set(KIND_OF[format], []);
     let counted = false;
     for (const [kind, rows] of byKind) {
-      sheets.push({ kind, rows, skipped: counted ? 0 : skipped });
+      sheets.push({
+        kind,
+        rows: kind === "SALE" ? saleDays(rows) : rows,
+        skipped: counted ? 0 : skipped,
+      });
       counted = true;
     }
   }

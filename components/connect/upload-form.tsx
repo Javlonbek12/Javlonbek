@@ -9,8 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { TranslationKey } from "@/lib/i18n";
 
-// The server takes up to 20 MB per file (the request limit is 21 MB).
-export const MAX_FILE_MB = 20;
+// The server takes up to 50 MB per file (the request limit is 51 MB): Smart Up's sales report of
+// three months is over 20 MB.
+export const MAX_FILE_MB = 50;
 
 // Sends the chosen exports one per request: together they may be far bigger than one request
 // may carry. A file over the limit is refused here, with its name, before anything is sent.

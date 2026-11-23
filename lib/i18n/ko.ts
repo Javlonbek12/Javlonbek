@@ -91,7 +91,7 @@ export const ko: PartialDictionary & {
         empty: "파일을 하나 이상 선택하세요.",
         unknown:
           "Connect 봇 또는 Smart Up 내보내기 파일이 아닌 것 같습니다. 필요한 열이 있는 시트를 찾지 못했습니다.",
-        tooBig: "파일이 너무 큽니다(20MB 초과).",
+        tooBig: "파일이 너무 큽니다(50MB 초과).",
         fileTooBig: "{mb}MB 초과: {names}. 이런 파일은 업로드할 수 없으니 나누어 내보내세요.",
         failed: "업로드하지 못했습니다. 연결을 확인하고 다시 시도하세요.",
       },
