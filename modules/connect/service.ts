@@ -118,6 +118,39 @@ export async function loadHierarchy() {
   return buildHierarchy(positions);
 }
 
+// Smart Up's route analysis of the months that from..to (days, inclusive) touch: a row per client
+// of a working zone, test stores left out.
+export async function loadRoutes(period: { from: string; to: string }) {
+  const rows = await db.connectRecord.findMany({
+    where: { kind: "ROUTE", month: { gte: period.from.slice(0, 7), lte: period.to.slice(0, 7) } },
+    select: { data: true, storeName: true, storeCode: true },
+  });
+  return rows
+    .filter((r) => !isTestStore(r.storeName, r.storeCode))
+    .map((r) => r.data as RecordOf<"ROUTE">);
+}
+
+// The last day the loaded route analysis covers (null: none loaded).
+export async function routesDataDate(): Promise<string | null> {
+  const { _max } = await db.connectRecord.aggregate({
+    where: { kind: "ROUTE" },
+    _max: { day: true },
+  });
+  return _max.day || null;
+}
+
+// Smart Up's client base by store code (grade, equipment, coordinates, who is responsible); only
+// the stores asked for, or all of them.
+export async function loadClients(storeCodes?: string[]) {
+  const rows = await db.connectRecord.findMany({
+    where: { kind: "CLIENT", storeCode: storeCodes ? { in: storeCodes } : undefined },
+    select: { data: true },
+  });
+  return new Map(
+    rows.map((r) => r.data as RecordOf<"CLIENT">).map((client) => [client.storeCode, client]),
+  );
+}
+
 // The ISM payment requests of the months from..to (the ISM block keeps its months).
 export async function loadPayments(months: { from: string; to: string }) {
   return (await loadDataset(months)).payments;
