@@ -141,13 +141,27 @@ export type SaleRecord = Base & {
 export const ROUTE_CODES = ["P", "PD", "U", "UD", "X", "O"] as const;
 export type RouteCode = (typeof ROUTE_CODES)[number];
 
-// One client of a working zone for a month: `person` is the zone (a TSM code or a distributor
-// rep's, «DR 02»), `storeCode` the client ID, `city` the organization, `day` the last day the
-// export covers. `days`: the day of the month ("02") → what happened.
+// One client on someone's route for a month. `person` is who visits («Штат»): a TSM code, a
+// distributor rep's («DR 02»), or a manager's position; `zone` the working zone the client is in
+// (for the route's own person the same code); `storeCode` the client ID, `city` the organization,
+// `day` the last day the export covers. `days`: the day of the month ("02") → what happened.
+// `lead`: the row is a manager's visits to a zone that is not theirs (a supervisor, a BDM, a
+// senior TSM coming along or checking) — not the zone's own route. Rows saved on 23.11.2026 before
+// this have no `zone` and `lead` (and `person` is the zone).
 export type RouteRecord = Base & {
   staff: string | null;
+  zone?: string;
+  lead?: boolean;
   days: Record<string, RouteCode>;
 };
+
+// Is `staff` the field person of the zone's own route: the zone itself («DR 02» in «DR 02»), one
+// of its people («Key Account / KA TSM 1» in «Key Account / KA») or another TSM / rep standing in.
+// Anyone else on a zone's clients is a manager visiting.
+export function isOwnRoute(zone: string, staff: string) {
+  const [z, s] = [titleKey(zone), titleKey(staff)];
+  return s === z || s.startsWith(`${z} `) || /^(dr|tsm)[ -]/.test(s);
+}
 
 // A store of Smart Up's client base: `storeCode` is its ИД, `city` the district («Регион»),
 // `person` the responsible TSM's code.
@@ -755,10 +769,11 @@ function parseRouteSheet(
     const cells = cellsOf(r);
     if (cells.every((c) => c === null)) continue;
     const zone = personCode(str(cells[zoneAt] ?? null));
+    const staff = (staffAt < 0 ? null : personCode(str(cells[staffAt] ?? null))) ?? zone;
     const client = str(cells[clientAt] ?? null);
     // The totals under the table («Итоговое количество визитов в день») are not clients.
     if (!client || !/^\d+$/.test(client)) continue;
-    if (!zone) {
+    if (!zone || !staff) {
       skipped++;
       continue;
     }
@@ -770,7 +785,8 @@ function parseRouteSheet(
     rows.push({
       kind: "ROUTE",
       record: {
-        id: `${month}|${zone}|${client}`,
+        // A zone's client has a row per visitor: its own person and each manager who came.
+        id: `${month}|${zone}|${staff}|${client}`,
         storeCode: client,
         storeName: str(cells[nameAt] ?? null) ?? client,
         city: orgAt < 0 ? null : str(cells[orgAt] ?? null),
@@ -778,8 +794,10 @@ function parseRouteSheet(
         at: "",
         day,
         month,
-        person: zone,
-        staff: staffAt < 0 ? null : str(cells[staffAt] ?? null),
+        person: staff,
+        staff,
+        zone,
+        lead: !isOwnRoute(zone, staff),
         days,
       },
     });

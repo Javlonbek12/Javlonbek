@@ -119,7 +119,8 @@ export async function loadHierarchy() {
 }
 
 // Smart Up's route analysis of the months that from..to (days, inclusive) touch: a row per client
-// of a working zone, test stores left out.
+// of a field person's own route (a TSM, a distributor's rep), test stores left out. Managers'
+// visits to other people's zones are not a route of their own and are left out.
 export async function loadRoutes(period: { from: string; to: string }) {
   const rows = await db.connectRecord.findMany({
     where: { kind: "ROUTE", month: { gte: period.from.slice(0, 7), lte: period.to.slice(0, 7) } },
@@ -127,7 +128,8 @@ export async function loadRoutes(period: { from: string; to: string }) {
   });
   return rows
     .filter((r) => !isTestStore(r.storeName, r.storeCode))
-    .map((r) => r.data as RecordOf<"ROUTE">);
+    .map((r) => r.data as RecordOf<"ROUTE">)
+    .filter((route) => !route.lead);
 }
 
 // The last day the loaded route analysis covers (null: none loaded).
