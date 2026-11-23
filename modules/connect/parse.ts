@@ -961,8 +961,9 @@ export async function parseWorkbook(
     for (; headerRow <= 15 && !format; headerRow++) {
       width = ws.getRow(headerRow).cellCount;
       format = detectFormat(cellsOf(headerRow).map((v) => String(v ?? "").trim()));
-      // Only the route analysis starts below row 1.
-      if (headerRow > 1 && format !== "ROUTE") format = null;
+      // Only Smart Up's own reports start below row 1: the route analysis (under its legend) and
+      // the sales report (under the lines of the filters it was made with).
+      if (headerRow > 1 && format !== "ROUTE" && format !== "SALE") format = null;
     }
     if (!format) continue;
     headerRow -= 1;
@@ -978,9 +979,9 @@ export async function parseWorkbook(
       sheets.push({ kind: "ROUTE", ...parseRouteSheet(ws.rowCount, cellsOf, headerRow, madeAt) });
       continue;
     }
-    const headers = cellsOf(1).map((v) => String(v ?? "").trim());
-    const second = cellsOf(2).map((v) => String(v ?? "").trim());
-    const first = second.join("|") === headers.join("|") ? 3 : 2;
+    const headers = cellsOf(headerRow).map((v) => String(v ?? "").trim());
+    const second = cellsOf(headerRow + 1).map((v) => String(v ?? "").trim());
+    const first = headerRow + (second.join("|") === headers.join("|") ? 2 : 1);
     const byKind = new Map<ConnectKind, ParsedRow[]>();
     let skipped = 0;
     for (let r = first; r <= ws.rowCount; r++) {
@@ -989,8 +990,14 @@ export async function parseWorkbook(
       // A totals row («Итого») is not data and not a skipped row either.
       if (cells.some((c) => typeof c === "string" && /^(итого|total)$/i.test(c))) continue;
       const row = parseRow(format, headers, cells);
-      if (row) byKind.set(row.kind, [...(byKind.get(row.kind) ?? []), row]);
-      else skipped++;
+      if (!row) {
+        skipped++;
+        continue;
+      }
+      // (A sales report has hundreds of thousands of rows: added to, never copied.)
+      const rows = byKind.get(row.kind);
+      if (rows) rows.push(row);
+      else byKind.set(row.kind, [row]);
     }
     if (!byKind.size) byKind.set(KIND_OF[format], []);
     let counted = false;

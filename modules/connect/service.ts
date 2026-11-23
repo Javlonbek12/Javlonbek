@@ -366,7 +366,7 @@ export type ImportResult = {
   }[];
 };
 
-const MAX_FILE = 20 * 1024 * 1024;
+const MAX_FILE = 50 * 1024 * 1024;
 
 // What an upload says about a sheet: «файл за 1 авг. – 7 нояб., 5 строк тестовых точек не учтено».
 function coverage(rows: ParsedRow[]) {
@@ -565,6 +565,9 @@ async function replaceRoutes(rows: ParsedRow[], importId: string) {
 
 // A sales report replaces the sales of its days (first to last); rows of the same store, day and
 // SKU are summed.
+const SALES_CHUNK = 5000;
+const SALES_SAVE_TIMEOUT = 10 * 60_000;
+
 async function replaceSales(rows: ParsedRow[], importId: string) {
   const byId = new Map<string, SaleRecord>();
   for (const { record } of rows) {
@@ -581,13 +584,21 @@ async function replaceSales(rows: ParsedRow[], importId: string) {
     externalId: r.id,
     ...recordFields(r, importId, null),
   }));
-  const chunks = [];
-  for (let i = 0; i < data.length; i += 5000) chunks.push(data.slice(i, i + 5000));
-  const [removed] = await db.$transaction([
-    db.connectRecord.deleteMany({ where: { kind: "SALE", day: { gte: from, lte: to } } }),
-    ...chunks.map((chunk) => db.connectRecord.createMany({ data: chunk })),
-  ]);
-  return { created: byId.size, updated: 0, kept: 0, newer: null, replaced: removed.count };
+  // A sales report of three months is hundreds of thousands of rows: one transaction (the old
+  // days are gone only when the new ones are in), given the minutes it takes instead of the
+  // default five seconds.
+  const removed = await db.$transaction(
+    async (tx) => {
+      const gone = await tx.connectRecord.deleteMany({
+        where: { kind: "SALE", day: { gte: from, lte: to } },
+      });
+      for (let i = 0; i < data.length; i += SALES_CHUNK)
+        await tx.connectRecord.createMany({ data: data.slice(i, i + SALES_CHUNK) });
+      return gone.count;
+    },
+    { maxWait: 15_000, timeout: SALES_SAVE_TIMEOUT },
+  );
+  return { created: byId.size, updated: 0, kept: 0, newer: null, replaced: removed };
 }
 
 async function saveRows(kind: ConnectKind, rows: ParsedRow[], importId: string) {
