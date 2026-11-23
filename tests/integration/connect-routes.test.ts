@@ -332,12 +332,17 @@ describe("Connect: routes and discipline", () => {
   it("keeps a row per employee of a zone's client", async () => {
     await setup();
     const rows = await db.connectRecord.findMany({
-      where: { kind: "ROUTE", storeCode: "900001", person: "TSM_TST_1" },
-      select: { externalId: true },
+      where: {
+        kind: "ROUTE",
+        storeCode: "900001",
+        externalId: { startsWith: "2026-11|TSM_TST_1|" },
+      },
+      select: { externalId: true, person: true },
     });
-    expect(rows.map((r) => r.externalId).sort()).toEqual([
-      "2026-11|TSM_TST_1|900001",
-      "2026-11|TSM_TST_1|900001|BDM 99",
+    // The TSM's own row and the BDM's, who came along: the BDM's is not the zone's route.
+    expect(rows.map((r) => [r.externalId, r.person]).sort()).toEqual([
+      ["2026-11|TSM_TST_1|BDM 99|900001", "BDM 99"],
+      ["2026-11|TSM_TST_1|TSM_TST_1|900001", "TSM_TST_1"],
     ]);
   });
 
@@ -353,8 +358,8 @@ describe("Connect: routes and discipline", () => {
       planned: 7,
       visited: 4,
       missed: 3,
-      // The BDM's joint visit.
-      unplanned: 1,
+      // The BDM's joint visit is not the zone's route.
+      unplanned: 0,
       attendance: 57.1,
       hitRate: null,
     });
