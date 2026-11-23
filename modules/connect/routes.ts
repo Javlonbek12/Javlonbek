@@ -14,6 +14,7 @@ import {
   type RouteDay,
   type StaffKind,
 } from "./route-codes";
+import { DEFAULT_RULES } from "./rules";
 
 // «Маршруты и дисциплина»: Smart Up's route analysis as pure functions (rules of 23.11.2026, see
 // docs/DECISIONS.md). A row of the analysis is one client of a working zone for a month with a
@@ -22,7 +23,12 @@ import {
 // visits with an order of all visits made, and only the distributor's reps (DR) have one: TSMs
 // take no orders.
 
-export const ROUTE_TARGETS = { attendance: 95, hitRate: 90 } as const;
+// The standard targets; the owner sets their own on «Нормы» (rules.ts).
+export const ROUTE_TARGETS: RouteTargets = {
+  attendance: DEFAULT_RULES.attendance,
+  hitRate: DEFAULT_RULES.hitRate,
+};
+export type RouteTargets = { attendance: number; hitRate: number };
 
 // Whose routes are shown: everyone's, KT&G's field staff or the distributor's reps.
 export const STAFF_FILTERS = ["all", "TSM", "DR"] as const;
@@ -121,6 +127,8 @@ export type NoOrderStore = ListStore & { visits: number; lastVisit: string | nul
 export type RouteAnalysis = {
   from: string;
   to: string;
+  // The targets the classes and the colours are counted against.
+  targets: RouteTargets;
   staff: StaffFilter;
   previous: { from: string; to: string };
   // Within the scope, whatever the staff filter.
@@ -175,10 +183,13 @@ const deltas = (now: RouteSummary, before: RouteSummary): Deltas => ({
   hitRateDelta: delta(now.hitRate, before.hitRate),
 });
 
-export function matrixClass(attendance: number | null, hitRate: number | null): MatrixClass | null {
+export function matrixClass(
+  attendance: number | null,
+  hitRate: number | null,
+  targets: RouteTargets = ROUTE_TARGETS,
+): MatrixClass | null {
   if (attendance === null || hitRate === null) return null;
-  const below =
-    Number(attendance < ROUTE_TARGETS.attendance) + Number(hitRate < ROUTE_TARGETS.hitRate);
+  const below = Number(attendance < targets.attendance) + Number(hitRate < targets.hitRate);
   return MATRIX_CLASSES[below]!;
 }
 const emptyClasses = (): Record<MatrixClass, number> => ({ ok: 0, one: 0, both: 0 });
@@ -231,9 +242,12 @@ export function analyzeRoutes(
     // The zones the viewer may see (null: all), compared by titleKey.
     scope?: Set<string> | null;
     staff?: StaffFilter;
+    // The owner's targets (the standard ones without them).
+    targets?: RouteTargets;
   },
 ): RouteAnalysis {
   const { from, to, hierarchy = null, scope = null, staff = "all" } = options;
+  const targets = options.targets ?? ROUTE_TARGETS;
   const previous = previousPeriod({ from, to });
   const allowed = scope ? new Set([...scope].map(titleKey)) : null;
   const shown = (kind: StaffKind) => staff === "all" || staff === kind;
@@ -361,7 +375,7 @@ export function analyzeRoutes(
       clients: z.clients,
       neverVisited: z.neverVisited,
       noOrder: z.noOrder,
-      class: z.kind === "DR" ? matrixClass(now.attendance, now.hitRate) : null,
+      class: z.kind === "DR" ? matrixClass(now.attendance, now.hitRate, targets) : null,
     };
   };
 
@@ -412,7 +426,7 @@ export function analyzeRoutes(
         kind,
         zones: list.length,
         clients: states.reduce((a, z) => a + z.clients, 0),
-        class: kind === "DR" ? matrixClass(now.attendance, now.hitRate) : null,
+        class: kind === "DR" ? matrixClass(now.attendance, now.hitRate, targets) : null,
         classes: inClass,
       };
     })
@@ -433,6 +447,7 @@ export function analyzeRoutes(
   return {
     from,
     to,
+    targets,
     staff,
     previous,
     totals,

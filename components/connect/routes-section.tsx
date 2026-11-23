@@ -7,7 +7,7 @@ import { dateFormat, t } from "@/lib/i18n";
 import { connectHref, formatNumber } from "@/modules/connect/report";
 import {
   MATRIX_CLASSES,
-  ROUTE_TARGETS,
+  type RouteTargets,
   STAFF_FILTERS,
   type MatrixClass,
   type MissedStore,
@@ -19,7 +19,7 @@ import {
 import type { RoutesBlock } from "@/modules/connect/routes-report";
 import { formatRange } from "@/modules/reports/format";
 
-import { DataTable, DayBars, Section, StatGrid, type Column } from "./parts";
+import { DataTable, DayBars, RulesLink, Section, StatGrid, type Column } from "./parts";
 import { CLASS_COLOR, RoutesMatrix } from "./routes-matrix";
 import { TsmName } from "./sections";
 
@@ -78,8 +78,9 @@ const Store = ({ name, code }: { name: string; code: string }) => (
 function totalsItems(
   total: RouteSummary &
     Pick<RouteTotals, "clients" | "neverVisited" | "noOrder" | "attendanceDelta" | "hitRateDelta">,
-  options: { zones?: number; dr: boolean; drClients?: number },
+  options: { zones?: number; dr: boolean; drClients?: number; targets: RouteTargets },
 ) {
+  const { targets } = options;
   const change = (value: number | null) => (value === null ? "" : ` · ${deltaText(value)}`);
   return [
     {
@@ -106,7 +107,7 @@ function totalsItems(
       tone:
         total.attendance === null
           ? undefined
-          : total.attendance >= ROUTE_TARGETS.attendance
+          : total.attendance >= targets.attendance
             ? ("good" as const)
             : ("warn" as const),
     },
@@ -132,12 +133,12 @@ function totalsItems(
             label: t("connect.routes.tile.hitRate"),
             value: percent(total.hitRate),
             note:
-              t("connect.routes.tile.hitRateNote", { target: ROUTE_TARGETS.hitRate }) +
+              t("connect.routes.tile.hitRateNote", { target: targets.hitRate }) +
               change(total.hitRateDelta),
             tone:
               total.hitRate === null
                 ? undefined
-                : total.hitRate >= ROUTE_TARGETS.hitRate
+                : total.hitRate >= targets.hitRate
                   ? ("good" as const)
                   : ("warn" as const),
           },
@@ -155,7 +156,14 @@ function totalsItems(
   ];
 }
 
-export function RoutesSection({ block }: { block: RoutesBlock | null | undefined }) {
+export function RoutesSection({
+  block,
+  rulesHref,
+}: {
+  block: RoutesBlock | null | undefined;
+  // Where the owner changes the targets (others have no link).
+  rulesHref?: string;
+}) {
   if (!block) return null;
   const a = block.analysis;
   const dataDate = block.dataDate && (
@@ -186,7 +194,7 @@ export function RoutesSection({ block }: { block: RoutesBlock | null | undefined
       >
         {dataDate}
         {visitNote}
-        <StatGrid items={totalsItems(zone, { dr: zone.kind === "DR" })} />
+        <StatGrid items={totalsItems(zone, { dr: zone.kind === "DR", targets: a.targets })} />
         <MissedList rows={a.missed} zones={false} />
         {zone.kind === "DR" && <NoOrderList rows={a.noOrder} zones={false} />}
       </Section>
@@ -199,7 +207,11 @@ export function RoutesSection({ block }: { block: RoutesBlock | null | undefined
     connectHref("/connect", block.query, { view: "executor", person: zone, staff: null });
   return (
     <>
-      <Section title={t("connect.routes.title")} hint={t("connect.routes.hint")}>
+      <Section
+        title={t("connect.routes.title")}
+        hint={t("connect.routes.hint")}
+        action={rulesHref && <RulesLink href={rulesHref} />}
+      >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <Segmented
             label={t("connect.routes.staffLabel")}
@@ -222,6 +234,7 @@ export function RoutesSection({ block }: { block: RoutesBlock | null | undefined
                 zones: total.zones,
                 dr,
                 drClients: a.totals.DR.clients,
+                targets: a.targets,
               })}
             />
             {block.level === "exec" && a.days.length > 0 && (
@@ -261,8 +274,8 @@ export function RoutesSection({ block }: { block: RoutesBlock | null | undefined
           title={t("connect.routes.matrix.title")}
           nav={false}
           hint={t("connect.routes.matrix.hint", {
-            attendance: ROUTE_TARGETS.attendance,
-            hitRate: ROUTE_TARGETS.hitRate,
+            attendance: a.targets.attendance,
+            hitRate: a.targets.hitRate,
           })}
         >
           <ul className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
@@ -275,7 +288,7 @@ export function RoutesSection({ block }: { block: RoutesBlock | null | undefined
             ))}
           </ul>
           <div className="grid gap-5 lg:grid-cols-2 [&>*]:min-w-0">
-            <RoutesMatrix zones={a.zones} average={a.matrix.average} />
+            <RoutesMatrix zones={a.zones} average={a.matrix.average} targets={a.targets} />
             <DataTable
               rows={a.organizations.filter((o) => o.kind === "DR")}
               rowKey={(o) => o.organization ?? "—"}

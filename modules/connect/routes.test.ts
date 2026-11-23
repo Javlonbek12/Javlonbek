@@ -329,6 +329,26 @@ describe("route analysis: the DRs' matrix", () => {
     expect(matrixClass(attendance, null)).toBeNull();
   });
 
+  it("classes by the owner's targets when they are set", () => {
+    // 77.8% and 33.3%: both below the standard targets, both reached with lower ones.
+    expect(matrixClass(77.8, 33.3)).toBe("both");
+    expect(matrixClass(77.8, 33.3, { attendance: 75, hitRate: 30 })).toBe("ok");
+    expect(matrixClass(77.8, 33.3, { attendance: 75, hitRate: 90 })).toBe("one");
+    const standard = analyze();
+    expect(standard.targets).toEqual(ROUTE_TARGETS);
+    const own = analyze({ targets: { attendance: 75, hitRate: 30 } });
+    expect(own.targets).toEqual({ attendance: 75, hitRate: 30 });
+    expect(own.matrix!.classes).toEqual({ ok: 3, one: 0, both: 0 });
+    expect(own.zones.filter((z) => z.kind === "DR").map((z) => z.class)).toEqual([
+      "ok",
+      "ok",
+      "ok",
+    ]);
+    // The numbers themselves do not depend on the targets.
+    expect(own.matrix!.average).toEqual(standard.matrix!.average);
+    expect(own.totals).toEqual(standard.totals);
+  });
+
   it("gives the averages, the classes and the same by organization", () => {
     const { matrix, organizations } = analyze();
     expect(matrix).toEqual({

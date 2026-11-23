@@ -1,25 +1,29 @@
 import { ownerOf, type Hierarchy } from "./hierarchy";
 import { titleKey } from "./parse";
 import type { FollowUps, Recovery } from "./recovery";
+import { DEFAULT_RULES, type ConnectRules } from "./rules";
 import type { TsmRow } from "./visits";
 
 // «Требует внимания»: the TSMs whose numbers are below the line, each with the reasons and their
 // numbers, the worst first — so a manager sees who to talk to and about what (rules of 23.11.2026,
 // see docs/DECISIONS.md). Pure functions: the numbers come from the page's other blocks.
 
-export const ATTENTION_RULES = {
+// The lines are the owner's («Нормы», rules.ts); how many it takes to judge is fixed.
+export const attentionRules = (rules: ConnectRules = DEFAULT_RULES) => ({
   // Connect used on fewer than this share (%) of the planned stores visited.
-  connect: { below: 70 },
+  connect: { below: rules.connect },
   // Fewer than this share (%) of the products that were out came back, of at least `min` compared.
-  recovery: { below: 15, min: 10 },
+  recovery: { below: rules.recovery, min: 10 },
   // Fewer than this share (%) of the checks with an OOS were followed by a rep's order, of at
   // least `min` checks counted.
-  followUp: { below: 50, min: 10 },
+  followUp: { below: rules.followUp, min: 10 },
   // This many auto-stock orders (or more) with nothing sold in a closed window.
-  unsold: { from: 3 },
+  unsold: { from: rules.unsold },
   // Fewer than this share (%) of the planned visits made (route analysis).
-  attendance: { below: 85 },
-} as const;
+  attendance: { below: rules.visited },
+});
+// The standard lines.
+export const ATTENTION_RULES = attentionRules();
 
 export const ATTENTION_KINDS = ["connect", "recovery", "followUp", "unsold", "attendance"] as const;
 export type AttentionKind = (typeof ATTENTION_KINDS)[number];
@@ -57,7 +61,9 @@ export function managerOf(hierarchy: Hierarchy | null | undefined, code: string)
 }
 
 // A share under the line: the further under, the worse.
-const below = (value: number, line: number) => Math.min(1, Math.max(0, (line - value) / line));
+// (A line of 0% is never crossed.)
+const below = (value: number, line: number) =>
+  line > 0 ? Math.min(1, Math.max(0, (line - value) / line)) : 0;
 
 export function attentionList(input: {
   // The TSMs to look at (those the viewer may see).
@@ -69,8 +75,10 @@ export function attentionList(input: {
   // Planned visits made, % by TSM code (the route analysis); without it the rule is skipped.
   attendance?: Map<string, number> | null;
   hierarchy?: Hierarchy | null;
+  // The owner's lines (the standard ones without them).
+  rules?: ConnectRules;
 }): AttentionRow[] {
-  const R = ATTENTION_RULES;
+  const R = attentionRules(input.rules);
   const byCode = <T extends { code: string }>(list: T[] | null | undefined) =>
     new Map((list ?? []).map((item) => [titleKey(item.code), item]));
   const recovery = byCode(input.recovery);

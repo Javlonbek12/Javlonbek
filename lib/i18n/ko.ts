@@ -469,6 +469,54 @@ export const ko: PartialDictionary & {
         noOrder: "DR 주문 없음",
       },
     },
+    rules: {
+      link: "기준 설정",
+      menu: "기준",
+      title: "Connect 분석 기준",
+      back: "분석으로 돌아가기",
+      intro:
+        "‘루트 및 규율’의 매트릭스와 색상, ‘주의 필요’ 목록은 이 기준으로 계산됩니다. 기준은 모두에게 동일하며 소유자만 변경할 수 있습니다. 데이터는 바뀌지 않고, 기준 미달로 보는 범위만 바뀝니다.",
+      group: {
+        targets: "‘루트 및 규율’의 목표",
+        attention: "‘주의 필요’: 직원이 목록에 오르는 조건",
+      },
+      groupHint: {
+        targets:
+          "수치가 목표 이상이면 목표 달성입니다. 목표에 따라 DR 매트릭스의 구역 등급(둘 다 달성, 하나 미달, 둘 다 미달)과 숫자 색상이 정해집니다.",
+        attention:
+          "직원의 수치가 기준보다 나쁘면 목록에 오릅니다. 기준이 엄격할수록 목록이 길어집니다.",
+      },
+      field: {
+        attendance: "방문율 — 목표",
+        hitRate: "DR 히트율 — 목표",
+        connect: "방문 중 Connect 사용 — 미만",
+        recovery: "OOS 회복 — 미만",
+        followUp: "OOS 후 유통사 주문 — 미만",
+        visited: "계획 방문 수행 — 미만",
+        unsold: "판매 없는 주문 — 이상",
+      },
+      fieldHint: {
+        attendance: "계획 방문 중 수행한 방문, TSM 및 DR.",
+        hitRate: "영업 담당자가 수행한 전체 방문 중 주문이 있는 방문.",
+        connect: "계획대로 방문한 매장 중 Connect Bot 작업을 모두 완료한 비율.",
+        recovery: "진열대로 돌아온 제품 비율(제품 10개부터 계산).",
+        followUp: "OOS가 있는 점검 후 3일 내 DR이 주문과 함께 방문한 비율(점검 10건부터).",
+        visited: "루트 분석 기준 계획 방문 수행 비율.",
+        unsold: "3일 내 판매가 없는 자동 재고 주문(판매 데이터가 있을 때).",
+      },
+      unit: { percent: "%", count: "건" },
+      range: "{min}~{max}",
+      standard: "기본값: {value}",
+      save: "저장",
+      reset: "기본값으로 되돌리기",
+      saved: "기준이 저장되었습니다. 분석에 바로 적용됩니다.",
+      resetDone: "기본 기준으로 되돌렸습니다.",
+      invalid:
+        "저장되지 않았습니다. 다음 항목을 확인하세요: {fields}. 각 항목에는 범위 내 정수가 필요합니다.",
+      forbidden: "기준은 소유자만 변경할 수 있습니다.",
+      custom: "현재 직접 설정한 기준이 적용 중입니다(기본값과 다름).",
+      standardNow: "현재 기본 기준이 적용 중입니다.",
+    },
     recovery: {
       moreSkus: "외 {count}개",
       title: "재고 회복",

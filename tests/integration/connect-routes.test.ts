@@ -11,10 +11,13 @@ import {
   parseConnectQuery,
   scopeConnectQuery,
 } from "@/modules/connect/report";
+import { DEFAULT_RULES } from "@/modules/connect/rules";
 import {
   importConnectFiles,
   linkConnectPerson,
   linkConnectPosition,
+  loadConnectRules,
+  saveConnectRules,
 } from "@/modules/connect/service";
 import { connectXlsx } from "@/modules/connect/xlsx";
 import { withAccess } from "@/modules/core/access/actor";
@@ -420,6 +423,56 @@ describe("Connect: routes and discipline", () => {
     );
     expect(before.exec!.routes).toBeNull();
     expect(before.empty).toBe(true);
+  });
+
+  it("counts against the owner's norms once saved; only the owner saves them", async () => {
+    const owner = await setup();
+    const manager = await withAccess(await createTestUser("MANAGER"));
+    const classes = async () => {
+      const report = await buildConnectReport(query({ view: "exec" }), TODAY);
+      const a = report.exec!.routes!.analysis;
+      return {
+        targets: a.targets,
+        classes: a.matrix!.classes,
+        rates: a.zones.filter((z) => z.kind === "DR").map((z) => [z.attendance, z.hitRate]),
+        rules: report.insights!.rules,
+      };
+    };
+    // The standard norms until the owner saves their own.
+    expect(await loadConnectRules()).toEqual(DEFAULT_RULES);
+    const standard = await classes();
+    expect(standard.targets).toEqual({ attendance: 95, hitRate: 90 });
+    expect(standard.classes).toEqual({ ok: 1, one: 1, both: 0 });
+    expect(standard.rules).toEqual(DEFAULT_RULES);
+    // Two DR zones, both visit everything; one takes an order on a third of its visits.
+    expect(standard.rates).toEqual([
+      [100, 33.3],
+      [100, 100],
+    ]);
+
+    await expect(
+      saveConnectRules(manager, { ...DEFAULT_RULES, hitRate: 30 }),
+    ).rejects.toMatchObject({ code: "forbidden" });
+    expect(await loadConnectRules()).toEqual(DEFAULT_RULES);
+
+    await saveConnectRules(owner, { ...DEFAULT_RULES, hitRate: 30, visited: 30 });
+    expect(await loadConnectRules()).toEqual({ ...DEFAULT_RULES, hitRate: 30, visited: 30 });
+    const own = await classes();
+    expect(own.targets).toEqual({ attendance: 95, hitRate: 30 });
+    expect(own.rules).toMatchObject({ hitRate: 30, visited: 30 });
+    // The same visits and orders, another line: 33.3% now reaches the target of 30%.
+    expect(own.rates).toEqual(standard.rates);
+    expect(own.classes).toEqual({ ok: 2, one: 0, both: 0 });
+
+    // Something unreadable saved is the standard, not an error.
+    await db.systemState.update({ where: { key: "connect.rules" }, data: { value: "{broken" } });
+    expect(await loadConnectRules()).toEqual(DEFAULT_RULES);
+    // Back to the standard ones.
+    await saveConnectRules(owner, { ...DEFAULT_RULES, hitRate: 30 });
+    await saveConnectRules(owner, null);
+    expect(await loadConnectRules()).toEqual(DEFAULT_RULES);
+    expect(await db.systemState.count({ where: { key: "connect.rules" } })).toBe(0);
+    expect((await classes()).classes).toEqual(standard.classes);
   });
 
   it("takes the TSMs' visits from the routes when no visit detail is loaded", async () => {

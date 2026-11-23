@@ -3,7 +3,7 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import type { z } from "zod";
 
 import { db } from "@/lib/db";
-import { fromDateString } from "@/lib/dates";
+import { fromDateString, toDateString } from "@/lib/dates";
 import { getEnv } from "@/lib/env";
 
 import { getAnthropicClient, isAiConfigured } from "./client";
@@ -57,7 +57,15 @@ const callClaude: ModelCall = async ({ model, system, context, prompt, schema })
   };
 };
 
-// Calls since the start of the given day (YYYY-MM-DD in the user's timezone, approximated as UTC day).
+// Where the day's calls are counted from. `today` is the user's day (YYYY-MM-DD in their
+// timezone) and its start is taken as midnight UTC. In a timezone ahead of UTC that midnight is
+// still ahead for the first hours of the day (00:00–05:00 in Tashkent): nothing would be counted
+// and the limit would be off, so the current UTC day is counted then.
+export function limitDayStart(today: string, now = new Date()): Date {
+  const start = fromDateString(today);
+  return start.getTime() <= now.getTime() ? start : fromDateString(toDateString(now));
+}
+
 export async function countAiCallsSince(userId: string, since: Date) {
   return db.aiUsage.count({ where: { userId, createdAt: { gte: since } } });
 }
@@ -85,7 +93,7 @@ export async function runStructured<T extends z.ZodType>(
   if (!call) throw new AiError("not_configured");
 
   const { AI_DAILY_LIMIT, CLAUDE_MODEL } = getEnv();
-  if ((await countAiCallsSince(userId, fromDateString(today))) >= AI_DAILY_LIMIT) {
+  if ((await countAiCallsSince(userId, limitDayStart(today))) >= AI_DAILY_LIMIT) {
     throw new AiError("limit");
   }
 

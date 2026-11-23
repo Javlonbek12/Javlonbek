@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
@@ -172,11 +173,14 @@ export function Section({
   children,
   className,
   nav,
+  action,
 }: {
   title: string;
   hint?: string;
   children: ReactNode;
   className?: string;
+  // Next to the title, on the right: a link that belongs to the whole block («Настроить нормы»).
+  action?: ReactNode;
   // The chip in the page's list of sections: the title by default, `false` for a block that
   // belongs to the section above it.
   nav?: string | false;
@@ -186,10 +190,26 @@ export function Section({
       className={cn("min-w-0 scroll-mt-20 gap-3", className)}
       {...(nav === false ? {} : { [SECTION_ATTRIBUTE]: nav ?? title })}
     >
-      <CardTitle>{title}</CardTitle>
+      {action ? (
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <CardTitle>{title}</CardTitle>
+          {action}
+        </div>
+      ) : (
+        <CardTitle>{title}</CardTitle>
+      )}
       {hint && <CardDescription>{hint}</CardDescription>}
       {children}
     </Card>
+  );
+}
+
+// «Настроить нормы» next to a block that is counted against them (shown to the owner).
+export function RulesLink({ href }: { href: string }) {
+  return (
+    <Link href={href} className="text-primary shrink-0 text-xs underline underline-offset-2">
+      {t("connect.rules.link")}
+    </Link>
   );
 }
 

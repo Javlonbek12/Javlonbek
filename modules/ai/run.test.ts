@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { createTestUser, resetDb } from "@/tests/helpers/db";
 
 import { extractTasks } from "./prompts";
-import { AiError, runStructured, systemBlocks, type ModelCall } from "./run";
+import { AiError, limitDayStart, runStructured, systemBlocks, type ModelCall } from "./run";
 
 const schema = z.object({ answer: z.string() });
 const ctx = {
@@ -144,6 +144,24 @@ describe("runStructured", () => {
     ).rejects.toMatchObject({
       code: "not_configured",
     });
+  });
+});
+
+describe("the daily limit's day", () => {
+  it("is counted from the start of the user's day", () => {
+    // Midday in Tashkent: the day started (as midnight UTC) hours ago.
+    expect(limitDayStart("2026-11-23", new Date("2026-11-23T07:00:00Z")).toISOString()).toBe(
+      "2026-11-23T00:00:00.000Z",
+    );
+  });
+
+  it("never starts ahead of now: just after a midnight ahead of UTC the limit still counts", () => {
+    // 02:52 on the 24th in Tashkent is 21:52 UTC on the 23rd: «the 24th at midnight UTC» is
+    // still ahead, and counting from it would count nothing.
+    const now = new Date("2026-11-23T21:52:00Z");
+    const start = limitDayStart("2026-11-24", now);
+    expect(start.toISOString()).toBe("2026-11-23T00:00:00.000Z");
+    expect(start.getTime()).toBeLessThanOrEqual(now.getTime());
   });
 });
 

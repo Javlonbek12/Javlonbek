@@ -1,4 +1,4 @@
-import { Upload } from "lucide-react";
+import { SlidersHorizontal, Upload } from "lucide-react";
 import Link from "next/link";
 
 import { ConnectDownloads } from "@/components/connect/download-menu";
@@ -29,6 +29,7 @@ import {
 } from "@/modules/connect/report";
 import {
   canLeadConnect,
+  canSetConnectRules,
   connectAppUsers,
   connectTotal,
   lastImports,
@@ -44,6 +45,8 @@ import { linkConnectPersonAction, linkConnectPositionAction } from "./actions";
 export default async function ConnectPage({ searchParams }: PageProps<"/connect">) {
   const user = await requireUser();
   const canLead = canLeadConnect(user);
+  // The owner sets the lines the blocks are counted against («Нормы»).
+  const rulesHref = canSetConnectRules(user) ? "/connect/rules" : undefined;
   const { timezone } = await getSettings(user.id);
   const today = todayInTimezone(timezone);
   const access = await loadConnectAccess();
@@ -108,6 +111,12 @@ export default async function ConnectPage({ searchParams }: PageProps<"/connect"
                 <Link href="/connect/import" className={menuItem}>
                   <Upload />
                   {t("connect.import.link")}
+                </Link>
+              )}
+              {rulesHref && (
+                <Link href={rulesHref} className={menuItem}>
+                  <SlidersHorizontal />
+                  {t("connect.rules.menu")}
                 </Link>
               )}
               {downloadable && (
@@ -217,7 +226,13 @@ export default async function ConnectPage({ searchParams }: PageProps<"/connect"
               <CardDescription>{t("connect.emptyPeriod")}</CardDescription>
             </Card>
           ) : report.exec ? (
-            <ExecView data={report.exec} months={months} insights={report.insights} href={href} />
+            <ExecView
+              data={report.exec}
+              months={months}
+              insights={report.insights}
+              href={href}
+              rulesHref={rulesHref}
+            />
           ) : report.manager ? (
             <ManagerView
               data={report.manager}
@@ -225,6 +240,7 @@ export default async function ConnectPage({ searchParams }: PageProps<"/connect"
               sales={report.salesDate !== null}
               insights={report.insights}
               href={href}
+              rulesHref={rulesHref}
               personHref={(person) => connectHref("/connect", q, { view: "executor", person })}
               link={
                 canLead

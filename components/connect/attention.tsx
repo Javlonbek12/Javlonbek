@@ -2,13 +2,14 @@ import Link from "next/link";
 
 import { t } from "@/lib/i18n";
 import {
-  ATTENTION_RULES,
   ATTENTION_SHOWN,
+  attentionRules,
   type AttentionReason,
   type AttentionRow,
 } from "@/modules/connect/attention";
+import type { ConnectRules } from "@/modules/connect/rules";
 
-import { DataTable, Section } from "./parts";
+import { DataTable, RulesLink, Section } from "./parts";
 import { TsmName } from "./sections";
 
 // A reason as a short phrase with its number: «Connect на 54% визитов (из 120)».
@@ -21,13 +22,19 @@ export function AttentionSection({
   rows,
   personHref,
   attendance = false,
+  rules,
+  rulesHref,
 }: {
   rows: (AttentionRow & { canOpen: boolean })[];
   personHref: (code: string) => string;
   // The route analysis gives the share of planned visits made: that rule is looked at too.
   attendance?: boolean;
+  // The lines the list was made with (the standard ones without them), and where the owner
+  // changes them.
+  rules?: ConnectRules;
+  rulesHref?: string;
 }) {
-  const R = ATTENTION_RULES;
+  const R = attentionRules(rules);
   const hint = t("connect.attention.hint", {
     connect: R.connect.below,
     recovery: R.recovery.below,
@@ -37,6 +44,7 @@ export function AttentionSection({
   return (
     <Section
       nav={t("connect.attention.title")}
+      action={rulesHref && <RulesLink href={rulesHref} />}
       title={
         rows.length
           ? `${t("connect.attention.title")} · ${rows.length}`
