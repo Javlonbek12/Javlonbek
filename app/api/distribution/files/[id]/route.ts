@@ -1,12 +1,13 @@
-import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
-import { Readable } from "node:stream";
+
+import { fileStream } from "@/lib/file-stream";
+import { LONG_CACHE, THUMBABLE, thumbnail, thumbWidth } from "@/lib/thumbnails";
 
 import { getUserFromRequest } from "@/modules/core/auth/request-user";
 import { getCampaignFile } from "@/modules/distribution/campaign";
 
 // A campaign's file. Pictures (their type was checked by their bytes on upload) are shown inline,
-// everything else is downloaded.
+// everything else is downloaded. ?w=… gives a picture as a small WebP copy (the campaign page).
 export async function GET(
   request: Request,
   { params }: RouteContext<"/api/distribution/files/[id]">,
@@ -23,17 +24,30 @@ export async function GET(
     return Response.json({ error: "file is missing" }, { status: 404 });
   }
   const { file } = found;
-  const inline =
-    file.mime.startsWith("image/") && !new URL(request.url).searchParams.has("download");
-  const stream = Readable.toWeb(createReadStream(found.absolutePath));
-  return new Response(stream as ReadableStream, {
+  const query = new URL(request.url).searchParams;
+  const inline = file.mime.startsWith("image/") && !query.has("download");
+  const width = thumbWidth(query.get("w"));
+  if (width && inline && THUMBABLE.has(file.mime)) {
+    const small = await thumbnail(found.absolutePath, file.path, { width });
+    if (small)
+      return new Response(new Uint8Array(small), {
+        headers: {
+          "Content-Type": "image/webp",
+          "Content-Length": String(small.length),
+          "X-Content-Type-Options": "nosniff",
+          "Content-Security-Policy": "default-src 'none'",
+          "Cache-Control": LONG_CACHE,
+        },
+      });
+  }
+  return new Response(fileStream(found.absolutePath), {
     headers: {
       "Content-Type": inline ? file.mime : "application/octet-stream",
       "Content-Disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(file.name)}`,
       "Content-Length": String(size),
       "X-Content-Type-Options": "nosniff",
       "Content-Security-Policy": "default-src 'none'",
-      "Cache-Control": "private, max-age=3600",
+      "Cache-Control": LONG_CACHE,
     },
   });
 }

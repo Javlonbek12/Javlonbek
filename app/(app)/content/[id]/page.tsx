@@ -441,7 +441,7 @@ export default async function ContentPostPage({
                               {f.kind === "PHOTO" ? (
                                 // eslint-disable-next-line @next/next/no-img-element -- private image from our API
                                 <img
-                                  src={`/api/content/files/${f.id}`}
+                                  src={`/api/content/files/${f.id}?w=96`}
                                   alt=""
                                   className="size-10 shrink-0 rounded-md object-cover"
                                 />

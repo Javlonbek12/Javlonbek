@@ -47,8 +47,9 @@ function Album({ media }: { media: PreviewFile[] }) {
         return m.kind === "VIDEO" ? (
           <video key={m.id} src={fileUrl(m.id)} className={box} controls preload="metadata" />
         ) : (
+          // A copy wide enough for the preview (a phone-sized post), not the original photo.
           // eslint-disable-next-line @next/next/no-img-element -- private image from our API
-          <img key={m.id} src={fileUrl(m.id)} alt="" className={box} />
+          <img key={m.id} src={`${fileUrl(m.id)}?w=1200`} alt="" className={box} />
         );
       })}
     </div>

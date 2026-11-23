@@ -17,7 +17,8 @@ $COMPOSE exec -T postgres pg_dump -U assistant assistant \
 mv "$BACKUP_DIR/db-$STAMP.sql.gz.part" "$BACKUP_DIR/db-$STAMP.sql.gz"
 
 # Uploaded files (pack pictures, attachments).
-$COMPOSE exec -T app tar -czf - -C /data uploads > "$BACKUP_DIR/uploads-$STAMP.tar.gz.part"
+# Small copies of pictures (.thumbs) are made again on demand: not backed up.
+$COMPOSE exec -T app tar -czf - --exclude='uploads/.thumbs' -C /data uploads > "$BACKUP_DIR/uploads-$STAMP.tar.gz.part"
 mv "$BACKUP_DIR/uploads-$STAMP.tar.gz.part" "$BACKUP_DIR/uploads-$STAMP.tar.gz"
 
 # Remove backups older than KEEP_DAYS days.

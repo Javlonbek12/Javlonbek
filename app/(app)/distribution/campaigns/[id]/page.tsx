@@ -258,7 +258,7 @@ export default async function DistributionCampaignPage({
               {f.mime.startsWith("image/") ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={`/api/distribution/files/${f.id}`}
+                  src={`/api/distribution/files/${f.id}?w=640`}
                   alt={f.name}
                   className="bg-muted aspect-[4/3] w-full rounded-t-xl object-contain"
                 />

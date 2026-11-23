@@ -1,4 +1,6 @@
-import { readFile } from "node:fs/promises";
+import { stat } from "node:fs/promises";
+
+import { fileStream } from "@/lib/file-stream";
 
 import { getUserFromRequest } from "@/modules/core/auth/request-user";
 import { getAttachmentFile } from "@/modules/tasks/attachment-service";
@@ -13,14 +15,16 @@ export async function GET(request: Request, { params }: RouteContext<"/api/attac
   const found = await getAttachmentFile(user, id);
   if (!found) return Response.json({ error: "not found" }, { status: 404 });
 
-  let content: Buffer;
+  let size: number;
   try {
-    content = await readFile(found.absolutePath);
+    size = (await stat(found.absolutePath)).size;
   } catch {
     return Response.json({ error: "file is missing" }, { status: 404 });
   }
-  return new Response(new Uint8Array(content), {
+  // Streamed, not read into memory first: a big file starts downloading at once.
+  return new Response(fileStream(found.absolutePath), {
     headers: {
+      "Content-Length": String(size),
       "Content-Type": "application/octet-stream",
       "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(found.attachment.title)}`,
       "X-Content-Type-Options": "nosniff",
