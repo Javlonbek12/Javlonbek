@@ -52,7 +52,11 @@ export function IsmSection({
     );
   if (level === "executor")
     return (
-      <Section title={t("connect.ism.issues")} hint={`${hint} ${t("connect.ism.issuesHint")}`}>
+      <Section
+        nav={false}
+        title={t("connect.ism.issues")}
+        hint={`${hint} ${t("connect.ism.issuesHint")}`}
+      >
         <DataTable
           rows={issues!}
           rowKey={(r) => r.id}

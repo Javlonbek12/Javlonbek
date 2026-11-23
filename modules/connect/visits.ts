@@ -9,6 +9,7 @@ import {
   type SuVisitRecord,
   type VisitRecord,
 } from "./parse";
+import { isRouteVisit } from "./route-visits";
 import {
   checkOrders,
   indexSales,
@@ -28,6 +29,8 @@ import {
 
 export type VisitData = {
   suVisits: SuVisitRecord[];
+  // The days whose visits are read from the route analysis (no visit detail loaded for them).
+  routeDays?: string[];
   mv: VisitRecord[];
   oos: OosRecord[];
   orders: OrderRecord[];
@@ -52,8 +55,28 @@ export const EQUIPMENT_QUESTIONS = [
   "Установлены ли фирменные ценники KT&G с актуальными на момент визита ценами?",
   "Оборудование KT&G в чистом состоянии на момент завершения визита?",
 ];
-// Question 1.1 is always blank in the export and is ignored.
-const IGNORED_QUESTION = /^1\.1\s/;
+// The bot's Russian questionnaire (09.2026) asks first whether there is KT&G equipment at all and
+// then goes one of two ways: these questions are asked only where there is equipment…
+export const HAS_EQUIPMENT_QUESTION = "Установлено ли оборудование KT&G в торговой точке?";
+export const NO_EQUIPMENT_ANSWER = "Нет оборудования";
+const WITH_EQUIPMENT_ONLY = [
+  "Какой тип оборудования KT&G установлен",
+  "Фото оборудование",
+  "Подсветка оборудования",
+  "Цена на полке на продукцию KT&G",
+  "Соблюдаются ли условия контракта",
+  "Выставлен ли весь обязательный ассортимент",
+  "Все необходимые документы от торговой точки",
+  "Установлены ли актуальные вставки",
+  "Установлены ли фирменные ценники",
+  "Оборудование KT&G в чистом состоянии",
+];
+// …and this one only where there is none.
+const WITHOUT_EQUIPMENT_ONLY = ["Фото оборудования конкурентов"];
+const startsWithAny = (q: string, starts: string[]) => starts.some((s) => q.startsWith(s));
+// Question 1.1 is always blank in the export and is ignored; so is the misspelt copy of the
+// contacts question («…что и зачем вы делайте…»), which the bot never asks.
+const IGNORED_QUESTION = /^1\.1\s|зачем вы делайте во время визита/;
 const CLOSED_COMMENT = /закрыт|closed/i;
 
 export const storeDay = (storeCode: string, day: string) => `${storeCode}|${day}`;
@@ -72,8 +95,10 @@ export function questionsOf(v: VisitRecord): string[] {
   );
 }
 
-// «No BWD» alone (a list with an installed type besides it is equipment).
+// «Нет оборудования» to the first equipment question, or «No BWD» alone as the type (a list with
+// an installed type besides it is equipment).
 export function hasNoEquipment(v: VisitRecord) {
+  if (answerOf(v, HAS_EQUIPMENT_QUESTION) === NO_EQUIPMENT_ANSWER) return true;
   const answer = answerOf(v, EQUIPMENT_QUESTION);
   if (!answer) return false;
   const parts = answer
@@ -110,9 +135,18 @@ function mvInfo(v: VisitRecord): MvInfo {
   const questions = questionsOf(v);
   // Every question except the store status (judged on its own); the equipment questions are not
   // required when there is no equipment.
+  // …and a question the questionnaire does not ask on this store's way (with equipment or
+  // without) is not required either.
   const noEquipment = hasNoEquipment(v);
+  const hasEquipment = !noEquipment && answerOf(v, HAS_EQUIPMENT_QUESTION) !== null;
   const required = questions.filter(
-    (q) => q !== STORE_OPEN_QUESTION && !(noEquipment && EQUIPMENT_QUESTIONS.includes(q)),
+    (q) =>
+      q !== STORE_OPEN_QUESTION &&
+      !(
+        noEquipment &&
+        (EQUIPMENT_QUESTIONS.includes(q) || startsWithAny(q, WITH_EQUIPMENT_ONLY))
+      ) &&
+      !(hasEquipment && startsWithAny(q, WITHOUT_EQUIPMENT_ONLY)),
   );
   const given = new Set(v.answers.map((a) => a.q));
   const answered = required.filter((q) => given.has(q)).length;
@@ -244,8 +278,10 @@ export function checkVisit(
   const closed =
     (mv ? storeStatus(mv.final) === "closed" : false) || CLOSED_COMMENT.test(visit.comment ?? "");
   const window = (at: string) => inVisitWindow(at, visit.start, visit.finish, tolerance);
-  const mvInTime = mv ? window(mv.final.at) : null;
-  const oosInTime = oos ? window(oos.final.at) : null;
+  // A visit read from the route analysis has no times: the day is enough, nothing to check.
+  const timed = !isRouteVisit(visit);
+  const mvInTime = mv && timed ? window(mv.final.at) : null;
+  const oosInTime = oos && timed ? window(oos.final.at) : null;
   const byOther = (person: string | null) => !sameCode(personCode(person), visit.person);
   const otherEmployee = Boolean(
     (mv && byOther(mv.final.person)) || (oos && byOther(oos.final.person)),
@@ -319,6 +355,8 @@ const scopeTest = (scope: Scope) => {
 function visitCounts(checks: VisitCheck[]) {
   const planned = checks.filter((c) => c.visit.planned);
   const connected = planned.filter((c) => c.mv || c.oos);
+  // Those whose time can be checked (not the visits read from the route analysis).
+  const timed = connected.filter((c) => !isRouteVisit(c.visit));
   const status = Object.fromEntries(
     (["ok", ...VISIT_ISSUES] as VisitStatus[]).map((s) => [
       s,
@@ -332,8 +370,10 @@ function visitCounts(checks: VisitCheck[]) {
     both: planned.filter((c) => c.mv && c.oos).length,
     withConnect: connected.length,
     allGood: status.ok,
-    // Of the visits with something in Connect: all of it in time / by someone else.
-    inTime: connected.filter((c) => !c.issues.includes("notInTime")).length,
+    // Of the visits with something in Connect: all of it in time (of those with a time to check
+    // against) / by someone else.
+    timed: timed.length,
+    inTime: timed.filter((c) => !c.issues.includes("notInTime")).length,
     otherEmployee: connected.filter((c) => c.otherEmployee).length,
     closed: planned.filter((c) => c.closed).length,
     attention: planned.filter(needsAttention).length,
@@ -350,7 +390,7 @@ export function visitRates(c: ReturnType<typeof visitCounts> & { planned: number
     withOosRate: percent(c.withOos, c.visited),
     connectRate: percent(c.withConnect, c.visited),
     allGoodRate: percent(c.allGood, c.visited),
-    inTimeRate: percent(c.inTime, c.withConnect),
+    inTimeRate: percent(c.inTime, c.timed),
     otherRate: percent(c.otherEmployee, c.withConnect),
   };
 }
@@ -635,6 +675,7 @@ export function tsmRows(a: Analysis, codes: string[]) {
       withOosRate: s.visits.withOosRate,
       withConnect: s.visits.withConnect,
       connectRate: s.visits.connectRate,
+      timed: s.visits.timed,
       inTime: s.visits.inTime,
       inTimeRate: s.visits.inTimeRate,
       otherEmployee: s.visits.otherEmployee,
@@ -687,9 +728,10 @@ export function aggregateRows(list: TsmRow[]) {
       total((r) => r.withOos),
       visited,
     ),
+    timed: total((r) => r.timed),
     inTimeRate: percent(
       total((r) => r.inTime),
-      withConnect,
+      total((r) => r.timed),
     ),
     otherEmployee: total((r) => r.otherEmployee),
     closed: total((r) => r.closed),
@@ -708,16 +750,29 @@ export function aggregateRows(list: TsmRow[]) {
 }
 export type RowTotals = ReturnType<typeof aggregateRows>;
 
-// The TSM rows summed by region (rates counted again from the sums).
+// The row of those with no Smart Up visit in the period (only Connect Bot records): the only region
+// known for them is a store's city, which is not theirs.
+export const NO_VISITS_REGION = "__no_visits__";
+
+// The TSM rows summed by region (rates counted again from the sums); the row of those with no
+// Smart Up visit goes last. Without any Smart Up visit at all the bot's cities are all there is.
 export function regionRows(rows: TsmRow[]) {
+  const inSmartUp = (r: TsmRow) => r.planned > 0 || r.unplanned > 0;
+  const split = rows.some(inSmartUp);
   const groups = new Map<string, TsmRow[]>();
   for (const r of rows) {
-    const region = r.region ?? "—";
+    const region = split && !inSmartUp(r) ? NO_VISITS_REGION : (r.region ?? "—");
     groups.set(region, [...(groups.get(region) ?? []), r]);
   }
+  const last = (region: string) => Number(region === NO_VISITS_REGION);
   return [...groups.entries()]
     .map(([region, list]) => ({ region, people: list.length, ...aggregateRows(list) }))
-    .sort((a, b) => b.planned - a.planned || a.region.localeCompare(b.region));
+    .sort(
+      (a, b) =>
+        last(a.region) - last(b.region) ||
+        b.planned - a.planned ||
+        a.region.localeCompare(b.region),
+    );
 }
 
 // --- One TSM ------------------------------------------------------------------------------------

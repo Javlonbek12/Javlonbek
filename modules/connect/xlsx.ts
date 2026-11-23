@@ -6,11 +6,14 @@ import type { ru } from "@/lib/i18n/ru";
 
 import type { IsmBlock, paymentIssues } from "./analytics";
 import type { TreeNode } from "./hierarchy";
+import { insightSheets } from "./insights-xlsx";
 import { localizeData } from "./localize";
 import { monthsLabel, periodLabel, type ConnectReport } from "./report";
+import { routeSheets } from "./routes-xlsx";
 import {
   aggregateRows,
   MV_RESULTS,
+  NO_VISITS_REGION,
   VISIT_ISSUES,
   type RowTotals,
   type TsmRow,
@@ -59,7 +62,10 @@ export async function connectXlsx(report: ConnectReport, today: string): Promise
       [`${t("connect.visits.withMv")}, %`, v.withMvRate],
       [`${t("connect.visits.withOos")}, %`, v.withOosRate],
       [t("connect.visits.both"), v.both],
-      [`${t("connect.visits.inTime")}, % (${t("connect.visits.inTimeNote")})`, v.inTimeRate],
+      [
+        `${t("connect.visits.inTime")}, % (${t("connect.visits.inTimeNote")})`,
+        v.timed ? v.inTimeRate : null,
+      ],
       [t("connect.visits.otherEmployee"), v.otherEmployee],
       [t("connect.visits.closed"), v.closed],
       ...(["ok", ...VISIT_ISSUES] as const).map((s) => [t(`connect.status.${s}`), v.status[s]]),
@@ -248,7 +254,7 @@ export async function connectXlsx(report: ConnectReport, today: string): Promise
         r.connectRate,
         r.withMvRate,
         r.withOosRate,
-        r.inTimeRate,
+        r.timed ? r.inTimeRate : null,
         r.otherEmployee,
         r.closed,
         r.attention,
@@ -306,7 +312,7 @@ export async function connectXlsx(report: ConnectReport, today: string): Promise
               totals.planned,
               totals.visitedRate,
               totals.connectRate,
-              totals.inTimeRate,
+              totals.timed ? totals.inTimeRate : null,
               totals.mvFullRate,
               totals.oosFound,
               totals.orders,
@@ -441,14 +447,14 @@ export async function connectXlsx(report: ConnectReport, today: string): Promise
         col("sum", 16),
       ],
       e.regions.map((r) => [
-        r.region,
+        r.region === NO_VISITS_REGION ? t("connect.section.noVisitsRegion") : r.region,
         r.people,
         r.planned,
         r.visitedRate,
         r.connectRate,
         r.withMvRate,
         r.withOosRate,
-        r.inTimeRate,
+        r.timed ? r.inTimeRate : null,
         r.otherEmployee,
         r.closed,
         r.mvFullRate,
@@ -544,5 +550,10 @@ export async function connectXlsx(report: ConnectReport, today: string): Promise
     sections(x.sections, heading);
     ism(null, x.payments);
   }
+  // «Маршруты и дисциплина» of the level on the screen.
+  const routes = report.exec?.routes ?? report.manager?.routes ?? report.executor?.routes;
+  if (routes) routeSheets(sheet, routes);
+  // Recovery of stock, the distributor's orders after an OOS, who needs attention.
+  insightSheets(sheet, report.insights, report.executor !== null);
   return Buffer.from(await book.xlsx.writeBuffer());
 }

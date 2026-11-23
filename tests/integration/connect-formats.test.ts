@@ -2,8 +2,8 @@ import ExcelJS from "exceljs";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { db } from "@/lib/db";
-import { parseWorkbook, routeMonth, type RecordOf } from "@/modules/connect/parse";
-import { connectDataDate, importConnectFiles } from "@/modules/connect/service";
+import { isOwnRoute, parseWorkbook, routeMonth, type RecordOf } from "@/modules/connect/parse";
+import { connectDataDate, importConnectFiles, loadRoutes } from "@/modules/connect/service";
 import { withAccess } from "@/modules/core/access/actor";
 import { createTestUser, resetDb } from "@/tests/helpers/db";
 
@@ -222,6 +222,16 @@ const CLIENTS: Row[] = [
   ],
 ];
 
+const routeRow = (n: number, zone: string, staff: string, store: number, ...days: Row): Row => [
+  n,
+  "Тестоград",
+  zone,
+  staff,
+  store,
+  `Тест магазин ${store - 900000}`,
+  null,
+  ...days,
+];
 // A legend, then weekdays over days of the month; totals under the clients.
 const ROUTES: Row[] = [
   [],
@@ -244,36 +254,12 @@ const ROUTES: Row[] = [
     "Количество визитов",
   ],
   [null, null, null, null, null, null, null, "1 неделя", 2, 3, "2 неделя", 9, "U"],
-  [
-    1,
-    "Тестоград",
-    "DR_TST_1",
-    "DR_TST_1",
-    900001,
-    "Тест магазин 1",
-    null,
-    null,
-    "PD",
-    "X",
-    null,
-    "O",
-    0,
-  ],
-  [
-    2,
-    "Тестоград",
-    "TSM_TST_1",
-    "TSM_TST_1",
-    900001,
-    "Тест магазин 1",
-    null,
-    null,
-    "P",
-    null,
-    null,
-    "UD",
-    1,
-  ],
+  routeRow(1, "DR_TST_1", "DR_TST_1", 900001, null, "PD", "X", null, "O", 0),
+  // The supervisor came along on the 2nd: the same client of the same zone, another visitor.
+  routeRow(2, "DR_TST_1", "Supervisor TST (Тест)", 900001, null, "U", null, null, null, 1),
+  routeRow(3, "TSM_TST_1", "TSM_TST_1", 900001, null, "P", null, null, "UD", 1),
+  // A key-account zone has several people.
+  routeRow(4, "Key Account / KA", "Key Account / KA TSM 1", 900002, null, "P", null, null, null, 0),
   [
     "Итоговое количество визитов в день:",
     null,
@@ -372,16 +358,36 @@ describe("new export formats", () => {
     expect(sheet).toMatchObject({ kind: "ROUTE", skipped: 0 });
     expect(sheet!.rows.map((r) => r.record)).toMatchObject([
       {
-        id: "2026-11|DR_TST_1|900001",
+        id: "2026-11|DR_TST_1|DR_TST_1|900001",
         person: "DR_TST_1",
+        zone: "DR_TST_1",
+        lead: false,
         storeCode: "900001",
         city: "Тестоград",
         month: "2026-11",
         day: "2026-11-09",
         days: { "02": "PD", "03": "X", "09": "O" },
       },
-      { id: "2026-11|TSM_TST_1|900001", person: "TSM_TST_1", days: { "02": "P", "09": "UD" } },
+      {
+        id: "2026-11|DR_TST_1|Supervisor TST (Тест)|900001",
+        person: "Supervisor TST (Тест)",
+        zone: "DR_TST_1",
+        lead: true,
+        days: { "02": "U" },
+      },
+      { person: "TSM_TST_1", zone: "TSM_TST_1", lead: false, days: { "02": "P", "09": "UD" } },
+      { person: "Key Account / KA TSM 1", zone: "Key Account / KA", lead: false },
     ]);
+  });
+
+  it("tells a zone's own people from managers visiting it", () => {
+    expect(isOwnRoute("DR_TST_1", "DR_TST_1")).toBe(true);
+    expect(isOwnRoute("Key Account / KA", "Key Account / KA TSM 2")).toBe(true);
+    // Another TSM standing in.
+    expect(isOwnRoute("TSM_TST_1", "TSM_TST_2")).toBe(true);
+    expect(isOwnRoute("DR_TST_1", "Supervisor TST (Тест)")).toBe(false);
+    expect(isOwnRoute("TSM_TST_1", "Senior TSM 2")).toBe(false);
+    expect(isOwnRoute("TSM_TST_1", "BDM 99")).toBe(false);
   });
 
   it("takes the route analysis' month from when it was made", () => {
@@ -436,9 +442,14 @@ describe("saving the new exports", () => {
 
     const made = new Date("2026-11-09T13:00:00Z");
     await upload("route.xlsx", await book(ROUTES, made));
-    const [routes] = await upload("route.xlsx", await book(ROUTES.slice(0, 7), made));
-    expect(routes!.sheets[0]).toMatchObject({ kind: "ROUTE", created: 1, replaced: 2 });
-    expect(await kindsOf()).toEqual(["AUDIT:1", "CLIENT:1", "ROUTE:1", "VISIT:1"]);
+    const [routes] = await upload("route.xlsx", await book(ROUTES.slice(0, 8), made));
+    // Every visitor's row is kept (the rep's and the supervisor's)…
+    expect(routes!.sheets[0]).toMatchObject({ kind: "ROUTE", created: 2, replaced: 4 });
+    expect(await kindsOf()).toEqual(["AUDIT:1", "CLIENT:1", "ROUTE:2", "VISIT:1"]);
+    // …and the reports get the routes' own people only.
+    expect(
+      (await loadRoutes({ from: "2026-11-02", to: "2026-11-09" })).map((r) => r.person),
+    ).toEqual(["DR_TST_1"]);
     // «Данные по …» stays the bot's and the visits' day, not the route's.
     expect(await connectDataDate()).toBe("2026-11-05");
   });

@@ -6,7 +6,11 @@ import { presetPeriod } from "@/modules/reports/period";
 
 import { ismBlock, paymentIssues } from "./analytics";
 import { linkedPositionCodes, managerTree, type Hierarchy } from "./hierarchy";
+import { connectInsights } from "./insights";
 import { personCode, titleKey } from "./parse";
+import type { StaffFilter } from "./routes";
+import { buildRoutesBlock, loadRouteSource, routeZones } from "./routes-report";
+import type { RecoveryBase } from "./recovery";
 import {
   connectDataDate,
   connectPeopleLinks,
@@ -42,6 +46,12 @@ export type ConnectQuery = {
   to: string | null;
   // A TSM code.
   person: string | null;
+  // «Маршруты и дисциплина»: only KT&G's field staff or only the distributor's reps (no value:
+  // everyone).
+  staff?: Exclude<StaffFilter, "all">;
+  // «Восстановление наличия» against the store's first check of the month; without it, against
+  // the check before.
+  base?: RecoveryBase;
 };
 
 export function parseConnectQuery(
@@ -66,6 +76,8 @@ export function parseConnectQuery(
     from: own ? from! : null,
     to: own ? to! : null,
     person: personCode(one("person")),
+    staff: (["TSM", "DR"] as const).find((s) => s === one("staff")?.toUpperCase()),
+    ...(one("base") === "month" ? { base: "month" as const } : {}),
   };
 }
 
@@ -189,15 +201,36 @@ export async function buildConnectReport(
   const dataDate = await connectDataDate();
   const period = connectPeriod(query, today, dataDate);
   const months = { from: period.from.slice(0, 7), to: period.to.slice(0, 7) };
-  const [data, payments, hierarchy] = await Promise.all([
-    loadVisitData(period),
+  // Smart Up's route analysis: «Маршруты и дисциплина», and the TSMs' visits of the days no
+  // visit detail is loaded for.
+  const routeSource = await loadRouteSource(period, options.hierarchy);
+  const { hierarchy } = routeSource;
+  const [data, payments] = await Promise.all([
+    loadVisitData(period, routeSource),
     loadPayments(months),
-    options.hierarchy === undefined ? loadHierarchy() : options.hierarchy,
   ]);
   const analysis = analyzeVisits(data);
   const codes = tsmCodes(data).filter((code) => inScope(scope, code));
-  const chosen = query.person && codes.find((c) => titleKey(c) === titleKey(query.person!));
-  const person = chosen || (options.own && query.view === "executor" ? (codes[0] ?? null) : null);
+  // Zones known only by their route (the distributor's reps) can be chosen as well.
+  const zones = routeZones(routeSource, period, scope);
+  const routeOnly = zones.filter((z) => !codes.some((c) => titleKey(c) === titleKey(z.zone)));
+  // «Требует внимания»: how much of their plan each TSM visited (none without routes).
+  const attendance = zones.length
+    ? new Map(
+        zones.flatMap((z) =>
+          z.kind === "TSM" && z.attendance !== null ? [[z.zone, z.attendance] as const] : [],
+        ),
+      )
+    : null;
+  const choice = [...codes, ...routeOnly.map((z) => z.zone)];
+  const chosen = query.person && choice.find((c) => titleKey(c) === titleKey(query.person!));
+  const person = chosen || (options.own && query.view === "executor" ? (choice[0] ?? null) : null);
+  const routes = await buildRoutesBlock(routeSource, {
+    period,
+    query: { ...query, person },
+    scope,
+    visitDays: data.routeDays,
+  });
   const paymentsOf = (allowed: Set<string> | null) =>
     payments.filter((p) => inScope(allowed, personCode(p.person)));
   const empty =
@@ -205,8 +238,26 @@ export async function buildConnectReport(
     !data.mv.length &&
     !data.oos.length &&
     !data.orders.length &&
-    !payments.length;
+    !payments.length &&
+    !routes;
   const managerRows = query.view === "manager" ? tsmRows(analysis, codes) : [];
+  const execRows = query.view === "exec" ? tsmRows(analysis, tsmCodes(data)) : [];
+  const execSections = query.view === "exec" ? visitSections(analysis) : null;
+  // Recovery of stock, the distributor's orders after an OOS, who needs attention, the change.
+  const insights = empty
+    ? null
+    : await connectInsights({
+        view: query.view,
+        base: query.base ?? "prev",
+        period,
+        data,
+        scope,
+        person,
+        hierarchy,
+        rows: query.view === "exec" ? execRows : managerRows,
+        sections: execSections,
+        attendance,
+      });
   return {
     query: { ...query, person },
     period,
@@ -215,18 +266,29 @@ export async function buildConnectReport(
     // The last day of the sales loaded (null: no sales, no cross-check).
     salesDate: data.salesRange?.to ?? null,
     empty,
-    people: codes.map((code) => tsmInfo(data, code)),
+    insights,
+    people: [
+      ...codes.map((code) => tsmInfo(data, code)),
+      ...routeOnly.map((z) => ({
+        code: z.zone,
+        name: z.person,
+        zone: null,
+        region: z.organization,
+      })),
+    ],
     exec:
-      query.view === "exec"
+      query.view === "exec" && execSections
         ? {
-            sections: visitSections(analysis),
-            regions: regionRows(tsmRows(analysis, tsmCodes(data))),
+            routes,
+            sections: execSections,
+            regions: regionRows(execRows),
             ism: ismBlock(payments, today),
           }
         : null,
     manager:
       query.view === "manager"
         ? {
+            routes,
             sections: visitSections(analysis, scope),
             people: managerRows,
             // By the employee info, when one is uploaded.
@@ -237,6 +299,7 @@ export async function buildConnectReport(
     executor:
       query.view === "executor" && person
         ? {
+            routes,
             row: tsmRows(analysis, [person])[0]!,
             sections: visitSections(analysis, new Set([person])),
             detail: tsmDetail(analysis, person),
@@ -292,6 +355,8 @@ export function connectHref(
     from: query.from,
     to: query.to,
     person: query.person,
+    staff: query.staff,
+    base: query.base,
     ...change,
   };
   for (const [key, value] of Object.entries(values)) if (value) params.set(key, value);

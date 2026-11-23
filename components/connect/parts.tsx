@@ -4,6 +4,8 @@ import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
+import { SECTION_ATTRIBUTE } from "./section-anchor";
+
 // Building blocks of the Connect analytics pages: tiles, bars, tables and small column charts.
 // Colors follow the validated chart palette (blue #2a78d6, orange #eb6834) and the status scale.
 
@@ -169,14 +171,21 @@ export function Section({
   hint,
   children,
   className,
+  nav,
 }: {
   title: string;
   hint?: string;
   children: ReactNode;
   className?: string;
+  // The chip in the page's list of sections: the title by default, `false` for a block that
+  // belongs to the section above it.
+  nav?: string | false;
 }) {
   return (
-    <Card className={cn("min-w-0 gap-3", className)}>
+    <Card
+      className={cn("min-w-0 scroll-mt-20 gap-3", className)}
+      {...(nav === false ? {} : { [SECTION_ATTRIBUTE]: nav ?? title })}
+    >
       <CardTitle>{title}</CardTitle>
       {hint && <CardDescription>{hint}</CardDescription>}
       {children}
@@ -191,10 +200,13 @@ export function Kpi({
   meter,
   tone,
   compare,
+  trend,
 }: {
   label: string;
   value: string | number;
   note?: string;
+  // Next to the number: the change against the previous period (see trend.tsx).
+  trend?: ReactNode;
   // 0..100: a thin bar under the number.
   meter?: number;
   tone?: "good" | "warn" | "bad";
@@ -212,9 +224,11 @@ export function Kpi({
           tone === "bad" && "text-red-600 dark:text-red-400",
           tone === "warn" && "text-amber-600 dark:text-amber-400",
           tone === "good" && "text-emerald-700 dark:text-emerald-400",
+          trend && "flex flex-wrap items-baseline gap-x-2",
         )}
       >
         {value}
+        {trend}
       </span>
       {meter !== undefined && (
         <span className="bg-muted h-1.5 overflow-hidden rounded-full">

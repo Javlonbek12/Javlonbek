@@ -7,7 +7,7 @@ import { logActivity } from "@/modules/core/activity/service";
 import type { Actor } from "@/modules/core/permissions";
 
 import { isTestStore, type Dataset } from "./analytics";
-import { buildHierarchy } from "./hierarchy";
+import { buildHierarchy, type Hierarchy } from "./hierarchy";
 import {
   parseWorkbook,
   personCode,
@@ -16,6 +16,7 @@ import {
   type RecordOf,
   type SaleRecord,
 } from "./parse";
+import { visitsFromRoutes } from "./route-visits";
 import { SALES_WINDOW_DAYS } from "./sales";
 import type { VisitData } from "./visits";
 
@@ -57,8 +58,13 @@ export async function loadDataset(filter: ConnectFilter = {}): Promise<Dataset> 
 }
 
 // Smart Up visits and the bot's MVs, checks and orders of the days from..to (inclusive), every
-// TSM of Smart Up's totals, and the sales of the stores ordered from in from..to + 3 days.
-export async function loadVisitData(period: { from: string; to: string }): Promise<VisitData> {
+// TSM of Smart Up's totals, and the sales of the stores ordered from in from..to + 3 days. The
+// days without a single Smart Up visit take the TSMs' visits from the route analysis (`source`:
+// the routes and the positions when the caller has them already).
+export async function loadVisitData(
+  period: { from: string; to: string },
+  source?: { routes: RecordOf<"ROUTE">[]; hierarchy: Hierarchy | null },
+): Promise<VisitData> {
   const [rows, people] = await Promise.all([
     db.connectRecord.findMany({
       where: {
@@ -92,8 +98,18 @@ export async function loadVisitData(period: { from: string; to: string }): Promi
       _max: { day: true },
     }),
   ]);
+  const suVisits = of("SU_VISIT");
+  const fromRoutes = visitsFromRoutes(source?.routes ?? (await loadRoutes(period)), {
+    ...period,
+    hierarchy: source ? source.hierarchy : await loadHierarchy(),
+    // A day with any row of the visit detail (a test store's too) is the detail's.
+    covered: new Set(
+      rows.filter((r) => r.kind === "SU_VISIT").map((r) => (r.data as RecordOf<"SU_VISIT">).day),
+    ),
+  });
   return {
-    suVisits: of("SU_VISIT"),
+    suVisits: fromRoutes.visits.length ? [...suVisits, ...fromRoutes.visits] : suVisits,
+    routeDays: fromRoutes.days,
     mv: of("VISIT"),
     oos: of("OOS"),
     orders,
@@ -119,7 +135,8 @@ export async function loadHierarchy() {
 }
 
 // Smart Up's route analysis of the months that from..to (days, inclusive) touch: a row per client
-// of a working zone, test stores left out.
+// of a field person's own route (a TSM, a distributor's rep), test stores left out. Managers'
+// visits to other people's zones are not a route of their own and are left out.
 export async function loadRoutes(period: { from: string; to: string }) {
   const rows = await db.connectRecord.findMany({
     where: { kind: "ROUTE", month: { gte: period.from.slice(0, 7), lte: period.to.slice(0, 7) } },
@@ -127,7 +144,8 @@ export async function loadRoutes(period: { from: string; to: string }) {
   });
   return rows
     .filter((r) => !isTestStore(r.storeName, r.storeCode))
-    .map((r) => r.data as RecordOf<"ROUTE">);
+    .map((r) => r.data as RecordOf<"ROUTE">)
+    .filter((route) => !route.lead);
 }
 
 // The last day the loaded route analysis covers (null: none loaded).
@@ -153,7 +171,18 @@ export async function loadClients(storeCodes?: string[]) {
 
 // The ISM payment requests of the months from..to (the ISM block keeps its months).
 export async function loadPayments(months: { from: string; to: string }) {
-  return (await loadDataset(months)).payments;
+  // Only the payments: the checks and questionnaires of the same months are many times more.
+  const rows = await db.connectRecord.findMany({
+    where: {
+      kind: "PAYMENT",
+      month: { gte: months.from || undefined, lte: months.to || undefined },
+    },
+    select: { data: true, storeName: true, storeCode: true },
+    orderBy: { day: "asc" },
+  });
+  return rows
+    .filter((r) => !isTestStore(r.storeName, r.storeCode))
+    .map((r) => r.data as RecordOf<"PAYMENT">);
 }
 
 export async function connectTotal() {

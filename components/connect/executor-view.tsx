@@ -8,6 +8,8 @@ import type { TsmRow } from "@/modules/connect/visits";
 import { FilterSelect } from "./filter-select";
 import { IsmSection } from "./ism";
 import { DataTable, Kpi, STAGE_COLOR } from "./parts";
+import { RecoveryBlock } from "./recovery-section";
+import { RoutesSection } from "./routes-section";
 import {
   deliveryColor,
   MvSection,
@@ -113,8 +115,42 @@ export function ExecutorsOverview({
 type Executor = NonNullable<ConnectReport["executor"]>;
 
 // One TSM: the numbers, then each section with the lists to act on.
-export function ExecutorView({ data, months }: { data: Executor; months: string }) {
+export function ExecutorView({
+  data,
+  months,
+  insights,
+  href,
+}: {
+  data: Executor;
+  months: string;
+  // The TSM's own recovery of stock and the stores where products are still out.
+  insights?: ConnectReport["insights"];
+  // The page with something changed (the recovery baseline).
+  href?: (change: Record<string, string | null>) => string;
+}) {
   const { row: r, sections: s, detail: d } = data;
+  // A distributor's rep has a route and nothing in Connect Bot: the route is all there is.
+  const zone = data.routes?.zone;
+  if (
+    zone?.kind === "DR" &&
+    !(r.planned || r.unplanned || r.mvUnique || r.oosChecked || r.orders || data.payments.length)
+  )
+    return (
+      <div className="flex flex-col gap-4 [&>*]:min-w-0">
+        <div className="flex flex-col">
+          <span className="text-lg font-medium">
+            {zone.zone}
+            {zone.person && (
+              <span className="text-muted-foreground font-normal"> · {zone.person}</span>
+            )}
+          </span>
+          {zone.organization && (
+            <span className="text-muted-foreground text-xs">{zone.organization}</span>
+          )}
+        </div>
+        <RoutesSection block={data.routes} />
+      </div>
+    );
   return (
     <div className="flex flex-col gap-4 [&>*]:min-w-0">
       <div className="flex flex-col">
@@ -170,6 +206,7 @@ export function ExecutorView({ data, months }: { data: Executor; months: string 
         />
       </div>
 
+      <RoutesSection block={data.routes} />
       <VisitsSection data={s.visits}>
         <h3 className="text-sm font-medium">
           {t("connect.executor.attention")} · {d.attention.length}
@@ -377,6 +414,13 @@ export function ExecutorView({ data, months }: { data: Executor; months: string 
               />
             </div>
           </details>
+        )}
+        {insights && href && s.oos.checked > 0 && (
+          <RecoveryBlock
+            own
+            data={insights.recovery}
+            baseHref={(base) => href({ base: base === "month" ? base : null })}
+          />
         )}
       </OosSection>
 
