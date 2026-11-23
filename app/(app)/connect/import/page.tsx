@@ -9,12 +9,7 @@ import { ConfirmAction } from "@/components/ui/confirm-action";
 import { PageHeader } from "@/components/ui/page-header";
 import type { ConnectKind } from "@/lib/generated/prisma/enums";
 import { dateFormat, t } from "@/lib/i18n";
-import {
-  canLeadConnect,
-  connectLoaded,
-  connectTotal,
-  lastImports,
-} from "@/modules/connect/service";
+import { canLeadConnect, connectLoaded, lastImports } from "@/modules/connect/service";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getSettings } from "@/modules/core/settings/service";
 import { formatRange, plural } from "@/modules/reports/format";
@@ -46,12 +41,14 @@ export default async function ConnectImportPage({ searchParams }: PageProps<"/co
   const params = await searchParams;
   const error = ERRORS.find((e) => e === params.error);
   const done = typeof params.done === "string" ? params.done.split("\n").filter(Boolean) : [];
-  const [imports, total, loaded, { timezone }] = await Promise.all([
+  const [imports, loaded, { timezone }] = await Promise.all([
     lastImports(),
-    connectTotal(),
     connectLoaded(),
     getSettings(user.id),
   ]);
+  // The rows as the files have them: sales are stored a store's day per row but counted in the
+  // report's lines, so the total is the sum of what is listed, not the rows of the table.
+  const total = loaded.reduce((sum, l) => sum + l.count, 0);
   // Times in the viewer's time zone, not the server's.
   const when = dateFormat({ dateStyle: "medium", timeStyle: "short", timeZone: timezone });
   const today = todayInTimezone(timezone);

@@ -9,12 +9,13 @@ import type { Actor } from "@/modules/core/permissions";
 import { isTestStore, type Dataset } from "./analytics";
 import { buildHierarchy, type Hierarchy } from "./hierarchy";
 import {
+  collectSales,
   parseWorkbook,
   personCode,
+  saleLines,
   titleKey,
   type ParsedRow,
   type RecordOf,
-  type SaleRecord,
 } from "./parse";
 import { visitsFromRoutes } from "./route-visits";
 import { DEFAULT_RULES, parseRules, type ConnectRules } from "./rules";
@@ -115,7 +116,9 @@ export async function loadVisitData(
     oos: of("OOS"),
     orders,
     people: people.map((p) => p.data as RecordOf<"SU_PERSON">),
-    sales: sales.map((s) => s.data as SaleRecord),
+    // A store's day of sales is taken apart into its lines (a row stored before 23.11.2026 is
+    // one already).
+    sales: sales.flatMap((s) => saleLines(s.data as RecordOf<"SALE">)),
     salesRange:
       range._min.day && range._max.day ? { from: range._min.day, to: range._max.day } : null,
   };
@@ -202,8 +205,22 @@ export async function connectDataDate(): Promise<string | null> {
   return _max.day;
 }
 
-// What is loaded now, by kind: rows, the days they cover and when they were last written (the
-// upload page).
+// The sales lines (a store, a day, a SKU) stored for the days from..to. Sales are stored a store's
+// day per row but counted the way the report has them: a day has a line per SKU, and a row stored
+// before 23.11.2026 is one line.
+async function saleLineCount(client: Prisma.TransactionClient, from = "", to = "9999-12-31") {
+  const [row] = await client.$queryRaw<{ lines: number }[]>`
+    SELECT COALESCE(SUM(
+      CASE WHEN jsonb_typeof("data"->'skus') = 'object'
+           THEN (SELECT count(*) FROM jsonb_object_keys("data"->'skus'))
+           ELSE 1 END), 0)::int AS "lines"
+    FROM "ConnectRecord"
+    WHERE "kind" = 'SALE' AND "day" >= ${from} AND "day" <= ${to}`;
+  return row?.lines ?? 0;
+}
+
+// What is loaded now, by kind: rows (of sales: lines), the days they cover and when they were
+// last written (the upload page).
 export async function connectLoaded() {
   const groups = await db.connectRecord.groupBy({
     by: ["kind"],
@@ -211,9 +228,10 @@ export async function connectLoaded() {
     _min: { day: true },
     _max: { day: true, updatedAt: true },
   });
+  const sales = groups.some((g) => g.kind === "SALE") ? await saleLineCount(db) : 0;
   return groups.map((g) => ({
     kind: g.kind,
-    count: g._count._all,
+    count: g.kind === "SALE" ? sales : g._count._all,
     from: g._min.day || null,
     to: g._max.day || null,
     at: g._max.updatedAt,
@@ -368,6 +386,10 @@ export type ImportResult = {
 
 const MAX_FILE = 50 * 1024 * 1024;
 
+// A store's day of sales stands for its lines (one per SKU), any other row for itself.
+const linesOf = (row: ParsedRow) =>
+  row.kind === "SALE" && "skus" in row.record ? Object.keys(row.record.skus).length : 1;
+
 // What an upload says about a sheet: «файл за 1 авг. – 7 нояб., 5 строк тестовых точек не учтено».
 function coverage(rows: ParsedRow[]) {
   const days = rows
@@ -377,7 +399,9 @@ function coverage(rows: ParsedRow[]) {
   return {
     from: days[0] ?? null,
     to: days.at(-1) ?? null,
-    test: rows.filter((r) => isTestStore(r.record.storeName, r.record.storeCode)).length,
+    test: rows
+      .filter((r) => isTestStore(r.record.storeName, r.record.storeCode))
+      .reduce((count, r) => count + linesOf(r), 0),
   };
 }
 
@@ -564,41 +588,48 @@ async function replaceRoutes(rows: ParsedRow[], importId: string) {
 }
 
 // A sales report replaces the sales of its days (first to last); rows of the same store, day and
-// SKU are summed.
+// SKU are summed. A row is written per store and day, with the day's SKUs inside (SaleDayRecord);
+// what was created and replaced is counted in lines, as the report has them.
 const SALES_CHUNK = 5000;
 const SALES_SAVE_TIMEOUT = 10 * 60_000;
 
 async function replaceSales(rows: ParsedRow[], importId: string) {
-  const byId = new Map<string, SaleRecord>();
-  for (const { record } of rows) {
-    const sale = record as SaleRecord;
-    const was = byId.get(sale.id);
-    byId.set(sale.id, was ? { ...was, blocks: was.blocks + sale.blocks } : sale);
-  }
-  const days = [...byId.values()].map((r) => r.day).sort();
-  const from = days[0];
-  const to = days.at(-1);
+  const sales = collectSales();
+  for (const row of rows) if (row.kind === "SALE") sales.add(row.record);
+  const records = sales.days();
+  let from = records[0]?.day;
+  let to = from;
   if (!from || !to) return { created: 0, updated: 0, kept: 0, newer: null, replaced: 0 };
-  const data = [...byId.values()].map((r) => ({
-    kind: "SALE" as const,
-    externalId: r.id,
-    ...recordFields(r, importId, null),
-  }));
-  // A sales report of three months is hundreds of thousands of rows: one transaction (the old
-  // days are gone only when the new ones are in), given the minutes it takes instead of the
-  // default five seconds.
+  for (const { day } of records) {
+    if (day < from) from = day;
+    if (day > to) to = day;
+  }
+  const days = { gte: from, lte: to };
+  const now = new Date();
+  // A sales report of three months is over a hundred thousand store-days: one transaction (the
+  // old days are gone only when the new ones are in), given the time it may take instead of the
+  // default five seconds. The rows stored before 23.11.2026 (one per line) go the same way.
   const removed = await db.$transaction(
     async (tx) => {
-      const gone = await tx.connectRecord.deleteMany({
-        where: { kind: "SALE", day: { gte: from, lte: to } },
-      });
-      for (let i = 0; i < data.length; i += SALES_CHUNK)
-        await tx.connectRecord.createMany({ data: data.slice(i, i + SALES_CHUNK) });
-      return gone.count;
+      const gone = await saleLineCount(tx, days.gte, days.lte);
+      await tx.connectRecord.deleteMany({ where: { kind: "SALE", day: days } });
+      // Written by the database from one JSON text per chunk: createMany took half a minute and
+      // over a gigabyte for these rows, this takes seconds. The columns are the record's own
+      // fields (see recordFields); the row's ID is the database's random one instead of a cuid.
+      for (let i = 0; i < records.length; i += SALES_CHUNK)
+        await tx.$executeRaw`
+          INSERT INTO "ConnectRecord"
+            ("id", "kind", "externalId", "storeCode", "storeName", "city", "channel", "day",
+             "month", "data", "importId", "updatedAt")
+          SELECT gen_random_uuid()::text, 'SALE'::"ConnectKind", r->>'id', r->>'storeCode',
+                 r->>'storeName', r->>'city', r->>'channel', r->>'day', r->>'month', r,
+                 ${importId}, ${now}
+          FROM jsonb_array_elements(${JSON.stringify(records.slice(i, i + SALES_CHUNK))}::jsonb) r`;
+      return gone;
     },
     { maxWait: 15_000, timeout: SALES_SAVE_TIMEOUT },
   );
-  return { created: byId.size, updated: 0, kept: 0, newer: null, replaced: removed };
+  return { created: sales.lines, updated: 0, kept: 0, newer: null, replaced: removed };
 }
 
 async function saveRows(kind: ConnectKind, rows: ParsedRow[], importId: string) {

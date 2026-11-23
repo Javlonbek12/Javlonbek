@@ -1,11 +1,16 @@
-import { describe, expect, it } from "vitest";
+import ExcelJS from "exceljs";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  collectSales,
   detectFormat,
   detectKind,
   parseRow,
+  parseWorkbook,
+  saleLines,
   skuKey,
   type OrderRecord,
+  type SaleDayRecord,
   type SaleRecord,
 } from "./parse";
 import {
@@ -294,5 +299,197 @@ describe("Sales after an auto-stock order", () => {
     expect(visitSections(analyzeVisits({ ...data, sales: [], salesRange: null })).oos.sales).toBe(
       null,
     );
+  });
+});
+
+// Smart Up's «Конструктор отчётов по продажам» as it comes: the lines of the filters it was made
+// with (each merged over four cells), the header under them and a totals row at the end.
+const REPORT_HEADERS = [
+  "Организация",
+  "Клиент",
+  "ИД клиента",
+  "Адрес",
+  "Регион",
+  "ТМЦ",
+  "Штат",
+  "ХЮ:Responsible TSM",
+  "ИД заказа",
+  "Дата доставки",
+  "Количество продажи",
+  "Сумма без скидки/наценки",
+];
+type Value = ExcelJS.CellValue;
+// «Регион» and the TSM are empty: such cells are not in the file at all.
+const reportRow = (
+  client: string | number,
+  day: Value,
+  sku: string,
+  blocks: number | null,
+  name: Value = `Тест точка ${client}`,
+): Value[] => [
+  "Тестовая организация",
+  name,
+  client,
+  "Тест адрес",
+  null,
+  sku,
+  "TSM_TST_1",
+  null,
+  "T-1",
+  day,
+  blocks,
+  1000,
+];
+const reportSheet = (wb: ExcelJS.Workbook, rows: Value[][]) => {
+  const ws = wb.addWorksheet("Конструктор отчётов по продажам");
+  ws.addRow(["Дата доставки:  03.11.2026-04.11.2026"]);
+  ws.addRow(["Организация: Тестовая организация"]);
+  ws.mergeCells("A1:D1");
+  ws.mergeCells("A2:D2");
+  ws.addRow([]);
+  ws.addRow(REPORT_HEADERS);
+  for (const row of rows) ws.addRow(row);
+  ws.addRow(REPORT_HEADERS.map((_, i) => (i < 10 ? "ИТОГО" : 10)));
+  return ws;
+};
+const bufferOf = async (wb: ExcelJS.Workbook) => Buffer.from(await wb.xlsx.writeBuffer());
+const storeDay = (storeCode: string, day: string, skus: Record<string, number>): SaleDayRecord => ({
+  id: `${storeCode}|${day}`,
+  storeCode,
+  storeName: `Тест точка ${storeCode}`,
+  city: "Тестовая организация",
+  // This report has no channel column.
+  channel: null,
+  at: `${day}T00:00`,
+  day,
+  month: day.slice(0, 7),
+  person: null,
+  skus,
+});
+
+describe("Sales workbook", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const ROWS = [
+    // A name in rich text (two runs of a shared string).
+    reportRow("900001", "03.11.2026", "SKU-TEST 1", 2, {
+      richText: [{ text: "Тест " }, { font: { bold: true }, text: "точка 900001" }],
+    }),
+    // The same store, day and product (in another spelling): summed.
+    reportRow("900001", "03.11.2026", "sku-test  1", 3),
+    reportRow("900001", "03.11.2026", "SKU-TEST 2", 1),
+    reportRow(900002, "04.11.2026", "SKU-TEST 1", 4),
+    // Without a quantity: skipped.
+    reportRow("900003", "04.11.2026", "SKU-TEST 1", null),
+  ];
+  const DAYS = [
+    storeDay("900001", "2026-11-03", { "SKU-TEST 1": 5, "SKU-TEST 2": 1 }),
+    storeDay("900002", "2026-11-04", { "SKU-TEST 1": 4 }),
+  ];
+  const SHEET = {
+    kind: "SALE",
+    skipped: 1,
+    rows: DAYS.map((record) => ({ kind: "SALE", record })),
+  };
+  const POSITIONS = [
+    ["ИД", "Название", "Пользователь", "Рабочие зоны", "Роли", "Руководитель"],
+    [900101, "BDM 99", "Тест Руководитель", "TSM_TST_1", "KT&G BDM", "BUM TEST"],
+  ];
+
+  it("is read by the light reader into store-days: filter lines above, totals out", async () => {
+    const wb = new ExcelJS.Workbook();
+    reportSheet(wb, ROWS);
+    const buffer = await bufferOf(wb);
+    const exceljs = vi.spyOn(ExcelJS, "Workbook");
+    expect(await parseWorkbook(buffer)).toEqual([SHEET]);
+    expect(exceljs).not.toHaveBeenCalled();
+  });
+
+  it("gives the same store-days through exceljs, when another export is in the workbook", async () => {
+    const wb = new ExcelJS.Workbook();
+    reportSheet(wb, ROWS);
+    wb.addWorksheet("Sheet").addRows(POSITIONS);
+    const buffer = await bufferOf(wb);
+    const exceljs = vi.spyOn(ExcelJS, "Workbook");
+    const sheets = await parseWorkbook(buffer);
+    expect(exceljs).toHaveBeenCalledTimes(1);
+    expect(sheets.map((s) => s.kind)).toEqual(["SALE", "SU_POSITION"]);
+    expect(sheets[0]).toEqual(SHEET);
+  });
+
+  it("leaves a sheet it could read differently to exceljs: real dates, merged cells", async () => {
+    // A date cell is a number with a date format: the light reader does not read formats.
+    let wb = new ExcelJS.Workbook();
+    reportSheet(wb, [reportRow("900001", new Date(Date.UTC(2026, 10, 3)), "SKU-TEST 1", 2)]);
+    let buffer = await bufferOf(wb);
+    let exceljs = vi.spyOn(ExcelJS, "Workbook");
+    expect((await parseWorkbook(buffer))[0]!.rows.map((r) => r.record)).toEqual([
+      storeDay("900001", "2026-11-03", { "SKU-TEST 1": 2 }),
+    ]);
+    expect(exceljs).toHaveBeenCalledTimes(1);
+    vi.restoreAllMocks();
+
+    // A name merged over the store's two rows is the name of both.
+    wb = new ExcelJS.Workbook();
+    reportSheet(wb, [
+      reportRow("900001", "03.11.2026", "SKU-TEST 1", 2, "Тест общая точка"),
+      reportRow("900001", "04.11.2026", "SKU-TEST 1", 1, null),
+    ]).mergeCells("B5:B6");
+    buffer = await bufferOf(wb);
+    exceljs = vi.spyOn(ExcelJS, "Workbook");
+    expect(
+      (await parseWorkbook(buffer))[0]!.rows.map((r) => [r.record.id, r.record.storeName]),
+    ).toEqual([
+      ["900001|2026-11-03", "Тест общая точка"],
+      ["900001|2026-11-04", "Тест общая точка"],
+    ]);
+    expect(exceljs).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Stored sales", () => {
+  const flat = [
+    sale("2026-11-03", "SKU-TEST-001", 2),
+    sale("2026-11-03", "SKU-TEST-002", 1),
+    sale("2026-11-04", "SKU-TEST-001", 3, "900002"),
+  ];
+
+  it("a row stored before 23.11.2026 (one per line) is read as it is", () => {
+    expect(flat.flatMap((row) => saleLines(row))).toEqual(flat);
+  });
+
+  it("a store's day expands to the same lines, and to the same cross-check", () => {
+    const sales = collectSales();
+    for (const row of flat) sales.add(row);
+    const days = sales.days();
+    expect(sales.lines).toBe(3);
+    expect(days.map((d) => [d.id, d.skus])).toEqual([
+      ["900001|2026-11-03", { "SKU-TEST-001": 2, "SKU-TEST-002": 1 }],
+      ["900002|2026-11-04", { "SKU-TEST-001": 3 }],
+    ]);
+    expect(days.flatMap((d) => saleLines(d))).toEqual(flat);
+    // As it comes back from the database's JSON.
+    const stored = JSON.parse(JSON.stringify(days)) as SaleDayRecord[];
+    expect(stored.flatMap((d) => saleLines(d))).toEqual(flat);
+    const o = order("#T-1", { "SKU-TEST-001": 10, "SKU-TEST-002": 20, "SKU-TEST-003": 5 });
+    const check = checkOrder(o, index(stored.flatMap((d) => saleLines(d))));
+    expect(check).toEqual(checkOrder(o, index(flat)));
+    expect(check.lines.map((l) => l.sold)).toEqual([20, 10, 0]);
+  });
+
+  it("sums the same store, day and product, in rows and in store-days alike", () => {
+    const sales = collectSales();
+    sales.add(sale(DAY, "SKU-TEST 1", 2));
+    sales.add(sale(DAY, "sku-test  1", 3));
+    sales.add(sale("2026-11-03", "SKU-TEST 1", 1));
+    const again = collectSales();
+    for (const day of sales.days()) again.add(day);
+    again.add(sale(DAY, "SKU-TEST 2", 4));
+    again.add(sale(DAY, "Sku-Test 1", 1));
+    expect(again.lines).toBe(3);
+    expect(again.days().map((d) => [d.id, d.skus])).toEqual([
+      [`900001|${DAY}`, { "SKU-TEST 1": 6, "SKU-TEST 2": 4 }],
+      ["900001|2026-11-03", { "SKU-TEST 1": 1 }],
+    ]);
   });
 });

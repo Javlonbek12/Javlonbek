@@ -92,8 +92,70 @@ const sale = (client: number, day: string, sku: string, blocks: number): Row => 
   sku,
   blocks,
 ];
-const sales = (rows: Row[]) =>
-  book([{ name: "Конструктор отчётов по продажам", rows: [SALES_HEADERS, ...rows] }]);
+// Smart Up's own export has the lines of the report's filters above the header and a totals row
+// at the end (`asExported`); a sheet with the header in row 1 is read the same.
+const sales = (rows: Row[], asExported = false) =>
+  book([
+    {
+      name: "Конструктор отчётов по продажам",
+      rows: asExported
+        ? [
+            ["Дата доставки:  02.11.2026-05.11.2026"],
+            ["Организация: Тестовая организация"],
+            [],
+            SALES_HEADERS,
+            ...rows,
+            [...SALES_HEADERS.slice(0, -1).map(() => "ИТОГО"), 1000],
+          ]
+        : [SALES_HEADERS, ...rows],
+    },
+  ]);
+// A sale as it was stored before 23.11.2026: a row per store, day and product.
+const oldSale = (importId: string, client: number, day: string, sku: string, blocks: number) => {
+  const columns = {
+    storeCode: String(client),
+    storeName: `Тестовая точка ${client}`,
+    city: "Тестовая организация",
+    channel: "Retail",
+    day,
+    month: day.slice(0, 7),
+    person: null,
+  };
+  const id = `${client}|${day}|${sku.toLowerCase()}`;
+  return {
+    kind: "SALE" as const,
+    externalId: id,
+    ...columns,
+    data: { id, ...columns, at: `${day}T00:00`, sku, blocks },
+    importId,
+  };
+};
+// What the cross-check says with the sales of 2–5 Nov (#TEST-2's window, 3–6 Nov, is not covered
+// yet), and with the sales of 6 Nov too.
+const CHECK_TO_5_NOV = {
+  orders: 3,
+  checked: 2,
+  notClosed: 1,
+  anySold: 1,
+  allSold: 1,
+  lines: 2,
+  linesSold: 1,
+  packsOrdered: 30,
+  packsSold: 20,
+  packsSoldRaw: 20,
+};
+const CHECK_TO_6_NOV = {
+  to: "2026-11-06",
+  checked: 3,
+  notClosed: 0,
+  anySold: 2,
+  allSold: 1,
+  lines: 4,
+  linesSold: 2,
+  packsOrdered: 45,
+  packsSold: 15,
+  packsSoldRaw: 20,
+};
 
 const SU_HEADERS = [
   "Organization",
@@ -195,13 +257,17 @@ describe("Connect analytics: the employee hierarchy and the sales cross-check", 
       { name: "employees.xlsx", buffer: await employees() },
       {
         name: "sales.xlsx",
-        buffer: await sales([
-          sale(900009, "02.11.2026", "SKU-TEST-001", 1),
-          // The same store, day and product twice (the name in another case): summed.
-          sale(900001, "03.11.2026", "sku-test-001", 1),
-          sale(900001, "03.11.2026", "SKU-TEST-001", 1),
-          sale(900002, "05.11.2026", "SKU-TEST-002", 1),
-        ]),
+        buffer: await sales(
+          [
+            sale(900009, "02.11.2026", "SKU-TEST-001", 1),
+            sale(900009, "02.11.2026", "SKU-TEST-002", 3),
+            // The same store, day and product twice (the name in another case): summed.
+            sale(900001, "03.11.2026", "sku-test-001", 1),
+            sale(900001, "03.11.2026", "SKU-TEST-001", 1),
+            sale(900002, "05.11.2026", "SKU-TEST-002", 1),
+          ],
+          true,
+        ),
       },
     ]);
     expect(results.map((r) => r.sheets.map((s) => [s.kind, s.created, s.replaced]))).toEqual([
@@ -210,8 +276,33 @@ describe("Connect analytics: the employee hierarchy and the sales cross-check", 
         ["ORDER", 3, null],
       ],
       [["SU_POSITION", 4, 0]],
-      [["SALE", 3, 0]],
+      // Four lines (a store, a day, a product) …
+      [["SALE", 4, 0]],
     ]);
+    // … stored a store's day per row, with the day's products inside.
+    const stored = await db.connectRecord.findMany({
+      where: { kind: "SALE" },
+      orderBy: { day: "asc" },
+    });
+    expect(stored.map((r) => [r.externalId, r.storeCode, r.day, r.month])).toEqual([
+      ["900009|2026-11-02", "900009", "2026-11-02", "2026-11"],
+      ["900001|2026-11-03", "900001", "2026-11-03", "2026-11"],
+      ["900002|2026-11-05", "900002", "2026-11-05", "2026-11"],
+    ]);
+    expect(stored[0]).toMatchObject({ storeName: "Тестовая точка 900009", channel: "Retail" });
+    expect(stored[0]!.data).toEqual({
+      id: "900009|2026-11-02",
+      storeCode: "900009",
+      storeName: "Тестовая точка 900009",
+      city: "Тестовая организация",
+      channel: "Retail",
+      at: "2026-11-02T00:00",
+      day: "2026-11-02",
+      month: "2026-11",
+      person: null,
+      skus: { "SKU-TEST-001": 1, "SKU-TEST-002": 3 },
+    });
+    expect(stored[1]!.data).toMatchObject({ skus: { "SKU-TEST-001": 2 } });
     expect(results[2]!.sheets[0]).toMatchObject({ from: "2026-11-02", to: "2026-11-05" });
     // Sales and positions don't move the data date.
     expect(await connectDataDate()).toBe("2026-11-03");
@@ -220,7 +311,8 @@ describe("Connect analytics: the employee hierarchy and the sales cross-check", 
     ).toMatchObject(
       expect.arrayContaining([
         { kind: "SU_POSITION", count: 4, from: null, to: null, at: expect.any(Date) },
-        { kind: "SALE", count: 3, from: "2026-11-02", to: "2026-11-05", at: expect.any(Date) },
+        // Counted in lines, as the report has them.
+        { kind: "SALE", count: 4, from: "2026-11-02", to: "2026-11-05", at: expect.any(Date) },
       ]),
     );
 
@@ -244,18 +336,7 @@ describe("Connect analytics: the employee hierarchy and the sales cross-check", 
     expect(tree.outside.map((r) => r.code)).toEqual(["TSM_TST_3"]);
 
     // Sales: #TEST-2's window (3–6 Nov) is not covered by sales up to 5 Nov.
-    expect(report.manager!.sections.oos.sales).toMatchObject({
-      orders: 3,
-      checked: 2,
-      notClosed: 1,
-      anySold: 1,
-      allSold: 1,
-      lines: 2,
-      linesSold: 1,
-      packsOrdered: 30,
-      packsSold: 20,
-      packsSoldRaw: 20,
-    });
+    expect(report.manager!.sections.oos.sales).toMatchObject(CHECK_TO_5_NOV);
 
     // Sales of 6 Nov: #TEST-2's window closes, its second product sold (10 packs for 5 ordered).
     const [more] = await importConnectFiles(owner, [
@@ -279,18 +360,7 @@ describe("Connect analytics: the employee hierarchy and the sales cross-check", 
 
     report = await managers();
     const s = report.manager!.sections.oos.sales!;
-    expect(s).toMatchObject({
-      to: "2026-11-06",
-      checked: 3,
-      notClosed: 0,
-      anySold: 2,
-      allSold: 1,
-      lines: 4,
-      linesSold: 2,
-      packsOrdered: 45,
-      packsSold: 15,
-      packsSoldRaw: 20,
-    });
+    expect(s).toMatchObject(CHECK_TO_6_NOV);
     expect(s.byStatus.map((b) => [b.status, b.orders, b.anySold])).toEqual([
       [NO_ANSWER, 2, 1],
       [DELIVERED, 1, 1],
@@ -356,6 +426,73 @@ describe("Connect analytics: the employee hierarchy and the sales cross-check", 
     expect(after.roots[0]!.children[1]!.own.map((r) => r.code)).toEqual(["TSM_TST_3"]);
     expect(after.outside.map((r) => r.code)).toEqual(["TSM_TST_2"]);
     expect(after.idle).toEqual([]);
+  });
+
+  it("reads the sales stored a row per line before 23.11.2026, until an upload replaces their days", async () => {
+    const owner = await withAccess(await createTestUser("OWNER"));
+    await importConnectFiles(owner, [{ name: "connect.xlsx", buffer: await connect() }]);
+    const log = await db.connectImport.create({
+      data: { fileName: "old-sales.xlsx", kinds: "SALE", created: 3, updated: 0, skipped: 0 },
+    });
+    await db.connectRecord.createMany({
+      data: [
+        oldSale(log.id, 900009, "2026-11-02", "SKU-TEST-001", 1),
+        oldSale(log.id, 900001, "2026-11-03", "SKU-TEST-001", 2),
+        oldSale(log.id, 900002, "2026-11-05", "SKU-TEST-002", 1),
+      ],
+    });
+    // The same cross-check as with these sales uploaded today.
+    let report = await managers();
+    expect(report.salesDate).toBe("2026-11-05");
+    expect(report.manager!.sections.oos.sales).toMatchObject(CHECK_TO_5_NOV);
+    expect((await connectLoaded()).find((l) => l.kind === "SALE")).toMatchObject({
+      count: 3,
+      from: "2026-11-02",
+      to: "2026-11-05",
+    });
+
+    // A report of 3–6 Nov replaces the old rows of its days (two lines); 2 Nov stays as it was.
+    const [next] = await importConnectFiles(owner, [
+      {
+        name: "sales-3-6.xlsx",
+        buffer: await sales(
+          [
+            sale(900001, "03.11.2026", "SKU-TEST-001", 1),
+            sale(900005, "06.11.2026", "SKU-TEST-002", 1),
+          ],
+          true,
+        ),
+      },
+    ]);
+    expect(next!.sheets).toMatchObject([
+      { kind: "SALE", created: 2, replaced: 2, skipped: 0, from: "2026-11-03", to: "2026-11-06" },
+    ]);
+    const stored = await db.connectRecord.findMany({
+      where: { kind: "SALE" },
+      orderBy: { day: "asc" },
+    });
+    expect(stored.map((r) => r.externalId)).toEqual([
+      "900009|2026-11-02|sku-test-001",
+      "900001|2026-11-03",
+      "900005|2026-11-06",
+    ]);
+    expect((await connectLoaded()).find((l) => l.kind === "SALE")).toMatchObject({ count: 3 });
+    // Old and new rows are read together.
+    report = await managers();
+    expect(report.manager!.sections.oos.sales).toMatchObject(CHECK_TO_6_NOV);
+
+    // The same report again replaces its own two lines.
+    const [again] = await importConnectFiles(owner, [
+      {
+        name: "sales-3-6.xlsx",
+        buffer: await sales([
+          sale(900001, "03.11.2026", "SKU-TEST-001", 1),
+          sale(900005, "06.11.2026", "SKU-TEST-002", 1),
+        ]),
+      },
+    ]);
+    expect(again!.sheets).toMatchObject([{ kind: "SALE", created: 2, replaced: 2 }]);
+    expect(await db.connectRecord.count({ where: { kind: "SALE" } })).toBe(3);
   });
 
   it("a person linked to a position sees the TSMs under it, together with their team's links", async () => {
