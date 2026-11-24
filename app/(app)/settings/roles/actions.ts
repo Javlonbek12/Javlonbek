@@ -27,6 +27,7 @@ export async function saveAccessAction(form: FormData) {
       MANAGER: role("MANAGER"),
       MEMBER: role("MEMBER"),
       LAWYER: role("LAWYER"),
+      connectLeads: form.getAll("connectLeads").map(String),
     });
     await saveTaskSettings(user, {
       teamApproval: form.getAll("teamApproval").map(String),

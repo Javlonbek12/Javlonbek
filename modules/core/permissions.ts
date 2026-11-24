@@ -4,7 +4,13 @@ import type { Role } from "@/lib/generated/prisma/enums";
 export type Actor = {
   id: string;
   role: Role;
-  access?: { taskScope: "all" | "team" | "own"; teamIds: string[]; modules: string[] };
+  access?: {
+    taskScope: "all" | "team" | "own";
+    teamIds: string[];
+    modules: string[];
+    // The whole of «Аналитика Connect», named by the owner (modules/core/access/actor.ts).
+    connectLead?: boolean;
+  };
 };
 
 // Roles that `actorRole` is allowed to invite. There is only one OWNER.

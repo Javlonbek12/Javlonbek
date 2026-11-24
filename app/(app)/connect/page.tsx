@@ -1,4 +1,4 @@
-import { SlidersHorizontal, Upload } from "lucide-react";
+import { SlidersHorizontal, Upload, UserCheck } from "lucide-react";
 import Link from "next/link";
 
 import { ConnectDownloads } from "@/components/connect/download-menu";
@@ -160,6 +160,12 @@ export default async function ConnectPage({ searchParams }: PageProps<"/connect"
                 <Link href={rulesHref} className={menuItem}>
                   <SlidersHorizontal />
                   {t("connect.rules.menu")}
+                </Link>
+              )}
+              {user.role === "OWNER" && (
+                <Link href="/settings/roles#connect" className={menuItem}>
+                  <UserCheck />
+                  {t("roleAccess.connect.link")}
                 </Link>
               )}
               {downloadable && (

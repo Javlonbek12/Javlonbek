@@ -8,7 +8,9 @@ import type { ConfigurableModule } from "./config";
 export const canUseModule = (
   actor: {
     role: Role;
-    access?: Pick<Access, "taskScope" | "teamIds"> & { modules: readonly string[] };
+    access?: Pick<Access, "taskScope" | "teamIds" | "connectLead"> & {
+      modules: readonly string[];
+    };
   },
   module: ConfigurableModule,
 ) => actor.role === "OWNER" || (actor.access?.modules.includes(module) ?? true);

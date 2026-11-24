@@ -26,10 +26,12 @@ import type { SalesGroup } from "./zone-sales";
 type Viewer = Parameters<typeof canUseModule>[0];
 
 // Everyone with the section sees the executor level; leadership and manager levels and
-// uploading new exports are for the owner and managers.
+// uploading new exports are for the owner, managers and the people the owner named in «Роли и
+// доступ» (they also see every zone, see leadScope).
 export const canSeeConnect = (user: Viewer) => canUseModule(user, "connect");
 export const canLeadConnect = (user: Viewer) =>
-  (user.role === "OWNER" || user.role === "MANAGER") && canSeeConnect(user);
+  (user.role === "OWNER" || user.role === "MANAGER" || user.access?.connectLead === true) &&
+  canSeeConnect(user);
 
 export class ConnectError extends Error {
   constructor(public readonly code: "forbidden" | "empty" | "unknown" | "tooBig") {

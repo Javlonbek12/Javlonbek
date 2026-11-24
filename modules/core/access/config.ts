@@ -38,6 +38,9 @@ const configSchema = z.object({
   MANAGER: roleSchema,
   MEMBER: roleSchema,
   LAWYER: roleSchema.default(LAWYER_DEFAULT),
+  // People (user ids) with the whole of «Аналитика Connect», whatever their role has: every
+  // level, every zone, uploading the exports. Added later: configs saved before have nobody.
+  connectLeads: z.array(z.string().min(1).max(64)).max(500).default([]),
 });
 export type RoleConfig = z.infer<typeof configSchema>;
 
@@ -50,6 +53,7 @@ export const DEFAULT_ROLE_CONFIG: RoleConfig = {
   },
   MEMBER: { modules: ["team", "meetings", "planograms", "content"], taskScope: "own" },
   LAWYER: LAWYER_DEFAULT,
+  connectLeads: [],
 };
 
 const KEY = "roles.config";
@@ -72,10 +76,22 @@ export class RoleConfigError extends Error {
   }
 }
 
+// `connectLeads` left out of the input keeps the people saved before (the roles alone are saved).
 export async function saveRoleConfig(actor: Actor, input: unknown) {
   if (actor.role !== "OWNER") throw new RoleConfigError("forbidden");
   const parsed = configSchema.safeParse(input);
   if (!parsed.success) throw new RoleConfigError("invalid");
+  const given = typeof input === "object" && input !== null && "connectLeads" in input;
+  // Only people who are in the app and are not the owner (who has it all anyway).
+  const connectLeads = given
+    ? (
+        await db.user.findMany({
+          where: { id: { in: parsed.data.connectLeads }, role: { not: "OWNER" } },
+          select: { id: true },
+          orderBy: { id: "asc" },
+        })
+      ).map((u) => u.id)
+    : (await getRoleConfig()).connectLeads;
   // Employees and the lawyer only ever see their own tasks; the lawyer always has the content plan.
   const lawyerModules = parsed.data.LAWYER.modules.filter((m) => m !== "reports");
   const config = {
@@ -87,6 +103,7 @@ export async function saveRoleConfig(actor: Actor, input: unknown) {
         : [...lawyerModules, "content" as const],
       taskScope: "own" as const,
     },
+    connectLeads,
   };
   const value = JSON.stringify(config);
   await db.systemState.upsert({
