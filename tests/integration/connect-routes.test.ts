@@ -475,6 +475,135 @@ describe("Connect: routes and discipline", () => {
     expect((await classes()).classes).toEqual(standard.classes);
   });
 
+  it("puts the sales report next to the zones: a rep's own sales, a TSM's stores", async () => {
+    const owner = await setup();
+    // No sales loaded: no block.
+    expect(
+      (await buildConnectReport(query({ view: "exec" }), TODAY)).exec!.routes!.sales,
+    ).toBeNull();
+
+    // Smart Up's sales report as it comes: filter lines above the header, a totals row below.
+    const sale = (store: number, day: string, staff: string, tsm: string, sum: number): Row => [
+      "Тестоград",
+      `Тест магазин ${store}`,
+      store,
+      "Тест адрес",
+      null,
+      "SKU-TEST 1",
+      staff,
+      tsm,
+      "T-1",
+      day,
+      sum / 1000,
+      sum,
+    ];
+    const HEAD = [
+      "Организация",
+      "Клиент",
+      "ИД клиента",
+      "Адрес",
+      "Регион",
+      "ТМЦ",
+      "Штат",
+      "ХЮ:Responsible TSM",
+      "ИД заказа",
+      "Дата доставки",
+      "Количество продажи",
+      "Сумма без скидки/наценки",
+    ];
+    await importConnectFiles(owner, [
+      {
+        name: "sales.xlsx",
+        buffer: await book([
+          {
+            name: "Конструктор отчётов по продажам",
+            rows: [
+              ["Дата доставки:  02.11.2026-15.11.2026"],
+              HEAD,
+              // The week before: DR_TST_1 sold 40 000.
+              sale(900001, "03.11.2026", "DR_TST_1", "TSM_TST_1", 40000),
+              // The week shown: 30 000 to the TSM's store, 10 000 to a store that is nobody's.
+              sale(900001, "09.11.2026", "DR_TST_1", "TSM_TST_1", 30000),
+              sale(900004, "10.11.2026", "DR_TST_1", "Другие", 10000),
+              // An operator with no route sold to the other rep's store.
+              sale(900005, "11.11.2026", "Operator 9 (Тест)", "TSM_TST_2", 20000),
+              HEAD.map((_, i) => (i < 10 ? "ИТОГО" : 0)),
+            ],
+          },
+        ]),
+      },
+    ]);
+
+    const exec = await buildConnectReport(query({ view: "exec" }), TODAY);
+    const sales = exec.exec!.routes!.sales!;
+    expect(sales.legacy).toBe(false);
+    expect(sales.total).toEqual({ blocks: 60, sum: 60000, before: 40000, change: 50 });
+    // The operator's 20 000 of the 60 000 are not any route's.
+    expect(sales.outside).toEqual({ blocks: 20, sum: 20000, share: 33.3, staff: 1 });
+    // The reps' three route stores of the week all had a sale.
+    expect(sales).toMatchObject({ clients: 3, buying: 3 });
+    const rows = Object.fromEntries(sales.rows.map((r) => [r.zone, r]));
+    expect(rows["DR_TST_1"]).toMatchObject({
+      kind: "DR",
+      sum: 40000,
+      before: 40000,
+      change: 0,
+      days: 2,
+      clients: 2,
+      buying: 2,
+      coverage: 100,
+      hitRate: 33.3,
+    });
+    // DR_TST_2 sold nothing themselves; their store bought from the operator.
+    expect(rows["DR_TST_2"]).toMatchObject({ sum: 0, change: null, clients: 1, buying: 1 });
+    // A TSM has the sales to the stores they are responsible for, whoever sold.
+    expect(rows["TSM_TST_1"]).toMatchObject({
+      kind: "TSM",
+      sum: 30000,
+      before: 40000,
+      change: -25,
+    });
+    expect(rows["TSM_TST_2"]).toMatchObject({ sum: 20000, change: null });
+
+    // The Excel file has every shown zone on a sheet of its own.
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load((await connectXlsx(exec, TODAY)) as unknown as ArrayBuffer);
+    const sheet = wb
+      .getWorksheet("Продажи по зонам")!
+      .getSheetValues()
+      .filter(Boolean)
+      .map((row) => (row as ExcelJS.CellValue[]).slice(1));
+    expect(sheet[0]!.slice(0, 7)).toEqual([
+      "Зона",
+      "Группа",
+      "Сотрудник",
+      "Организация",
+      "Продано",
+      "Изменение, %",
+      "Блоков",
+    ]);
+    // Zone, group, …, sold, change, blocks, deliveries, route stores, with a sale, %, hit rate.
+    const line = sheet.find((row) => row[0] === "DR_TST_1")!;
+    expect([line[1], ...line.slice(4, 12)]).toEqual(["DR", 40000, 0, 40, 2, 2, 2, 100, 33.3]);
+
+    // The reps alone, and one rep's own page.
+    const dr = await buildConnectReport(query({ view: "exec", staff: "dr" }), TODAY);
+    expect(dr.exec!.routes!.sales!.rows.map((r) => r.kind)).toEqual(["DR", "DR"]);
+    const own = await buildConnectReport(query({ view: "executor", person: "DR_TST_1" }), TODAY);
+    expect(own.executor!.routes!.sales!.rows.map((r) => [r.zone, r.sum])).toEqual([
+      ["DR_TST_1", 40000],
+    ]);
+
+    // Days stored before the rep and the money were read count for nothing and say so.
+    await db.connectRecord.updateMany({
+      where: { kind: "SALE", day: "2026-11-09" },
+      data: { data: { id: "900001|2026-11-09", storeCode: "900001", skus: { "SKU-TEST 1": 30 } } },
+    });
+    const old = (await buildConnectReport(query({ view: "exec" }), TODAY)).exec!.routes!.sales!;
+    expect(old.legacy).toBe(true);
+    expect(old.total.sum).toBe(30000);
+  });
+
   it("takes the TSMs' visits from the routes when no visit detail is loaded", async () => {
     await setup();
     const report = await buildConnectReport(query({ view: "exec" }), TODAY);

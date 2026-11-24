@@ -12,7 +12,9 @@ import {
   type RouteZone,
   type StaffFilter,
 } from "./routes";
-import { loadClients, loadHierarchy, loadRoutes, routesDataDate } from "./service";
+import { routeDays, staffKind } from "./route-codes";
+import { loadClients, loadHierarchy, loadRoutes, loadSalesGroups, routesDataDate } from "./service";
+import { zoneSales, type ZoneSales } from "./zone-sales";
 
 // «Маршруты и дисциплина» for the Connect analytics page and its downloads: what is loaded for a
 // period and the block each level shows.
@@ -58,9 +60,42 @@ export type RoutesBlock = {
   analysis: RouteAnalysis;
   // The executors' level: the chosen zone.
   zone: RouteZone | null;
+  // «Продажи по зонам»: the sales report next to the shown zones (null: no sales loaded for the
+  // period).
+  sales: ZoneSales | null;
   // The days of the period whose Smart Up visits are read from the route analysis.
   visitDays: string[];
 };
+
+// The sales of the shown zones: each zone's route stores of the period, and the sums by rep and
+// by responsible TSM.
+async function salesOf(
+  source: RouteSource,
+  analysis: RouteAnalysis,
+  period: { from: string; to: string },
+): Promise<ZoneSales | null> {
+  const { groups, legacy } = await loadSalesGroups(period, previousPeriod(period));
+  if (!groups.some((g) => g.period === "now")) return null;
+  const clients = new Map<string, Set<string>>();
+  const reps = new Map<string, string>();
+  for (const route of source.routes) {
+    if (!route.person) continue;
+    const key = titleKey(route.person);
+    if (!reps.has(key) && staffKind(route.person, source.hierarchy) === "DR")
+      reps.set(key, route.person);
+    if (!routeDays(route, period.from, period.to).length) continue;
+    let stores = clients.get(key);
+    if (!stores) clients.set(key, (stores = new Set()));
+    stores.add(route.storeCode);
+  }
+  return zoneSales({
+    zones: analysis.zones,
+    clients,
+    groups,
+    repZones: [...reps.values()],
+    legacy,
+  });
+}
 
 // More stores than this in the lists: the whole client base is read instead of a long list.
 const MAX_CLIENT_CODES = 5000;
@@ -92,6 +127,7 @@ export async function buildRoutesBlock(
     targets: options.targets,
   });
   if (!analysis.totals.all.clients) return null;
+  const sales = await salesOf(source, analysis, period);
   const codes = listStoreCodes(analysis);
   const clients = codes.length
     ? await loadClients(codes.length > MAX_CLIENT_CODES ? undefined : codes)
@@ -102,6 +138,7 @@ export async function buildRoutesBlock(
     dataDate: source.dataDate,
     query,
     analysis: gradeRouteLists(analysis, clients),
+    sales,
     zone:
       query.view === "executor"
         ? (analysis.zones.find((z) => titleKey(z.zone) === titleKey(query.person!)) ?? null)

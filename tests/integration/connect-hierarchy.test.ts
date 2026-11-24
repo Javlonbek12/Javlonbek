@@ -301,6 +301,11 @@ describe("Connect analytics: the employee hierarchy and the sales cross-check", 
       month: "2026-11",
       person: null,
       skus: { "SKU-TEST-001": 1, "SKU-TEST-002": 3 },
+      // The day's blocks; this report has no rep, TSM and money columns.
+      staff: null,
+      tsm: null,
+      blocks: 4,
+      sum: 0,
     });
     expect(stored[1]!.data).toMatchObject({ skus: { "SKU-TEST-001": 2 } });
     expect(results[2]!.sheets[0]).toMatchObject({ from: "2026-11-02", to: "2026-11-05" });

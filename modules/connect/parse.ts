@@ -136,6 +136,12 @@ export type PositionRecord = Base & {
 export type SaleRecord = Base & {
   sku: string;
   blocks: number;
+  // The report's «Штат» (the distributor's rep who sold: «DR 36»), «Responsible TSM» (KT&G's TSM
+  // of the store; «Другие» is nobody) and the line's money — read since 24.11.2026, for the
+  // sales by zone.
+  staff?: string | null;
+  tsm?: string | null;
+  sum?: number;
 };
 
 // How sales are stored: a store's delivery day with every SKU sold on it (name → blocks); the ID
@@ -143,6 +149,13 @@ export type SaleRecord = Base & {
 // of a day repeat the store's name and organization: a row per line made the table 350 MB.
 export type SaleDayRecord = Base & {
   skus: Record<string, number>;
+  // Since 24.11.2026, for the sales by zone: who sold and whose store it is (a store's day has
+  // one rep: 9 store-days of 112 000 had two, the first is kept), and the day's blocks and money.
+  // A day stored before that has none of the four.
+  staff?: string | null;
+  tsm?: string | null;
+  blocks?: number;
+  sum?: number;
 };
 
 // What happened with a client on a day of Smart Up's «Анализ маршрута»: a planned visit made
@@ -617,6 +630,11 @@ function parseSale(headers: string[], cells: Cell[]): ParsedRow | null {
   if (!storeCode || !day || !sku || blocks === null) return null;
   // «ХЮ:(TSM;DR) Основной канал / POS channel»: the prefix may change.
   const channel = headers.find((h) => /channel/i.test(h));
+  // «ХЮ:Responsible TSM»; a store nobody is responsible for has «Другие».
+  const tsmColumn = headers.find((h) => /responsible tsm/i.test(h));
+  const tsm = tsmColumn ? str(get(tsmColumn)) : null;
+  // «Сумма без скидки/наценки».
+  const sumColumn = headers.find((h) => /^сумма/i.test(h));
   return {
     kind: "SALE",
     record: {
@@ -631,9 +649,13 @@ function parseSale(headers: string[], cells: Cell[]): ParsedRow | null {
       person: null,
       sku,
       blocks,
+      staff: str(get("Штат")),
+      tsm: tsm && !NO_TSM.test(tsm) ? tsm : null,
+      sum: (sumColumn ? num(get(sumColumn)) : null) ?? 0,
     },
   };
 }
+const NO_TSM = /^(другие|others?)$/i;
 
 // A product name compared without case and repeated spaces («Esse Change 1» = «ESSE  Change 1»):
 // the sales report and the bot's order columns write some names differently.
@@ -644,6 +666,12 @@ export const skuKey = (name: string) => name.toLowerCase().replace(/\s+/g, " ").
 export function saleLines(record: SaleRecord | SaleDayRecord): SaleRecord[] {
   if (!("skus" in record)) return [record];
   const { skus, ...base } = record;
+  // A line is what the cross-check with orders works on: the day's own totals and who sold are
+  // not a line's.
+  delete base.blocks;
+  delete base.sum;
+  delete base.staff;
+  delete base.tsm;
   return Object.entries(skus).map(([sku, blocks]) => ({
     ...base,
     id: `${record.id}|${skuKey(sku)}`,
@@ -670,7 +698,13 @@ export function collectSales() {
   // A product is written one way in all the days: the way it was first seen.
   const names = new Map<string, string>();
   let lines = 0;
-  const add = (base: Base, sku: string, blocks: number) => {
+  // Who sold and whose store it is, with what is already there (a text kept once, or nothing).
+  type Zone = { staff?: string | null; tsm?: string | null };
+  const zoned = (day: SaleDayRecord, from: Zone) => {
+    if (from.staff && !day.staff) day.staff = once(from.staff);
+    if (from.tsm && !day.tsm) day.tsm = once(from.tsm);
+  };
+  const add = (base: Base & Zone, sku: string, blocks: number) => {
     const id = `${base.storeCode}|${base.day}`;
     let day = days.get(id);
     if (!day) {
@@ -685,9 +719,15 @@ export function collectSales() {
         month: once(base.month),
         person: null,
         skus: {},
+        staff: null,
+        tsm: null,
+        blocks: 0,
+        sum: 0,
       };
       days.set(id, day);
     }
+    zoned(day, base);
+    day.blocks = (day.blocks ?? 0) + blocks;
     const key = skuKey(sku);
     let name = names.get(key);
     if (name === undefined) names.set(key, (name = once(sku)));
@@ -699,6 +739,9 @@ export function collectSales() {
       if ("skus" in record)
         for (const [sku, blocks] of Object.entries(record.skus)) add(record, sku, blocks);
       else add(record, record.sku, record.blocks);
+      // The money once for what was added: a line's own, or a whole day's.
+      const day = days.get(`${record.storeCode}|${record.day}`);
+      if (day) day.sum = (day.sum ?? 0) + (record.sum ?? 0);
     },
     days: () => [...days.values()],
     get lines() {

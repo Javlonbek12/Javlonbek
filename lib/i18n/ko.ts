@@ -477,6 +477,37 @@ export const ko: PartialDictionary & {
         noOrder: "DR 주문 없음",
       },
     },
+    zoneSales: {
+      title: "구역별 판매",
+      hint: "Smart Up 판매 보고서를 루트와 나란히 봅니다. 판매는 배송일 기준입니다. 영업 담당자(DR)는 본인이 판매한 것, TSM은 담당 매장에 판매된 것입니다. 변화는 같은 길이의 이전 기간({previous}) 대비입니다. 하락폭이 가장 큰 구역부터 표시됩니다.",
+      legacy:
+        "이 기간의 일부 판매는 업데이트 전에 업로드되어 영업 담당자와 금액이 없어 여기에 포함되지 않습니다. 해당 날짜의 판매 보고서를 다시 업로드하세요.",
+      tile: {
+        sum: "기간 판매액",
+        sumNote: "{blocks} 블록 · 보고서의 모든 판매",
+        change: "이전 기간 대비",
+        changeNote: "이전 {before}",
+        changeNone: "이전 기간 판매 없음",
+        coverage: "DR 루트 매장 중 판매 발생",
+        coverageNote: "{clients} 중 {buying} · 판매 없음: {idle}",
+        outside: "루트 외 판매",
+        outsideNote: "{sum} · 분석에 루트가 없는 판매자: {staff}",
+      },
+      table: { DR: "영업 담당자(DR)", TSM: "TSM — 담당 매장 판매" },
+      tableHint: {
+        DR: "판매 옆에 히트율이 있습니다. 주문 방문은 많은데 판매가 줄거나 그 반대라면 확인이 필요합니다.",
+        TSM: "TSM이 담당자로 지정된 매장의 판매입니다. 옆에 방문율이 있습니다.",
+      },
+      col: {
+        sum: "판매액",
+        change: "변화",
+        blocks: "블록",
+        days: "배송",
+        coverage: "판매 발생 매장",
+      },
+      sheet: "구역별 판매",
+      kind: "그룹",
+    },
     worst: {
       title: "최저 실적",
       hint: "항목별 최저 5개 — 대화를 시작할 곳입니다. 색상은 기준을 따릅니다: 빨강은 기준에 크게 미달, 노랑은 근접, 초록은 달성.",
