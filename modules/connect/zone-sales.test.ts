@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import type { RouteZone } from "./routes";
-import { zoneSales, type SalesGroup } from "./zone-sales";
+import {
+  idleStores,
+  idleSummary,
+  soldStores,
+  sortIdle,
+  zoneSales,
+  type IdleStore,
+  type RouteStore,
+  type SalesGroup,
+} from "./zone-sales";
 
 // Synthetic data only: DR_TST_* / TSM_TST_* zones, stores 9000xx.
 const zone = (name: string, kind: "DR" | "TSM", rates: Partial<RouteZone> = {}) =>
@@ -100,5 +109,90 @@ describe("«Продажи по зонам»", () => {
       ["DR_TST_2", null],
       ["DR_TST_1", null],
     ]);
+  });
+});
+
+describe("«Точки маршрута без продаж»", () => {
+  const store = (code: string, visits = 1, orders = 0): [string, RouteStore] => [
+    code,
+    { store: `Тест магазин ${code}`, organization: "Тестоград", visits, orders },
+  ];
+  const STORES = new Map([
+    ["dr tst 1", new Map([store("900001"), store("900002"), store("900003", 4, 2)])],
+    ["dr tst 2", new Map([store("900003", 0), store("900004")])],
+    ["tsm tst 1", new Map([store("900001"), store("900005", 2)])],
+  ]);
+  const SOLD = soldStores(GROUPS);
+
+  it("takes the stores sold to in the period shown, not before", () => {
+    expect([...SOLD].sort()).toEqual(["900001", "900002", "900004", "900099"]);
+    expect(soldStores([group("before", "DR_TST_1", null, 100, ["900001"])]).size).toBe(0);
+  });
+
+  it("lists the reps' route stores nobody sold to, a store on two routes with each", () => {
+    const idle = idleStores({ zones: ZONES, stores: STORES, sold: SOLD });
+    // 900004 was sold to by an operator: it bought. The TSM's 900005 is not a rep's store.
+    expect(idle.map((s) => [s.zone, s.storeCode, s.visits, s.orders])).toEqual([
+      ["DR_TST_1", "900003", 4, 2],
+      ["DR_TST_2", "900003", 0, 0],
+    ]);
+    expect(idle[0]).toMatchObject({
+      kind: "DR",
+      person: "Тест DR_TST_1",
+      store: "Тест магазин 900003",
+      organization: "Тестоград",
+    });
+  });
+
+  it("lists the TSMs' own route stores when no rep is shown", () => {
+    const idle = idleStores({ zones: [ZONES[2]!], stores: STORES, sold: SOLD });
+    expect(idle.map((s) => [s.zone, s.storeCode])).toEqual([["TSM_TST_1", "900005"]]);
+    // A zone with no route in the period has nothing to list.
+    expect(idleStores({ zones: ZONES, stores: new Map(), sold: SOLD })).toEqual([]);
+  });
+
+  it("puts the biggest first, then those with an order marked and no sale", () => {
+    const row = (storeCode: string, grade: string | null, orders: number, visits: number) =>
+      ({
+        storeCode,
+        store: `Тест магазин ${storeCode}`,
+        zone: "DR_TST_1",
+        kind: "DR",
+        person: null,
+        organization: null,
+        lastSale: null,
+        equipment: null,
+        grade,
+        orders,
+        visits,
+      }) satisfies IdleStore;
+    const sorted = sortIdle(
+      [
+        row("900001", null, 5, 5),
+        row("900002", "m", 0, 9),
+        row("900003", "XL", 0, 1),
+        row("900004", "M", 2, 1),
+        row("900005", "XL", 0, 3),
+        row("900006", "M", 2, 4),
+      ],
+      ["XL", "L", "M", "S"],
+    );
+    expect(sorted.map((s) => s.storeCode)).toEqual([
+      "900005",
+      "900003",
+      "900006",
+      "900004",
+      "900002",
+      "900001",
+    ]);
+    // A store on two routes is one store: visited by one of the two is visited.
+    expect(
+      idleSummary([
+        row("900001", null, 2, 3),
+        row("900002", null, 0, 0),
+        { ...row("900002", null, 0, 1), zone: "DR_TST_2" },
+        { ...row("900003", null, 0, 0), lastSale: "2026-10-20" },
+      ]),
+    ).toEqual({ stores: 3, orders: 1, unvisited: 1, never: 2 });
   });
 });

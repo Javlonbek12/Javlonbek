@@ -5,6 +5,7 @@ import { titleKey, type RecordOf } from "./parse";
 import type { ConnectQuery } from "./report";
 import {
   analyzeRoutes,
+  GRADE_ORDER,
   gradeRouteLists,
   listStoreCodes,
   type RouteAnalysis,
@@ -12,9 +13,23 @@ import {
   type RouteZone,
   type StaffFilter,
 } from "./routes";
-import { routeDays, staffKind } from "./route-codes";
-import { loadClients, loadHierarchy, loadRoutes, loadSalesGroups, routesDataDate } from "./service";
-import { zoneSales, type ZoneSales } from "./zone-sales";
+import { isOrder, isVisit, routeDays, staffKind } from "./route-codes";
+import {
+  loadClients,
+  loadHierarchy,
+  loadLastSales,
+  loadRoutes,
+  loadSalesGroups,
+  routesDataDate,
+} from "./service";
+import {
+  idleStores,
+  soldStores,
+  sortIdle,
+  zoneSales,
+  type RouteStore,
+  type ZoneSales,
+} from "./zone-sales";
 
 // «Маршруты и дисциплина» for the Connect analytics page and its downloads: what is loaded for a
 // period and the block each level shows.
@@ -76,25 +91,48 @@ async function salesOf(
 ): Promise<ZoneSales | null> {
   const { groups, legacy } = await loadSalesGroups(period, previousPeriod(period));
   if (!groups.some((g) => g.period === "now")) return null;
-  const clients = new Map<string, Set<string>>();
+  // Each zone's stores of the period, with the visits and the orders the route shows for them.
+  const stores = new Map<string, Map<string, RouteStore>>();
   const reps = new Map<string, string>();
   for (const route of source.routes) {
     if (!route.person) continue;
     const key = titleKey(route.person);
     if (!reps.has(key) && staffKind(route.person, source.hierarchy) === "DR")
       reps.set(key, route.person);
-    if (!routeDays(route, period.from, period.to).length) continue;
-    let stores = clients.get(key);
-    if (!stores) clients.set(key, (stores = new Set()));
-    stores.add(route.storeCode);
+    const days = routeDays(route, period.from, period.to);
+    if (!days.length) continue;
+    let ofZone = stores.get(key);
+    if (!ofZone) stores.set(key, (ofZone = new Map()));
+    let store = ofZone.get(route.storeCode);
+    if (!store)
+      ofZone.set(
+        route.storeCode,
+        (store = { store: route.storeName, organization: route.city, visits: 0, orders: 0 }),
+      );
+    for (const { code } of days) {
+      if (isVisit(code)) store.visits += 1;
+      if (isOrder(code)) store.orders += 1;
+    }
   }
-  return zoneSales({
+  const sales = zoneSales({
     zones: analysis.zones,
-    clients,
+    clients: new Map([...stores].map(([zone, list]) => [zone, new Set(list.keys())])),
     groups,
     repZones: [...reps.values()],
     legacy,
   });
+  const idle = idleStores({ zones: analysis.zones, stores, sold: soldStores(groups) });
+  // When each of them last bought before the period: how long it has been.
+  const lastSales = await loadLastSales([...new Set(idle.map((s) => s.storeCode))], period.from);
+  return {
+    ...sales,
+    idle: idle.map((s) => ({
+      ...s,
+      lastSale: lastSales.get(s.storeCode) ?? null,
+      grade: null,
+      equipment: null,
+    })),
+  };
 }
 
 // More stores than this in the lists: the whole client base is read instead of a long list.
@@ -128,7 +166,9 @@ export async function buildRoutesBlock(
   });
   if (!analysis.totals.all.clients) return null;
   const sales = await salesOf(source, analysis, period);
-  const codes = listStoreCodes(analysis);
+  const codes = [
+    ...new Set([...listStoreCodes(analysis), ...(sales?.idle ?? []).map((s) => s.storeCode)]),
+  ];
   const clients = codes.length
     ? await loadClients(codes.length > MAX_CLIENT_CODES ? undefined : codes)
     : new Map<string, RecordOf<"CLIENT">>();
@@ -138,7 +178,17 @@ export async function buildRoutesBlock(
     dataDate: source.dataDate,
     query,
     analysis: gradeRouteLists(analysis, clients),
-    sales,
+    // The stores without a sale get their grade and equipment, the biggest first.
+    sales: sales && {
+      ...sales,
+      idle: sortIdle(
+        sales.idle.map((store) => {
+          const client = clients.get(store.storeCode);
+          return client ? { ...store, grade: client.grade, equipment: client.equipment } : store;
+        }),
+        GRADE_ORDER,
+      ),
+    },
     zone:
       query.view === "executor"
         ? (analysis.zones.find((z) => titleKey(z.zone) === titleKey(query.person!)) ?? null)

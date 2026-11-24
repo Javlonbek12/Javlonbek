@@ -267,6 +267,21 @@ export async function loadSalesGroups(
   };
 }
 
+// The last delivery day of each of the stores before a day, in the sales loaded (a store not
+// sold to before it is not in the map).
+export async function loadLastSales(
+  storeCodes: string[],
+  before: string,
+): Promise<Map<string, string>> {
+  if (!storeCodes.length) return new Map();
+  const rows = await db.connectRecord.groupBy({
+    by: ["storeCode"],
+    where: { kind: "SALE", storeCode: { in: storeCodes }, day: { lt: before } },
+    _max: { day: true },
+  });
+  return new Map(rows.flatMap((r) => (r._max.day ? [[r.storeCode, r._max.day] as const] : [])));
+}
+
 // What is loaded now, by kind: rows (of sales: lines), the days they cover and when they were
 // last written (the upload page).
 export async function connectLoaded() {

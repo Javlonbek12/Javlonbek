@@ -161,4 +161,32 @@ export function routeSheets(sheet: AddSheet, block: RoutesBlock) {
         r.attendance,
       ]),
     );
+  if (block.sales?.idle.length)
+    sheet(
+      t("connect.zoneSales.idle.sheet"),
+      [
+        col("zone", 26),
+        col("person", 30),
+        col("organization", 18),
+        col("storeCode", 12),
+        col("store", 40),
+        col("grade", 8),
+        col("equipment", 30),
+        { header: t("connect.zoneSales.idle.visits"), width: 10 },
+        { header: t("connect.zoneSales.idle.orders"), width: 12 },
+        { header: t("connect.zoneSales.idle.lastSale"), width: 18 },
+      ],
+      block.sales.idle.map((s) => [
+        s.zone,
+        s.person,
+        s.organization,
+        s.storeCode,
+        s.store,
+        s.grade,
+        localizeData(s.equipment),
+        s.visits,
+        s.orders,
+        s.lastSale,
+      ]),
+    );
 }

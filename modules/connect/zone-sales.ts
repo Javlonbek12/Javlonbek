@@ -42,6 +42,29 @@ export type ZoneSalesRow = {
   attendance: number | null;
 };
 
+// A store of a zone's route in the period: what the route analysis says about it.
+export type RouteStore = {
+  store: string;
+  organization: string | null;
+  // Visits made in the period and those of them marked with an order.
+  visits: number;
+  orders: number;
+};
+
+// «Точки маршрута без продаж»: a store on a shown zone's route that nobody sold anything to in
+// the period.
+export type IdleStore = RouteStore & {
+  zone: string;
+  kind: StaffKind;
+  person: string | null;
+  storeCode: string;
+  // The last delivery day in the sales loaded (null: none at all).
+  lastSale: string | null;
+  // From the client base, when the store is known there.
+  grade: string | null;
+  equipment: string | null;
+};
+
 type Money = { blocks: number; sum: number; before: number; change: number | null };
 
 export type ZoneSales = {
@@ -54,6 +77,9 @@ export type ZoneSales = {
   clients: number;
   buying: number;
   rows: ZoneSalesRow[];
+  // The stores of the shown routes with no sale in the period (filled by the report: it knows
+  // the stores' names, their last sale and the client base).
+  idle: IdleStore[];
   // Sales stored before the rep and the money were read (24.11.2026): the report has to be
   // uploaded again for them to count.
   legacy: boolean;
@@ -162,6 +188,76 @@ export function zoneSales(input: {
         a.sum - b.sum ||
         a.zone.localeCompare(b.zone, undefined, { numeric: true }),
     ),
+    idle: [],
     legacy: input.legacy ?? false,
   };
+}
+
+// The stores sold to in the period shown.
+export const soldStores = (groups: SalesGroup[]) =>
+  new Set(groups.flatMap((g) => (g.period === "now" ? g.stores : [])));
+
+// The stores of the shown zones' routes that nobody sold to: the reps' routes (they are who
+// sells); the TSMs' own when no rep is shown (a TSM's page, the TSMs alone). A store on two
+// routes is a row of each: each of the two has it to answer for.
+export function idleStores(input: {
+  zones: RouteZone[];
+  // Each zone's route stores of the period, by titleKey of the zone, then by store code.
+  stores: Map<string, Map<string, RouteStore>>;
+  sold: Set<string>;
+}): Omit<IdleStore, "lastSale" | "grade" | "equipment">[] {
+  const reps = input.zones.some((z) => z.kind === "DR");
+  return input.zones
+    .filter((z) => (reps ? z.kind === "DR" : true))
+    .flatMap((z) =>
+      [...(input.stores.get(titleKey(z.zone)) ?? [])]
+        .filter(([code]) => !input.sold.has(code))
+        .map(([storeCode, store]) => ({
+          ...store,
+          zone: z.zone,
+          kind: z.kind,
+          person: z.person,
+          storeCode,
+        })),
+    );
+}
+
+// The list in four numbers, a store on two routes counted once: how many stores, how many with
+// an order marked on a route, never visited in the period, and with no sale loaded before it.
+export function idleSummary(idle: IdleStore[]) {
+  const stores = new Map<string, { orders: number; visits: number; lastSale: string | null }>();
+  for (const s of idle) {
+    const store = stores.get(s.storeCode);
+    if (store) {
+      store.orders += s.orders;
+      store.visits += s.visits;
+    } else stores.set(s.storeCode, { orders: s.orders, visits: s.visits, lastSale: s.lastSale });
+  }
+  const count = (
+    test: (s: { orders: number; visits: number; lastSale: string | null }) => boolean,
+  ) => [...stores.values()].filter(test).length;
+  return {
+    stores: stores.size,
+    orders: count((s) => s.orders > 0),
+    unvisited: count((s) => s.visits === 0),
+    never: count((s) => !s.lastSale),
+  };
+}
+
+// The biggest stores first (by the grades' order), then those with orders marked on the route
+// and still nothing sold, then the most visited.
+export function sortIdle<T extends IdleStore>(stores: T[], grades: readonly string[]): T[] {
+  const rank = (grade: string | null) => {
+    const at = grades.indexOf((grade ?? "").trim().toUpperCase());
+    return at < 0 ? grades.length : at;
+  };
+  return [...stores].sort(
+    (a, b) =>
+      rank(a.grade) - rank(b.grade) ||
+      b.orders - a.orders ||
+      b.visits - a.visits ||
+      a.zone.localeCompare(b.zone, undefined, { numeric: true }) ||
+      a.store.localeCompare(b.store) ||
+      a.storeCode.localeCompare(b.storeCode),
+  );
 }
