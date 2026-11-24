@@ -1,8 +1,17 @@
 name: CI
 
+# One run per change: a pull request's own, and main's after the merge (the deploy follows that
+# one). A push to a branch with an open pull request used to run the same checks twice, and the
+# repository is private, so every minute counts against the account's included Actions minutes.
 on:
   push:
+    branches: [main]
   pull_request:
+
+# A newer push to the same pull request replaces the run in progress; main's runs are never cut.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   check:
