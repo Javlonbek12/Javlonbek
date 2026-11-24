@@ -1,10 +1,11 @@
 import Link from "next/link";
 
+import { formatDay } from "@/lib/dates";
 import { formatNumber as decimal } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { formatMoney, formatNumber } from "@/modules/connect/report";
 import type { RouteTargets } from "@/modules/connect/routes";
-import type { ZoneSales, ZoneSalesRow } from "@/modules/connect/zone-sales";
+import { idleSummary, type ZoneSales, type ZoneSalesRow } from "@/modules/connect/zone-sales";
 
 import { DataTable, Section, StatGrid, ToneBar, ToneValue, type Column } from "./parts";
 import { TsmName } from "./sections";
@@ -24,6 +25,10 @@ const changeText = (change: number | null) =>
   change === null
     ? "—"
     : `${change > 0 ? "▲" : change < 0 ? "▼" : ""} ${decimal(Math.abs(change))}%`.trim();
+
+// The stores without a sale shown on the page (all of them are in the Excel file).
+const IDLE_SHOWN = 30;
+const IDLE_ANCHOR = "idle-stores";
 
 // How many zones a table shows (the rest are in the Excel file).
 const ZONES_SHOWN = { exec: 20, manager: 40, executor: 1 };
@@ -48,6 +53,7 @@ export function ZoneSalesSection({
   const tsms = sales.rows.filter((r) => r.kind === "TSM");
   if (!reps.length && !tsms.length) return null;
   const total = sales.total;
+  const idle = idleSummary(sales.idle);
 
   const columns = (kind: "DR" | "TSM"): Column<ZoneSalesRow>[] => [
     {
@@ -207,6 +213,95 @@ export function ZoneSalesSection({
       )}
       {table("DR", reps)}
       {table("TSM", tsms)}
+      {sales.idle.length > 0 && (
+        <div id={IDLE_ANCHOR} className="flex scroll-mt-20 flex-col gap-2 border-t pt-4">
+          <h3 className="text-sm font-medium">
+            {t("connect.zoneSales.idle.title")} · {formatNumber(idle.stores)}
+          </h3>
+          <p className="text-muted-foreground max-w-3xl text-xs">
+            {t("connect.zoneSales.idle.hint")}
+          </p>
+          <p className="text-sm">
+            {t("connect.zoneSales.idle.summary", {
+              orders: formatNumber(idle.orders),
+              unvisited: formatNumber(idle.unvisited),
+              never: formatNumber(idle.never),
+            })}
+          </p>
+          <DataTable
+            rows={sales.idle}
+            rowKey={(s) => `${s.zone}|${s.storeCode}`}
+            // An order marked on the route and nothing delivered is what to look into (amber, not
+            // red: an order of the period's last days may be delivered after it).
+            rowTone={(s) => (s.orders > 0 ? "warn" : null)}
+            limit={IDLE_SHOWN}
+            columns={[
+              {
+                key: "store",
+                header: t("connect.routes.col.store"),
+                cell: (s) => (
+                  <span className="flex flex-col">
+                    <span>{s.store}</span>
+                    <span className="text-muted-foreground text-xs">{s.storeCode}</span>
+                  </span>
+                ),
+                className: "min-w-48",
+              },
+              {
+                key: "zone",
+                header: t("connect.routes.col.zone"),
+                cell: (s) =>
+                  href ? (
+                    <Link href={href(s.zone)} className="text-primary underline underline-offset-2">
+                      <TsmName code={s.zone} name={s.person} />
+                    </Link>
+                  ) : (
+                    <TsmName code={s.zone} name={s.person} />
+                  ),
+                className: "min-w-40",
+              },
+              {
+                key: "organization",
+                header: t("connect.routes.col.organization"),
+                cell: (s) => s.organization ?? "—",
+              },
+              {
+                key: "grade",
+                header: t("connect.routes.col.grade"),
+                cell: (s) => s.grade ?? "—",
+              },
+              {
+                key: "visits",
+                header: t("connect.zoneSales.idle.visits"),
+                numeric: true,
+                cell: (s) => formatNumber(s.visits),
+              },
+              {
+                key: "orders",
+                header: t("connect.zoneSales.idle.orders"),
+                numeric: true,
+                cell: (s) => (
+                  <ToneValue tone={s.orders > 0 ? "warn" : null}>
+                    {formatNumber(s.orders)}
+                  </ToneValue>
+                ),
+              },
+              {
+                key: "lastSale",
+                header: t("connect.zoneSales.idle.lastSale"),
+                cell: (s) =>
+                  s.lastSale ? (
+                    formatDay(s.lastSale)
+                  ) : (
+                    <span className="text-muted-foreground whitespace-nowrap">
+                      {t("connect.zoneSales.idle.never")}
+                    </span>
+                  ),
+              },
+            ]}
+          />
+        </div>
+      )}
     </Section>
   );
 }

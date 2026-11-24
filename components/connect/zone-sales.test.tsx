@@ -1,7 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import type { ZoneSales, ZoneSalesRow } from "@/modules/connect/zone-sales";
+import type { IdleStore, ZoneSales, ZoneSalesRow } from "@/modules/connect/zone-sales";
 
 import { changeTone, ZoneSalesSection } from "./zone-sales";
 
@@ -34,6 +34,7 @@ const SALES: ZoneSales = {
     row("DR_TST_2", "DR", { change: -3, hitRate: 95 }),
     row("DR_TST_3", "DR", { change: null, before: 0, coverage: null, clients: 0, buying: 0 }),
   ],
+  idle: [],
   legacy: false,
 };
 const TARGETS = { attendance: 95, hitRate: 90 };
@@ -148,5 +149,73 @@ describe("«Продажи по зонам»", () => {
       "good",
       null,
     ]);
+  });
+
+  it("lists the route stores without a sale, an order with no delivery highlighted", () => {
+    const idle = (storeCode: string, extra: Partial<IdleStore>): IdleStore => ({
+      storeCode,
+      store: `Тест магазин ${storeCode}`,
+      zone: "DR_TST_1",
+      kind: "DR",
+      person: "Тест DR_TST_1",
+      organization: "Тестоград",
+      grade: null,
+      equipment: null,
+      visits: 0,
+      orders: 0,
+      lastSale: null,
+      ...extra,
+    });
+    // Nothing to list: no heading.
+    show();
+    expect(screen.queryByText(/Точки маршрута без продаж/)).toBeNull();
+    document.body.innerHTML = "";
+
+    show({
+      sales: {
+        ...SALES,
+        idle: [
+          idle("900001", { grade: "XL", visits: 4, orders: 2, lastSale: "2026-10-20" }),
+          idle("900002", { visits: 3 }),
+          // The same store on another rep's route: one store, two rows.
+          idle("900002", { zone: "DR_TST_2", person: "Тест DR_TST_2" }),
+        ],
+      },
+      href: (zone) => `/connect?person=${zone}`,
+    });
+    const heading = screen.getByRole("heading", { name: "Точки маршрута без продаж · 2" });
+    const rows = within(heading.parentElement!.querySelector("table")!)
+      .getAllByRole("row")
+      .slice(1);
+    expect(
+      rows.map((tr) =>
+        within(tr)
+          .getAllByRole("cell")
+          .map((td) => td.textContent),
+      ),
+    ).toEqual([
+      [
+        "Тест магазин 900001900001",
+        "DR_TST_1Тест DR_TST_1",
+        "Тестоград",
+        "XL",
+        "4",
+        "2",
+        "20 окт.",
+      ],
+      ["Тест магазин 900002900002", "DR_TST_1Тест DR_TST_1", "Тестоград", "—", "3", "0", "не было"],
+      ["Тест магазин 900002900002", "DR_TST_2Тест DR_TST_2", "Тестоград", "—", "0", "0", "не было"],
+    ]);
+    // An order marked on the route and no delivery is the one highlighted.
+    expect(within(rows[0]!).getByText("2").className).toMatch(/bg-amber/);
+    expect(rows[0]!.className).toMatch(/amber/);
+    expect(rows[1]!.className).not.toMatch(/red|amber/);
+    expect(
+      screen.getByText(
+        "С отмеченным заказом: 1 · без визитов за период: 0 · не покупали и раньше (в загруженных продажах): 1",
+      ),
+    ).toBeInTheDocument();
+    // The zone opens that person's page.
+    expect(within(rows[0]!).getByRole("link")).toHaveAttribute("href", "/connect?person=DR_TST_1");
   });
 });

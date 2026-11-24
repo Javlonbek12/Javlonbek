@@ -329,6 +329,48 @@ async function setup() {
 const query = (extra: Record<string, string> = {}) =>
   parseConnectQuery({ ...WEEK, ...extra }, true);
 
+// Smart Up's sales report as it comes: filter lines above the header, a totals row below.
+const sale = (store: number, day: string, staff: string, tsm: string, sum: number): Row => [
+  "Тестоград",
+  `Тест магазин ${store}`,
+  store,
+  "Тест адрес",
+  null,
+  "SKU-TEST 1",
+  staff,
+  tsm,
+  "T-1",
+  day,
+  sum / 1000,
+  sum,
+];
+const HEAD = [
+  "Организация",
+  "Клиент",
+  "ИД клиента",
+  "Адрес",
+  "Регион",
+  "ТМЦ",
+  "Штат",
+  "ХЮ:Responsible TSM",
+  "ИД заказа",
+  "Дата доставки",
+  "Количество продажи",
+  "Сумма без скидки/наценки",
+];
+const salesBook = (rows: Row[]) =>
+  book([
+    {
+      name: "Конструктор отчётов по продажам",
+      rows: [
+        ["Дата доставки:  02.11.2026-15.11.2026"],
+        HEAD,
+        ...rows,
+        HEAD.map((_, i) => (i < 10 ? "ИТОГО" : 0)),
+      ],
+    },
+  ]);
+
 describe("Connect: routes and discipline", () => {
   beforeEach(resetDb);
 
@@ -482,54 +524,17 @@ describe("Connect: routes and discipline", () => {
       (await buildConnectReport(query({ view: "exec" }), TODAY)).exec!.routes!.sales,
     ).toBeNull();
 
-    // Smart Up's sales report as it comes: filter lines above the header, a totals row below.
-    const sale = (store: number, day: string, staff: string, tsm: string, sum: number): Row => [
-      "Тестоград",
-      `Тест магазин ${store}`,
-      store,
-      "Тест адрес",
-      null,
-      "SKU-TEST 1",
-      staff,
-      tsm,
-      "T-1",
-      day,
-      sum / 1000,
-      sum,
-    ];
-    const HEAD = [
-      "Организация",
-      "Клиент",
-      "ИД клиента",
-      "Адрес",
-      "Регион",
-      "ТМЦ",
-      "Штат",
-      "ХЮ:Responsible TSM",
-      "ИД заказа",
-      "Дата доставки",
-      "Количество продажи",
-      "Сумма без скидки/наценки",
-    ];
     await importConnectFiles(owner, [
       {
         name: "sales.xlsx",
-        buffer: await book([
-          {
-            name: "Конструктор отчётов по продажам",
-            rows: [
-              ["Дата доставки:  02.11.2026-15.11.2026"],
-              HEAD,
-              // The week before: DR_TST_1 sold 40 000.
-              sale(900001, "03.11.2026", "DR_TST_1", "TSM_TST_1", 40000),
-              // The week shown: 30 000 to the TSM's store, 10 000 to a store that is nobody's.
-              sale(900001, "09.11.2026", "DR_TST_1", "TSM_TST_1", 30000),
-              sale(900004, "10.11.2026", "DR_TST_1", "Другие", 10000),
-              // An operator with no route sold to the other rep's store.
-              sale(900005, "11.11.2026", "Operator 9 (Тест)", "TSM_TST_2", 20000),
-              HEAD.map((_, i) => (i < 10 ? "ИТОГО" : 0)),
-            ],
-          },
+        buffer: await salesBook([
+          // The week before: DR_TST_1 sold 40 000.
+          sale(900001, "03.11.2026", "DR_TST_1", "TSM_TST_1", 40000),
+          // The week shown: 30 000 to the TSM's store, 10 000 to a store that is nobody's.
+          sale(900001, "09.11.2026", "DR_TST_1", "TSM_TST_1", 30000),
+          sale(900004, "10.11.2026", "DR_TST_1", "Другие", 10000),
+          // An operator with no route sold to the other rep's store.
+          sale(900005, "11.11.2026", "Operator 9 (Тест)", "TSM_TST_2", 20000),
         ]),
       },
     ]);
@@ -602,6 +607,91 @@ describe("Connect: routes and discipline", () => {
     const old = (await buildConnectReport(query({ view: "exec" }), TODAY)).exec!.routes!.sales!;
     expect(old.legacy).toBe(true);
     expect(old.total.sum).toBe(30000);
+  });
+
+  it("lists the route stores nobody sold to in the period, the biggest first", async () => {
+    const owner = await setup();
+    await importConnectFiles(owner, [
+      {
+        name: "sales.xlsx",
+        buffer: await salesBook([
+          // The week shown: one store of DR_TST_1's two bought; the other bought the week before.
+          sale(900001, "09.11.2026", "DR_TST_1", "TSM_TST_1", 30000),
+          sale(900004, "03.11.2026", "DR_TST_1", "Другие", 10000),
+        ]),
+      },
+    ]);
+
+    const exec = await buildConnectReport(query({ view: "exec" }), TODAY);
+    const sales = exec.exec!.routes!.sales!;
+    expect(sales).toMatchObject({ clients: 3, buying: 1 });
+    // The reps' stores: the graded one first; the ungraded one had two orders marked on the
+    // route (the day to come does not count) and has never bought.
+    expect(sales.idle).toEqual([
+      {
+        zone: "DR_TST_1",
+        kind: "DR",
+        person: "Тест Агент 1",
+        storeCode: "900004",
+        store: "Тест магазин 900004",
+        organization: "Тестоград",
+        grade: "M",
+        equipment: null,
+        visits: 3,
+        orders: 0,
+        lastSale: "2026-11-03",
+      },
+      {
+        zone: "DR_TST_2",
+        kind: "DR",
+        person: "Тест Агент 2",
+        storeCode: "900005",
+        store: "Тест магазин 900005",
+        organization: "Тестобад",
+        grade: null,
+        equipment: null,
+        visits: 2,
+        orders: 2,
+        lastSale: null,
+      },
+    ]);
+
+    // The Excel file has the whole list.
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load((await connectXlsx(exec, TODAY)) as unknown as ArrayBuffer);
+    const sheet = wb
+      .getWorksheet("Точки без продаж")!
+      .getSheetValues()
+      .filter(Boolean)
+      .map((row) => (row as ExcelJS.CellValue[]).slice(1));
+    expect(sheet[0]).toEqual([
+      "Зона",
+      "Сотрудник",
+      "Организация",
+      "ИД клиента",
+      "Точка",
+      "Грейд",
+      "Оборудование",
+      "Визитов",
+      "С заказом",
+      "Последняя продажа",
+    ]);
+    expect(sheet.slice(1).map((row) => [row[0], row[3], row[7], row[8], row[9]])).toEqual([
+      ["DR_TST_1", "900004", 3, 0, "2026-11-03"],
+      ["DR_TST_2", "900005", 2, 2, undefined],
+    ]);
+
+    // A rep's own page has their stores only.
+    const own = await buildConnectReport(query({ view: "executor", person: "DR_TST_2" }), TODAY);
+    expect(own.executor!.routes!.sales!.idle.map((s) => s.storeCode)).toEqual(["900005"]);
+    // With the TSMs alone it is their own routes: the store that was not visited too.
+    const tsm = await buildConnectReport(query({ view: "exec", staff: "tsm" }), TODAY);
+    expect(
+      tsm.exec!.routes!.sales!.idle.map((s) => [s.zone, s.storeCode, s.visits, s.grade]),
+    ).toEqual([
+      ["TSM_TST_1", "900002", 0, "XL"],
+      ["TSM_TST_2", "900003", 2, null],
+    ]);
   });
 
   it("takes the TSMs' visits from the routes when no visit detail is loaded", async () => {

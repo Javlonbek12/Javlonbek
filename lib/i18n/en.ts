@@ -3677,6 +3677,17 @@ export const en: Dictionary = {
       },
     },
     zoneSales: {
+      idle: {
+        title: "Route stores without a sale",
+        hint: "Stores on the shown sales reps' routes that nobody sold anything to in the period. The biggest first (by grade), among them those with an order marked on the route and no sale (highlighted: worth a look; an order of the period's last days may not be delivered yet). A store on two routes is shown with each. “Last sale” is when the store last bought before this period.",
+        visits: "Visits",
+        orders: "With an order",
+        lastSale: "Last sale",
+        never: "none",
+        summary:
+          "With an order marked: {orders} · not visited in the period: {unvisited} · did not buy before either (in the sales loaded): {never}",
+        sheet: "Stores without a sale",
+      },
       title: "Sales by zone",
       hint: "Smart Up's sales report next to the routes. A sale counts by its delivery date. A sales rep (DR) has what they sold themselves; a TSM has what was sold to the stores they are responsible for. The change is against the period of the same length before ({previous}). The zones with the biggest fall come first.",
       legacy:
