@@ -2192,6 +2192,12 @@ export const en: Dictionary = {
       distribution: "POSM distribution (by region and TSM, stock and shipments)",
     },
     roleNames: { OWNER: "Owner", MANAGER: "Manager", MEMBER: "Employee", LAWYER: "Lawyer" },
+    connect: {
+      title: "Connect analytics: full access for named people",
+      hint: "The people ticked see the whole of “Connect analytics”, whatever their role: every level (“Leadership”, “Managers”, “Executors”), every zone — and can upload the exports. The section appears in their menu even if it is off for their role above. “Norms” and deleting data stay with the owner.",
+      nobody: "There is nobody in the app but you yet.",
+      link: "Who has Connect",
+    },
     tasks: {
       title: "Tasks: route and bin",
       teamApproval: "Approve tasks inside the team",

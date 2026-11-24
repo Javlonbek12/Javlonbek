@@ -16,6 +16,9 @@ export type Access = {
   taskScope: TaskScope;
   // People below this person in the reporting lines (any depth).
   teamIds: string[];
+  // Named by the owner in «Роли и доступ»: the whole of «Аналитика Connect» (every level and
+  // zone, uploading the exports), whatever the role's sections are.
+  connectLead?: boolean;
 };
 
 // Everyone below `id` through "manager" links.
@@ -45,7 +48,15 @@ export async function accessFor(
     taskScope === "team"
       ? subordinatesOf(user.id, await db.user.findMany({ select: { id: true, managerId: true } }))
       : [];
-  return { modules: roleModules(user.role, cfg), taskScope, teamIds };
+  const modules = roleModules(user.role, cfg);
+  if (user.role === "OWNER" || !cfg.connectLeads.includes(user.id))
+    return { modules, taskScope, teamIds };
+  return {
+    modules: modules.includes("connect") ? modules : [...modules, "connect"],
+    taskScope,
+    teamIds,
+    connectLead: true,
+  };
 }
 
 // The user as an actor with their access rules attached. Every entry point (web, API, bot,

@@ -6,6 +6,7 @@ import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import { db } from "@/lib/db";
 import { t } from "@/lib/i18n";
 import {
   CONFIGURABLE_MODULES,
@@ -35,11 +36,17 @@ export default async function RolesPage({ searchParams }: PageProps<"/settings/r
   const user = await requireUser();
   if (user.role !== "OWNER") redirect("/settings");
   const { saved, error } = await searchParams;
-  const [config, taskSettings, leads, teams] = await Promise.all([
+  const [config, taskSettings, leads, teams, people] = await Promise.all([
     getRoleConfig(),
     getTaskSettings(),
     listTeamLeads(),
     teamsOfPeople(),
+    // Everyone but the owner (who has it all): whom the whole of Connect can be given to.
+    db.user.findMany({
+      where: { role: { not: "OWNER" }, deactivatedAt: null },
+      select: { id: true, firstName: true, lastName: true, role: true, position: true },
+      orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+    }),
   ]);
   const cell = "px-2 py-2 text-center";
   // Reports are for managers only; the lawyer always has the content plan.
@@ -187,6 +194,38 @@ export default async function RolesPage({ searchParams }: PageProps<"/settings/r
               className="w-24"
             />
           </label>
+        </Card>
+
+        <Card id="connect" className="scroll-mt-20 gap-4">
+          <CardTitle>{t("roleAccess.connect.title")}</CardTitle>
+          <fieldset className="flex flex-col gap-2">
+            <legend className="sr-only">{t("roleAccess.connect.title")}</legend>
+            <CardDescription>{t("roleAccess.connect.hint")}</CardDescription>
+            {people.length === 0 && (
+              <p className="text-muted-foreground text-sm">{t("roleAccess.connect.nobody")}</p>
+            )}
+            <div className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
+              {people.map((person) => (
+                <label key={person.id} className="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    name="connectLeads"
+                    value={person.id}
+                    defaultChecked={config.connectLeads.includes(person.id)}
+                    className="mt-0.5 size-4 shrink-0"
+                  />
+                  <span className="flex min-w-0 flex-col">
+                    <span>{displayName(person)}</span>
+                    <span className="text-muted-foreground text-xs">
+                      {[person.position, t(`roleAccess.roleNames.${person.role as Role}`)]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
         </Card>
       </DirtyForm>
     </div>

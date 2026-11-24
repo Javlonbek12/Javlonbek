@@ -160,7 +160,7 @@ export function scopeConnectQuery(
 }
 
 // Which TSMs the owner or a manager sees on the managers' and executors' levels (by the org
-// chart): the owner every one (null); a manager those linked to people of their team or to
+// chart): the owner and the people named in «Роли и доступ» every one (null); a manager those linked to people of their team or to
 // themselves, or under positions linked to them (every linked one with «all tasks» in the role
 // settings). A TSM linked to nobody is for the owner to link.
 export function leadScope(
@@ -168,7 +168,7 @@ export function leadScope(
   links: Record<string, string>,
   positions: PositionAccess = { links: {}, hierarchy: null },
 ): Set<string> | null {
-  if (actor.role === "OWNER") return null;
+  if (actor.role === "OWNER" || actor.access?.connectLead) return null;
   const scope = actor.access?.taskScope ?? "all";
   const team = scope === "all" ? null : new Set([actor.id, ...(actor.access?.teamIds ?? [])]);
   return new Set([
