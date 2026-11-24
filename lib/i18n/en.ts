@@ -3676,6 +3676,37 @@ export const en: Dictionary = {
         noOrder: "DR no order",
       },
     },
+    zoneSales: {
+      title: "Sales by zone",
+      hint: "Smart Up's sales report next to the routes. A sale counts by its delivery date. A sales rep (DR) has what they sold themselves; a TSM has what was sold to the stores they are responsible for. The change is against the period of the same length before ({previous}). The zones with the biggest fall come first.",
+      legacy:
+        "Some sales of this period were uploaded before the update and have no sales rep and no money — they are not counted here. Upload the sales report for those days again.",
+      tile: {
+        sum: "Sold in the period",
+        sumNote: "{blocks} blocks · every sale of the report",
+        change: "Against the period before",
+        changeNote: "it was {before}",
+        changeNone: "no sales in the period before",
+        coverage: "Stores on DR routes with a sale",
+        coverageNote: "{buying} of {clients} · without a sale: {idle}",
+        outside: "Sold outside the routes",
+        outsideNote: "{sum} · sellers with no route in the analysis: {staff}",
+      },
+      table: { DR: "Sales reps (DR)", TSM: "TSM — sales to their stores" },
+      tableHint: {
+        DR: "Next to the sales is the hit rate: many visits with an order while sales fall, or the other way round, is worth a look.",
+        TSM: "Sales to the stores the TSM is responsible for. Next to them is their attendance.",
+      },
+      col: {
+        sum: "Sold",
+        change: "Change",
+        blocks: "Blocks",
+        days: "Deliveries",
+        coverage: "Stores with a sale",
+      },
+      sheet: "Sales by zone",
+      kind: "Group",
+    },
     worst: {
       title: "Worst results",
       hint: "The five lowest figures of each kind — where to start the talk. The colours follow the norms: red is far below, amber is close, green is met.",

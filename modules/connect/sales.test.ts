@@ -115,7 +115,29 @@ describe("Sales report", () => {
         person: null,
         sku: "ESSE Change 1",
         blocks: 5,
+        // This report has no «Штат», «Responsible TSM» and money columns.
+        staff: null,
+        tsm: null,
+        sum: 0,
       },
+    });
+    // With them: who sold, whose store it is and the line's money; «Другие» is nobody's store.
+    const zoned = [...headers, "Штат", "ХЮ:Responsible TSM", "Сумма без скидки/наценки"];
+    const row = [
+      "Тестовая точка 1",
+      "900001",
+      "Тестовая организация",
+      "Retail",
+      "03.11.2026",
+      "X",
+      5,
+    ];
+    expect(
+      parseRow("SALE", zoned, [...row, "DR_TST_1", "TSM_TST_1", 150000])!.record,
+    ).toMatchObject({ staff: "DR_TST_1", tsm: "TSM_TST_1", sum: 150000 });
+    expect(parseRow("SALE", zoned, [...row, "DR_TST_1", "Другие", 150000])!.record).toMatchObject({
+      staff: "DR_TST_1",
+      tsm: null,
     });
     // Without a store, a day, a product or a quantity it is not a sale.
     expect(
@@ -319,7 +341,7 @@ const REPORT_HEADERS = [
   "Сумма без скидки/наценки",
 ];
 type Value = ExcelJS.CellValue;
-// «Регион» and the TSM are empty: such cells are not in the file at all.
+// «Регион» is empty: such a cell is not in the file at all.
 const reportRow = (
   client: string | number,
   day: Value,
@@ -333,8 +355,8 @@ const reportRow = (
   "Тест адрес",
   null,
   sku,
+  "DR_TST_1",
   "TSM_TST_1",
-  null,
   "T-1",
   day,
   blocks,
@@ -353,7 +375,13 @@ const reportSheet = (wb: ExcelJS.Workbook, rows: Value[][]) => {
   return ws;
 };
 const bufferOf = async (wb: ExcelJS.Workbook) => Buffer.from(await wb.xlsx.writeBuffer());
-const storeDay = (storeCode: string, day: string, skus: Record<string, number>): SaleDayRecord => ({
+const storeDay = (
+  storeCode: string,
+  day: string,
+  skus: Record<string, number>,
+  // The day's money: 1000 a row of the report.
+  sum = 1000,
+): SaleDayRecord => ({
   id: `${storeCode}|${day}`,
   storeCode,
   storeName: `Тест точка ${storeCode}`,
@@ -365,6 +393,11 @@ const storeDay = (storeCode: string, day: string, skus: Record<string, number>):
   month: day.slice(0, 7),
   person: null,
   skus,
+  // Who sold, whose store it is, and the day's totals.
+  staff: "DR_TST_1",
+  tsm: "TSM_TST_1",
+  blocks: Object.values(skus).reduce((a, b) => a + b, 0),
+  sum,
 });
 
 describe("Sales workbook", () => {
@@ -383,7 +416,8 @@ describe("Sales workbook", () => {
     reportRow("900003", "04.11.2026", "SKU-TEST 1", null),
   ];
   const DAYS = [
-    storeDay("900001", "2026-11-03", { "SKU-TEST 1": 5, "SKU-TEST 2": 1 }),
+    // Three rows of the report: 3 000 of money.
+    storeDay("900001", "2026-11-03", { "SKU-TEST 1": 5, "SKU-TEST 2": 1 }, 3000),
     storeDay("900002", "2026-11-04", { "SKU-TEST 1": 4 }),
   ];
   const SHEET = {

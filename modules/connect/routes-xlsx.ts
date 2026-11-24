@@ -126,4 +126,39 @@ export function routeSheets(sheet: AddSheet, block: RoutesBlock) {
         localizeData(s.equipment),
       ]),
     );
+  // «Продажи по зонам»: every shown zone (the page shows the first of them).
+  if (block.sales)
+    sheet(
+      t("connect.zoneSales.sheet"),
+      [
+        col("zone", 26),
+        { header: t("connect.zoneSales.kind"), width: 8 },
+        col("person", 30),
+        col("organization", 18),
+        { header: t("connect.zoneSales.col.sum"), width: 16 },
+        { header: `${t("connect.zoneSales.col.change")}, %`, width: 14 },
+        { header: t("connect.zoneSales.col.blocks"), width: 10 },
+        { header: t("connect.zoneSales.col.days"), width: 10 },
+        col("clients", 8),
+        { header: t("connect.zoneSales.col.coverage"), width: 16 },
+        { header: `${t("connect.zoneSales.col.coverage")}, %`, width: 16 },
+        percent("hitRate"),
+        percent("attendance"),
+      ],
+      block.sales.rows.map((r) => [
+        r.zone,
+        r.kind,
+        r.person,
+        r.organization,
+        Math.round(r.sum),
+        r.change,
+        r.blocks,
+        r.days,
+        r.clients,
+        r.buying,
+        r.coverage,
+        r.hitRate,
+        r.attendance,
+      ]),
+    );
 }

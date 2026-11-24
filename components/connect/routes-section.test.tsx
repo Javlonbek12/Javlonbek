@@ -54,6 +54,7 @@ const block = (
     analysis,
     zone: person ? analysis.zones[0]! : null,
     visitDays: ["2026-11-09", "2026-11-10", "2026-11-11"],
+    sales: null,
   };
 };
 

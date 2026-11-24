@@ -21,6 +21,7 @@ import { visitsFromRoutes } from "./route-visits";
 import { DEFAULT_RULES, parseRules, type ConnectRules } from "./rules";
 import { SALES_WINDOW_DAYS } from "./sales";
 import type { VisitData } from "./visits";
+import type { SalesGroup } from "./zone-sales";
 
 type Viewer = Parameters<typeof canUseModule>[0];
 
@@ -217,6 +218,53 @@ async function saleLineCount(client: Prisma.TransactionClient, from = "", to = "
     FROM "ConnectRecord"
     WHERE "kind" = 'SALE' AND "day" >= ${from} AND "day" <= ${to}`;
   return row?.lines ?? 0;
+}
+
+// The sales of a period and of the one before it, summed in the database by who sold and whose
+// store it is (see zone-sales.ts): a month of sales is tens of thousands of store-days, and only
+// the sums are needed. `legacy`: some of those days were stored before the rep and the money
+// were read (24.11.2026) and count for nothing here until the report is uploaded again.
+export async function loadSalesGroups(
+  period: { from: string; to: string },
+  before: { from: string; to: string },
+): Promise<{ groups: SalesGroup[]; legacy: boolean }> {
+  const rows = await db.$queryRaw<
+    {
+      period: string;
+      staff: string | null;
+      tsm: string | null;
+      blocks: number;
+      sum: number;
+      days: number;
+      legacy: number;
+      stores: string[] | null;
+    }[]
+  >`
+    SELECT CASE WHEN "day" >= ${period.from} THEN 'now' ELSE 'before' END AS "period",
+           "data"->>'staff' AS "staff",
+           "data"->>'tsm' AS "tsm",
+           COALESCE(SUM(("data"->>'blocks')::numeric), 0)::float8 AS "blocks",
+           COALESCE(SUM(("data"->>'sum')::numeric), 0)::float8 AS "sum",
+           COUNT(*)::int AS "days",
+           COUNT(*) FILTER (WHERE NOT ("data" ? 'blocks'))::int AS "legacy",
+           ARRAY_AGG(DISTINCT "storeCode") FILTER (WHERE "day" >= ${period.from}) AS "stores"
+    FROM "ConnectRecord"
+    WHERE "kind" = 'SALE'
+      AND (("day" >= ${period.from} AND "day" <= ${period.to})
+        OR ("day" >= ${before.from} AND "day" <= ${before.to}))
+    GROUP BY 1, 2, 3`;
+  return {
+    groups: rows.map((r) => ({
+      period: r.period === "now" ? "now" : "before",
+      staff: r.staff,
+      tsm: r.tsm,
+      blocks: r.blocks,
+      sum: r.sum,
+      days: r.days,
+      stores: r.stores ?? [],
+    })),
+    legacy: rows.some((r) => r.period === "now" && r.legacy > 0),
+  };
 }
 
 // What is loaded now, by kind: rows (of sales: lines), the days they cover and when they were

@@ -24,6 +24,7 @@ import { RoutesCalendar } from "./routes-calendar";
 import { CLASS_COLOR, RoutesMatrix } from "./routes-matrix";
 import { TsmName } from "./sections";
 import { targetTone, type Tone } from "./tone";
+import { ZoneSalesSection } from "./zone-sales";
 
 // «Маршруты и дисциплина»: Smart Up's route analysis on the three levels. Leadership sees the
 // whole picture (totals, days, weekdays, the DRs' matrix, organizations), managers their zones
@@ -194,22 +195,30 @@ export function RoutesSection({
     const zone = block.zone;
     if (!zone) return null;
     return (
-      <Section
-        title={t("connect.routes.executor.title", { zone: zone.zone })}
-        hint={t("connect.routes.executor.hint", { previous })}
-      >
-        {dataDate}
-        {visitNote}
-        <StatGrid items={totalsItems(zone, { dr: zone.kind === "DR", targets: a.targets })} />
-        {/* The zone's own days: a rep's by hit rate, a TSM's by attendance. */}
-        <RoutesCalendar
-          analysis={a}
-          mode={zone.kind === "DR" ? "hitRate" : "attendance"}
-          zones={[zone]}
+      <>
+        <Section
+          title={t("connect.routes.executor.title", { zone: zone.zone })}
+          hint={t("connect.routes.executor.hint", { previous })}
+        >
+          {dataDate}
+          {visitNote}
+          <StatGrid items={totalsItems(zone, { dr: zone.kind === "DR", targets: a.targets })} />
+          {/* The zone's own days: a rep's by hit rate, a TSM's by attendance. */}
+          <RoutesCalendar
+            analysis={a}
+            mode={zone.kind === "DR" ? "hitRate" : "attendance"}
+            zones={[zone]}
+          />
+          <MissedList rows={a.missed} zones={false} />
+          {zone.kind === "DR" && <NoOrderList rows={a.noOrder} zones={false} />}
+        </Section>
+        <ZoneSalesSection
+          sales={block.sales}
+          level="executor"
+          targets={a.targets}
+          previous={previous}
         />
-        <MissedList rows={a.missed} zones={false} />
-        {zone.kind === "DR" && <NoOrderList rows={a.noOrder} zones={false} />}
-      </Section>
+      </>
     );
   }
 
@@ -550,6 +559,13 @@ export function RoutesSection({
           )}
         </>
       )}
+      <ZoneSalesSection
+        sales={block.sales}
+        level={block.level}
+        targets={targets}
+        previous={previous}
+        href={block.level === "manager" ? zoneHref : undefined}
+      />
     </>
   );
 }
