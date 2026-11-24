@@ -1,4 +1,4 @@
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Download } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -9,6 +9,7 @@ import { ConfirmAction } from "@/components/ui/confirm-action";
 import { PageHeader } from "@/components/ui/page-header";
 import type { ConnectKind } from "@/lib/generated/prisma/enums";
 import { dateFormat, t } from "@/lib/i18n";
+import { SAMPLE_EFFECT as EFFECT } from "@/modules/connect/sample-guide";
 import { canLeadConnect, connectLoaded, lastImports } from "@/modules/connect/service";
 import { requireUser } from "@/modules/core/auth/current-user";
 import { getSettings } from "@/modules/core/settings/service";
@@ -17,7 +18,7 @@ import { todayInTimezone } from "@/lib/dates";
 
 import { clearConnectAction, importConnectFileAction } from "../actions";
 
-const ERRORS = ["forbidden", "empty", "unknown", "tooBig"] as const;
+const ERRORS = ["forbidden", "empty", "unknown", "tooBig", "sample"] as const;
 const KINDS = [
   "SU_VISIT",
   "SU_PERSON",
@@ -90,6 +91,7 @@ export default async function ConnectImportPage({ searchParams }: PageProps<"/co
                 to = "",
                 test = "0",
                 replaced = "",
+                samples = "0",
               ] = line.split("|");
               const range = from && to ? formatRange(from, to, today) : null;
               // Under the line: the days (sales have them in the line), the rows replaced, test
@@ -104,6 +106,7 @@ export default async function ConnectImportPage({ searchParams }: PageProps<"/co
                   replaced !== "0" &&
                   t("connect.import.replacedRows", { count: replaced }),
                 test !== "0" && t("connect.import.testRows", { count: test }),
+                samples !== "0" && t("connect.samples.rowsLeft", { count: samples }),
               ].filter(Boolean);
               return (
                 <li key={line}>
@@ -152,12 +155,48 @@ export default async function ConnectImportPage({ searchParams }: PageProps<"/co
 
       <Card className="gap-3">
         <CardDescription>{t("connect.import.hint")}</CardDescription>
-        <ul className="text-muted-foreground list-disc pl-5 text-sm">
+        <ConnectUploadForm action={importConnectFileAction} />
+      </Card>
+
+      <Card id="samples" className="scroll-mt-20 gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex min-w-0 flex-col gap-1">
+            <CardTitle>{t("connect.samples.title")}</CardTitle>
+            <CardDescription>{t("connect.samples.hint")}</CardDescription>
+          </div>
+          <Button asChild variant="outline" className="shrink-0">
+            <a href="/api/connect/samples" download>
+              <Download />
+              {t("connect.samples.all")}
+            </a>
+          </Button>
+        </div>
+        <ul className="flex flex-col divide-y text-sm">
           {KINDS.map((kind) => (
-            <li key={kind}>{t(`connect.kinds.${kind}`)}</li>
+            <li key={kind} className="flex flex-col gap-1 py-2.5">
+              <span className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                <span className="font-medium">{t(`connect.kinds.${kind}`)}</span>
+                <a
+                  href={`/api/connect/samples?kind=${kind}`}
+                  download
+                  className="text-primary shrink-0 text-xs underline underline-offset-2"
+                  aria-label={`${t("connect.samples.one")}: ${t(`connect.kinds.${kind}`)}`}
+                >
+                  {t("connect.samples.one")}
+                </a>
+              </span>
+              <span className="text-muted-foreground text-xs">
+                {t(`connect.samples.what.${kind}`)}
+              </span>
+              <span className="text-muted-foreground text-xs">
+                <span className="text-foreground">{t("connect.samples.sourceLabel")}</span>{" "}
+                {t(`connect.samples.source.${kind}`)}{" "}
+                <span className="text-foreground">{t("connect.samples.effectLabel")}</span>{" "}
+                {t(`connect.samples.effect.${EFFECT[kind]}`)}
+              </span>
+            </li>
           ))}
         </ul>
-        <ConnectUploadForm action={importConnectFileAction} />
       </Card>
 
       <Card className="gap-3">

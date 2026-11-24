@@ -48,6 +48,72 @@ export const ko: PartialDictionary & {
       ISM_CHECK: "ISM 체크리스트(LEGO, Backwall, POG)",
       AUDIT: "BDM 감사(동행 방문)",
     },
+    samples: {
+      title: "데이터 샘플",
+      hint: "어떤 내보내기 파일을 올려야 할지 모르겠나요? 샘플 파일을 내려받으세요. «무엇을 업로드하나» 시트와 데이터 종류별 시트가 있으며, 실제 내보내기와 같은 열과 가상의 행 몇 개가 들어 있습니다. 본인 파일과 비교해 보세요. 샘플 파일 자체는 업로드할 필요가 없습니다. [ОБРАЗЕЦ] 표시가 있는 행은 앱이 받지 않습니다.",
+      all: "모든 샘플 내려받기 (Excel)",
+      one: "샘플",
+      sourceLabel: "출처:",
+      effectLabel: "업로드 시:",
+      rowsLeft: "불러오지 않은 샘플 행: {count}",
+      fileAll: "Connect 데이터 샘플",
+      fileOne: "Connect 샘플",
+      what: {
+        SU_VISIT:
+          "TSM의 계획 방문과 실제 방문 전체: 매장, 계획일, 방문 날짜와 시간. 계획, 방문, 계획 외 방문을 여기서 계산합니다.",
+        SU_PERSON:
+          "Smart Up 직원별 합계. TSM의 이름과 구역만 사용하며, 수치는 방문 상세에서 계산합니다.",
+        VISIT:
+          "Connect 봇의 Market Visit 설문: 매장별 답변. 방문 시 Connect 사용과 설문 완성도를 여기서 계산합니다.",
+        OOS: "재고 점검: 매장에 있는 제품, 부족한 제품, 없는 제품. OOS와 재고 회복을 여기서 계산합니다.",
+        ORDER: "재고 점검 후 생성된 주문: 제품, 금액, 배송 상태.",
+        PAYMENT: "ISM 지급 요청과 그 결정.",
+        AUDIT:
+          "«BDM Audit» 설문 — 관리자의 동행 방문. 따로 보관되며 직원 수치에 포함되지 않습니다.",
+        ISM_CHECK: "장비별 ISM 체크리스트: LEGO, Backwall, POG.",
+        ROUTE:
+          "월의 날짜별 TSM과 영업 담당자의 루트: 계획 방문을 했는지, 주문이 있었는지. «루트와 규율», 방문율, hit rate를 여기서 만듭니다.",
+        CLIENT: "매장 기반 데이터: 등급, 장비, 채널, 좌표, 담당 TSM·DR·BDM.",
+        SU_POSITION:
+          "직책과 보고 관계. 이 파일로 조직 계층을 만들고 누가 누구의 데이터를 보는지 정합니다.",
+        SALE: "매장·날짜·제품별 판매와 판매자, 금액. 주문 후 판매, «구역별 판매», 판매 없는 매장을 여기서 계산합니다.",
+      },
+      source: {
+        SU_VISIT: "Smart Up — 방문 보고서, 상세(한 행이 한 방문).",
+        SU_PERSON: "Smart Up — 방문 보고서, 직원별 합계.",
+        VISIT: "Connect 봇 — «Market Visit» 내보내기.",
+        OOS: "Connect 봇 — «OOS check» 내보내기.",
+        ORDER: "Connect 봇 — «OOS orders» 내보내기.",
+        PAYMENT: "Connect 봇 — ISM 지급 요청 내보내기.",
+        AUDIT: "Connect 봇 — «BDM Audit» 템플릿 설문 내보내기.",
+        ISM_CHECK: "Connect 봇 — ISM 체크리스트 내보내기.",
+        ROUTE: "Smart Up — 이번 달 «루트 분석».",
+        CLIENT: "Smart Up — 고객 목록(모든 매장).",
+        SU_POSITION: "Smart Up — «Employee info»(직책).",
+        SALE: "Smart Up — «판매 보고서 빌더».",
+      },
+      effect: {
+        update: "같은 ID의 행은 갱신되고 새 행은 추가됩니다.",
+        days: "파일의 날짜(첫날부터 마지막 날까지) 데이터를 대체합니다.",
+        month: "해당 월의 루트를 대체합니다.",
+        all: "이 종류의 데이터를 전부 대체합니다.",
+      },
+      guide: {
+        sheet: "무엇을 업로드하나",
+        data: "데이터",
+        what: "설명",
+        source: "내보내는 곳",
+        effect: "업로드하면 일어나는 일",
+        sample: "샘플 시트",
+        required: "이 열이 없으면 파일을 불러올 수 없습니다",
+        note1:
+          "{mark} 표시가 있는 행은 가상의 예시입니다. 앱은 이 행을 불러오지 않으므로 이 파일을 그대로 업로드해도 아무것도 바뀌지 않습니다.",
+        note2:
+          "내보내기 파일은 Smart Up이나 Connect 봇이 준 그대로 업로드하세요. 시트와 열 이름을 바꿀 필요가 없으며 시트는 열로 인식됩니다. 추가 열은 문제가 되지 않습니다.",
+        note3:
+          "여러 파일을 한 번에 선택하거나 시트가 여러 개인 통합 문서 하나를 올릴 수 있습니다. 파일 하나는 50MB까지입니다.",
+      },
+    },
     import: {
       resultPositions: "{file} — 조직 계층: {count}(대체됨)",
       resultSales: "{file} — 판매: {range} {count}(대체됨)",
@@ -91,6 +157,8 @@ export const ko: PartialDictionary & {
         empty: "파일을 하나 이상 선택하세요.",
         unknown:
           "Connect 봇 또는 Smart Up 내보내기 파일이 아닌 것 같습니다. 필요한 열이 있는 시트를 찾지 못했습니다.",
+        sample:
+          "샘플 파일입니다. 가상의 행만 있으므로 업로드할 필요가 없습니다. 본인의 내보내기 파일을 업로드하세요. 샘플 시트와 같은 모양이어야 합니다.",
         tooBig: "파일이 너무 큽니다(50MB 초과).",
         fileTooBig: "{mb}MB 초과: {names}. 이런 파일은 업로드할 수 없으니 나누어 내보내세요.",
         failed: "업로드하지 못했습니다. 연결을 확인하고 다시 시도하세요.",

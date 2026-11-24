@@ -3245,6 +3245,73 @@ export const en: Dictionary = {
       ISM_CHECK: "ISM checklists (LEGO, Backwall, POG)",
       AUDIT: "BDM audit (joint visits)",
     },
+    samples: {
+      title: "Sample data",
+      hint: "Not sure which export to upload? Download the samples file: it has a “What to upload” sheet and a sheet for every kind of data — with the same columns as the real export and a few made-up rows. Compare it with your file. The samples file itself need not be uploaded: the app does not take rows marked [ОБРАЗЕЦ].",
+      all: "Download all samples (Excel)",
+      one: "Sample",
+      sourceLabel: "From:",
+      effectLabel: "On upload:",
+      rowsLeft: "sample rows not loaded: {count}",
+      fileAll: "Connect data samples",
+      fileOne: "Connect sample",
+      what: {
+        SU_VISIT:
+          "Every planned and made TSM visit: the store, the plan day, the day and time of the visit. Plan, visited and unplanned visits are counted from them.",
+        SU_PERSON:
+          "Smart Up totals per employee. Only the TSM's name and zone are taken — the numbers are counted from the visit detail.",
+        VISIT:
+          "Market Visit questionnaires from the Connect bot: the answers for each store. Connect on visits and complete questionnaires are counted from them.",
+        OOS: "Stock checks: which products a store has, is running out of or lacks. OOS and stock recovery are counted from them.",
+        ORDER: "Orders created after a stock check: products, amount, delivery status.",
+        PAYMENT: "ISM payment requests and the decisions on them.",
+        AUDIT:
+          "“BDM Audit” questionnaires — joint visits of the managers. Kept apart and not counted in the employees' numbers.",
+        ISM_CHECK: "ISM checklists for the equipment: LEGO, Backwall, POG.",
+        ROUTE:
+          "Routes of the TSMs and sales reps by day of the month: whether the planned visit was made and whether there was an order. “Routes and discipline”, attendance and hit rate are built from it.",
+        CLIENT:
+          "The store base: grade, equipment, channel, coordinates, the responsible TSM, DR and BDM.",
+        SU_POSITION:
+          "Positions and who reports to whom. The hierarchy is built from the file, and who sees whose data.",
+        SALE: "Sales by store, day and product, with the seller and the amount. Sales after an order, “Sales by zone” and stores without a sale are counted from it.",
+      },
+      source: {
+        SU_VISIT: "Smart Up — the visits report, detail (a row is a visit).",
+        SU_PERSON: "Smart Up — the visits report, totals per employee.",
+        VISIT: "Connect bot — the “Market Visit” export.",
+        OOS: "Connect bot — the “OOS check” export.",
+        ORDER: "Connect bot — the “OOS orders” export.",
+        PAYMENT: "Connect bot — the export of ISM payment requests.",
+        AUDIT: "Connect bot — the export of questionnaires with the “BDM Audit” template.",
+        ISM_CHECK: "Connect bot — the export of ISM checklists.",
+        ROUTE: "Smart Up — “Route analysis” for the current month.",
+        CLIENT: "Smart Up — the list of clients (all stores).",
+        SU_POSITION: "Smart Up — “Employee info” (positions).",
+        SALE: "Smart Up — the “Sales report builder”.",
+      },
+      effect: {
+        update: "rows with the same ID are updated, new ones are added.",
+        days: "replaces the data of the file's days — from the first to the last.",
+        month: "replaces the routes of its month.",
+        all: "replaces all the data of this kind.",
+      },
+      guide: {
+        sheet: "What to upload",
+        data: "Data",
+        what: "What it is",
+        source: "Where to export it from",
+        effect: "What an upload does",
+        sample: "Sample sheet",
+        required: "The file will not load without these columns",
+        note1:
+          "Rows marked {mark} are made-up examples. The app does not load them: uploading this file as it is changes nothing.",
+        note2:
+          "Upload the exports as Smart Up or the Connect bot gives them: sheets and columns need no renaming, a sheet is recognised by its columns. Extra columns do no harm.",
+        note3:
+          "You can choose several files at once or one workbook with several sheets. One file — up to 50 MB.",
+      },
+    },
     import: {
       resultPositions: "{file} — Hierarchy: {count} (replaced)",
       resultSales: "{file} — Sales: {count} for {range} (replaced)",
@@ -3288,6 +3355,8 @@ export const en: Dictionary = {
         empty: "Choose at least one file.",
         unknown:
           "This doesn't look like a Connect bot or Smart Up export: no sheet with the expected columns.",
+        sample:
+          "This is the samples file: it has only made-up rows and need not be uploaded. Upload your own export — it should look like the sample sheet.",
         tooBig: "The file is too big (over 50 MB).",
         fileTooBig: "Over {mb} MB: {names}. Such a file can't be uploaded — export it in parts.",
         failed: "Upload failed — check the connection and try again.",
