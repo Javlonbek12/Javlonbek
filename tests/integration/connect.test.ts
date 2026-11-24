@@ -135,7 +135,15 @@ describe("Connect analytics: upload and downloads", () => {
       { name: "oos.xlsx", buffer: oos },
       { name: "ism.xlsx", buffer: payments },
     ]);
-    const sheet = { updated: 0, skipped: 0, kept: 0, newer: null, test: 0, replaced: null };
+    const sheet = {
+      updated: 0,
+      skipped: 0,
+      kept: 0,
+      newer: null,
+      test: 0,
+      samples: 0,
+      replaced: null,
+    };
     const oct5 = { from: "2026-10-05", to: "2026-10-05" };
     // The result says which days the file covers and how many test-store rows were left out.
     expect(result).toEqual([
