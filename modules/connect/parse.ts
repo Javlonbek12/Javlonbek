@@ -13,6 +13,16 @@ import { openLightXlsx, type LightCell, type LightSheet } from "./light-xlsx";
 
 export type Cell = string | number | null;
 
+// A row of the samples workbook («все данные с образцами»: a sheet per export, to show what to
+// upload) carries this mark in one of its text cells. Such a row is never data: an untouched
+// samples file uploaded back must change nothing, and several exports replace everything stored
+// of their kind or period.
+export const SAMPLE_MARK = "[ОБРАЗЕЦ]";
+function isSample(cells: Cell[]) {
+  for (const cell of cells) if (typeof cell === "string" && cell.includes(SAMPLE_MARK)) return true;
+  return false;
+}
+
 // Statuses of a product in a stock check other than "in stock".
 export const OOS_STATUSES = ["OUT", "LOW", "NOT_BOUGHT"] as const;
 export type OosStatus = (typeof OOS_STATUSES)[number];
@@ -864,7 +874,7 @@ function parseRouteSheet(
   cellsOf: (r: number) => Cell[],
   headerRow: number,
   madeAt: Date,
-): { rows: ParsedRow[]; skipped: number } {
+): Omit<ParsedSheet, "kind"> {
   const headers = cellsOf(headerRow).map((v) => String(v ?? "").trim());
   const under = cellsOf(headerRow + 1);
   const dayColumns = headers
@@ -887,9 +897,14 @@ function parseRouteSheet(
   const day = `${month}-${String(lastDay).padStart(2, "0")}`;
   const rows: ParsedRow[] = [];
   let skipped = 0;
+  let samples = 0;
   for (let r = headerRow + 2; r <= rowCount; r++) {
     const cells = cellsOf(r);
     if (cells.every((c) => c === null)) continue;
+    if (isSample(cells)) {
+      samples++;
+      continue;
+    }
     const zone = personCode(str(cells[zoneAt] ?? null));
     const staff = (staffAt < 0 ? null : personCode(str(cells[staffAt] ?? null))) ?? zone;
     const client = str(cells[clientAt] ?? null);
@@ -924,7 +939,7 @@ function parseRouteSheet(
       },
     });
   }
-  return { rows, skipped };
+  return { rows, skipped, ...sampleCount(samples) };
 }
 
 // The bot's Russian exports.
@@ -1051,7 +1066,14 @@ function parseRussianRow(kind: RuKind, headers: string[], cells: Cell[]): Parsed
   };
 }
 
-export type ParsedSheet = { kind: ConnectKind; rows: ParsedRow[]; skipped: number };
+export type ParsedSheet = {
+  kind: ConnectKind;
+  rows: ParsedRow[];
+  skipped: number;
+  // The rows left out as samples (see SAMPLE_MARK); not there when the sheet has none.
+  samples?: number;
+};
+const sampleCount = (samples: number | undefined) => (samples ? { samples } : {});
 
 // "…23.11.2026 18_01_45.xlsx" → that day (noon in Tashkent), for an export that names its date.
 function dateInName(name: string | undefined): Date | null {
@@ -1077,6 +1099,13 @@ function formatAt(row: number, cells: Cell[]): SheetFormat | null {
 const isTotals = (cells: Cell[]) =>
   cells.some((c) => typeof c === "string" && /^(итого|total)$/i.test(c));
 
+// The kind a sample row stands for, without reading it: a visits sheet has the TSMs' Market Visits
+// and the BDMs' audits, told apart by the template.
+function sampleKind(format: SheetFormat, headers: string[], cells: Cell[]): ConnectKind {
+  const template = format === "VISIT" ? cells[headers.indexOf("Шаблон")] : null;
+  return typeof template === "string" && AUDIT_TEMPLATE.test(template) ? "AUDIT" : KIND_OF[format];
+}
+
 // The rows of a sales sheet as store-days (the same store, day and SKU summed).
 function saleDays(rows: ParsedRow[]): ParsedRow[] {
   const sales = collectSales();
@@ -1099,6 +1128,7 @@ async function parseSalesSheet(sheet: LightSheet): Promise<ParsedSheet> {
   let headerRow = 0;
   let dateAt = -1;
   let skipped = 0;
+  let samples = 0;
   const merges = await sheet.rows((raw, row) => {
     if (!headers) {
       const cells = raw.map(cellValue);
@@ -1112,6 +1142,10 @@ async function parseSalesSheet(sheet: LightSheet): Promise<ParsedSheet> {
     const cells = headers.map((_, i) => cellValue(raw[i] ?? null));
     if (cells.every((c) => c === null) || isTotals(cells)) return;
     if (row === headerRow + 1 && headerOf(cells).join("|") === headers.join("|")) return;
+    if (isSample(cells)) {
+      samples++;
+      return;
+    }
     // Smart Up writes the day as text («05.09.2026»). A real date cell is a number with a date
     // format, and formats are not read here.
     const date = raw[dateAt] ?? null;
@@ -1125,6 +1159,7 @@ async function parseSalesSheet(sheet: LightSheet): Promise<ParsedSheet> {
     kind: "SALE",
     rows: sales.days().map((record) => ({ kind: "SALE", record })),
     skipped,
+    ...sampleCount(samples),
   };
 }
 
@@ -1154,7 +1189,8 @@ async function parseSalesWorkbook(buffer: Buffer): Promise<ParsedSheet[] | null>
 // in row 2 (Smart Up's totals have a two-row header) is not data. The header is row 1, except in
 // Smart Up's route analysis (a legend comes first) and its sales report (filter lines come first).
 // A sheet with rows of two kinds (Market Visits and BDM audits) gives a sheet per kind; a sales
-// sheet gives store-days, not rows.
+// sheet gives store-days, not rows. The rows of the samples workbook (SAMPLE_MARK) are left out
+// and counted, in whichever sheet they are.
 export async function parseWorkbook(
   buffer: Buffer,
   options: { name?: string; now?: Date } = {},
@@ -1195,12 +1231,18 @@ export async function parseWorkbook(
     const second = headerOf(cellsOf(headerRow + 1));
     const first = headerRow + (second.join("|") === headers.join("|") ? 2 : 1);
     const byKind = new Map<ConnectKind, ParsedRow[]>();
+    const samples = new Map<ConnectKind, number>();
     let skipped = 0;
     for (let r = first; r <= ws.rowCount; r++) {
       const cells = cellsOf(r);
       if (cells.every((c) => c === null)) continue;
       // A totals row is not a skipped row either.
       if (isTotals(cells)) continue;
+      if (isSample(cells)) {
+        const kind = sampleKind(format, headers, cells);
+        samples.set(kind, (samples.get(kind) ?? 0) + 1);
+        continue;
+      }
       const row = parseRow(format, headers, cells);
       if (!row) {
         skipped++;
@@ -1211,6 +1253,8 @@ export async function parseWorkbook(
       if (rows) rows.push(row);
       else byKind.set(row.kind, [row]);
     }
+    // A sheet of samples only is still a sheet of its kind, with no rows.
+    for (const kind of samples.keys()) if (!byKind.has(kind)) byKind.set(kind, []);
     if (!byKind.size) byKind.set(KIND_OF[format], []);
     let counted = false;
     for (const [kind, rows] of byKind) {
@@ -1218,6 +1262,7 @@ export async function parseWorkbook(
         kind,
         rows: kind === "SALE" ? saleDays(rows) : rows,
         skipped: counted ? 0 : skipped,
+        ...sampleCount(samples.get(kind)),
       });
       counted = true;
     }

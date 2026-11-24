@@ -34,7 +34,7 @@ export const canLeadConnect = (user: Viewer) =>
   canSeeConnect(user);
 
 export class ConnectError extends Error {
-  constructor(public readonly code: "forbidden" | "empty" | "unknown" | "tooBig") {
+  constructor(public readonly code: "forbidden" | "empty" | "unknown" | "tooBig" | "sample") {
     super(code);
     this.name = "ConnectError";
   }
@@ -443,6 +443,8 @@ export type ImportResult = {
     from: string | null;
     to: string | null;
     test: number;
+    // Rows of the samples file left among the person's own (not loaded).
+    samples: number;
     // Smart Up visits and sales: the rows of those days that were there before and were replaced;
     // positions: all that were there.
     replaced: number | null;
@@ -482,7 +484,12 @@ export async function importConnectFiles(
   for (const file of files) {
     const sheets = await parseWorkbook(file.buffer, { name: file.name }).catch(() => []);
     if (!sheets.length) throw new ConnectError("unknown");
-    parsed.push({ name: file.name, sheets });
+    // The samples file as it was downloaded (modules/connect/samples.ts): none of its rows is the
+    // person's own, so nothing is loaded and nothing is replaced.
+    if (sheets.some((s) => s.samples) && sheets.every((s) => !s.rows.length))
+      throw new ConnectError("sample");
+    // Own rows put into the samples file: the sheets left as they were are passed over.
+    parsed.push({ name: file.name, sheets: sheets.filter((s) => s.rows.length || !s.samples) });
   }
   const results: ImportResult[] = [];
   for (const file of parsed) {
@@ -499,7 +506,13 @@ export async function importConnectFiles(
     const sheets = [];
     for (const sheet of file.sheets) {
       const counts = await saveRows(sheet.kind, sheet.rows, log.id);
-      sheets.push({ kind: sheet.kind, ...counts, skipped: sheet.skipped, ...coverage(sheet.rows) });
+      sheets.push({
+        kind: sheet.kind,
+        ...counts,
+        skipped: sheet.skipped,
+        samples: sheet.samples ?? 0,
+        ...coverage(sheet.rows),
+      });
     }
     await db.connectImport.update({
       where: { id: log.id },

@@ -18,8 +18,8 @@ export type ConnectUploadResult = { lines: string[]; error: string | null };
 
 // Uploads one export (the page sends the chosen files one by one, so several big files never
 // hit the request size limit together). Returns the result lines for the upload page:
-// file|kind|created|updated|skipped|kept|newer|from|to|test|replaced (replaced: Smart Up visits,
-// positions and sales).
+// file|kind|created|updated|skipped|kept|newer|from|to|test|replaced|samples (replaced: Smart Up
+// visits, positions and sales; samples: rows of the samples file that were not loaded).
 export async function importConnectFileAction(form: FormData): Promise<ConnectUploadResult> {
   const actor = await requireUser();
   const files = form.getAll("files").filter((f): f is File => f instanceof File && f.size > 0);
@@ -47,6 +47,7 @@ export async function importConnectFileAction(form: FormData): Promise<ConnectUp
             s.to ?? "",
             s.test,
             s.replaced ?? "",
+            s.samples,
           ].join("|"),
         ),
       ),
