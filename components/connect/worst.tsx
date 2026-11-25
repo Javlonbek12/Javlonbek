@@ -37,7 +37,11 @@ export function WorstSection({ lists }: { lists: WorstList[] }) {
   const shown = lists.filter((list) => list.rows.length > 0);
   if (!shown.length) return null;
   return (
-    <Section title={t("connect.worst.title")} hint={t("connect.worst.hint")}>
+    <Section
+      sources={["smartup", "bot"]}
+      title={t("connect.worst.title")}
+      hint={t("connect.worst.hint")}
+    >
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 print:grid-cols-4">
         {shown.map((list) => {
           const rows = list.rows.slice(0, WORST_SHOWN);

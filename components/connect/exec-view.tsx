@@ -133,7 +133,11 @@ export function ExecView({
       <WorstSection lists={worstLists({ routes: data.routes, insights, regions: data.regions })} />
 
       {data.regions.length > 0 && (
-        <Section title={t("connect.section.regions")} hint={t("connect.section.regionsHint")}>
+        <Section
+          sources={["smartup", "bot"]}
+          title={t("connect.section.regions")}
+          hint={t("connect.section.regionsHint")}
+        >
           <DataTable
             rows={data.regions}
             rowKey={(r) => r.region}

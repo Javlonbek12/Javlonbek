@@ -158,7 +158,11 @@ export function ZoneSalesSection({
     );
 
   return (
-    <Section title={t("connect.zoneSales.title")} hint={t("connect.zoneSales.hint", { previous })}>
+    <Section
+      sources={["smartup"]}
+      title={t("connect.zoneSales.title")}
+      hint={t("connect.zoneSales.hint", { previous })}
+    >
       {sales.legacy && (
         <p className="rounded-md bg-amber-400/15 p-3 text-sm">{t("connect.zoneSales.legacy")}</p>
       )}

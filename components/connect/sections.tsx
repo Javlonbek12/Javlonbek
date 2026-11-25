@@ -24,6 +24,7 @@ import {
   STAGE_COLOR,
   StatGrid,
   UNANSWERED_COLOR,
+  SourceTags,
 } from "./parts";
 
 // The report's three sections on Smart Up visits and Connect Bot, the same on every level (the
@@ -55,7 +56,11 @@ export function VisitsSection({
 }) {
   const v = data;
   return (
-    <Section title={t("connect.section.visits")} hint={t("connect.section.visitsHint")}>
+    <Section
+      sources={["smartup", "bot"]}
+      title={t("connect.section.visits")}
+      hint={t("connect.section.visitsHint")}
+    >
       <StatGrid
         items={[
           { key: "planned", label: t("connect.visits.planned"), value: formatNumber(v.planned) },
@@ -180,7 +185,7 @@ export function OosSection({
 }) {
   const o = data;
   return (
-    <Section title={t("connect.section.oos")} hint={t("connect.section.oosHint")}>
+    <Section sources={["bot"]} title={t("connect.section.oos")} hint={t("connect.section.oosHint")}>
       <StatGrid
         items={[
           {
@@ -243,7 +248,7 @@ export function OosSection({
 export function MvSection({ data, children }: { data: VisitSections["mv"]; children?: ReactNode }) {
   const m = data;
   return (
-    <Section title={t("connect.section.mv")} hint={t("connect.section.mvHint")}>
+    <Section sources={["bot"]} title={t("connect.section.mv")} hint={t("connect.section.mvHint")}>
       <StatGrid
         items={[
           { key: "unique", label: t("connect.mv.unique"), value: formatNumber(m.unique) },
@@ -345,6 +350,7 @@ function SalesBlock({ data }: { data: SalesSummary }) {
     <div className="flex flex-col gap-3 border-t pt-4">
       <div className="flex flex-col gap-0.5">
         <h3 className="text-sm font-medium">{t("connect.oos.salesTitle")}</h3>
+        <SourceTags sources={["bot", "smartup"]} />
         <p className="text-xs">{t("connect.oos.salesDate", { date: formatDay(s.to) })}</p>
         <p className="text-muted-foreground text-xs">{t("connect.oos.salesHint")}</p>
       </div>

@@ -197,6 +197,7 @@ export function RoutesSection({
     return (
       <>
         <Section
+          sources={["smartup"]}
           title={t("connect.routes.executor.title", { zone: zone.zone })}
           hint={t("connect.routes.executor.hint", { previous })}
         >
@@ -236,6 +237,7 @@ export function RoutesSection({
     <>
       {a.ranking.length > 0 && (
         <Section
+          sources={["smartup"]}
           title={t("connect.calendar.attendanceTitle")}
           hint={t("connect.calendar.attendanceHint")}
           nav={false}
@@ -251,6 +253,7 @@ export function RoutesSection({
       )}
       {drByHitRate.length > 0 && (
         <Section
+          sources={["smartup"]}
           title={t("connect.calendar.hitRateTitle")}
           hint={t("connect.calendar.hitRateHint")}
           nav={false}
@@ -269,6 +272,7 @@ export function RoutesSection({
   return (
     <>
       <Section
+        sources={["smartup"]}
         title={t("connect.routes.title")}
         hint={t("connect.routes.hint")}
         action={rulesHref && <RulesLink href={rulesHref} />}
@@ -334,6 +338,7 @@ export function RoutesSection({
 
       {block.level === "exec" && dr && a.matrix && (
         <Section
+          sources={["smartup"]}
           title={t("connect.routes.matrix.title")}
           nav={false}
           hint={t("connect.routes.matrix.hint", {
@@ -393,6 +398,7 @@ export function RoutesSection({
 
       {block.level === "exec" && a.ranking.length > 0 && (
         <Section
+          sources={["smartup"]}
           title={t("connect.routes.ranking.title")}
           nav={false}
           hint={t("connect.routes.ranking.hint")}
@@ -451,6 +457,7 @@ export function RoutesSection({
 
       {block.level === "exec" && a.organizations.length > 0 && (
         <Section
+          sources={["smartup"]}
           title={t("connect.routes.organizations.title")}
           nav={false}
           hint={t("connect.routes.changeHint", { previous })}
@@ -535,6 +542,7 @@ export function RoutesSection({
       {block.level === "manager" && total.clients > 0 && (
         <>
           <Section
+            sources={["smartup"]}
             title={t("connect.routes.zones.title")}
             nav={false}
             hint={t("connect.routes.changeHint", { previous })}
@@ -542,6 +550,7 @@ export function RoutesSection({
             <ZonesTable rows={a.zones} dr={dr} href={zoneHref} targets={targets} />
           </Section>
           <Section
+            sources={["smartup"]}
             title={t("connect.routes.missed.title")}
             nav={false}
             hint={t("connect.routes.missed.hint")}
@@ -550,6 +559,7 @@ export function RoutesSection({
           </Section>
           {dr && (
             <Section
+              sources={["smartup"]}
               title={t("connect.routes.noOrder.title")}
               nav={false}
               hint={t("connect.routes.noOrder.hint")}

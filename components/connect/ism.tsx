@@ -44,7 +44,7 @@ export function IsmSection({
   const empty = level === "executor" ? !issues?.length : !block?.requests;
   if (empty)
     return (
-      <Section title={t("connect.section.ism")} hint={hint}>
+      <Section sources={["bot"]} title={t("connect.section.ism")} hint={hint}>
         <p className="text-muted-foreground text-sm">
           {level === "executor" ? t("connect.manager.noRows") : t("connect.ism.none")}
         </p>
@@ -53,6 +53,7 @@ export function IsmSection({
   if (level === "executor")
     return (
       <Section
+        sources={["bot"]}
         nav={false}
         title={t("connect.ism.issues")}
         hint={`${hint} ${t("connect.ism.issuesHint")}`}
@@ -105,7 +106,7 @@ export function IsmSection({
   const b = block!;
   if (level === "manager")
     return (
-      <Section title={t("connect.section.ism")} hint={hint}>
+      <Section sources={["bot"]} title={t("connect.section.ism")} hint={hint}>
         <h3 className="text-sm font-medium">{t("connect.ism.waiting")}</h3>
         <p className="text-muted-foreground -mt-2 text-xs">{t("connect.ism.waitingHint")}</p>
         <DataTable
@@ -158,7 +159,7 @@ export function IsmSection({
       </Section>
     );
   return (
-    <Section title={t("connect.section.ism")} hint={hint}>
+    <Section sources={["bot"]} title={t("connect.section.ism")} hint={hint}>
       <StatGrid
         items={[
           {

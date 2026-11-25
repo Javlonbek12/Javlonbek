@@ -68,7 +68,11 @@ export function ManagerView({
       />
       {data.tree ? (
         <>
-          <Section title={t("connect.manager.tree")} hint={t("connect.manager.treeHint")}>
+          <Section
+            sources={["smartup", "bot"]}
+            title={t("connect.manager.tree")}
+            hint={t("connect.manager.treeHint")}
+          >
             {data.tree.roots.length || data.tree.idle.length ? (
               <ManagerTreeView tree={data.tree} sales={sales} personHref={personHref} link={link} />
             ) : (
@@ -76,13 +80,21 @@ export function ManagerView({
             )}
           </Section>
           {data.tree.outside.length > 0 && (
-            <Section title={t("connect.manager.outside")} hint={t("connect.manager.outsideHint")}>
+            <Section
+              sources={["smartup", "bot"]}
+              title={t("connect.manager.outside")}
+              hint={t("connect.manager.outsideHint")}
+            >
               <PeopleTable rows={data.tree.outside} sales={sales} personHref={personHref} />
             </Section>
           )}
         </>
       ) : (
-        <Section title={t("connect.manager.people")} hint={t("connect.manager.peopleHint")}>
+        <Section
+          sources={["smartup", "bot"]}
+          title={t("connect.manager.people")}
+          hint={t("connect.manager.peopleHint")}
+        >
           <PeopleTable rows={data.people} sales={sales} personHref={personHref} />
         </Section>
       )}
