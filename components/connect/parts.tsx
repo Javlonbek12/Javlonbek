@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { STAGE_COLOR } from "@/modules/connect/tone";
 
 import { SECTION_ATTRIBUTE } from "./section-anchor";
 import { TONE_CELL, TONE_COLOR, type Tone } from "./tone";
@@ -11,32 +12,8 @@ import { TONE_CELL, TONE_COLOR, type Tone } from "./tone";
 // Building blocks of the Connect analytics pages: tiles, bars, tables and small column charts.
 // Colors follow the validated chart palette (blue #2a78d6, orange #eb6834) and the status scale.
 
-// Red is kept for errors and overdue items: a store that didn't answer or a rejected payment is
-// a warning (amber / orange), not an error.
-export const STAGE_COLOR: Record<string, string> = {
-  delivered: "#1f9d55",
-  paid: "#1f9d55",
-  approved: "#2a78d6",
-  inProgress: "#2a78d6",
-  blocked: "#d69e2e",
-  waitingBum: "#eb6834",
-  waitingBdm: "#eb6834",
-  noAnswer: "#d69e2e",
-  refused: "#898781",
-  rejected: "#898781",
-  // Smart Up visits and Market Visit results.
-  ok: "#1f9d55",
-  noMv: "#eb6834",
-  noOos: "#d69e2e",
-  notInTime: "#b7791f",
-  otherEmployee: "#8a6fd1",
-  closed: "#b8b6ae",
-  full: "#1f9d55",
-  partial: "#d69e2e",
-  noPhoto: "#eb6834",
-  partialNoPhoto: "#b7791f",
-  skipped: "#898781",
-};
+// The status scale (see modules/connect/tone.ts).
+export { STAGE_COLOR };
 
 // A list of numbers with labels, without boxes inside the section's card.
 export function StatGrid({

@@ -3,6 +3,7 @@ import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { formatMoney, formatNumber, type ConnectReport } from "@/modules/connect/report";
 import { DEFAULT_RULES } from "@/modules/connect/rules";
+import { connectTone, regionTone, visitedTone } from "@/modules/connect/tone";
 import { NO_VISITS_REGION } from "@/modules/connect/visits";
 
 import { AttentionSection } from "./attention";
@@ -12,7 +13,7 @@ import { DataTable, Kpi, Section, ToneValue } from "./parts";
 import { FollowUpBlock, RecoveryBlock } from "./recovery-section";
 import { RoutesSection } from "./routes-section";
 import { MvSection, OosSection, VisitsSection } from "./sections";
-import { lineTone, toneRank as toneOrder, type Tone } from "./tone";
+import { lineTone } from "./tone";
 import { Trend } from "./trend";
 import { WorstSection } from "./worst";
 import { worstLists } from "./worst-lists";
@@ -42,13 +43,6 @@ export function ExecView({
   const recovery = insights?.recovery.totals;
   // The tiles and the regions are coloured against the owner's norms («Нормы»).
   const rules = insights?.rules ?? DEFAULT_RULES;
-  // A region as bad as the worse of its two shares; those without Smart Up visits have neither.
-  const regionTone = (r: (typeof data.regions)[number]): Tone | null =>
-    r.region === NO_VISITS_REGION || !r.planned
-      ? null
-      : ([lineTone(r.visitedRate, rules.visited), lineTone(r.connectRate, rules.connect)].sort(
-          (a, b) => toneOrder(a) - toneOrder(b),
-        )[0] ?? null);
   return (
     <div className="flex flex-col gap-4 [&>*]:min-w-0">
       <div
@@ -61,7 +55,7 @@ export function ExecView({
           label={t("connect.tile.planDone")}
           value={pct(v.visitedRate)}
           meter={v.visitedRate}
-          tone={(v.planned ? lineTone(v.visitedRate, rules.visited) : null) ?? undefined}
+          tone={visitedTone(v, rules) ?? undefined}
           trend={<Trend change={changes?.planDone} />}
           note={t("connect.tile.planDoneNote", {
             visited: formatNumber(v.visited),
@@ -72,7 +66,7 @@ export function ExecView({
           label={t("connect.tile.connectUsed")}
           value={pct(v.connectRate)}
           meter={v.connectRate}
-          tone={(v.visited ? lineTone(v.connectRate, rules.connect) : null) ?? undefined}
+          tone={connectTone(v, rules) ?? undefined}
           trend={<Trend change={changes?.connectUsed} />}
           note={t("connect.tile.connectUsedNote", { rate: v.allGoodRate })}
         />
@@ -142,7 +136,7 @@ export function ExecView({
           <DataTable
             rows={data.regions}
             rowKey={(r) => r.region}
-            rowTone={regionTone}
+            rowTone={(r) => regionTone(r, rules)}
             limit={30}
             columns={[
               {
@@ -168,9 +162,7 @@ export function ExecView({
                 header: t("connect.col.visitedRate"),
                 numeric: true,
                 cell: (r) => (
-                  <ToneValue tone={r.planned ? lineTone(r.visitedRate, rules.visited) : null}>
-                    {pct(r.visitedRate)}
-                  </ToneValue>
+                  <ToneValue tone={visitedTone(r, rules)}>{pct(r.visitedRate)}</ToneValue>
                 ),
               },
               {
@@ -178,9 +170,7 @@ export function ExecView({
                 header: t("connect.col.connectRate"),
                 numeric: true,
                 cell: (r) => (
-                  <ToneValue tone={r.visited ? lineTone(r.connectRate, rules.connect) : null}>
-                    {pct(r.connectRate)}
-                  </ToneValue>
+                  <ToneValue tone={connectTone(r, rules)}>{pct(r.connectRate)}</ToneValue>
                 ),
               },
               {

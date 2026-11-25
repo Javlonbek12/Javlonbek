@@ -663,4 +663,79 @@ describe("Connect analytics: the path of an OOS from the check to the sale", () 
     expect(heading("Что проверить · 2")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Market Visit" })).not.toBeInTheDocument();
   });
+
+  it("marks in the Excel file what the page marks: a delivery without a sale, a silent rep", async () => {
+    await upload(ALL);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(
+      (await connectXlsx(await report({ view: "exec" }), TODAY)) as unknown as ArrayBuffer,
+    );
+    const RED = "FFFED5D7";
+    const AMBER = "FFFFEEBF";
+    const fillOf = (cell: ExcelJS.Cell) =>
+      cell.fill?.type === "pattern" ? cell.fill.fgColor?.argb : undefined;
+    const row = (sheet: string, first: string) => {
+      let found: ExcelJS.Row | undefined;
+      wb.getWorksheet(sheet)!.eachRow((r) => {
+        if (!found && r.getCell(1).text === first) found = r;
+      });
+      return found!;
+    };
+
+    // Every sheet of the block compares the two sources: its tab is neither's colour, and the
+    // line under a column's header says whose the column is.
+    const summary = wb.getWorksheet("Путь OOS")!;
+    expect(summary.properties.tabColor?.argb).toBe("FF62748E");
+    expect(wb.getWorksheet("Путь OOS — точки")!.properties.tabColor?.argb).toBe("FF62748E");
+    expect(summary.getRow(1).getCell(1).border?.bottom?.color?.argb).toBe("FF00A6F4");
+    expect(summary.getRow(1).getCell(3).border?.bottom?.color?.argb).toBe("FF8E51FF");
+    // The table of steps is filtered; the funnel and the mismatches under it are not in it.
+    expect(summary.autoFilter).toBe("A1:I6");
+
+    // Step × sold. Delivered in the bot and not sold in Smart Up is red; a sale without an
+    // order is amber (the number and its share).
+    const delivered = row("Путь OOS", "Доставлено");
+    expect([delivered.getCell(7).value, fillOf(delivered.getCell(7))]).toEqual([1, RED]);
+    expect(fillOf(delivered.getCell(8))).toBeUndefined();
+    const noOrder = row("Путь OOS", "Заказ не создан");
+    expect([fillOf(noOrder.getCell(3)), fillOf(noOrder.getCell(4))]).toEqual([AMBER, AMBER]);
+    expect(noOrder.getCell(4).numFmt).toBe('0.0"%"');
+    // The same number not sold after an order nobody answered is not a mismatch.
+    expect(fillOf(row("Путь OOS", "Точка выбрала дату — ждём DR").getCell(8))).toBeUndefined();
+    expect(row("Путь OOS", "Всего").getCell(1).font).toMatchObject({ bold: true });
+    // The two mismatches as numbers of their own.
+    const mismatch = row("Путь OOS", "Доставлено без продажи");
+    expect([mismatch.getCell(2).value, fillOf(mismatch.getCell(2))]).toEqual([1, RED]);
+    expect(fillOf(row("Путь OOS", "Продано без заказа или ответа").getCell(2))).toBe(AMBER);
+
+    // The chains to act on, each in the colour of its reason (the row is marked too).
+    const chain = (reason: string) => {
+      const r = row("Путь OOS — точки", reason);
+      return [fillOf(r.getCell(1)), r.getCell(1).border?.left?.style];
+    };
+    expect(chain("Доставлено, продажи нет")).toEqual([RED, "medium"]);
+    expect(chain("DR не ответил")).toEqual([AMBER, "medium"]);
+    expect(chain("Нет заказа и нет продажи")).toEqual([undefined, undefined]);
+
+    // A rep's zone: the orders they have not answered amber, a delivery without a sale red.
+    const reps = wb.getWorksheet("Путь OOS — DR")!;
+    const header = (reps.getRow(1).values as ExcelJS.CellValue[]).slice(1);
+    const waiting = header.indexOf("DR не ответил (Connect-бот)") + 1;
+    const noSale = header.indexOf("Доставлено без продажи") + 1;
+    const rep = row("Путь OOS — DR", DR1);
+    expect([rep.getCell(waiting).value, fillOf(rep.getCell(waiting))]).toEqual([1, AMBER]);
+    expect([rep.getCell(noSale).value, fillOf(rep.getCell(noSale))]).toEqual([1, RED]);
+    expect(fillOf(rep.getCell(1))).toBe(RED);
+    expect(fillOf(row("Путь OOS — DR", DR2).getCell(1))).toBeUndefined();
+    // A TSM's row is not marked for a rep's silence (as on the page), only for the mismatch.
+    const tsms = wb.getWorksheet("Путь OOS — ТСМ")!;
+    const tsmHeader = (tsms.getRow(1).values as ExcelJS.CellValue[]).slice(1);
+    const second = row("Путь OOS — ТСМ", TSM2);
+    const tsmWaiting = tsmHeader.indexOf("DR не ответил (Connect-бот)") + 1;
+    expect([second.getCell(tsmWaiting).value, fillOf(second.getCell(tsmWaiting))]).toEqual([
+      1,
+      undefined,
+    ]);
+    expect(fillOf(row("Путь OOS — ТСМ", TSM1).getCell(1))).toBe(RED);
+  });
 });

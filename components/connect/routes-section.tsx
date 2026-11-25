@@ -4,6 +4,7 @@ import { Segmented } from "@/components/ui/segmented";
 import { formatDay, fromDateString } from "@/lib/dates";
 import { formatNumber as decimal } from "@/lib/format";
 import { dateFormat, t } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 import { connectHref, formatNumber } from "@/modules/connect/report";
 import {
   MATRIX_CLASSES,
@@ -17,13 +18,14 @@ import {
   type RouteZone,
 } from "@/modules/connect/routes";
 import type { RoutesBlock } from "@/modules/connect/routes-report";
+import { deltaTone, zoneTone } from "@/modules/connect/tone";
 import { formatRange } from "@/modules/reports/format";
 
 import { DataTable, DayBars, RulesLink, Section, StatGrid, ToneValue, type Column } from "./parts";
 import { RoutesCalendar } from "./routes-calendar";
 import { CLASS_COLOR, RoutesMatrix } from "./routes-matrix";
 import { TsmName } from "./sections";
-import { targetTone, type Tone } from "./tone";
+import { targetTone, TONE_TEXT } from "./tone";
 import { ZoneSalesSection } from "./zone-sales";
 
 // «Маршруты и дисциплина»: Smart Up's route analysis on the three levels. Leadership sees the
@@ -38,15 +40,10 @@ const deltaText = (value: number) =>
 
 function Delta({ value }: { value: number | null }) {
   if (value === null) return null;
+  const tone = deltaTone(value);
   return (
     <span
-      className={
-        value > 0
-          ? "text-xs whitespace-nowrap text-emerald-700 dark:text-emerald-400"
-          : value < 0
-            ? "text-xs whitespace-nowrap text-red-600 dark:text-red-400"
-            : "text-muted-foreground text-xs whitespace-nowrap"
-      }
+      className={cn("text-xs whitespace-nowrap", tone ? TONE_TEXT[tone] : "text-muted-foreground")}
     >
       {deltaText(value)}
     </span>
@@ -626,16 +623,6 @@ function WeekdayTable({
 }
 
 // The zones a manager sees: TSMs, then the distributor's reps, the lowest attendance first.
-// A zone's mark on the left edge: a rep by the class of the matrix, a TSM by attendance.
-const zoneTone = (z: RouteZone, targets: RouteTargets): Tone | null =>
-  z.kind === "DR" && z.class
-    ? z.class === "both"
-      ? "bad"
-      : z.class === "one"
-        ? "warn"
-        : "good"
-    : targetTone(z.attendance, targets.attendance);
-
 function ZonesTable({
   rows,
   dr,

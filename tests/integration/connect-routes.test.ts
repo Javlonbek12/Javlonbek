@@ -900,4 +900,207 @@ describe("Connect: routes and discipline", () => {
     const tsm = await buildConnectReport(query({ view: "manager", staff: "TSM" }), TODAY);
     expect((await read(await connectXlsx(tsm, TODAY))).names).not.toContain("DR без заказа");
   });
+
+  it("makes the Excel file look like the page: the norms' colours, the sources, the cover", async () => {
+    const owner = await setup();
+    await importConnectFiles(owner, [
+      {
+        name: "sales.xlsx",
+        buffer: await salesBook([
+          sale(900001, "03.11.2026", "DR_TST_1", "TSM_TST_1", 40000),
+          sale(900001, "09.11.2026", "DR_TST_1", "TSM_TST_1", 30000),
+          sale(900004, "10.11.2026", "DR_TST_1", "Другие", 10000),
+          sale(900005, "11.11.2026", "Operator 9 (Тест)", "TSM_TST_2", 20000),
+        ]),
+      },
+    ]);
+    const RED = "FFFED5D7";
+    const AMBER = "FFFFEEBF";
+    const GREEN = "FFD9F5EB";
+    const fillOf = (cell: ExcelJS.Cell) =>
+      cell.fill?.type === "pattern" ? cell.fill.fgColor?.argb : undefined;
+    const open = async (lang: "ru" | "en" | "ko" = "ru") => {
+      const wb = new ExcelJS.Workbook();
+      await withExportLocale(lang, async () => {
+        const report = await buildConnectReport(query({ view: "exec" }), TODAY);
+        await wb.xlsx.load((await connectXlsx(report, TODAY)) as unknown as ArrayBuffer);
+      });
+      // A row of a sheet by its first cell.
+      const row = (sheet: string, first: string) => {
+        let found: ExcelJS.Row | undefined;
+        wb.getWorksheet(sheet)!.eachRow((r) => {
+          if (!found && r.getCell(1).text === first) found = r;
+        });
+        return found!;
+      };
+      // The cover's texts and the sheets its links open.
+      const cover = wb.worksheets[0]!;
+      const texts: string[] = [];
+      const links: string[] = [];
+      cover.eachRow((r) =>
+        r.eachCell((cell) => {
+          if (cell.isMerged && cell.master !== cell) return;
+          texts.push(cell.text);
+          if (cell.hyperlink) links.push(cell.hyperlink.replace(/^#'(.*)'!A1$/, "$1"));
+        }),
+      );
+      return { wb, row, cover, texts, links };
+    };
+
+    // The standard norms: attendance 95%, hit rate 90%, planned visits made 85%.
+    const ru = await open();
+    const zones = ru.wb.getWorksheet("Маршруты")!;
+    // The header as on the page, in place when the sheet is scrolled; the table can be filtered.
+    expect(zones.getRow(1).getCell(9).value).toBe("Посещаемость, %");
+    expect(zones.getRow(1).getCell(9).font).toMatchObject({ bold: true });
+    expect(fillOf(zones.getRow(1).getCell(9))).toBe("FFF0F3F7");
+    expect(zones.getRow(1).getCell(9).alignment).toMatchObject({
+      horizontal: "right",
+      vertical: "middle",
+      wrapText: true,
+    });
+    expect(zones.views[0]).toMatchObject({ state: "frozen", ySplit: 1, xSplit: 1 });
+    expect(zones.autoFilter).toBe("A1:T5");
+    // A share under its target is red, one at the target green; the value is the number it was.
+    const first = ru.row("Маршруты", "TSM_TST_1");
+    expect([first.getCell(9).value, first.getCell(9).numFmt]).toEqual([40, '0.0"%"']);
+    expect(fillOf(first.getCell(9))).toBe(RED);
+    expect(fillOf(ru.row("Маршруты", "TSM_TST_2").getCell(9))).toBe(GREEN);
+    const rep = ru.row("Маршруты", "DR_TST_1");
+    expect([rep.getCell(17).value, fillOf(rep.getCell(17))]).toEqual([33.3, RED]);
+    expect(fillOf(ru.row("Маршруты", "DR_TST_2").getCell(17))).toBe(GREEN);
+    // The change against the week before: an arrow by the number format, a fall in red.
+    expect(first.getCell(10).value).toBe(-60);
+    expect(first.getCell(10).numFmt).toBe('"▲ "0.0" п.п.";"▼ "0.0" п.п.";0.0" п.п."');
+    expect(first.getCell(10).font?.color?.argb).toBe("FFE7000B");
+    expect(rep.getCell(10).font?.color?.argb).toBeUndefined();
+    // The rows the page marks: the TSM far under the target, the rep with one target missed
+    // (its class is written in the same colour); a zone that reaches its targets has no mark.
+    expect(fillOf(first.getCell(1))).toBe(RED);
+    expect(fillOf(rep.getCell(1))).toBe(AMBER);
+    expect([rep.getCell(20).value, rep.getCell(20).font?.color?.argb]).toEqual([
+      "Одна ниже цели",
+      "FFBB4D00",
+    ]);
+    expect(fillOf(ru.row("Маршруты", "DR_TST_2").getCell(1))).toBeUndefined();
+
+    // «Продажи по зонам»: the change keeps its number and shows the arrow; a fall of a tenth and
+    // more is red (and marks the row), no fall green.
+    const fall = ru.row("Продажи по зонам", "TSM_TST_1");
+    expect([fall.getCell(6).value, fall.getCell(6).numFmt]).toEqual([
+      -25,
+      '"▲ "0.0"%";"▼ "0.0"%";0.0"%"',
+    ]);
+    expect([fillOf(fall.getCell(6)), fillOf(fall.getCell(1))]).toEqual([RED, RED]);
+    const flat = ru.row("Продажи по зонам", "DR_TST_1");
+    expect([flat.getCell(6).value, fillOf(flat.getCell(6))]).toEqual([0, GREEN]);
+    expect(fillOf(flat.getCell(1))).toBeUndefined();
+    expect(fall.getCell(5).numFmt).toBe("#,##0");
+
+    // Whose data a sheet is: Smart Up violet, the Connect bot sky, both compared slate.
+    const tab = (name: string) => ru.wb.getWorksheet(name)!.properties.tabColor?.argb;
+    expect(tab("Маршруты")).toBe("FF8E51FF");
+    expect(tab("Продажи по зонам")).toBe("FF8E51FF");
+    expect(tab("OOS и заказы")).toBe("FF00A6F4");
+    expect(tab("Market Visit")).toBe("FF00A6F4");
+    expect(tab("Визиты и Connect")).toBe("FF62748E");
+    expect(tab("Сводка")).toBeUndefined();
+    // A list of numbers has no filter.
+    expect(ru.wb.getWorksheet("Визиты и Connect")!.autoFilter).toBeUndefined();
+
+    // The cover is the first sheet: the title, the level's numbers in the page's colours, what
+    // the file is, the norms in force with what each colour means, the sheets.
+    expect(ru.wb.worksheets[0]!.name).toBe("Сводка");
+    expect(ru.cover.getCell("A1").value).toBe("Аналитика Connect — Руководство: 9–15 нояб.");
+    expect([ru.cover.getCell("A2").value, ru.cover.getCell("B2").value]).toEqual([
+      "Показатель",
+      "Значение",
+    ]);
+    // 4 of the 7 planned visits made: under the line of 85%.
+    const plan = ru.row("Сводка", "План визитов выполнен, %");
+    expect([plan.getCell(2).value, plan.getCell(2).numFmt]).toEqual([57, '0.0"%"']);
+    expect(fillOf(plan.getCell(2))).toBe(RED);
+    expect(plan.getCell(4).value).toBe("4 из 7 визитов");
+    expect(ru.texts).toEqual(
+      expect.arrayContaining([
+        "О файле",
+        "Руководство",
+        "все сотрудники",
+        "9–15 нояб.",
+        "2–8 нояб. — предыдущий период такой же длины",
+        "Нормы и цвета",
+        "Зелёный — норма выполнена",
+        "Жёлтый — близко к норме",
+        "Красный — далеко от нормы",
+        "Что ещё выделено цветом",
+        "Листы",
+        "Маршруты по зонам: посещаемость, hit rate и их изменение к предыдущему периоду.",
+      ]),
+    );
+    expect(ru.texts.some((text) => text.includes("Данные маршрутов по 16 нояб."))).toBe(true);
+    const norm = (label: string) =>
+      [2, 3, 4, 5].map((c) => ru.row("Сводка", label).getCell(c).value);
+    expect(norm("Посещаемость — цель")).toEqual([
+      "95%",
+      "от 95%",
+      "от 80,75%, но меньше 95%",
+      "меньше 80,75%",
+    ]);
+    expect(norm("Посещено плановых визитов — меньше")).toEqual([
+      "85%",
+      "от 92,5%",
+      "от 85%, но меньше 92,5%",
+      "меньше 85%",
+    ]);
+    expect(
+      [3, 4, 5].map((c) => fillOf(ru.row("Сводка", "Посещаемость — цель").getCell(c))),
+    ).toEqual([GREEN, AMBER, RED]);
+    // Every other sheet is listed once, in the file's order; its name opens it.
+    const names = ru.wb.worksheets.slice(1).map((ws) => ws.name);
+    expect(ru.links).toEqual(names);
+    const listed = ru.row("Сводка", "Маршруты");
+    expect(listed.getCell(1).value).toMatchObject({ hyperlink: "#'Маршруты'!A1" });
+    expect([listed.getCell(5).value, fillOf(listed.getCell(5))]).toEqual(["Smart Up", "FFF4EEFF"]);
+    expect(ru.row("Сводка", "OOS и заказы").getCell(5).value).toBe("Connect-бот");
+    expect(ru.row("Сводка", "Визиты и Connect").getCell(5).value).toBe("Connect-бот + Smart Up");
+
+    // The owner changes the norms: the same numbers, other colours — in the sheets and on the
+    // cover, as on the page.
+    await saveConnectRules(owner, { ...DEFAULT_RULES, attendance: 40, hitRate: 35, visited: 30 });
+    const own = await open();
+    const again = own.row("Маршруты", "TSM_TST_1");
+    expect([again.getCell(9).value, fillOf(again.getCell(9))]).toEqual([40, GREEN]);
+    expect(fillOf(again.getCell(1))).toBeUndefined();
+    // 33.3% is close to a target of 35%.
+    expect(fillOf(own.row("Маршруты", "DR_TST_1").getCell(17))).toBe(AMBER);
+    // 57% is above the line of 30% now, in its lower half.
+    expect(fillOf(own.row("Сводка", "План визитов выполнен, %").getCell(2))).toBe(AMBER);
+    expect(
+      [2, 3, 4, 5].map((c) => own.row("Сводка", "Посещаемость — цель").getCell(c).value),
+    ).toEqual(["40%", "от 40%", "от 34%, но меньше 40%", "меньше 34%"]);
+    // The change of sales has no norm of the owner's: it stays as it was.
+    expect(fillOf(own.row("Продажи по зонам", "TSM_TST_1").getCell(6))).toBe(RED);
+    await saveConnectRules(owner, null);
+
+    // English and Korean: the same file, the cover in its language, every link to a sheet.
+    for (const [lang, sheet, norms] of [
+      ["en", "Summary", "Norms and colours"],
+      ["ko", "요약", "기준과 색"],
+    ] as const) {
+      const file = await open(lang);
+      expect(file.wb.worksheets[0]!.name).toBe(sheet);
+      expect(file.texts).toContain(norms);
+      expect(file.links).toEqual(file.wb.worksheets.slice(1).map((ws) => ws.name));
+      expect(file.links.length).toBeGreaterThan(10);
+    }
+    // One TSM's own file in Korean: «not visited» of the plan and of the route are two sheets.
+    const single = new ExcelJS.Workbook();
+    await withExportLocale("ko", async () => {
+      const one = await buildConnectReport(query({ view: "executor", person: "TSM_TST_1" }), TODAY);
+      await single.xlsx.load((await connectXlsx(one, TODAY)) as unknown as ArrayBuffer);
+    });
+    expect(single.worksheets.map((ws) => ws.name)).toEqual(
+      expect.arrayContaining(["요약", "계획 미방문", "미방문"]),
+    );
+  });
 });
