@@ -5,7 +5,8 @@ import { previousPeriod } from "@/modules/reports/period";
 import { isTestStore } from "./analytics";
 import { attentionList } from "./attention";
 import type { Hierarchy } from "./hierarchy";
-import { titleKey, type OosRecord } from "./parse";
+import { indexPathSales, oosPath, outOf, pathChains, repRoutes } from "./oos-path";
+import { titleKey, type OosRecord, type RouteRecord } from "./parse";
 import {
   analyzeRecovery,
   FOLLOW_UP_DAYS,
@@ -14,10 +15,12 @@ import {
   type RecoveryBase,
 } from "./recovery";
 import { DEFAULT_RULES, type ConnectRules } from "./rules";
-import { loadRoutes, loadVisitData } from "./service";
+import { SALES_WINDOW_DAYS } from "./sales";
+import { loadClients, loadRoutes, loadStoreSales, loadVisitData } from "./service";
 import { headline, trendOf } from "./trend";
 import {
   analyzeVisits,
+  tsmRegions,
   visitSections,
   type TsmRow,
   type VisitData,
@@ -60,6 +63,9 @@ export async function connectInsights(input: {
   attendance?: Map<string, number> | null;
   // The owner's lines of «Требует внимания» (the standard ones without them).
   rules?: ConnectRules;
+  // The route analysis of the period's months, already loaded for «Маршруты и дисциплина»: whose
+  // route a checked store is on («Путь OOS»).
+  routes?: RouteRecord[];
 }) {
   const { view, base, period, data, hierarchy } = input;
   if (view === "executor" && !input.person) return null;
@@ -68,12 +74,38 @@ export async function connectInsights(input: {
   const scope =
     view === "exec" ? null : view === "manager" ? input.scope : new Set([input.person!]);
   const before = view === "exec" ? previousPeriod(period) : null;
-  const [earlier, routes, was] = await Promise.all([
+  // «Путь OOS»: the checks that found a product out, each with its order's step. The sales of
+  // the stores ordered from are loaded with the period's records; the other checked stores' are
+  // read here (only when any sales are loaded at all).
+  const reps = repRoutes(input.routes ?? [], hierarchy);
+  // A checked store on no rep's route: the client base says whose it is.
+  const offRoute = new Set<string>();
+  for (const check of data.oos)
+    if (!reps.has(check.storeCode) && outOf(check).length) offRoute.add(check.storeCode);
+  const chains = pathChains({
+    oos: data.oos,
+    orders: data.orders,
+    reps,
+    clients: offRoute.size ? await loadClients([...offRoute]) : undefined,
+    scope,
+  });
+  const ordered = new Set(data.orders.map((o) => o.storeCode));
+  const unread = [...new Set(chains.map((c) => c.check.storeCode))].filter((s) => !ordered.has(s));
+  const [earlier, routes, was, sold] = await Promise.all([
     loadChecksBefore(recoveryFrom(before?.from ?? period.from), period.from),
     // A rep's order counts up to three days after the check.
     lead ? loadRoutes({ from: period.from, to: addDays(period.to, FOLLOW_UP_DAYS) }) : [],
     before ? loadVisitData(before) : null,
+    data.salesRange
+      ? loadStoreSales(unread, { from: period.from, to: addDays(period.to, SALES_WINDOW_DAYS) })
+      : [],
   ]);
+  const path = oosPath(chains, {
+    sales: indexPathSales([...(data.sales ?? []), ...sold], data.salesRange),
+    hierarchy,
+    regions: tsmRegions(input.rows),
+    scope,
+  });
   const checks = [...earlier, ...data.oos];
   const recovery = analyzeRecovery(checks, { ...period, baseline: base, scope });
   const followUp =
@@ -112,6 +144,8 @@ export async function connectInsights(input: {
     base,
     recovery,
     followUp,
+    // The chain after each check that found a product out, up to the sale in Smart Up.
+    oosPath: path,
     attention,
     // Whether the share of planned visits made was among the attention rules.
     attendance: Boolean(input.attendance),

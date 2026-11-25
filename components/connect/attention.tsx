@@ -43,6 +43,7 @@ export function AttentionSection({
   });
   return (
     <Section
+      sources={["smartup", "bot"]}
       nav={t("connect.attention.title")}
       action={rulesHref && <RulesLink href={rulesHref} />}
       title={

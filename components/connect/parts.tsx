@@ -176,6 +176,32 @@ export function AnswerBar({
   );
 }
 
+// Where a block's numbers come from: the Connect bot's exports, Smart Up's, or both compared.
+export type DataSource = "bot" | "smartup";
+
+// «Connect-бот» / «Smart Up» next to a title or a column: every number on the page says whose
+// data it is, so a mismatch between the two (delivered in the bot, no sale in Smart Up) reads
+// as one.
+export function SourceTags({ sources }: { sources: readonly DataSource[] }) {
+  return (
+    <span className="flex flex-wrap items-center gap-1" aria-label={t("connect.source.label")}>
+      {sources.map((source) => (
+        <span
+          key={source}
+          className={cn(
+            "rounded-full border px-2 py-0.5 text-[11px] leading-4 font-normal whitespace-nowrap",
+            source === "bot"
+              ? "border-sky-500/40 bg-sky-500/10 text-sky-900 dark:text-sky-200"
+              : "border-violet-500/40 bg-violet-500/10 text-violet-900 dark:text-violet-200",
+          )}
+        >
+          {t(`connect.source.${source}`)}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 export function Section({
   title,
   hint,
@@ -183,11 +209,14 @@ export function Section({
   className,
   nav,
   action,
+  sources,
 }: {
   title: string;
   hint?: string;
   children: ReactNode;
   className?: string;
+  // Whose data the block is counted from, shown under the title.
+  sources?: readonly DataSource[];
   // Next to the title, on the right: a link that belongs to the whole block («Настроить нормы»).
   action?: ReactNode;
   // The chip in the page's list of sections: the title by default, `false` for a block that
@@ -207,6 +236,7 @@ export function Section({
       ) : (
         <CardTitle>{title}</CardTitle>
       )}
+      {sources && sources.length > 0 && <SourceTags sources={sources} />}
       {hint && <CardDescription>{hint}</CardDescription>}
       {children}
     </Card>

@@ -10,7 +10,7 @@ import {
 } from "@/modules/connect/recovery";
 import { formatNumber } from "@/modules/connect/report";
 
-import { DataTable, StatGrid } from "./parts";
+import { DataTable, StatGrid, SourceTags } from "./parts";
 import { SECTION_ATTRIBUTE } from "./section-anchor";
 import { TsmName } from "./sections";
 
@@ -43,6 +43,7 @@ export function RecoveryBlock({
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <div className="flex min-w-0 flex-col gap-0.5">
           <h3 className="text-sm font-medium">{t("connect.recovery.title")}</h3>
+          <SourceTags sources={["bot"]} />
           <p className="text-muted-foreground max-w-3xl text-xs">{t("connect.recovery.hint")}</p>
           <p className="text-xs">{t(`connect.recovery.baseNote.${data.baseline}`)}</p>
         </div>
@@ -274,6 +275,7 @@ export function FollowUpBlock({ data }: { data: FollowUps }) {
     <div className="flex flex-col gap-3 border-t pt-4">
       <div className="flex flex-col gap-0.5">
         <h3 className="text-sm font-medium">{t("connect.recovery.followTitle")}</h3>
+        <SourceTags sources={["bot", "smartup"]} />
         {data.routesTo && (
           <p className="text-xs">
             {t("connect.recovery.routesDate", { date: formatDay(data.routesTo) })}

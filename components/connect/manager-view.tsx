@@ -7,6 +7,7 @@ import type { TsmRow } from "@/modules/connect/visits";
 import { AttentionSection } from "./attention";
 import { IsmSection } from "./ism";
 import { ManagerTreeView } from "./manager-tree";
+import { OosPathSection } from "./oos-path";
 import { DataTable, Section } from "./parts";
 import { FollowUpBlock, RecoveryBlock } from "./recovery-section";
 import { RoutesSection } from "./routes-section";
@@ -68,7 +69,11 @@ export function ManagerView({
       />
       {data.tree ? (
         <>
-          <Section title={t("connect.manager.tree")} hint={t("connect.manager.treeHint")}>
+          <Section
+            sources={["smartup", "bot"]}
+            title={t("connect.manager.tree")}
+            hint={t("connect.manager.treeHint")}
+          >
             {data.tree.roots.length || data.tree.idle.length ? (
               <ManagerTreeView tree={data.tree} sales={sales} personHref={personHref} link={link} />
             ) : (
@@ -76,13 +81,21 @@ export function ManagerView({
             )}
           </Section>
           {data.tree.outside.length > 0 && (
-            <Section title={t("connect.manager.outside")} hint={t("connect.manager.outsideHint")}>
+            <Section
+              sources={["smartup", "bot"]}
+              title={t("connect.manager.outside")}
+              hint={t("connect.manager.outsideHint")}
+            >
               <PeopleTable rows={data.tree.outside} sales={sales} personHref={personHref} />
             </Section>
           )}
         </>
       ) : (
-        <Section title={t("connect.manager.people")} hint={t("connect.manager.peopleHint")}>
+        <Section
+          sources={["smartup", "bot"]}
+          title={t("connect.manager.people")}
+          hint={t("connect.manager.peopleHint")}
+        >
           <PeopleTable rows={data.people} sales={sales} personHref={personHref} />
         </Section>
       )}
@@ -98,6 +111,9 @@ export function ManagerView({
         )}
         {insights?.followUp && <FollowUpBlock data={insights.followUp} />}
       </OosSection>
+      {insights && data.sections.oos.checked > 0 && (
+        <OosPathSection data={insights.oosPath} level="manager" href={personHref} />
+      )}
       <MvSection data={data.sections.mv} />
       <IsmSection level="manager" months={months} block={data.ism} />
     </div>
