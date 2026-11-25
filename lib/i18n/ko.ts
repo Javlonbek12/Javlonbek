@@ -48,6 +48,7 @@ export const ko: PartialDictionary & {
       ISM_CHECK: "ISM 체크리스트(LEGO, Backwall, POG)",
       AUDIT: "BDM 감사(동행 방문)",
     },
+    source: { label: "데이터 출처", bot: "Connect 봇", smartup: "Smart Up" },
     samples: {
       title: "데이터 샘플",
       hint: "어떤 내보내기 파일을 올려야 할지 모르겠나요? 샘플 파일을 내려받으세요. «무엇을 업로드하나» 시트와 데이터 종류별 시트가 있으며, 실제 내보내기와 같은 열과 가상의 행 몇 개가 들어 있습니다. 본인 파일과 비교해 보세요. 샘플 파일 자체는 업로드할 필요가 없습니다. [ОБРАЗЕЦ] 표시가 있는 행은 앱이 받지 않습니다.",

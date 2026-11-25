@@ -3245,6 +3245,7 @@ export const en: Dictionary = {
       ISM_CHECK: "ISM checklists (LEGO, Backwall, POG)",
       AUDIT: "BDM audit (joint visits)",
     },
+    source: { label: "Data source", bot: "Connect bot", smartup: "Smart Up" },
     samples: {
       title: "Sample data",
       hint: "Not sure which export to upload? Download the samples file: it has a “What to upload” sheet and a sheet for every kind of data — with the same columns as the real export and a few made-up rows. Compare it with your file. The samples file itself need not be uploaded: the app does not take rows marked [ОБРАЗЕЦ].",
