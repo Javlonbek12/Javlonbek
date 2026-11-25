@@ -7,6 +7,7 @@ import { NO_VISITS_REGION } from "@/modules/connect/visits";
 
 import { AttentionSection } from "./attention";
 import { IsmSection } from "./ism";
+import { OosPathSection } from "./oos-path";
 import { DataTable, Kpi, Section, ToneValue } from "./parts";
 import { FollowUpBlock, RecoveryBlock } from "./recovery-section";
 import { RoutesSection } from "./routes-section";
@@ -242,6 +243,7 @@ export function ExecView({
         )}
         {insights?.followUp && <FollowUpBlock data={insights.followUp} />}
       </OosSection>
+      {insights && o.checked > 0 && <OosPathSection data={insights.oosPath} level="exec" />}
       <MvSection data={m} />
       <IsmSection level="exec" months={months} block={data.ism} />
     </div>

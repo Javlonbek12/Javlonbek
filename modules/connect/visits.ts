@@ -754,15 +754,28 @@ export type RowTotals = ReturnType<typeof aggregateRows>;
 // known for them is a store's city, which is not theirs.
 export const NO_VISITS_REGION = "__no_visits__";
 
+// The region a TSM row is counted in: its own, or the row of those with no Smart Up visit.
+type RegionRow = Pick<TsmRow, "code" | "region" | "planned" | "unplanned">;
+function rowRegion(rows: RegionRow[]) {
+  const inSmartUp = (r: RegionRow) => r.planned > 0 || r.unplanned > 0;
+  const split = rows.some(inSmartUp);
+  return (r: RegionRow) => (split && !inSmartUp(r) ? NO_VISITS_REGION : (r.region ?? "—"));
+}
+
+// Each TSM's region of «Регионы», by titleKey of the code: other blocks split by the same regions.
+export function tsmRegions(rows: RegionRow[]) {
+  const regionOf = rowRegion(rows);
+  return new Map(rows.map((r) => [titleKey(r.code), regionOf(r)]));
+}
+
 // The TSM rows summed by region (rates counted again from the sums), the lowest share of the
 // plan visited first; the row of those with no Smart Up visit goes last. Without any Smart Up
 // visit at all the bot's cities are all there is.
 export function regionRows(rows: TsmRow[]) {
-  const inSmartUp = (r: TsmRow) => r.planned > 0 || r.unplanned > 0;
-  const split = rows.some(inSmartUp);
+  const regionOf = rowRegion(rows);
   const groups = new Map<string, TsmRow[]>();
   for (const r of rows) {
-    const region = split && !inSmartUp(r) ? NO_VISITS_REGION : (r.region ?? "—");
+    const region = regionOf(r);
     groups.set(region, [...(groups.get(region) ?? []), r]);
   }
   const last = (region: string) => Number(region === NO_VISITS_REGION);

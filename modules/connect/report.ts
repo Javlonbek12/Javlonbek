@@ -262,6 +262,7 @@ export async function buildConnectReport(
         sections: execSections,
         attendance,
         rules,
+        routes: routeSource.routes,
       });
   return {
     query: { ...query, person },
