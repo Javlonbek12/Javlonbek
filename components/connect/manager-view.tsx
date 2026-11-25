@@ -7,6 +7,7 @@ import type { TsmRow } from "@/modules/connect/visits";
 import { AttentionSection } from "./attention";
 import { IsmSection } from "./ism";
 import { ManagerTreeView } from "./manager-tree";
+import { OosPathSection } from "./oos-path";
 import { DataTable, Section } from "./parts";
 import { FollowUpBlock, RecoveryBlock } from "./recovery-section";
 import { RoutesSection } from "./routes-section";
@@ -110,6 +111,9 @@ export function ManagerView({
         )}
         {insights?.followUp && <FollowUpBlock data={insights.followUp} />}
       </OosSection>
+      {insights && data.sections.oos.checked > 0 && (
+        <OosPathSection data={insights.oosPath} level="manager" href={personHref} />
+      )}
       <MvSection data={data.sections.mv} />
       <IsmSection level="manager" months={months} block={data.ism} />
     </div>

@@ -8,6 +8,7 @@ import type { IsmBlock, paymentIssues } from "./analytics";
 import type { TreeNode } from "./hierarchy";
 import { insightSheets } from "./insights-xlsx";
 import { localizeData } from "./localize";
+import { oosPathSheets } from "./oos-path-xlsx";
 import { monthsLabel, periodLabel, type ConnectReport } from "./report";
 import { routeSheets } from "./routes-xlsx";
 import {
@@ -555,5 +556,7 @@ export async function connectXlsx(report: ConnectReport, today: string): Promise
   if (routes) routeSheets(sheet, routes);
   // Recovery of stock, the distributor's orders after an OOS, who needs attention.
   insightSheets(sheet, report.insights, report.executor !== null);
+  // The chain after each check that found a product out, up to the sale in Smart Up.
+  oosPathSheets(sheet, report.insights?.oosPath, report.executor !== null);
   return Buffer.from(await book.xlsx.writeBuffer());
 }

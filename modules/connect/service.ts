@@ -284,6 +284,21 @@ export async function loadLastSales(
   return new Map(rows.flatMap((r) => (r._max.day ? [[r.storeCode, r._max.day] as const] : [])));
 }
 
+// The sales of these stores on the days from..to (inclusive), a store's day per row: what was sold
+// to a store after something happened there («Путь OOS»).
+export async function loadStoreSales(storeCodes: string[], days: { from: string; to: string }) {
+  if (!storeCodes.length) return [];
+  const rows = await db.connectRecord.findMany({
+    where: {
+      kind: "SALE",
+      storeCode: { in: storeCodes },
+      day: { gte: days.from, lte: days.to },
+    },
+    select: { data: true },
+  });
+  return rows.map((r) => r.data as RecordOf<"SALE">);
+}
+
 // What is loaded now, by kind: rows (of sales: lines), the days they cover and when they were
 // last written (the upload page).
 export async function connectLoaded() {

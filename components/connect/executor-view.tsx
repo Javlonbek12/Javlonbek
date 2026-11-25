@@ -7,6 +7,7 @@ import type { TsmRow } from "@/modules/connect/visits";
 
 import { FilterSelect } from "./filter-select";
 import { IsmSection } from "./ism";
+import { OosPathSection } from "./oos-path";
 import { DataTable, Kpi, STAGE_COLOR } from "./parts";
 import { RecoveryBlock } from "./recovery-section";
 import { RoutesSection } from "./routes-section";
@@ -149,6 +150,10 @@ export function ExecutorView({
           )}
         </div>
         <RoutesSection block={data.routes} />
+        {/* The checks at the rep's stores that found a product out: what became of each. */}
+        {insights && insights.oosPath.totals.checks > 0 && (
+          <OosPathSection data={insights.oosPath} level="executor" />
+        )}
       </div>
     );
   return (
@@ -423,6 +428,9 @@ export function ExecutorView({
           />
         )}
       </OosSection>
+      {insights && insights.oosPath.totals.checks > 0 && (
+        <OosPathSection data={insights.oosPath} level="executor" />
+      )}
 
       <MvSection data={s.mv}>
         {d.problems.length > 0 && (
