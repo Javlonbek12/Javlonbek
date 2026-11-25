@@ -131,6 +131,28 @@ export const STAGE_COLOR: Record<string, string> = {
   skipped: "#898781",
 };
 
+// Answer values of a question in one bar: «Да» blue, «Нет» orange, the others in turn; what is
+// summed up or not answered grey (a part that names its colour keeps it).
+const YES_NO: Record<string, string> = { Да: "#2a78d6", Нет: "#eb6834" };
+const OTHER_ANSWERS = ["#1f9d55", "#8a6fd1", "#d69e2e", "#0f9b8e"];
+export const UNANSWERED_COLOR = "#d4d2ca";
+export function answerColors<T extends { key: string; color?: string }>(parts: T[]) {
+  let other = 0;
+  return parts.map((p) => ({
+    ...p,
+    color: p.color ?? YES_NO[p.key] ?? OTHER_ANSWERS[other++ % OTHER_ANSWERS.length]!,
+  }));
+}
+
+// The bot writes people as "TSM_TASH_12 - Name": the name, and the position apart from it.
+const POSITION = /_|^(tsm|bdm|bum|dr|senior|junior|marketing|performance|express|trade)\b/i;
+export function personName(value: string | null): { name: string | null; role: string | null } {
+  if (!value) return { name: null, role: null };
+  const [role = "", ...rest] = value.split(" - ");
+  if (!rest.length || !POSITION.test(role)) return { name: value, role: null };
+  return { name: rest.join(" - "), role };
+}
+
 // An order's delivery status as the bot writes it, coloured by its stage.
 export const deliveryColor = (status: string) =>
   STAGE_COLOR[orderStage({ status, outcome: null, storeAnswer: null })];

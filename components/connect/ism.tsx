@@ -2,6 +2,7 @@ import { formatDay } from "@/lib/dates";
 import { t } from "@/lib/i18n";
 import type { IsmBlock, paymentIssues } from "@/modules/connect/analytics";
 import { formatMoney, formatNumber } from "@/modules/connect/report";
+import { SHOWN } from "@/modules/connect/shown";
 import { plural } from "@/modules/reports/format";
 
 import { BarList, DataTable, PersonName, Section, StageBar, STAGE_COLOR, StatGrid } from "./parts";
@@ -112,7 +113,7 @@ export function IsmSection({
         <DataTable
           rows={b.waitingList}
           rowKey={(r) => r.id}
-          limit={15}
+          limit={SHOWN.ismWaiting}
           columns={[
             {
               key: "store",

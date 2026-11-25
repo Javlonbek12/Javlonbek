@@ -8,6 +8,7 @@ import { withAccess } from "@/modules/core/access/actor";
 import { importConnectFiles } from "@/modules/connect/service";
 import { createSessionToken, SESSION_COOKIE } from "@/modules/core/auth/session";
 import { updateSettings } from "@/modules/core/settings/service";
+import { readPage } from "@/tests/helpers/connect-page";
 import { createTestUser, resetDb } from "@/tests/helpers/db";
 
 // Connect downloads in the language chosen before downloading (synthetic data: TSM_TST_* codes,
@@ -143,10 +144,20 @@ async function xlsx(userId: string, query: string) {
       .getSheetValues()
       .filter(Boolean)
       .map((row) => (row as ExcelJS.CellValue[]).slice(1));
+  // The first sheet is the page: a block by its title, a cell with what follows it in its row.
+  const page = readPage(book.worksheets[0]!);
+  const after = (title: string, text: string, count = 2) =>
+    page
+      .block(title)
+      .find(text)
+      .slice(0, count)
+      .map((cell) => (typeof cell.value === "object" ? cell.text : cell.value));
   return {
     name: decodeURIComponent(response.headers.get("content-disposition")!),
     sheets: book.worksheets.map((ws) => ws.name),
     values,
+    page,
+    after,
   };
 }
 
@@ -157,23 +168,36 @@ describe("Connect downloads in the chosen language", () => {
     const owner = await withAccess(await createTestUser("OWNER"));
     await importConnectFiles(owner, [{ name: "report.xlsx", buffer: await workbook() }]);
 
-    // Korean: sheet names, headers, answers, equipment, statuses and the file name.
+    // Korean: the first sheet named as the level, its titles, headers, answers, equipment,
+    // statuses, and the file name.
     const ko = await xlsx(owner.id, `view=exec&${PERIOD}&lang=ko`);
     expect(ko.name).toContain("Connect 분석 — 경영진");
-    expect(ko.sheets).toEqual(expect.arrayContaining(["요약", "지역별", "MV 질문", "집기"]));
-    expect(ko.values("요약")[0]![0]).toBe("Connect 분석 — 경영진: 11월 2일~8일");
-    expect(ko.values("요약")[1]).toEqual(["지표", "값"]);
-    expect(ko.values("MV 질문")).toContainEqual(["매장이 영업 중입니까?", "예", 1, 0]);
-    expect(ko.values("MV 질문")).toContainEqual([
-      "KT&G 제품의 진열 가격이 권장 가격과 일치합니까?",
-      "권장가보다 높음",
+    expect(ko.sheets[0]).toBe("경영진");
+    expect(ko.page.titles).toEqual(expect.arrayContaining(["지역별", "Market Visit"]));
+    expect(ko.page.ws.getCell("A1").value).toBe("Connect 분석 — 경영진: 11월 2일~8일");
+    expect(ko.page.find("보기").map((cell) => cell.value)).toEqual(["보기", "경영진"]);
+    // A question with its answers: the answer and how many gave it; the share of problem
+    // answers after the question.
+    expect(ko.page.block("Market Visit").texts).toEqual(
+      expect.arrayContaining([
+        "매장이 영업 중입니까?",
+        "KT&G 제품의 진열 가격이 권장 가격과 일치합니까? · 문제: 100%",
+      ]),
+    );
+    expect(ko.after("Market Visit", "예")).toEqual(["예", 1]);
+    expect(ko.after("Market Visit", "권장가보다 높음")).toEqual(["권장가보다 높음", 1]);
+    expect(ko.after("Market Visit", "M (9*6) POSI (한국산 흰색)")).toEqual([
+      "M (9*6) POSI (한국산 흰색)",
       1,
-      100,
     ]);
-    expect(ko.values("집기")).toContainEqual(["M (9*6) POSI (한국산 흰색)", 1]);
-    expect(ko.values("상태별 주문")).toContainEqual(["배송 완료 — 매장 확인 대기", 1, 20, 400000]);
+    // An order status with its orders, packs and sum.
+    expect(ko.after("자동 재고(OOS)와 주문", "배송 완료 — 매장 확인 대기", 3)).toEqual([
+      "배송 완료 — 매장 확인 대기",
+      1,
+      "· 20갑 · 400,000 숨",
+    ]);
     // Regions stay as they came.
-    expect(ko.values("지역별")[1]![0]).toBe("Тестоград");
+    expect(ko.page.block("지역별").tables()[0]!.rows[0]![0]).toBe("Тестоград");
 
     // One TSM's list in Korean: the problem with its answer, the order's status; the store stays.
     const one = await xlsx(owner.id, `view=executor&person=${TSM}&${PERIOD}&lang=ko`);
@@ -194,16 +218,21 @@ describe("Connect downloads in the chosen language", () => {
     // English.
     const en = await xlsx(owner.id, `view=exec&${PERIOD}&lang=en`);
     expect(en.name).toContain("Connect analytics — Leadership");
-    expect(en.sheets).toContain("Summary");
-    expect(en.values("MV questions")).toContainEqual(["Is the outlet open?", "Yes", 1, 0]);
+    expect(en.sheets[0]).toBe("Leadership");
+    expect(en.page.block("Market Visit").texts).toContain("Is the outlet open?");
+    expect(en.after("Market Visit", "Yes")).toEqual(["Yes", 1]);
 
     // No language, or an unknown one: the user's (Russian), data as it came.
     for (const query of [`view=exec&${PERIOD}`, `view=exec&${PERIOD}&lang=xx`]) {
       const ru = await xlsx(owner.id, query);
       expect(ru.name).toContain("Аналитика Connect — Руководство");
-      expect(ru.sheets).toContain("Сводка");
-      expect(ru.values("Вопросы MV")).toContainEqual([OPEN, "Да", 1, 0]);
-      expect(ru.values("Оборудование")).toContainEqual(["M (9*6) POSI (Корейский белый)", 1]);
+      expect(ru.sheets[0]).toBe("Руководство");
+      expect(ru.page.block("Market Visit").texts).toContain(OPEN);
+      expect(ru.after("Market Visit", "Да")).toEqual(["Да", 1]);
+      expect(ru.after("Market Visit", "M (9*6) POSI (Корейский белый)")).toEqual([
+        "M (9*6) POSI (Корейский белый)",
+        1,
+      ]);
     }
 
     // An English user without a choice gets English; Russian when chosen.
@@ -216,8 +245,8 @@ describe("Connect downloads in the chosen language", () => {
       digestTime: 510,
       locale: "en",
     });
-    expect((await xlsx(owner.id, `view=exec&${PERIOD}`)).sheets).toContain("Summary");
-    expect((await xlsx(owner.id, `view=exec&${PERIOD}&lang=ru`)).sheets).toContain("Сводка");
+    expect((await xlsx(owner.id, `view=exec&${PERIOD}`)).sheets[0]).toBe("Leadership");
+    expect((await xlsx(owner.id, `view=exec&${PERIOD}&lang=ru`)).sheets[0]).toBe("Руководство");
   });
 
   it("makes the PowerPoint in Korean", async () => {

@@ -11,6 +11,7 @@ import {
   type PathStage,
 } from "@/modules/connect/oos-path";
 import { formatNumber } from "@/modules/connect/report";
+import { SHOWN as PAGE } from "@/modules/connect/shown";
 import {
   pathRepTone as repTone,
   pathRowTone as rowTone,
@@ -34,7 +35,7 @@ const pct = (value: number | null) => (value === null ? "—" : `${value}%`);
 const n = formatNumber;
 
 // How many rows of a table each level shows; the whole lists are in the Excel file.
-const SHOWN = { exec: 20, manager: 40, executor: 40 } as const;
+const SHOWN = PAGE.path;
 
 // «Путь OOS: от проверки до продажи»: what happened after each stock check that found a product
 // out — the order, the store's and the rep's answers, the delivery (Connect bot) — and whether
@@ -83,7 +84,7 @@ export function OosPathSection({
                     rows={data.byRegion}
                     rowKey={(x) => x.region}
                     rowTone={rowTone}
-                    limit={30}
+                    limit={PAGE.pathGroups}
                     columns={[
                       {
                         key: "region",
@@ -106,7 +107,7 @@ export function OosPathSection({
                     rows={data.byManager}
                     rowKey={(x) => x.title ?? "-"}
                     rowTone={rowTone}
-                    limit={30}
+                    limit={PAGE.pathGroups}
                     columns={[
                       {
                         key: "manager",
@@ -712,7 +713,7 @@ function repColumns(
 }
 
 // The product names shown next to their number; the whole list is in the Excel file.
-const SKUS_SHOWN = 4;
+const SKUS_SHOWN = PAGE.pathSkus;
 
 function SkuList({ skus }: { skus: string[] }) {
   const more = skus.length - SKUS_SHOWN;

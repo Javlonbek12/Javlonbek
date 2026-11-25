@@ -4,6 +4,7 @@ import { formatDay } from "@/lib/dates";
 import { t } from "@/lib/i18n";
 import { formatMoney, formatNumber } from "@/modules/connect/report";
 import type { SalesSummary } from "@/modules/connect/sales";
+import { SHOWN } from "@/modules/connect/shown";
 import { deliveryColor } from "@/modules/connect/tone";
 import {
   MV_RESULTS,
@@ -274,7 +275,7 @@ export function MvSection({ data, children }: { data: VisitSections["mv"]; child
           <div className="flex flex-col gap-2">
             <h3 className="text-sm font-medium">{t("connect.mv.equipment")}</h3>
             <BarList
-              rows={m.equipment.slice(0, 12).map((e) => ({
+              rows={m.equipment.slice(0, SHOWN.equipment).map((e) => ({
                 key: e.type,
                 label: e.type,
                 value: e.count,

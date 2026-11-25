@@ -2,13 +2,10 @@ import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
 
 import {
-  addCoverSheet,
   addStyledSheet,
-  fillCoverSheet,
   numberFormat,
   sheetName,
   textLines,
-  type Cover,
   type SheetColumn,
   type SheetRow,
 } from "./xlsx-style";
@@ -250,122 +247,27 @@ describe("the Connect download's style layer", () => {
     expect(ws.getRow(1).getCell(9).border?.bottom?.color?.argb).toBe("FF8E51FF");
   });
 
-  it("makes the cover: the title, the tiles in their colours, the norms and the links", async () => {
-    const cover: Cover = {
-      title: "Аналитика Connect — Руководство: 2–8 нояб.",
-      tilesHead: ["Показатель", "Значение"],
-      tiles: [
-        {
-          label: "План визитов выполнен, %",
-          value: 84,
-          format: "percent",
-          tone: "bad",
-          change: { delta: -2, tone: "bad" },
-          note: "17 583 из 20 863 визитов",
-        },
-        { label: "Заказов", value: 2760, format: "count" },
-      ],
-      changeUnit: "п.п.",
-      caption: "▲ ▼ — изменение к предыдущему периоду.",
-      facts: { title: "О файле", rows: [["Период", "2–8 нояб."]] },
-      norms: {
-        title: "Нормы и цвета",
-        hint: "Зелёный — норма выполнена.",
-        head: ["Норма", "Значение", "Зелёный", "Жёлтый", "Красный"],
-        rows: [
-          {
-            label: "Посещаемость — цель",
-            value: "95%",
-            good: "от 95%",
-            warn: "от 80,75%, но меньше 95%",
-            bad: "меньше 80,75%",
-          },
-        ],
-        more: { title: "Что ещё выделено цветом", rows: [["Продажи по зонам", "Рост — зелёный."]] },
-      },
-      sheets: {
-        title: "Листы",
-        hint: "Название листа — ссылка.",
-        head: ["Лист", "Что на листе", "Источник данных"],
-        rows: [
-          {
-            name: "Маршруты",
-            about: "Маршруты по зонам.",
-            source: "smartup",
-            sourceLabel: "Smart Up",
-          },
-          {
-            name: "Тест's лист",
-            about: "С апострофом.",
-            source: "bot",
-            sourceLabel: "Connect-бот",
-          },
-        ],
-      },
-    };
+  it("gives a list's sheet the way back to its block, after the table", async () => {
     const book = new ExcelJS.Workbook();
-    fillCoverSheet(addCoverSheet(book, "Сводка"), cover);
-    book.addWorksheet("Маршруты");
-    book.addWorksheet("Тест's лист");
-    const copy = await reopen(book);
-    expect(copy.worksheets[0]!.name).toBe("Сводка");
-    const ws = copy.worksheets[0]!;
-    const texts: string[] = [];
-    const links: string[] = [];
-    ws.eachRow((row) =>
-      row.eachCell((cell) => {
-        if (cell.isMerged && cell.master !== cell) return;
-        texts.push(cell.text);
-        if (cell.hyperlink) links.push(cell.hyperlink);
-      }),
+    book.addWorksheet("Руководство");
+    addStyledSheet(book, "Маршруты", columns, rows, {
+      source: "smartup",
+      about: "Тест",
+      back: { text: "← Руководство: Маршруты и дисциплина", target: "#'Руководство'!A120" },
+    });
+    const ws = (await reopen(book)).getWorksheet("Маршруты")!;
+    // The header and the records are what they were; the link stands after an empty column.
+    expect((ws.getRow(1).values as ExcelJS.CellValue[]).slice(1, 7)).toEqual(
+      columns.map((c) => c.header),
     );
-    // A designed page: the title over the whole width, no frozen row and no filter.
-    expect(ws.getCell("A1").value).toBe(cover.title);
-    expect(ws.getCell("E1").master.address).toBe("A1");
-    expect(ws.getCell("A1").font).toMatchObject({ bold: true, size: 16 });
-    expect(ws.views[0]?.state).not.toBe("frozen");
-    expect(ws.autoFilter).toBeUndefined();
-    // The tiles: the number in its colour, the change with its arrow, the note.
-    expect([ws.getCell("A2").value, ws.getCell("B2").value]).toEqual(["Показатель", "Значение"]);
-    expect([ws.getCell("A3").value, ws.getCell("B3").value]).toEqual([
-      "План визитов выполнен, %",
-      84,
-    ]);
-    expect([fillOf(ws.getCell("B3")), ws.getCell("B3").numFmt]).toEqual([RED, '0.0"%"']);
-    expect(ws.getCell("C3").value).toBe(-2);
-    expect(ws.getCell("C3").numFmt).toContain('"▼ "0.0" п.п."');
-    expect(inkOf(ws.getCell("C3"))).toBe("FFE7000B");
-    expect(ws.getCell("D3").value).toBe("17 583 из 20 863 визитов");
-    expect(fillOf(ws.getCell("B4"))).toBeUndefined();
-    // Everything said is there.
-    expect(texts).toEqual(
-      expect.arrayContaining([
-        "▲ ▼ — изменение к предыдущему периоду.",
-        "О файле",
-        "2–8 нояб.",
-        "Нормы и цвета",
-        "Посещаемость — цель",
-        "95%",
-        "Что ещё выделено цветом",
-        "Рост — зелёный.",
-        "Листы",
-        "Маршруты по зонам.",
-        "Smart Up",
-      ]),
-    );
-    // The legend is in the colours it explains.
-    const band = (text: string) => {
-      let found: ExcelJS.Cell | undefined;
-      ws.eachRow((row) => row.eachCell((cell) => (cell.value === text ? (found = cell) : null)));
-      return fillOf(found!);
-    };
-    expect([band("от 95%"), band("от 80,75%, но меньше 95%"), band("меньше 80,75%")]).toEqual([
-      GREEN,
-      AMBER,
-      RED,
-    ]);
-    expect([band("Smart Up"), band("Connect-бот")]).toEqual(["FFF4EEFF", "FFE6F6FE"]);
-    // A sheet's name opens it (an apostrophe in a name is doubled).
-    expect(links).toEqual(["#'Маршруты'!A1", "#'Тест''s лист'!A1"]);
+    expect(ws.getRow(1).getCell(7).value).toBeNull();
+    expect(ws.getRow(1).getCell(8).value).toMatchObject({
+      text: "← Руководство: Маршруты и дисциплина",
+      hyperlink: "#'Руководство'!A120",
+    });
+    expect(ws.getRow(2).getCell(8).value).toBeNull();
+    // The filter and the print keep to the table.
+    expect(ws.autoFilter).toBe("A1:F4");
+    expect(ws.pageSetup.printArea).toBe("A1:F4");
   });
 });

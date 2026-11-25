@@ -3,8 +3,10 @@ import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { formatMoney, formatNumber, type ConnectReport } from "@/modules/connect/report";
 import { DEFAULT_RULES } from "@/modules/connect/rules";
+import { SHOWN } from "@/modules/connect/shown";
 import { connectTone, regionTone, visitedTone } from "@/modules/connect/tone";
 import { NO_VISITS_REGION } from "@/modules/connect/visits";
+import { worstLists } from "@/modules/connect/worst";
 
 import { AttentionSection } from "./attention";
 import { IsmSection } from "./ism";
@@ -16,7 +18,6 @@ import { MvSection, OosSection, VisitsSection } from "./sections";
 import { lineTone } from "./tone";
 import { Trend } from "./trend";
 import { WorstSection } from "./worst";
-import { worstLists } from "./worst-lists";
 
 const pct = (value: number) => `${value}%`;
 
@@ -137,7 +138,7 @@ export function ExecView({
             rows={data.regions}
             rowKey={(r) => r.region}
             rowTone={(r) => regionTone(r, rules)}
-            limit={30}
+            limit={SHOWN.regions}
             columns={[
               {
                 key: "region",

@@ -10,6 +10,7 @@ import { buildConnectReport, connectHref, parseConnectQuery } from "@/modules/co
 import { importConnectFiles } from "@/modules/connect/service";
 import { connectXlsx } from "@/modules/connect/xlsx";
 import { withAccess } from "@/modules/core/access/actor";
+import { fillOf, readBook } from "@/tests/helpers/connect-page";
 import { createTestUser, resetDb } from "@/tests/helpers/db";
 
 // «Путь OOS: от проверки до продажи», through uploads and the report: the bot's checks and orders,
@@ -450,29 +451,49 @@ describe("Connect analytics: the path of an OOS from the check to the sale", () 
       return out;
     };
     const ru = await sheetsOf(exec);
+    // The block is on the first sheet as on the page; its lists are sheets of their own.
     expect(ru.worksheets.map((ws) => ws.name)).toEqual(
       expect.arrayContaining([
-        "Путь OOS",
         "Путь OOS — регионы",
         "Путь OOS — ТСМ",
         "Путь OOS — DR",
         "Путь OOS — точки",
       ]),
     );
-    // Every column says whose data it is.
-    expect(rows(ru, "Путь OOS")[0]!.slice(0, 4)).toEqual([
-      "Шаг (Connect-бот)",
-      "Проверок с OOS (Connect-бот)",
-      "Продан хотя бы один (Smart Up)",
-      "Продано за 3 дня (Smart Up)",
+    const block = readBook(ru).page.block("Путь OOS: от проверки до продажи");
+    // Step × sold, with the page's columns: the step, the checks, those with a sale and their
+    // share, all sold, not sold (something else sold / nothing sold), the window still open.
+    const cross = block.tables()[0]!;
+    expect(cross.head).toEqual([
+      "Шаг",
+      "Проверок с OOS",
+      "Продан хотя бы один",
+      "Проданы все",
+      "Нет, но продали другое",
+      "Точке ничего не продали",
+      "Окно не закрыто",
     ]);
-    expect(rows(ru, "Путь OOS").slice(1, 6)).toEqual([
-      ["Заказ не создан", 2, 1, 50, 1, 0, 0, 1, 0],
-      ["Точка не ответила", 1, 0, undefined, 0, 0, 0, 0, 1],
-      ["Точка выбрала дату — ждём DR", 1, 0, 0, 0, 0, 0, 1, 0],
-      ["Доставлено", 1, 0, 0, 0, 0, 1, 0, 0],
-      ["Всего", 5, 1, 25, 1, 0, 1, 2, 1],
+    expect(cross.rows).toEqual([
+      ["Заказ не создан", 2, "1 · 50%", 1, 0, 1, 0],
+      ["Точка не ответила", 1, "—", 0, 0, 0, 1],
+      ["Точка выбрала дату — ждём DR", 1, "0 · 0%", 0, 0, 1, 0],
+      ["Доставлено", 1, "0 · 0%", 0, 1, 0, 0],
     ]);
+    // A part sold is not a column of the page: the report has it.
+    expect(exec.insights!.oosPath.cross.map((c) => c.some)).toEqual([0, 0, 0, 0]);
+    // The total is the page's funnel and the numbers of what was sold.
+    expect(block.stat("1. Найден OOS").value).toBe(5);
+    expect(block.stat("Продан хотя бы один товар")).toMatchObject({
+      value: 25,
+      note: "1 из 4 проверок",
+    });
+    expect(block.stat("Проданы все товары").value).toBe(1);
+    expect(block.stat("Ничего не продано")).toMatchObject({
+      value: 3,
+      note: "точке ничего не продали: 2 · продали другие товары: 1",
+    });
+    expect(block.stat("Окно не закрыто").value).toBe(1);
+    expect(exec.insights!.oosPath.totals.soldSome).toBe(0);
     expect(
       rows(ru, "Путь OOS — регионы")
         .slice(1)
@@ -536,27 +557,31 @@ describe("Connect analytics: the path of an OOS from the check to the sale", () 
     ]);
     const ko = await sheetsOf(exec, "ko");
     expect(ko.worksheets.map((ws) => ws.name)).toEqual(
-      expect.arrayContaining(["OOS 경로", "OOS 경로 — TSM", "OOS 경로 — DR", "OOS 경로 — 매장"]),
+      expect.arrayContaining(["OOS 경로 — TSM", "OOS 경로 — DR", "OOS 경로 — 매장"]),
     );
+    expect(readBook(ko).page.links.map((link) => link.text)).toContain("OOS 경로");
     expect(rows(ko, "OOS 경로 — 매장")[1]![0]).toBe("배송됐으나 판매 없음");
 
     // One TSM's file: their own numbers and chains, without the tables by employee.
     const own = await sheetsOf(await report({ view: "executor", person: TSM1 }));
     const names = own.worksheets.map((ws) => ws.name);
-    expect(names).toEqual(expect.arrayContaining(["Путь OOS", "Путь OOS — точки"]));
+    expect(names).toEqual(expect.arrayContaining(["Путь OOS — точки"]));
     expect(names).not.toContain("Путь OOS — ТСМ");
     expect(names).not.toContain("Путь OOS — DR");
-    expect(rows(own, "Путь OOS").find((r) => r[0] === "Всего")).toEqual([
-      "Всего",
-      2,
-      1,
-      50,
-      1,
-      0,
-      1,
-      0,
-      0,
-    ]);
+    const mine = readBook(own).page.block("Путь OOS: от проверки до продажи");
+    expect(mine.stat("1. Найден OOS").value).toBe(2);
+    expect(mine.stat("Продан хотя бы один товар")).toMatchObject({
+      value: 50,
+      note: "1 из 2 проверок",
+    });
+    expect(mine.stat("Проданы все товары").value).toBe(1);
+    expect(mine.stat("Ничего не продано")).toMatchObject({
+      value: 1,
+      note: "точке ничего не продали: 0 · продали другие товары: 1",
+    });
+    expect(mine.stat("Окно не закрыто").value).toBe(0);
+    // One TSM's page has no table of steps, as the page.
+    expect(mine.tables().map((table) => table.head[0])).toEqual(["Точка"]);
   });
 
   it("shows the block on the three levels", async () => {
@@ -672,8 +697,6 @@ describe("Connect analytics: the path of an OOS from the check to the sale", () 
     );
     const RED = "FFFED5D7";
     const AMBER = "FFFFEEBF";
-    const fillOf = (cell: ExcelJS.Cell) =>
-      cell.fill?.type === "pattern" ? cell.fill.fgColor?.argb : undefined;
     const row = (sheet: string, first: string) => {
       let found: ExcelJS.Row | undefined;
       wb.getWorksheet(sheet)!.eachRow((r) => {
@@ -682,31 +705,61 @@ describe("Connect analytics: the path of an OOS from the check to the sale", () 
       return found!;
     };
 
-    // Every sheet of the block compares the two sources: its tab is neither's colour, and the
-    // line under a column's header says whose the column is.
-    const summary = wb.getWorksheet("Путь OOS")!;
-    expect(summary.properties.tabColor?.argb).toBe("FF62748E");
+    // Every list of the block compares the two sources: its tab is neither's colour. On the
+    // first sheet the block has both tags under its title, and the line under a column's header
+    // of its tables says whose the column is — the page's legend, in the header itself.
     expect(wb.getWorksheet("Путь OOS — точки")!.properties.tabColor?.argb).toBe("FF62748E");
-    expect(summary.getRow(1).getCell(1).border?.bottom?.color?.argb).toBe("FF00A6F4");
-    expect(summary.getRow(1).getCell(3).border?.bottom?.color?.argb).toBe("FF8E51FF");
-    // The table of steps is filtered; the funnel and the mismatches under it are not in it.
-    expect(summary.autoFilter).toBe("A1:I6");
+    const page = readBook(wb).page;
+    const block = page.block("Путь OOS: от проверки до продажи");
+    expect(page.ws.autoFilter).toBeUndefined();
+    const cross = block.tables()[0]!;
+    expect(cross.headCells[0]!.border?.bottom).toMatchObject({
+      style: "medium",
+      color: { argb: "FF00A6F4" },
+    });
+    expect(cross.headCells[2]!.border?.bottom?.color?.argb).toBe("FF8E51FF");
 
     // Step × sold. Delivered in the bot and not sold in Smart Up is red; a sale without an
-    // order is amber (the number and its share).
-    const delivered = row("Путь OOS", "Доставлено");
-    expect([delivered.getCell(7).value, fillOf(delivered.getCell(7))]).toEqual([1, RED]);
-    expect(fillOf(delivered.getCell(8))).toBeUndefined();
-    const noOrder = row("Путь OOS", "Заказ не создан");
-    expect([fillOf(noOrder.getCell(3)), fillOf(noOrder.getCell(4))]).toEqual([AMBER, AMBER]);
-    expect(noOrder.getCell(4).numFmt).toBe('0.0"%"');
+    // order is amber (the number with its share).
+    const delivered = cross.row("Доставлено");
+    expect([delivered[4]!.value, fillOf(delivered[4]!)]).toEqual([1, RED]);
+    expect(fillOf(delivered[5]!)).toBeUndefined();
+    const noOrder = cross.row("Заказ не создан");
+    expect([noOrder[2]!.value, fillOf(noOrder[2]!)]).toEqual(["1 · 50%", AMBER]);
     // The same number not sold after an order nobody answered is not a mismatch.
-    expect(fillOf(row("Путь OOS", "Точка выбрала дату — ждём DR").getCell(8))).toBeUndefined();
-    expect(row("Путь OOS", "Всего").getCell(1).font).toMatchObject({ bold: true });
-    // The two mismatches as numbers of their own.
-    const mismatch = row("Путь OOS", "Доставлено без продажи");
-    expect([mismatch.getCell(2).value, fillOf(mismatch.getCell(2))]).toEqual([1, RED]);
-    expect(fillOf(row("Путь OOS", "Продано без заказа или ответа").getCell(2))).toBe(AMBER);
+    expect(fillOf(cross.row("Точка выбрала дату — ждём DR")[5]!)).toBeUndefined();
+    // The two mismatches as the page says them: a line each on its tinted ground, and the
+    // funnel's last step in red.
+    const said = (start: string) =>
+      block.cells.flat().find((cell) => String(cell.value).startsWith(start))!;
+    const mismatch = said("В боте «Доставлено», а в Smart Up нет продажи этих товаров: 1 из 1");
+    expect([fillOf(mismatch), mismatch.border?.left?.color?.argb]).toEqual([
+      "FFFFEAEB",
+      "FFFB2C36",
+    ]);
+    const anyway = said("Заказа нет или точка не ответила, а товар всё равно продан: 1.");
+    expect([fillOf(anyway), anyway.border?.left?.color?.argb]).toEqual(["FFFFF7E0", "FFFFB900"]);
+    expect(said("Доставлено без продажи: 1").font?.color?.argb).toBe("FFE7000B");
+    expect(said("Без заказа: 2").font?.color?.argb).toBe("FFBB4D00");
+
+    // The same on the first sheet's tables by TSM and by rep, as on the page: a delivery
+    // without a sale red (the row marked on its left edge), a rep's unanswered orders amber.
+    const byRep = page.sub("Путь OOS по зонам DR").tables()[0]!;
+    const waitingAt = byRep.head.indexOf("DR не ответил");
+    const noSaleAt = byRep.head.indexOf("Доставлено без продажи");
+    expect([byRep.row(DR1)[waitingAt]!.value, fillOf(byRep.row(DR1)[waitingAt]!)]).toEqual([
+      1,
+      AMBER,
+    ]);
+    expect([byRep.row(DR1)[noSaleAt]!.value, fillOf(byRep.row(DR1)[noSaleAt]!)]).toEqual([1, RED]);
+    expect(byRep.row(DR1)[0]!.border?.left).toMatchObject({
+      style: "thick",
+      color: { argb: "FFFB2C36" },
+    });
+    expect(byRep.row(DR2)[0]!.border?.left).toBeUndefined();
+    const byTsm = page.sub("Путь OOS по ТСМ").tables()[0]!;
+    expect(fillOf(byTsm.row(TSM2)[byTsm.head.indexOf("DR не ответил")]!)).toBeUndefined();
+    expect(byTsm.row(TSM1)[0]!.border?.left?.color?.argb).toBe("FFFB2C36");
 
     // The chains to act on, each in the colour of its reason (the row is marked too).
     const chain = (reason: string) => {

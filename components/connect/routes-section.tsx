@@ -18,6 +18,7 @@ import {
   type RouteZone,
 } from "@/modules/connect/routes";
 import type { RoutesBlock } from "@/modules/connect/routes-report";
+import { SHOWN } from "@/modules/connect/shown";
 import { deltaTone, zoneTone } from "@/modules/connect/tone";
 import { formatRange } from "@/modules/reports/format";
 
@@ -157,9 +158,6 @@ function totalsItems(
   ];
 }
 
-// How many zones a calendar shows (the rest are in the tables and in Excel).
-const CALENDAR_ROWS = { exec: 20, manager: 40 };
-
 export function RoutesSection({
   block,
   rulesHref,
@@ -229,7 +227,8 @@ export function RoutesSection({
   const drByHitRate = a.zones
     .filter((z) => z.kind === "DR" && z.hitRate !== null)
     .sort((x, y) => x.hitRate! - y.hitRate! || y.visits - x.visits);
-  const calendarRows = block.level === "exec" ? CALENDAR_ROWS.exec : CALENDAR_ROWS.manager;
+  // How many zones a calendar shows (the rest are in the tables and in Excel).
+  const calendarRows = block.level === "exec" ? SHOWN.calendar.exec : SHOWN.calendar.manager;
   const calendars = total.clients > 0 && (
     <>
       {a.ranking.length > 0 && (
@@ -357,7 +356,7 @@ export function RoutesSection({
             <DataTable
               rows={a.organizations.filter((o) => o.kind === "DR")}
               rowKey={(o) => o.organization ?? "—"}
-              limit={30}
+              limit={SHOWN.matrixOrganizations}
               columns={[
                 {
                   key: "organization",
@@ -404,7 +403,7 @@ export function RoutesSection({
             rows={a.ranking}
             rowKey={(z) => z.zone}
             rowTone={(z) => zoneTone(z, targets)}
-            limit={15}
+            limit={SHOWN.ranking}
             columns={[
               {
                 key: "zone",
@@ -462,7 +461,7 @@ export function RoutesSection({
           <DataTable
             rows={a.organizations}
             rowKey={(o) => `${o.kind}|${o.organization ?? ""}`}
-            limit={40}
+            limit={SHOWN.organizations}
             columns={[
               {
                 key: "organization",
@@ -639,7 +638,7 @@ function ZonesTable({
       rows={rows}
       rowKey={(z) => z.zone}
       rowTone={(z) => zoneTone(z, targets)}
-      limit={100}
+      limit={SHOWN.zones}
       columns={[
         {
           key: "zone",
@@ -752,7 +751,7 @@ function MissedList({ rows, zones }: { rows: MissedStore[]; zones: boolean }) {
       <DataTable
         rows={rows}
         rowKey={(s) => `${s.zone}|${s.storeCode}`}
-        limit={30}
+        limit={SHOWN.missed}
         columns={[
           {
             key: "store",
@@ -818,7 +817,7 @@ function NoOrderList({ rows, zones }: { rows: NoOrderStore[]; zones: boolean }) 
       <DataTable
         rows={rows}
         rowKey={(s) => `${s.zone}|${s.storeCode}`}
-        limit={30}
+        limit={SHOWN.noOrder}
         columns={[
           {
             key: "store",

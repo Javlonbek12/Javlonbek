@@ -9,6 +9,7 @@ import {
   type RecoveryBase,
 } from "@/modules/connect/recovery";
 import { formatNumber } from "@/modules/connect/report";
+import { SHOWN } from "@/modules/connect/shown";
 
 import { DataTable, StatGrid, SourceTags } from "./parts";
 import { SECTION_ATTRIBUTE } from "./section-anchor";
@@ -106,7 +107,7 @@ export function RecoveryBlock({
                 <DataTable
                   rows={data.byTsm}
                   rowKey={(x) => x.code}
-                  limit={15}
+                  limit={SHOWN.recovery}
                   columns={[
                     {
                       key: "tsm",
@@ -149,7 +150,7 @@ export function RecoveryBlock({
                 <DataTable
                   rows={data.bySku}
                   rowKey={(x) => x.sku}
-                  limit={15}
+                  limit={SHOWN.recovery}
                   columns={[
                     {
                       key: "sku",
@@ -250,7 +251,7 @@ export function RecoveryBlock({
 }
 
 // The product names shown next to their number; the whole list is in the Excel file.
-const SKUS_SHOWN = 6;
+const SKUS_SHOWN = SHOWN.recoverySkus;
 
 // How many products and which: «8 · A, B, C… и ещё 5».
 function SkuList({ skus }: { skus: string[] }) {
@@ -359,7 +360,7 @@ function FollowTable({
       <DataTable
         rows={rows}
         rowKey={(x) => x.code}
-        limit={15}
+        limit={SHOWN.followUp}
         columns={[
           {
             key: "code",

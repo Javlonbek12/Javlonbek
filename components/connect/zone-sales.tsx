@@ -5,6 +5,7 @@ import { formatNumber as decimal } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { formatMoney, formatNumber } from "@/modules/connect/report";
 import type { RouteTargets } from "@/modules/connect/routes";
+import { SHOWN } from "@/modules/connect/shown";
 import { changeTone, idleTone } from "@/modules/connect/tone";
 import { idleSummary, type ZoneSales, type ZoneSalesRow } from "@/modules/connect/zone-sales";
 
@@ -24,12 +25,7 @@ const changeText = (change: number | null) =>
     ? "—"
     : `${change > 0 ? "▲" : change < 0 ? "▼" : ""} ${decimal(Math.abs(change))}%`.trim();
 
-// The stores without a sale shown on the page (all of them are in the Excel file).
-const IDLE_SHOWN = 30;
 const IDLE_ANCHOR = "idle-stores";
-
-// How many zones a table shows (the rest are in the Excel file).
-const ZONES_SHOWN = { exec: 20, manager: 40, executor: 1 };
 
 export function ZoneSalesSection({
   sales,
@@ -149,7 +145,8 @@ export function ZoneSalesSection({
           rows={rows}
           rowKey={(r) => r.zone}
           rowTone={(r) => changeTone(r.change)}
-          limit={ZONES_SHOWN[level]}
+          // The rest of the zones are in the Excel file.
+          limit={SHOWN.zoneSales[level]}
           columns={columns(kind)}
         />
       </div>
@@ -236,7 +233,7 @@ export function ZoneSalesSection({
             // An order marked on the route and nothing delivered is what to look into (amber, not
             // red: an order of the period's last days may be delivered after it).
             rowTone={idleTone}
-            limit={IDLE_SHOWN}
+            limit={SHOWN.idle}
             columns={[
               {
                 key: "store",
