@@ -5,21 +5,19 @@ import { formatNumber as decimal } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { formatMoney, formatNumber } from "@/modules/connect/report";
 import type { RouteTargets } from "@/modules/connect/routes";
+import { changeTone, idleTone } from "@/modules/connect/tone";
 import { idleSummary, type ZoneSales, type ZoneSalesRow } from "@/modules/connect/zone-sales";
 
 import { DataTable, Section, StatGrid, ToneBar, ToneValue, type Column } from "./parts";
 import { TsmName } from "./sections";
-import { targetTone, type Tone } from "./tone";
+import { targetTone } from "./tone";
 
 // «Продажи по зонам»: what each rep sold (Smart Up's sales report) next to their hit rate, and
 // what was sold to each TSM's stores next to their attendance. The biggest fall against the
 // period before comes first.
 
-// A fall of sales has no norm of the owner's: a tenth and more is marked as far, any fall as
-// close, growth as good.
-const FAR_FALL = -10;
-export const changeTone = (change: number | null): Tone | null =>
-  change === null ? null : change <= FAR_FALL ? "bad" : change < 0 ? "warn" : "good";
+// A fall of sales has no norm of the owner's (see changeTone in modules/connect/tone.ts).
+export { changeTone };
 
 const changeText = (change: number | null) =>
   change === null
@@ -237,7 +235,7 @@ export function ZoneSalesSection({
             rowKey={(s) => `${s.zone}|${s.storeCode}`}
             // An order marked on the route and nothing delivered is what to look into (amber, not
             // red: an order of the period's last days may be delivered after it).
-            rowTone={(s) => (s.orders > 0 ? "warn" : null)}
+            rowTone={idleTone}
             limit={IDLE_SHOWN}
             columns={[
               {
@@ -284,11 +282,7 @@ export function ZoneSalesSection({
                 key: "orders",
                 header: t("connect.zoneSales.idle.orders"),
                 numeric: true,
-                cell: (s) => (
-                  <ToneValue tone={s.orders > 0 ? "warn" : null}>
-                    {formatNumber(s.orders)}
-                  </ToneValue>
-                ),
+                cell: (s) => <ToneValue tone={idleTone(s)}>{formatNumber(s.orders)}</ToneValue>,
               },
               {
                 key: "lastSale",

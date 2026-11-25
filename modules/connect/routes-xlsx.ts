@@ -3,27 +3,40 @@ import type { ru } from "@/lib/i18n/ru";
 
 import { localizeData } from "./localize";
 import type { RoutesBlock } from "./routes-report";
-
-type Value = string | number | null;
-// The workbook's way to add a sheet (see connectXlsx).
-type AddSheet = (
-  name: string,
-  columns: { header: string; width: number }[],
-  rows: Value[][],
-) => unknown;
+import { changeTone, classTone, deltaTone, idleTone, targetTone, zoneTone } from "./tone";
+import type { AddSheet, CellFormat, SheetColumn } from "./xlsx-style";
 
 // «Маршруты и дисциплина» in the Excel download: the zones on the screen and the full lists of
-// stores to act on (the page shows the first of them).
+// stores to act on (the page shows the first of them). All of it is Smart Up's data; the shares
+// are coloured against the owner's targets, as on the page.
 export function routeSheets(sheet: AddSheet, block: RoutesBlock) {
   const a = block.analysis;
-  const col = (key: keyof typeof ru.connect.routes.col, width = 12) => ({
-    header: t(`connect.routes.col.${key}`),
-    width,
-  });
-  const percent = (key: keyof typeof ru.connect.routes.col) => ({
+  const { targets } = a;
+  const col = (
+    key: keyof typeof ru.connect.routes.col,
+    width = 12,
+    format: CellFormat = "text",
+    more: Partial<SheetColumn> = {},
+  ): SheetColumn => ({ header: t(`connect.routes.col.${key}`), width, format, ...more });
+  const count = (key: keyof typeof ru.connect.routes.col, width = 12) => col(key, width, "count");
+  const percent = (
+    key: keyof typeof ru.connect.routes.col,
+    tone?: SheetColumn["tone"],
+  ): SheetColumn => ({
     header: `${t(`connect.routes.col.${key}`)}, %`,
     width: 12,
+    format: "percent",
+    tone,
   });
+  // «▲ 1.4 п.п.» against the period before: up in green, down in red, as under a share on the page.
+  const delta = (key: "attendanceDelta" | "hitRateDelta") =>
+    col(key, 14, "change", {
+      unit: t("connect.routes.pp"),
+      tone: (value) => deltaTone(typeof value === "number" ? value : null),
+      paint: "text",
+    });
+  const about = (key: keyof typeof ru.connect.cover.about) => t(`connect.cover.about.${key}`);
+
   sheet(
     t("connect.routes.sheets.zones"),
     [
@@ -32,21 +45,27 @@ export function routeSheets(sheet: AddSheet, block: RoutesBlock) {
       col("person", 30),
       col("manager", 40),
       col("organization", 18),
-      col("clients", 8),
-      col("planned", 8),
-      col("visited", 10),
-      percent("attendance"),
-      col("attendanceDelta", 14),
-      col("missed", 10),
-      col("neverVisited", 12),
-      col("unplanned", 10),
-      col("upcoming", 10),
-      col("visits", 10),
-      col("orders", 10),
-      percent("hitRate"),
-      col("hitRateDelta", 14),
-      col("noOrder", 12),
-      col("class", 24),
+      count("clients", 8),
+      count("planned", 8),
+      count("visited", 10),
+      percent("attendance", (_, __, i) => targetTone(a.zones[i]!.attendance, targets.attendance)),
+      delta("attendanceDelta"),
+      count("missed", 10),
+      count("neverVisited", 12),
+      count("unplanned", 10),
+      count("upcoming", 10),
+      count("visits", 10),
+      count("orders", 10),
+      // Only the distributor's reps have a hit rate (and a class of the matrix).
+      percent("hitRate", (_, __, i) =>
+        a.zones[i]!.kind === "DR" ? targetTone(a.zones[i]!.hitRate, targets.hitRate) : null,
+      ),
+      delta("hitRateDelta"),
+      count("noOrder", 12),
+      col("class", 24, "text", {
+        tone: (_, __, i) => (a.zones[i]!.class ? classTone(a.zones[i]!.class!) : null),
+        paint: "text",
+      }),
     ],
     a.zones.map((z) => [
       z.zone,
@@ -70,6 +89,11 @@ export function routeSheets(sheet: AddSheet, block: RoutesBlock) {
         : [null, null, null, null]),
       z.class ? t(`connect.routes.class.${z.class}`) : null,
     ]),
+    {
+      source: "smartup",
+      about: about("routes"),
+      rowTone: (_, i) => zoneTone(a.zones[i]!, targets),
+    },
   );
   sheet(
     t("connect.routes.sheets.missed"),
@@ -80,9 +104,9 @@ export function routeSheets(sheet: AddSheet, block: RoutesBlock) {
       col("organization", 18),
       col("storeCode", 12),
       col("store", 40),
-      col("misses", 10),
+      count("misses", 10),
       col("missedDays", 40),
-      col("lastVisit", 14),
+      col("lastVisit", 14, "date"),
       col("grade", 8),
       col("equipment", 30),
     ],
@@ -99,6 +123,7 @@ export function routeSheets(sheet: AddSheet, block: RoutesBlock) {
       s.grade,
       localizeData(s.equipment),
     ]),
+    { source: "smartup", about: about("missed") },
   );
   if (block.staff !== "TSM" && (block.zone ? block.zone.kind === "DR" : a.totals.DR.zones > 0))
     sheet(
@@ -109,8 +134,8 @@ export function routeSheets(sheet: AddSheet, block: RoutesBlock) {
         col("organization", 18),
         col("storeCode", 12),
         col("store", 40),
-        col("visits", 10),
-        col("lastVisit", 14),
+        count("visits", 10),
+        col("lastVisit", 14, "date"),
         col("grade", 8),
         col("equipment", 30),
       ],
@@ -125,27 +150,37 @@ export function routeSheets(sheet: AddSheet, block: RoutesBlock) {
         s.grade,
         localizeData(s.equipment),
       ]),
+      { source: "smartup", about: about("noOrder") },
     );
   // «Продажи по зонам»: every shown zone (the page shows the first of them).
-  if (block.sales)
+  const sales = block.sales;
+  if (sales)
     sheet(
       t("connect.zoneSales.sheet"),
       [
         col("zone", 26),
-        { header: t("connect.zoneSales.kind"), width: 8 },
+        { header: t("connect.zoneSales.kind"), width: 8, format: "text" },
         col("person", 30),
         col("organization", 18),
-        { header: t("connect.zoneSales.col.sum"), width: 16 },
-        { header: `${t("connect.zoneSales.col.change")}, %`, width: 14 },
-        { header: t("connect.zoneSales.col.blocks"), width: 10 },
-        { header: t("connect.zoneSales.col.days"), width: 10 },
-        col("clients", 8),
-        { header: t("connect.zoneSales.col.coverage"), width: 16 },
-        { header: `${t("connect.zoneSales.col.coverage")}, %`, width: 16 },
-        percent("hitRate"),
-        percent("attendance"),
+        { header: t("connect.zoneSales.col.sum"), width: 16, format: "money" },
+        // «▼ 16.7%»: a fall is amber, a tenth and more red, growth green.
+        {
+          header: `${t("connect.zoneSales.col.change")}, %`,
+          width: 14,
+          format: "change",
+          tone: (_, __, i) => changeTone(sales.rows[i]!.change),
+        },
+        { header: t("connect.zoneSales.col.blocks"), width: 10, format: "count" },
+        { header: t("connect.zoneSales.col.days"), width: 10, format: "count" },
+        count("clients", 8),
+        { header: t("connect.zoneSales.col.coverage"), width: 16, format: "count" },
+        { header: `${t("connect.zoneSales.col.coverage")}, %`, width: 16, format: "percent" },
+        percent("hitRate", (_, __, i) => targetTone(sales.rows[i]!.hitRate, targets.hitRate)),
+        percent("attendance", (_, __, i) =>
+          targetTone(sales.rows[i]!.attendance, targets.attendance),
+        ),
       ],
-      block.sales.rows.map((r) => [
+      sales.rows.map((r) => [
         r.zone,
         r.kind,
         r.person,
@@ -160,8 +195,13 @@ export function routeSheets(sheet: AddSheet, block: RoutesBlock) {
         r.hitRate,
         r.attendance,
       ]),
+      {
+        source: "smartup",
+        about: about("zoneSales"),
+        rowTone: (_, i) => changeTone(sales.rows[i]!.change),
+      },
     );
-  if (block.sales?.idle.length)
+  if (sales?.idle.length)
     sheet(
       t("connect.zoneSales.idle.sheet"),
       [
@@ -172,11 +212,17 @@ export function routeSheets(sheet: AddSheet, block: RoutesBlock) {
         col("store", 40),
         col("grade", 8),
         col("equipment", 30),
-        { header: t("connect.zoneSales.idle.visits"), width: 10 },
-        { header: t("connect.zoneSales.idle.orders"), width: 12 },
-        { header: t("connect.zoneSales.idle.lastSale"), width: 18 },
+        { header: t("connect.zoneSales.idle.visits"), width: 10, format: "count" },
+        // An order marked on the route and nothing sold: what to look into.
+        {
+          header: t("connect.zoneSales.idle.orders"),
+          width: 12,
+          format: "count",
+          tone: (_, __, i) => idleTone(sales.idle[i]!),
+        },
+        { header: t("connect.zoneSales.idle.lastSale"), width: 18, format: "date" },
       ],
-      block.sales.idle.map((s) => [
+      sales.idle.map((s) => [
         s.zone,
         s.person,
         s.organization,
@@ -188,5 +234,10 @@ export function routeSheets(sheet: AddSheet, block: RoutesBlock) {
         s.orders,
         s.lastSale,
       ]),
+      {
+        source: "smartup",
+        about: about("idle"),
+        rowTone: (_, i) => idleTone(sales.idle[i]!),
+      },
     );
 }

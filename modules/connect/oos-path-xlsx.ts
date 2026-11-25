@@ -3,31 +3,51 @@ import { t } from "@/lib/i18n";
 import type { ru } from "@/lib/i18n/ru";
 
 import type { OosPath, PathRow } from "./oos-path";
+import { pathRepTone, pathRowTone, REASON_TONE, type Tone } from "./tone";
 import { NO_VISITS_REGION } from "./visits";
-
-type Value = string | number | null;
-// The workbook's way to add a sheet (see connectXlsx).
-type AddSheet = (
-  name: string,
-  columns: { header: string; width: number }[],
-  rows: Value[][],
-) => unknown;
+import type { AddSheet, CellFormat, SheetColumn, SheetRow, Value } from "./xlsx-style";
 
 type ColKey = keyof typeof ru.connect.oosPath.col;
 
 // «Путь OOS» in the Connect download: the block in full (the page shows the first rows of each
 // list). `own`: the executors' level — one person's numbers and chains, without the tables by
-// employee.
+// employee. Every sheet compares the two sources, and every column says whose it is (in its
+// header and by the line under it); what the page marks — a delivery without a sale red, a rep
+// who has not answered amber — is marked here.
 export function oosPathSheets(sheet: AddSheet, path: OosPath | null | undefined, own: boolean) {
   if (!path || !path.totals.checks) return;
-  const column = (header: string, width = 14) => ({ header, width });
-  const col = (key: ColKey, width = 14) => column(t(`connect.oosPath.col.${key}`), width);
-  const percent = (key: ColKey) => column(`${t(`connect.oosPath.col.${key}`)}, %`, 12);
+  const column = (
+    header: string,
+    width = 14,
+    format: CellFormat = "text",
+    more: Partial<SheetColumn> = {},
+  ): SheetColumn => ({ header, width, format, ...more });
+  const col = (key: ColKey, width = 14, format: CellFormat = "count") =>
+    column(t(`connect.oosPath.col.${key}`), width, format);
+  const percent = (key: ColKey, source: "bot" | "smartup") =>
+    column(`${t(`connect.oosPath.col.${key}`)}, %`, 12, "percent", { source });
   // Whose data a column is: the steps are the bot's, the sales Smart Up's.
-  const bot = (key: ColKey, width = 12) =>
-    column(`${t(`connect.oosPath.col.${key}`)} (${t("connect.source.bot")})`, width);
-  const smartUp = (key: ColKey, width = 12) =>
-    column(`${t(`connect.oosPath.col.${key}`)} (${t("connect.source.smartup")})`, width);
+  const bot = (
+    key: ColKey,
+    width = 12,
+    format: CellFormat = "count",
+    more: Partial<SheetColumn> = {},
+  ) =>
+    column(`${t(`connect.oosPath.col.${key}`)} (${t("connect.source.bot")})`, width, format, {
+      source: "bot",
+      ...more,
+    });
+  const smartUp = (
+    key: ColKey,
+    width = 12,
+    format: CellFormat = "count",
+    more: Partial<SheetColumn> = {},
+  ) =>
+    column(`${t(`connect.oosPath.col.${key}`)} (${t("connect.source.smartup")})`, width, format, {
+      source: "smartup",
+      ...more,
+    });
+  const about = (key: keyof typeof ru.connect.cover.about) => t(`connect.cover.about.${key}`);
   const r = path.totals;
 
   // Step × sold, the total under it, then the funnel and the two mismatches.
@@ -50,44 +70,65 @@ export function oosPathSheets(sheet: AddSheet, path: OosPath | null | undefined,
     c.noneNothing,
     c.open,
   ];
+  // The rows of the table are the steps; the total and what is under it have no step.
+  const step = (index: number) => path.cross[index]?.step;
+  // A sale without an order or an answer of the store is marked amber.
+  const soldAnyway: SheetColumn["tone"] = (_, __, i) =>
+    (step(i) === "noOrder" || step(i) === "storeSilent") && path.cross[i]!.anySold > 0
+      ? "warn"
+      : null;
+  // A delivery without a sale is red.
+  const unsold: SheetColumn["tone"] = (value, _, i) =>
+    step(i) === "delivered" && typeof value === "number" && value > 0 ? "bad" : null;
+  const mismatch = (label: string, value: number, tone: Tone): SheetRow => ({
+    cells: [label, value],
+    tone: value > 0 ? tone : null,
+  });
   sheet(
     t("connect.oosPath.sheet.summary"),
     [
-      bot("step", 44),
+      bot("step", 44, "text"),
       bot("checks", 16),
-      smartUp("anySold", 18),
-      smartUp("soldRate", 18),
+      smartUp("anySold", 18, "count", { tone: soldAnyway }),
+      smartUp("soldRate", 18, "percent", { tone: soldAnyway }),
       smartUp("soldAll", 16),
       smartUp("soldSome", 16),
-      smartUp("noneOther", 22),
-      smartUp("noneNothing", 22),
+      smartUp("noneOther", 22, "count", { tone: unsold }),
+      smartUp("noneNothing", 22, "count", { tone: unsold }),
       smartUp("open", 16),
     ],
     [
       ...path.cross.map((c): Value[] => [t(`connect.oosPath.step.${c.step}`), ...cross(c)]),
-      [
-        t("connect.oosPath.total"),
-        ...cross({
-          checks: r.checks,
-          anySold: r.anySold,
-          anyRate: r.soldRate,
-          all: r.soldAll,
-          some: r.soldSome,
-          noneOther: r.noneOther,
-          noneNothing: r.noneNothing,
-          open: r.open,
-        }),
-      ],
+      {
+        cells: [
+          t("connect.oosPath.total"),
+          ...cross({
+            checks: r.checks,
+            anySold: r.anySold,
+            anyRate: r.soldRate,
+            all: r.soldAll,
+            some: r.soldSome,
+            noneOther: r.noneOther,
+            noneNothing: r.noneNothing,
+            open: r.open,
+          }),
+        ],
+        bold: true,
+      },
       [],
-      ...path.funnel.map((stage): Value[] => [
-        t(`connect.oosPath.stage.${stage.key}`),
-        stage.count,
-        stage.rate === null ? null : t("connect.oosPath.ofPrevious", { rate: stage.rate }),
-      ]),
+      // The funnel is a list of its own: a stage, how many reached it, its share in words.
+      ...path.funnel.map((stage): SheetRow => ({
+        cells: [
+          t(`connect.oosPath.stage.${stage.key}`),
+          stage.count,
+          stage.rate === null ? null : t("connect.oosPath.ofPrevious", { rate: stage.rate }),
+        ],
+        formats: ["text", "count", "text"],
+      })),
       [],
       [t("connect.oosPath.col.confirmed"), r.confirmed],
-      [t("connect.oosPath.col.deliveredNoSale"), r.deliveredNoSale],
-      [t("connect.oosPath.col.soldAnyway"), r.soldAnyway],
+      mismatch(t("connect.oosPath.col.deliveredNoSale"), r.deliveredNoSale, "bad"),
+      mismatch(t("connect.oosPath.col.soldAnyway"), r.soldAnyway, "warn"),
       [t("connect.oosPath.noZone"), r.noZone],
       [
         path.sales
@@ -96,30 +137,38 @@ export function oosPathSheets(sheet: AddSheet, path: OosPath | null | undefined,
         null,
       ],
     ],
+    { source: "both", about: about("path") },
   );
 
-  // The same numbers for every row of a table.
-  const counts = [
+  // The same numbers for every row of a table. A rep's unanswered orders are marked on their
+  // own table only, as on the page.
+  const counts = (rows: PathRow[], reps = false): SheetColumn[] => [
     bot("checks", 12),
     bot("orders", 10),
     bot("noOrder", 12),
-    percent("noOrder"),
+    percent("noOrder", "bot"),
     bot("storeWaiting", 12),
     bot("storeSilent", 12),
     bot("storeRefused", 12),
-    bot("agentWaiting", 12),
+    bot("agentWaiting", 12, "count", {
+      tone: reps ? (_, __, i) => (rows[i]!.agentWaiting > 0 ? "warn" : null) : undefined,
+    }),
     bot("agentAccepted", 12),
     bot("delivered", 12),
     bot("confirmed", 14),
     bot("other", 12),
     smartUp("closed", 12),
     smartUp("anySold", 14),
-    percent("soldRate"),
+    percent("soldRate", "smartup"),
     smartUp("soldAll", 12),
     smartUp("noneOther", 16),
     smartUp("noneNothing", 16),
     smartUp("open", 12),
-    col("deliveredNoSale", 16),
+    // Delivered in the bot and not sold in Smart Up: the two sources disagree.
+    {
+      ...col("deliveredNoSale", 16),
+      tone: (_, __, i) => (rows[i]!.deliveredNoSale > 0 ? "bad" : null),
+    },
     col("soldAnyway", 18),
   ];
   const numbers = (x: PathRow): Value[] => [
@@ -146,15 +195,16 @@ export function oosPathSheets(sheet: AddSheet, path: OosPath | null | undefined,
     x.soldAnyway,
   ];
 
-  if (!own && path.byRegion.length + path.byManager.length > 0)
+  if (!own && path.byRegion.length + path.byManager.length > 0) {
+    const groups: PathRow[] = [...path.byRegion, ...path.byManager];
     sheet(
       t("connect.oosPath.sheet.groups"),
       [
-        col("who", 14),
-        col("name", 30),
+        col("who", 14, "text"),
+        col("name", 30, "text"),
         column(t("connect.col.person"), 30),
         col("people", 8),
-        ...counts,
+        ...counts(groups),
       ],
       [
         ...path.byRegion.map((x): Value[] => [
@@ -172,38 +222,62 @@ export function oosPathSheets(sheet: AddSheet, path: OosPath | null | undefined,
           ...numbers(x),
         ]),
       ],
+      {
+        source: "both",
+        about: about("pathGroups"),
+        rowTone: (_, i) => pathRowTone(groups[i]!),
+      },
     );
+  }
 
   if (!own && path.byTsm.length)
     sheet(
       t("connect.oosPath.sheet.people"),
-      [column(t("connect.col.tsm"), 26), column(t("connect.col.person"), 30), ...counts],
+      [
+        column(t("connect.col.tsm"), 26),
+        column(t("connect.col.person"), 30),
+        ...counts(path.byTsm),
+      ],
       path.byTsm.map((x) => [x.code || null, x.name, ...numbers(x)]),
+      {
+        source: "both",
+        about: about("pathPeople"),
+        rowTone: (_, i) => pathRowTone(path.byTsm[i]!),
+      },
     );
 
   if (!own && path.byDr.length)
     sheet(
       t("connect.oosPath.sheet.reps"),
-      [smartUp("zone", 30), ...counts],
+      [smartUp("zone", 30, "text"), ...counts(path.byDr, true)],
       path.byDr.map((x) => [x.zone ?? t("connect.oosPath.noZone"), ...numbers(x)]),
+      {
+        source: "both",
+        about: about("pathReps"),
+        rowTone: (_, i) => pathRepTone(path.byDr[i]!),
+      },
     );
 
   if (path.stores.length)
     sheet(
       t("connect.oosPath.sheet.stores"),
       [
-        col("reason", 28),
+        // Why the chain is in the list, in the colour of the reason.
+        {
+          ...col("reason", 28, "text"),
+          tone: (_, __, i) => REASON_TONE[path.stores[i]!.reason],
+        },
         column(t("connect.col.store"), 40),
         column("ID", 12),
-        bot("check", 14),
+        bot("check", 14, "date"),
         column(t("connect.col.tsm"), 26),
         column(t("connect.col.person"), 30),
-        smartUp("zone", 24),
+        smartUp("zone", 24, "text"),
         bot("out", 10),
         column(`${t("connect.oosPath.col.out")}: ${t("connect.col.skus")}`, 70),
-        bot("step", 34),
-        bot("order", 14),
-        smartUp("sale", 36),
+        bot("step", 34, "text"),
+        bot("order", 14, "text"),
+        smartUp("sale", 36, "text"),
       ],
       path.stores.map((x) => [
         t(`connect.oosPath.reason.${x.reason}`),
@@ -219,6 +293,11 @@ export function oosPathSheets(sheet: AddSheet, path: OosPath | null | undefined,
         x.orderNo,
         t(`connect.oosPath.sold.${x.sold}`),
       ]),
+      {
+        source: "both",
+        about: about("pathStores"),
+        rowTone: (_, i) => REASON_TONE[path.stores[i]!.reason],
+      },
     );
 }
 

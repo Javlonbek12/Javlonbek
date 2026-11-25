@@ -11,6 +11,11 @@ import {
   type PathStage,
 } from "@/modules/connect/oos-path";
 import { formatNumber } from "@/modules/connect/report";
+import {
+  pathRepTone as repTone,
+  pathRowTone as rowTone,
+  REASON_TONE,
+} from "@/modules/connect/tone";
 import { NO_VISITS_REGION } from "@/modules/connect/visits";
 
 import {
@@ -271,19 +276,6 @@ export function OosPathSection({
     </Section>
   );
 }
-
-// Why a chain is in the list: a delivery without a sale is the mismatch to look into first.
-const REASON_TONE: Record<OosPath["stores"][number]["reason"], Tone | null> = {
-  deliveredNoSale: "bad",
-  agentWaiting: "warn",
-  noOrderNoSale: null,
-};
-
-// A row with a delivery that Smart Up shows no sale for is marked red; a rep's row with orders
-// they have not answered amber.
-const rowTone = (x: PathRow): Tone | null => (x.deliveredNoSale > 0 ? "bad" : null);
-const repTone = (x: PathRow): Tone | null =>
-  x.deliveredNoSale > 0 ? "bad" : x.agentWaiting > 0 ? "warn" : null;
 
 // What the chains stopped at on the way to a stage: the line under its number.
 const STOPPED_TONE: Record<PathStage, Tone | null> = {

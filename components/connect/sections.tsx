@@ -2,9 +2,9 @@ import type { ReactNode } from "react";
 
 import { formatDay } from "@/lib/dates";
 import { t } from "@/lib/i18n";
-import { orderStage } from "@/modules/connect/analytics";
 import { formatMoney, formatNumber } from "@/modules/connect/report";
 import type { SalesSummary } from "@/modules/connect/sales";
+import { deliveryColor } from "@/modules/connect/tone";
 import {
   MV_RESULTS,
   STORE_OPEN_QUESTION,
@@ -21,7 +21,6 @@ import {
   DayBars,
   Section,
   StageBar,
-  STAGE_COLOR,
   StatGrid,
   UNANSWERED_COLOR,
   SourceTags,
@@ -33,8 +32,7 @@ import {
 const pct = (value: number) => `${value}%`;
 
 // An order's delivery status as the bot writes it, coloured by its stage.
-export const deliveryColor = (status: string) =>
-  STAGE_COLOR[orderStage({ status, outcome: null, storeAnswer: null })];
+export { deliveryColor };
 export const statusLabel = (status: string) => status || t("connect.oos.noStatus");
 
 // A TSM: the code, the name under it.
