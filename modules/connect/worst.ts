@@ -1,11 +1,33 @@
 import { formatNumber } from "@/lib/format";
 import { t } from "@/lib/i18n";
-import type { ConnectReport } from "@/modules/connect/report";
-import { DEFAULT_RULES } from "@/modules/connect/rules";
-import { NO_VISITS_REGION, type TsmRow } from "@/modules/connect/visits";
 
-import { lineTone, targetTone } from "./tone";
-import type { WorstList } from "./worst";
+import type { ConnectReport } from "./report";
+import { DEFAULT_RULES } from "./rules";
+import { lineTone, targetTone, type Tone } from "./tone";
+import { NO_VISITS_REGION, type TsmRow } from "./visits";
+
+// «Худшие результаты»: the lowest numbers of each kind next to each other (asked by the owner on
+// 23.11.2026). Pure, so the page and the Excel file show the same lists.
+
+export type WorstRow = {
+  key: string;
+  // A code and, under it, a name (or just a region).
+  title: string;
+  note?: string | null;
+  // The share shown as a bar, and what it is of («142 из 342»).
+  value: number;
+  of?: string | null;
+  tone: Tone | null;
+  href?: string;
+};
+
+export type WorstList = {
+  key: string;
+  title: string;
+  // The norm the colours are counted against: «цель 95%».
+  norm: string;
+  rows: WorstRow[];
+};
 
 // How many products it takes to judge a TSM's recovery (as «Требует внимания» does).
 const MIN_COMPARED = 10;

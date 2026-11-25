@@ -4,7 +4,8 @@ import type { ReactNode } from "react";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { STAGE_COLOR } from "@/modules/connect/tone";
+import { SHOWN } from "@/modules/connect/shown";
+import { answerColors, personName, STAGE_COLOR, UNANSWERED_COLOR } from "@/modules/connect/tone";
 
 import { SECTION_ATTRIBUTE } from "./section-anchor";
 import { TONE_CELL, TONE_COLOR, type Tone } from "./tone";
@@ -110,10 +111,8 @@ export function DayBars({
 }
 
 // Answer values of a question in one bar: «Да» blue, «Нет» orange, the others in turn, not
-// answered grey.
-const YES_NO: Record<string, string> = { Да: "#2a78d6", Нет: "#eb6834" };
-const OTHER_ANSWERS = ["#1f9d55", "#8a6fd1", "#d69e2e", "#0f9b8e"];
-export const UNANSWERED_COLOR = "#d4d2ca";
+// answered grey (see answerColors).
+export { UNANSWERED_COLOR };
 
 export function AnswerBar({
   parts,
@@ -122,11 +121,7 @@ export function AnswerBar({
 }) {
   const total = parts.reduce((a, p) => a + p.value, 0);
   if (!total) return null;
-  let other = 0;
-  const colored = parts.map((p) => ({
-    ...p,
-    color: p.color ?? YES_NO[p.key] ?? OTHER_ANSWERS[other++ % OTHER_ANSWERS.length]!,
-  }));
+  const colored = answerColors(parts);
   return (
     <div className="flex flex-col gap-1">
       <div className="flex h-3 overflow-hidden rounded-full">
@@ -467,7 +462,7 @@ export type Column<T> = {
 export function DataTable<T>({
   rows,
   columns,
-  limit = 50,
+  limit = SHOWN.table,
   rowKey,
   rowTone,
 }: {
@@ -561,15 +556,13 @@ export function DataTable<T>({
 }
 
 // The bot writes people as "TSM_TASH_12 - Name": the name first, the position under it.
-const POSITION = /_|^(tsm|bdm|bum|dr|senior|junior|marketing|performance|express|trade)\b/i;
-
 export function PersonName({ value }: { value: string | null }) {
-  if (!value) return <span className="text-muted-foreground">—</span>;
-  const [role = "", ...rest] = value.split(" - ");
-  if (!rest.length || !POSITION.test(role)) return <span>{value}</span>;
+  const { name, role } = personName(value);
+  if (!name) return <span className="text-muted-foreground">—</span>;
+  if (!role) return <span>{name}</span>;
   return (
     <span className="flex flex-col">
-      <span>{rest.join(" - ")}</span>
+      <span>{name}</span>
       <span className="text-muted-foreground text-xs">{role}</span>
     </span>
   );

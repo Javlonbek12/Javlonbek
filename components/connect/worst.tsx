@@ -2,35 +2,15 @@ import Link from "next/link";
 
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { SHOWN } from "@/modules/connect/shown";
+import type { WorstList } from "@/modules/connect/worst";
 
 import { Section, ToneBar, ToneValue } from "./parts";
-import { TONE_COLOR, toneRank, type Tone } from "./tone";
+import { TONE_COLOR, toneRank } from "./tone";
 
 // «Худшие результаты»: the five lowest numbers of each kind next to each other, so the worst is
 // seen before anything is read (asked by the owner on 23.11.2026, after the Kazakhstan team's
 // dashboard). Each list is a card outlined by its worst row; the colours are the norms'.
-
-export type WorstRow = {
-  key: string;
-  // A code and, under it, a name (or just a region).
-  title: string;
-  note?: string | null;
-  // The share shown as a bar, and what it is of («142 из 342»).
-  value: number;
-  of?: string | null;
-  tone: Tone | null;
-  href?: string;
-};
-
-export type WorstList = {
-  key: string;
-  title: string;
-  // The norm the colours are counted against: «цель 95%».
-  norm: string;
-  rows: WorstRow[];
-};
-
-export const WORST_SHOWN = 5;
 
 // The lowest first; `rows` come already sorted.
 export function WorstSection({ lists }: { lists: WorstList[] }) {
@@ -44,7 +24,7 @@ export function WorstSection({ lists }: { lists: WorstList[] }) {
     >
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 print:grid-cols-4">
         {shown.map((list) => {
-          const rows = list.rows.slice(0, WORST_SHOWN);
+          const rows = list.rows.slice(0, SHOWN.worst);
           // The card is as bad as its worst row.
           const worst = rows.map((r) => r.tone).sort((a, b) => toneRank(a) - toneRank(b))[0];
           return (

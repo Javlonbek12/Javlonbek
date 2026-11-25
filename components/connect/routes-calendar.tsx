@@ -2,40 +2,21 @@ import { fromDateString } from "@/lib/dates";
 import { formatNumber } from "@/lib/format";
 import { dateFormat, t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import {
+  calendarCell,
+  calendarDays,
+  calendarTotal,
+  type CalendarMode,
+} from "@/modules/connect/calendar";
 import type { RouteAnalysis, RouteZone } from "@/modules/connect/routes";
 
 import { ToneBar, ToneValue } from "./parts";
 import { TsmName } from "./sections";
-import { targetTone, TONE_CELL, type Tone } from "./tone";
+import { targetTone, TONE_CELL } from "./tone";
 
-// «Календарь»: zones down, the period's days across — a cell is a zone's day, coloured against
-// the target (after the attendance grid of the Kazakhstan team's dashboard). A TSM's day shows
-// the planned visits made and is coloured by attendance; a rep's day shows the visits with an
-// order and is coloured by hit rate (reps visit nearly everything, so attendance says little).
-// The worst zones come first; the period's share is at the end of the row.
-
-export type CalendarMode = "attendance" | "hitRate";
-
-const share = (part: number, whole: number) =>
-  whole > 0 ? Math.round((part / whole) * 1000) / 10 : null;
-
-// A day of a zone: its number, its share and the colour.
-function cellOf(
-  day: RouteAnalysis["calendar"][string][string] | undefined,
-  mode: CalendarMode,
-  target: number,
-): { text: string; rate: number | null; tone: Tone | null; of: string } | null {
-  if (!day) return null;
-  const [part, whole] =
-    mode === "attendance" ? [day.visited, day.planned] : [day.orders, day.visits];
-  // A day with only visits out of plan (attendance) has nothing to take a share of.
-  if (!whole)
-    return mode === "attendance" && day.visits
-      ? { text: "+", rate: null, tone: null, of: "" }
-      : null;
-  const rate = share(part, whole);
-  return { text: String(part), rate, tone: targetTone(rate, target), of: `${part} / ${whole}` };
-}
+// «Календарь» as a grid of tinted cells (after the attendance grid of the Kazakhstan team's
+// dashboard); what a cell says is counted in modules/connect/calendar.ts. The worst zones come
+// first; the period's share is at the end of the row.
 
 export function RoutesCalendar({
   analysis,
@@ -53,13 +34,10 @@ export function RoutesCalendar({
 }) {
   const target = mode === "attendance" ? analysis.targets.attendance : analysis.targets.hitRate;
   const rows = zones.slice(0, limit ?? zones.length);
-  // The days anyone shown has something on (a Sunday without routes is not a column).
-  const days = [
-    ...new Set(rows.flatMap((z) => Object.keys(analysis.calendar[z.zone] ?? {}))),
-  ].sort();
+  const days = calendarDays(analysis, rows);
   if (!rows.length || !days.length) return null;
   const weekday = dateFormat({ weekday: "short", timeZone: "UTC" });
-  const total = (z: RouteZone) => (mode === "attendance" ? z.attendance : z.hitRate);
+  const total = (z: RouteZone) => calendarTotal(z, mode).share;
   return (
     <div className="flex flex-col gap-2">
       <div className="-mx-1 overflow-x-auto px-1 print:overflow-visible">
@@ -95,8 +73,7 @@ export function RoutesCalendar({
           <tbody>
             {rows.map((z) => {
               const tone = targetTone(total(z), target);
-              const [part, whole] =
-                mode === "attendance" ? [z.visited, z.planned] : [z.orders, z.visits];
+              const { part, whole } = calendarTotal(z, mode);
               return (
                 <tr key={z.zone} className="print:break-inside-avoid">
                   <th className="bg-card sticky left-0 z-10 max-w-44 px-1 py-0.5 text-left font-normal">
@@ -109,7 +86,7 @@ export function RoutesCalendar({
                     )}
                   </th>
                   {days.map((day) => {
-                    const cell = cellOf(analysis.calendar[z.zone]?.[day], mode, target);
+                    const cell = calendarCell(analysis.calendar[z.zone]?.[day], mode, target);
                     return (
                       <td
                         key={day}

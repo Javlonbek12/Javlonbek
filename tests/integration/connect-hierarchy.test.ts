@@ -19,6 +19,7 @@ import {
 } from "@/modules/connect/service";
 import { connectXlsx } from "@/modules/connect/xlsx";
 import { withAccess } from "@/modules/core/access/actor";
+import { readBook } from "@/tests/helpers/connect-page";
 import { createTestUser, resetDb } from "@/tests/helpers/db";
 
 // Connect v3: the CRM's employee info (who reports to whom) and its sales report next to the
@@ -387,13 +388,16 @@ describe("Connect analytics: the employee hierarchy and the sales cross-check", 
       { id: "#TEST-3", day: "2026-11-02", status: NO_ANSWER, skus: ["SKU-TEST-002"] },
     ]);
 
-    // Downloads: the tree and the cross-check in Excel; PowerPoint builds.
+    // Downloads: the tree as a sheet and the cross-check on the first one; PowerPoint builds.
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load((await connectXlsx(report, TODAY)) as unknown as ArrayBuffer);
     const names = wb.worksheets.map((w) => w.name);
-    expect(names).toEqual(
-      expect.arrayContaining(["Иерархия", "Продажи после заказа", "Продажи по статусам"]),
+    expect(names).toEqual(expect.arrayContaining(["Иерархия"]));
+    const page = readBook(wb).page;
+    expect(page.headings.map((h) => h.text)).toEqual(
+      expect.arrayContaining(["Продажи после заказа (3 дня)", "Продажи по статусам доставки"]),
     );
+    expect(page.sub("Продажи после заказа (3 дня)").stat("Заказов проверено").value).toBe(3);
     const treeSheet = wb.getWorksheet("Иерархия")!;
     expect(treeSheet.getRow(2).getCell(1).value).toBe("BUM TEST");
     expect(treeSheet.getRow(3).getCell(1).alignment?.indent).toBe(1);

@@ -3617,22 +3617,13 @@ export const en: Dictionary = {
     },
     sheets: {
       tree: "Hierarchy",
-      sales: "Sales after order",
-      salesStatuses: "Sales by status",
-      unsoldSkus: "Not sold after order",
       unsold: "Orders nothing sold",
-      summary: "Summary",
       regions: "By region",
-      days: "By day",
-      visits: "Visits and Connect",
       people: "By employee",
-      oos: "OOS and orders",
-      statuses: "Orders by status",
-      skus: "Gaps by product",
-      mv: "Market Visit",
       questions: "MV questions",
       equipment: "Equipment",
       ism: "ISM payments",
+      ismWaiting: "ISM — awaiting decision",
       attention: "Visits attention",
       notVisited: "Not visited",
       withoutVisit: "MV without visit",
@@ -3939,7 +3930,6 @@ export const en: Dictionary = {
       tile: "OOS recovery",
       tileNote: "{restored} of {total} products are back",
       sheet: {
-        summary: "OOS recovery",
         people: "Recovery — TSMs",
         skus: "Recovery — products",
         stores: "Recovery — stores",
@@ -4093,10 +4083,17 @@ export const en: Dictionary = {
     pptx: {
       period: "Period: {period}",
     },
-    // The first sheet of the Excel file (25.11.2026): what the file is, the norms with the
-    // colours' meaning, the list of sheets with whose data each is.
+    // The first sheet of the Excel file is the page itself (25.11.2026): the links to the
+    // sheets of whole lists and back.
+    page: {
+      fullList: "Full list: {rows} →",
+      list: "{name}: {rows} →",
+      back: "← {sheet}: {block}",
+    },
+    // What the first sheet of the Excel file says of the file itself (25.11.2026): the level,
+    // the period, the norms with the colours' meaning, and what each list's sheet is (the hint
+    // of the link that opens it).
     cover: {
-      facts: "About this file",
       who: "Whose data",
       whoAll: "all staff",
       whoTeam: "TSMs in the file: {count}",
@@ -4128,34 +4125,21 @@ export const en: Dictionary = {
         idle: "An order is marked on the route and there is no sale — amber: a store to check.",
         path: "“Delivered, no sale” — red: the bot says the order is delivered, and Smart Up shows no sale of those products. “DR did not answer” — amber.",
         rowTitle: "The first cell of a row",
-        row: "Tinted, with a coloured line on its left, when the row is worth a look: red — far below the norm, amber — close to it. On the page such a row has a coloured edge.",
+        row: "Has a coloured line on its left when the row is worth a look: red — far below the norm, amber — close to it (on the page such a row has a coloured edge). On the sheets of lists that cell is tinted too.",
         statusTitle: "Order statuses and payment stages",
         status:
           "Written in the same colour as on the page: green — delivered or paid, blue — in progress, amber and orange — waiting for an answer, grey — refused.",
+        listsTitle: "Full lists",
+        lists:
+          "The link «Full list» under a table opens the sheet with all of it — every row and every column; the link to the right of that sheet's header goes back to the block. The colour of a sheet's tab says whose data it is: light blue — the Connect bot, violet — Smart Up, grey — both sources together (one is compared with the other); on such sheets the line under a column's header has the colour of its source.",
       },
-      sheets: "Sheets",
-      sheetsHint:
-        "A sheet's name is a link to it. The colour of a sheet's tab at the bottom says whose data it is: light blue — the Connect bot, violet — Smart Up, grey — both sources together (one is compared with the other). On such sheets the line under a column's header has the colour of its source.",
-      sheet: "Sheet",
-      what: "What is on it",
-      source: "Data source",
       about: {
         tree: "The positions in their order of command and the numbers of the TSMs under each.",
         people: "Visits, Connect, OOS and orders for each TSM.",
         regions: "Visits, Connect, OOS and orders by region.",
-        visits: "Planned Smart Up visits and what was done in Connect Bot on them: the totals.",
-        days: "The plan, the visits and the visits with Connect by day.",
-        oos: "Stock checks (OOS) and auto-stock orders: the totals.",
-        statuses: "Auto-stock orders by delivery status.",
-        skus: "The products most often out of stock in the stores.",
-        sales:
-          "Were the products of an auto-stock order sold to that store within 3 days of the order: the totals.",
-        salesStatuses: "Sales after the order, by the order's delivery status.",
-        unsoldSkus: "The products most often ordered and not sold.",
-        mv: "Market Visit forms: how many, how complete, with what result.",
         questions: "The answers to each Market Visit question and the share of problem answers.",
         equipment: "The equipment in the stores, by the Market Visit forms.",
-        ism: "ISM payments by stage; below — what waits for a decision and where the checklist says “no”.",
+        ism: "ISM payments waiting for a decision: the outlet, the employee, the stage, who decides, the sum and for how many days.",
         ismIssues: "The employee's ISM payments that need to be seen through.",
         attention: "Planned visits where not everything was done in Connect.",
         notVisited: "Stores of the plan the employee did not come to.",
@@ -4164,21 +4148,21 @@ export const en: Dictionary = {
         problems: "Stores with problem answers in the Market Visit form.",
         orders: "The employee's auto-stock orders.",
         unsold: "Orders with none of the ordered products sold within 3 days.",
+        salesStatuses: "Sales after the order, by the order's delivery status.",
+        organizations:
+          "Organizations (distributors): zones, attendance, hit rate and their change against the previous period.",
         routes:
           "Routes by zone: attendance, hit rate and their change against the previous period.",
         missed: "Stores whose planned visit was missed twice in a row or more.",
         noOrder: "DR stores: three visits or more in the period and not a single order.",
         zoneSales: "Smart Up sales by zone next to hit rate and attendance.",
         idle: "Stores of the routes nobody sold anything to in the period.",
-        recovery:
-          "Did the products that were out come back, and did a DR bring an order after an OOS: the totals.",
         recoveryPeople: "Recovery of stock for each TSM.",
         recoverySkus: "Recovery of stock by product.",
         recoveryStores: "Stores where a product is still out, and which one.",
         follow:
           "A distributor's order within 3 days of a check with an OOS — by DR zone and by TSM.",
         attentionList: "Who to talk to and about what: employees whose number is below the norm.",
-        path: "What became of each check that found a product out: the steps in the Connect bot and the sale in Smart Up.",
         pathGroups: "The OOS path by region and by manager.",
         pathPeople: "The OOS path for each TSM.",
         pathReps: "The OOS path by DR zone.",

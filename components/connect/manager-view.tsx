@@ -2,7 +2,9 @@ import Link from "next/link";
 
 import { t } from "@/lib/i18n";
 import { formatMoney, formatNumber, type ConnectReport } from "@/modules/connect/report";
+import { SHOWN } from "@/modules/connect/shown";
 import type { TsmRow } from "@/modules/connect/visits";
+import { worstLists } from "@/modules/connect/worst";
 
 import { AttentionSection } from "./attention";
 import { IsmSection } from "./ism";
@@ -13,7 +15,6 @@ import { FollowUpBlock, RecoveryBlock } from "./recovery-section";
 import { RoutesSection } from "./routes-section";
 import { MvSection, OosSection, statusLabel, TsmName, VisitsSection } from "./sections";
 import { WorstSection } from "./worst";
-import { worstLists } from "./worst-lists";
 
 const pct = (value: number) => `${value}%`;
 
@@ -137,7 +138,7 @@ function PeopleTable({
     <DataTable
       rows={people}
       rowKey={(r) => r.code}
-      limit={100}
+      limit={SHOWN.people}
       columns={[
         {
           key: "tsm",

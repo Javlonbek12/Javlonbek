@@ -3,6 +3,7 @@ import Link from "next/link";
 import { formatDay } from "@/lib/dates";
 import { t } from "@/lib/i18n";
 import { formatMoney, formatNumber, linkOf, type ConnectReport } from "@/modules/connect/report";
+import { SHOWN } from "@/modules/connect/shown";
 import type { TsmRow } from "@/modules/connect/visits";
 
 import { FilterSelect } from "./filter-select";
@@ -223,7 +224,7 @@ export function ExecutorView({
           <DataTable
             rows={d.attention}
             rowKey={(x) => x.id}
-            limit={100}
+            limit={SHOWN.own}
             columns={[
               {
                 key: "store",
@@ -349,7 +350,7 @@ export function ExecutorView({
             <DataTable
               rows={d.orders}
               rowKey={(x) => x.id}
-              limit={100}
+              limit={SHOWN.own}
               columns={[
                 {
                   key: "store",
@@ -392,7 +393,7 @@ export function ExecutorView({
               <DataTable
                 rows={d.unsold}
                 rowKey={(x) => x.id}
-                limit={100}
+                limit={SHOWN.own}
                 columns={[
                   {
                     key: "store",
@@ -441,7 +442,7 @@ export function ExecutorView({
             <DataTable
               rows={d.problems}
               rowKey={(x) => x.id}
-              limit={100}
+              limit={SHOWN.own}
               columns={[
                 {
                   key: "store",

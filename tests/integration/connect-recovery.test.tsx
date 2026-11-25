@@ -10,6 +10,7 @@ import { buildConnectReport, connectHref, parseConnectQuery } from "@/modules/co
 import { importConnectFiles } from "@/modules/connect/service";
 import { connectXlsx } from "@/modules/connect/xlsx";
 import { withAccess } from "@/modules/core/access/actor";
+import { readBook } from "@/tests/helpers/connect-page";
 import { createTestUser, resetDb } from "@/tests/helpers/db";
 
 // «Восстановление наличия», «Заказ дистрибьютора после OOS», «Требует внимания» and the tiles'
@@ -316,7 +317,8 @@ describe("Connect analytics: stock recovery, the distributor's orders, who needs
       byTsm: [],
     });
 
-    // The Excel file: the blocks in full, in the file's language.
+    // The Excel file: the blocks on the first sheet as on the page, their lists in full on
+    // sheets of their own, in the file's language.
     const sheetsOf = async (lang: "ru" | "ko") => {
       const wb = new ExcelJS.Workbook();
       await withExportLocale(lang, async () => {
@@ -328,7 +330,6 @@ describe("Connect analytics: stock recovery, the distributor's orders, who needs
     const names = ru.worksheets.map((ws) => ws.name);
     expect(names).toEqual(
       expect.arrayContaining([
-        "Восстановление OOS",
         "Восстановление — ТСМ",
         "Восстановление — товары",
         "Восстановление — точки",
@@ -341,11 +342,15 @@ describe("Connect analytics: stock recovery, the distributor's orders, who needs
       wb.getWorksheet(name)!.eachRow((row) => out.push((row.values as unknown[]).slice(1)));
       return out;
     };
-    expect(rows(ru, "Восстановление OOS").slice(1, 4)).toEqual([
-      ["С чем сравнивать", "К предыдущей проверке"],
-      ["Точек сравнили", 2],
-      ["Восстановлено, %", 23],
-    ]);
+    // The block's numbers are on the first sheet, under their labels as on the page.
+    const recovery = readBook(ru).page.sub("Восстановление наличия");
+    expect(recovery.texts).toContain("С чем сравнивать: К предыдущей проверке");
+    expect(recovery.stat("Точек сравнили").value).toBe(2);
+    expect(recovery.stat("Восстановлено")).toMatchObject({
+      value: 23,
+      note: "3 из 13 товаров",
+    });
+    expect(recovery.stat("Восстановлено").cell.numFmt).toBe('0"%"');
     expect(rows(ru, "Восстановление — ТСМ")[1]).toEqual([
       TSM1,
       "Тест TSM_TST_1",
@@ -381,8 +386,10 @@ describe("Connect analytics: stock recovery, the distributor's orders, who needs
     ]);
     const ko = await sheetsOf("ko");
     expect(ko.worksheets.map((ws) => ws.name)).toEqual(
-      expect.arrayContaining(["OOS 회복", "회복 — 매장", "OOS 후 DR 주문", "주의 필요"]),
+      expect.arrayContaining(["회복 — 매장", "OOS 후 DR 주문", "주의 필요"]),
     );
+    // The block itself is on the first sheet, among the links at its top.
+    expect(readBook(ko).page.links.map((link) => link.text)).toContain("재고 회복");
     expect(rows(ko, "주의 필요")[1]![5]).toBe("OOS 9% 회복 (제품 11개 중)");
 
     // One TSM's file: their own stores, without the tables by employee.
@@ -390,9 +397,8 @@ describe("Connect analytics: stock recovery, the distributor's orders, who needs
     const own = new ExcelJS.Workbook();
     await own.xlsx.load((await connectXlsx(one, TODAY)) as unknown as ArrayBuffer);
     const ownNames = own.worksheets.map((ws) => ws.name);
-    expect(ownNames).toEqual(
-      expect.arrayContaining(["Восстановление OOS", "Восстановление — точки"]),
-    );
+    expect(ownNames).toEqual(expect.arrayContaining(["Восстановление — точки"]));
+    expect(readBook(own).page.sub("Восстановление наличия").stat("Точек сравнили").value).toBe(1);
     expect(ownNames).not.toContain("Восстановление — ТСМ");
     expect(ownNames).not.toContain("Требует внимания");
   });

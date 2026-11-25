@@ -1,683 +1,403 @@
 import ExcelJS from "exceljs";
 
 import { formatDay } from "@/lib/dates";
+import { formatNumber as decimal } from "@/lib/format";
 import { t } from "@/lib/i18n";
-import type { ru } from "@/lib/i18n/ru";
+import { previousPeriod } from "@/modules/reports/period";
 
-import type { IsmBlock, paymentIssues } from "./analytics";
-import type { TreeNode } from "./hierarchy";
-import { insightSheets } from "./insights-xlsx";
-import { localizeData } from "./localize";
-import { oosPathSheets } from "./oos-path-xlsx";
-import { monthsLabel, type ConnectReport } from "./report";
-import { routeSheets } from "./routes-xlsx";
+import { attentionRules } from "./attention";
+import { attentionBlock, followUpBlock, recoveryBlock, worstBlock } from "./insights-xlsx";
+import { oosPathBlock } from "./oos-path-xlsx";
+import { formatMoney, formatNumber, monthsLabel, periodLabel, type ConnectReport } from "./report";
+import { routeBlocks } from "./routes-xlsx";
 import { DEFAULT_RULES } from "./rules";
 import {
-  connectTone,
-  deliveryColor,
-  regionTone,
-  STAGE_COLOR,
-  visitedTone,
-  type Tone,
-} from "./tone";
-import {
-  aggregateRows,
-  MV_RESULTS,
-  NO_VISITS_REGION,
-  STORE_OPEN_QUESTION,
-  VISIT_ISSUES,
-  type RowTotals,
-  type TsmRow,
-  type VisitSections,
-} from "./visits";
-import { connectCover, type ListedSheet } from "./xlsx-cover";
-import {
-  addCoverSheet,
-  addStyledSheet,
-  fillCoverSheet,
-  type AddSheet,
-  type CellFormat,
-  type SheetColumn,
-  type SheetRow,
-  type Value,
-} from "./xlsx-style";
+  ismBlock,
+  mvBlock,
+  oosBlock,
+  orderLists,
+  peopleBlock,
+  peopleTable,
+  problemList,
+  regionsBlock,
+  treeBlock,
+  visitLists,
+  visitsBlock,
+} from "./sections-xlsx";
+import { connectTone, lineBands, lineTone, targetBands, visitedTone, type Tone } from "./tone";
+import { LOWER_IS_BETTER, trendTone, type TrendKey } from "./trend";
+import { worstLists } from "./worst";
+import { Page, type Tile } from "./xlsx-page";
+import { addStyledSheet } from "./xlsx-style";
 
-type About = keyof typeof ru.connect.cover.about;
-
-// The level on the screen as Excel: a cover, then the same sections, one sheet each, ready to
-// filter and sort and coloured as the page is (see xlsx-style.ts). Texts follow the language of
-// the current work (see withExportLocale); known data values (answers, statuses, questions,
-// equipment) are translated with localizeData.
+// The level on the screen as Excel (decision of 25.11.2026, see docs/DECISIONS.md): the first
+// sheet is the page itself — every block of the level, top to bottom in the page's order, looking
+// like the page (xlsx-page.ts) — and after it only the sheets of whole lists, each opened by a
+// link from the place where the page shows its first rows (and with a link back). Texts follow
+// the language of the current work (see withExportLocale); known data values (answers, statuses,
+// questions, equipment) are translated with localizeData.
 export async function connectXlsx(report: ConnectReport, today: string): Promise<Buffer> {
   const book = new ExcelJS.Workbook();
   book.creator = t("app.name");
-  // The cover comes first and lists the sheets after it: filled when they are made.
-  const cover = addCoverSheet(book, t("connect.sheets.summary"));
-  const listed: ListedSheet[] = [];
-  const sheet: AddSheet = (name, columns, rows, options) => {
-    const ws = addStyledSheet(book, name, columns, rows, options);
-    listed.push({ name: ws.name, about: options.about, source: options.source });
-    return ws;
-  };
-  const about = (key: About) => t(`connect.cover.about.${key}`);
-  const col = (
-    key: keyof typeof ru.connect.col,
-    width = 14,
-    format: CellFormat = "text",
-    more: Partial<SheetColumn> = {},
-  ): SheetColumn => ({ header: t(`connect.col.${key}`), width, format, ...more });
-  const count = (key: keyof typeof ru.connect.col, width = 14) => col(key, width, "count");
-  const share = (key: keyof typeof ru.connect.col, width = 10) => col(key, width, "percent");
-  // A list of numbers: each row says what its number is (a count without it).
-  const metric = [col("metric", 50), col("value", 18, "count")];
-  const number = (
-    label: string,
-    value: Value,
-    format: CellFormat = "count",
-    tone: Tone | null = null,
-  ): SheetRow => ({ cells: [label, value], format, tone });
-  const percent = (label: string, value: Value) => number(`${label}, %`, value, "percent");
-  // The page marks a number that should be zero and is not.
-  const some = (value: number): Tone | null => (value ? "warn" : null);
-  // The owner's lines («Нормы»), as the page takes them.
-  const rules = report.insights?.rules ?? DEFAULT_RULES;
-  // A delivery status as the bot writes it, in the colour of its stage.
-  const statusColumn = (statuses: (string | null)[]) =>
-    col("status", 44, "text", { color: (_, __, i) => deliveryColor(statuses[i] ?? "") });
+  // The first tab is named as the level is on the page.
+  const page = new Page(book, t(`connect.views.${report.query.view}`), (...sheet) =>
+    addStyledSheet(book, ...sheet),
+  );
+  top(page, report, today);
+  if (report.exec) exec(page, report);
+  else if (report.manager) manager(page, report);
+  else if (report.executor) executor(page, report);
+  norms(page, report);
+  page.finish();
+  return Buffer.from(await book.xlsx.writeBuffer());
+}
 
-  // Sections 1–3 as metric lists, the orders by status, products and questions as tables.
-  const sections = (s: VisitSections) => {
-    const v = s.visits;
-    sheet(
-      t("connect.sheets.visits"),
-      metric,
-      [
-        number(t("connect.visits.planned"), v.planned),
-        number(t("connect.visits.visited"), v.visited),
-        percent(t("connect.visits.visited"), v.visitedRate),
-        number(t("connect.visits.notVisited"), v.notVisited, "count", some(v.notVisited)),
-        number(t("connect.visits.unplanned"), v.unplanned),
-        percent(t("connect.visits.withMv"), v.withMvRate),
-        percent(t("connect.visits.withOos"), v.withOosRate),
-        number(t("connect.visits.both"), v.both),
-        number(
-          `${t("connect.visits.inTime")}, % (${t("connect.visits.inTimeNote")})`,
-          v.timed ? v.inTimeRate : null,
-          "percent",
-        ),
-        number(t("connect.visits.otherEmployee"), v.otherEmployee, "count", some(v.otherEmployee)),
-        number(t("connect.visits.closed"), v.closed),
-        ...(["ok", ...VISIT_ISSUES] as const).map((s) =>
-          number(t(`connect.status.${s}`), v.status[s]),
-        ),
-        number(t("connect.visits.mvWithoutVisit"), v.mvWithoutVisit),
-        number(`${t("connect.visits.duplicates")}: ${t("connect.col.mv")}`, v.mvCopiesRemoved),
-        number(`${t("connect.visits.duplicates")}: ${t("connect.col.oos")}`, v.oosCopiesRemoved),
-      ],
-      { source: "both", about: about("visits"), list: true },
-    );
-    sheet(
-      t("connect.sheets.days"),
-      [
-        col("day", 14, "date"),
-        { header: t("connect.visits.legend.planned"), width: 14, format: "count" },
-        { header: t("connect.visits.legend.visited"), width: 14, format: "count" },
-        { header: t("connect.visits.legend.withConnect"), width: 14, format: "count" },
-      ],
-      v.days.map((d) => [d.day, d.planned, d.visited, d.withConnect]),
-      { source: "both", about: about("days") },
-    );
-    const o = s.oos;
-    sheet(
-      t("connect.sheets.oos"),
-      metric,
-      [
-        number(t("connect.oos.checked"), o.checked),
-        number(t("connect.oos.withGap"), o.withGap),
-        percent(t("connect.oos.withGap"), o.gapRate),
-        percent(t("connect.oos.ledToOrder"), o.orderRate),
-        number(t("connect.oos.orders"), o.orders),
-        number(t("connect.oos.packs"), o.packs),
-        number(`${t("connect.oos.sum")}, ${t("connect.sum")}`, o.sum, "money"),
-      ],
-      { source: "bot", about: about("oos"), list: true },
-    );
-    sheet(
-      t("connect.sheets.statuses"),
-      [
-        statusColumn(o.byStatus.map((x) => x.status)),
-        count("count"),
-        count("packs"),
-        col("sum", 18, "money"),
-      ],
-      o.byStatus.map((x) => [
-        localizeData(x.status) || t("connect.oos.noStatus"),
-        x.count,
-        x.packs,
-        x.sum,
-      ]),
-      { source: "bot", about: about("statuses") },
-    );
-    sheet(
-      t("connect.sheets.skus"),
-      [
-        col("sku", 34),
-        count("count"),
-        { header: `${t("connect.col.share")}, %`, width: 12, format: "percent" },
-      ],
-      o.topSkus.map((x) => [x.sku, x.total, x.rate]),
-      { source: "bot", about: about("skus") },
-    );
-    const sales = o.sales;
-    if (sales) {
-      sheet(
-        t("connect.sheets.sales"),
-        metric,
-        [
-          number(t("connect.oos.salesChecked"), sales.checked),
-          number(t("connect.col.notClosed"), sales.notClosed),
-          number(t("connect.oos.salesAny"), sales.anySold),
-          percent(t("connect.oos.salesAny"), sales.anyRate),
-          number(t("connect.oos.salesAll"), sales.allSold),
-          percent(t("connect.oos.salesAll"), sales.allRate),
-          [t("connect.col.linesSold"), `${sales.linesSold} / ${sales.lines}`],
-          percent(t("connect.oos.salesLines"), sales.linesRate),
-          [t("connect.col.packsSold"), `${sales.packsSold} / ${sales.packsOrdered}`],
-          percent(t("connect.oos.salesPacks"), sales.packsRate),
-          number(t("connect.col.packsRaw"), sales.packsSoldRaw),
-          [],
-          // How far the sales are loaded: an order's three days may not be over yet.
-          [t("connect.oos.salesDate", { date: formatDay(sales.to) }), null],
-        ],
-        { source: "both", about: about("sales"), list: true },
-      );
-      sheet(
-        t("connect.sheets.salesStatuses"),
-        [
-          statusColumn(sales.byStatus.map((x) => x.status)),
-          count("orders", 10),
-          count("checked", 10),
-          count("notClosed", 12),
-          count("anySold", 10),
-          { header: `${t("connect.col.anySold")}, %`, width: 10, format: "percent" },
-          count("allSold", 10),
-          { header: `${t("connect.col.allSold")}, %`, width: 10, format: "percent" },
-          // «12 / 30»: two numbers in a text, on the numbers' side.
-          count("linesSold", 14),
-          count("packsSold", 14),
-          count("packsRaw", 12),
-        ],
-        sales.byStatus.map((x) => [
-          localizeData(x.status) || t("connect.oos.noStatus"),
-          x.orders,
-          x.checked,
-          x.notClosed,
-          x.anySold,
-          x.anyRate,
-          x.allSold,
-          x.allRate,
-          `${x.linesSold} / ${x.lines}`,
-          `${x.packsSold} / ${x.packsOrdered}`,
-          x.packsSoldRaw,
-        ]),
-        { source: "both", about: about("salesStatuses") },
-      );
-      sheet(
-        t("connect.sheets.unsoldSkus"),
-        [
-          col("sku", 34),
-          count("orders", 10),
-          count("count", 12),
-          { header: "%", width: 8, format: "percent" },
-        ],
-        sales.topUnsold.map((x) => [x.sku, x.ordered, x.unsold, x.rate]),
-        { source: "both", about: about("unsoldSkus") },
-      );
-    }
-    const m = s.mv;
-    sheet(
-      t("connect.sheets.mv"),
-      metric,
-      [
-        number(t("connect.mv.unique"), m.unique),
-        percent(t("connect.mv.fullRate"), m.fullRate),
-        number(t("connect.mv.problems"), m.problems),
-        ...MV_RESULTS.map((r) => number(t(`connect.result.${r}`), m.results[r])),
-      ],
-      { source: "bot", about: about("mv"), list: true },
-    );
-    // A question's share of problem answers is on its first row; the page writes it in amber.
-    const questions = m.questions.flatMap((q) => [
-      ...q.answers.map((a, i) => ({
-        cells: [localizeData(q.q), localizeData(a.value), a.count, i === 0 ? q.problemRate : null],
-        problem: i === 0 && q.q !== STORE_OPEN_QUESTION && q.problems > 0,
-      })),
-      ...(q.unanswered
+// The top of the page: what it is, the level and whose data, the period and what it is compared
+// with, how fresh the data is; then the links to the blocks.
+function top(page: Page, report: ConnectReport, today: string) {
+  const view = report.query.view;
+  const routes = report.exec?.routes ?? report.manager?.routes ?? report.executor?.routes ?? null;
+  const day = (date: string) => periodLabel({ from: date, to: date }, today);
+  const period = periodLabel(report.period, today);
+  const one = report.executor;
+  const fresh = [
+    report.dataDate && t("connect.dataDate", { date: day(report.dataDate) }),
+    routes?.dataDate && t("connect.routes.dataDate", { date: day(routes.dataDate) }),
+    report.salesDate && t("connect.oos.salesDate", { date: day(report.salesDate) }),
+  ].filter(Boolean);
+  page.title(`${t("connect.title")} — ${t(`connect.views.${view}`)}: ${period}`);
+  page.facts([
+    [
+      t("connect.viewsLabel"),
+      [t(`connect.views.${view}`), report.query.staff].filter(Boolean).join(" · "),
+    ],
+    [
+      t("connect.cover.who"),
+      one
+        ? [one.row.code, one.row.name].filter(Boolean).join(" · ")
+        : report.manager
+          ? t("connect.cover.whoTeam", { count: formatNumber(report.manager.people.length) })
+          : t("connect.cover.whoAll"),
+    ],
+    [t("connect.cover.period"), period],
+    [
+      t("connect.cover.compared"),
+      t("connect.cover.comparedValue", {
+        dates: periodLabel(previousPeriod(report.period), today),
+      }),
+    ],
+    ...(fresh.length ? [[t("connect.cover.fresh"), fresh.join("; ")] as [string, string]] : []),
+    [t("connect.cover.made"), day(today)],
+    [t("connect.cover.note"), t("connect.testNote")],
+  ]);
+  page.chips();
+}
+
+const months = (report: ConnectReport) => monthsLabel(report.months);
+
+// Leadership: the key shares as tiles, who needs attention, the worst results, the regions, then
+// the sections — the whole picture.
+function exec(page: Page, report: ConnectReport) {
+  const data = report.exec!;
+  const insights = report.insights;
+  const { visits: v, oos: o, mv: m } = data.sections;
+  const rules = insights?.rules ?? DEFAULT_RULES;
+  const changes = insights?.trend?.changes;
+  const previous = insights?.trend?.previous;
+  const recovery = insights?.recovery.totals;
+  // «▲ 2 п.п.» next to a share: green when it got better (for some shares lower is better).
+  const trend = (key: TrendKey): Tile["trend"] => {
+    const change = changes?.[key];
+    if (!change) return null;
+    const tone = trendTone(change.delta, LOWER_IS_BETTER[key]);
+    return {
+      delta: change.delta,
+      tone: tone === "better" ? "good" : tone === "worse" ? "bad" : null,
+      unit: t("connect.trend.pp"),
+    };
+  };
+  page.gap();
+  page.tiles(
+    [
+      {
+        label: t("connect.tile.planDone"),
+        value: v.visitedRate,
+        format: "percent",
+        meter: v.visitedRate,
+        tone: visitedTone(v, rules),
+        trend: trend("planDone"),
+        note: t("connect.tile.planDoneNote", {
+          visited: formatNumber(v.visited),
+          planned: formatNumber(v.planned),
+        }),
+      },
+      {
+        label: t("connect.tile.connectUsed"),
+        value: v.connectRate,
+        format: "percent",
+        meter: v.connectRate,
+        tone: connectTone(v, rules),
+        trend: trend("connectUsed"),
+        note: t("connect.tile.connectUsedNote", { rate: v.allGoodRate }),
+      },
+      {
+        label: t("connect.tile.mvFull"),
+        value: m.fullRate,
+        format: "percent",
+        meter: m.fullRate,
+        trend: trend("mvFull"),
+        note: t("connect.tile.mvFullNote", { count: formatNumber(m.unique) }),
+      },
+      {
+        label: t("connect.tile.oosStores"),
+        value: o.withGap,
+        // The change is of the share in the note; fewer stores with an OOS is better.
+        trend: trend("oosStores"),
+        note: t("connect.tile.oosStoresNote", {
+          rate: o.gapRate,
+          checked: formatNumber(o.checked),
+        }),
+      },
+      ...(recovery && recovery.stores > 0
         ? [
             {
-              cells: [localizeData(q.q), t("connect.mv.unanswered"), q.unanswered, null],
-              problem: false,
+              label: t("connect.recovery.tile"),
+              value: recovery.rate,
+              format: "percent" as const,
+              meter: recovery.rate,
+              tone: lineTone(recovery.rate, rules.recovery),
+              trend: trend("recovery"),
+              note: t("connect.recovery.tileNote", {
+                restored: formatNumber(recovery.restored),
+                total: formatNumber(recovery.wasOut),
+              }),
             },
           ]
         : []),
-    ]);
-    sheet(
-      t("connect.sheets.questions"),
-      [
-        col("question", 70),
-        col("answer", 28),
-        count("count"),
-        col("problemRate", 14, "percent", {
-          tone: (_, __, i) => (questions[i]!.problem ? "warn" : null),
-          paint: "text",
-        }),
-      ],
-      questions.map((q): Value[] => q.cells),
-      { source: "bot", about: about("questions") },
-    );
-    sheet(
-      t("connect.sheets.equipment"),
-      [col("value", 50), count("count")],
-      m.equipment.map((e) => [localizeData(e.type), e.count]),
-      { source: "bot", about: about("equipment") },
-    );
-  };
-
-  // The sales cross-check per TSM or position (when sales are loaded).
-  const salesColumns = report.salesDate
-    ? [
-        count("checked", 10),
-        count("anySold", 10),
-        share("salesRate", 12),
-        count("allSold", 10),
-        count("linesSold", 14),
-        count("packsSold", 14),
-        count("notClosed", 12),
-      ]
-    : [];
-  const salesCells = (r: Pick<RowTotals, "sales" | "salesRate">): Value[] =>
-    report.salesDate
-      ? [
-          r.sales.checked,
-          r.sales.anySold,
-          r.sales.checked ? r.salesRate : null,
-          r.sales.allSold,
-          `${r.sales.linesSold} / ${r.sales.lines}`,
-          `${r.sales.packsSold} / ${r.sales.packsOrdered}`,
-          r.sales.notClosed,
-        ]
-      : [];
-
-  const people = (rows: TsmRow[]) =>
-    sheet(
-      t("connect.sheets.people"),
-      [
-        col("tsm", 26),
-        col("person", 30),
-        col("zone", 18),
-        col("region", 16),
-        count("planned", 10),
-        share("visitedRate"),
-        share("connectRate"),
-        share("withMvRate"),
-        share("withOosRate"),
-        share("inTimeRate"),
-        count("otherEmployee", 10),
-        count("closed", 10),
-        count("attention", 10),
-        share("mvFullRate"),
-        count("problems", 10),
-        count("oosFound", 10),
-        count("orders", 10),
-        count("packs", 10),
-        col("sum", 16, "money"),
-        ...salesColumns,
-        col("statuses", 60),
-      ],
-      rows.map((r) => [
-        r.code,
-        r.name,
-        r.zone,
-        r.region,
-        r.planned,
-        r.visitedRate,
-        r.connectRate,
-        r.withMvRate,
-        r.withOosRate,
-        r.timed ? r.inTimeRate : null,
-        r.otherEmployee,
-        r.closed,
-        r.attention,
-        r.mvFullRate,
-        r.problems,
-        r.oosFound,
-        r.orders,
-        r.packs,
-        r.sum,
-        ...salesCells(r),
-        r.statuses
-          .map((s) => `${localizeData(s.status) || t("connect.oos.noStatus")}: ${s.count}`)
-          .join("; "),
-      ]),
-      { source: "both", about: about("people") },
-    );
-
-  // The managers' tree: each position indented under the one above it, with the numbers of the
-  // TSMs under it; positions without TSMs (the distributor's staff) after them, without numbers.
-  const tree = (roots: TreeNode[], idle: TreeNode[]) => {
-    const rows: SheetRow[] = [];
-    const add = (
-      depth: number,
-      title: string,
-      person: Value,
-      roles: Value,
-      totals: RowTotals | null,
-      tsms: number,
-    ) =>
-      rows.push({
-        cells: [
-          title,
-          person,
-          roles,
-          tsms || null,
-          ...(totals
-            ? [
-                totals.planned,
-                totals.visitedRate,
-                totals.connectRate,
-                totals.timed ? totals.inTimeRate : null,
-                totals.mvFullRate,
-                totals.oosFound,
-                totals.orders,
-                totals.packs,
-                totals.sum,
-                ...salesCells(totals),
-              ]
-            : []),
-        ],
-        indent: Math.min(depth, 15),
-        bold: tsms > 1 || (!totals && depth === 0),
-      });
-    const walk = (n: TreeNode) => {
-      add(
-        n.depth,
-        n.title,
-        n.people.length
-          ? n.people.map((p) => p.name ?? t("connect.manager.vacant")).join("; ")
-          : t("connect.manager.noRow"),
-        n.people.flatMap((p) => p.roles).join(", ") || null,
-        n.totals,
-        n.tsms,
-      );
-      // A TSM code of a position with positions under it: its own row.
-      if (n.children.length || n.own.length > 1)
-        for (const r of n.own) add(n.depth + 1, r.code, r.name, null, aggregateRows([r]), 1);
-      n.children.forEach(walk);
-    };
-    roots.forEach(walk);
-    if (idle.length) {
-      rows.push([], { cells: [t("connect.manager.idle")], kind: "title" });
-      idle.forEach(walk);
-    }
-    sheet(
-      t("connect.sheets.tree"),
-      [
-        col("position", 40),
-        col("person", 30),
-        col("roles", 26),
-        count("people", 8),
-        count("planned", 10),
-        share("visitedRate"),
-        share("connectRate"),
-        share("inTimeRate"),
-        share("mvFullRate"),
-        count("oosFound", 10),
-        count("orders", 10),
-        count("packs", 10),
-        col("sum", 16, "money"),
-        ...salesColumns,
-      ],
-      rows,
-      { source: "both", about: about("tree") },
-    );
-  };
-
-  const ism = (block: IsmBlock | null, issues: ReturnType<typeof paymentIssues> | null) => {
-    const name = `${t("connect.sheets.ism")} ${monthsLabel(report.months)}`;
-    if (issues)
-      return sheet(
-        name,
-        [
-          col("store", 40),
-          col("city", 16),
-          col("date", 12, "date"),
-          col("stage", 24, "text", { color: (_, __, i) => STAGE_COLOR[issues[i]!.stage] }),
-          col("status", 40),
-          col("sum", 14, "money"),
-        ],
-        issues.map((p) => [
-          p.store,
-          p.city,
-          p.day,
-          t(`connect.paymentStage.${p.stage}`),
-          [p.note, ...p.failed]
-            .map((x) => localizeData(x))
-            .filter(Boolean)
-            .join("; ") || null,
-          p.sum,
-        ]),
-        { source: "bot", about: about("ismIssues") },
-      );
-    if (!block) return;
-    const rows: SheetRow[] = [
-      [t("connect.kpi.requests"), block.requests, block.contractSum],
-      ...block.stages.map((s): Value[] => [t(`connect.paymentStage.${s.id}`), s.value, s.sum]),
-    ];
-    // Under the stages: what waits for a decision (a table of its own) and the checklist's «no».
-    const waiting: CellFormat[] = ["text", "text", "text", "text", "money", "count"];
-    if (block.waitingList.length) {
-      rows.push(
-        [],
-        { cells: [t("connect.ism.waiting")], kind: "title" },
-        {
-          cells: [
-            t("connect.col.store"),
-            t("connect.col.person"),
-            t("connect.col.stage"),
-            t("connect.col.decider"),
-            t("connect.col.sum"),
-            t("connect.col.days"),
-          ],
-          kind: "header",
-          formats: waiting,
-        },
-        ...block.waitingList.map((p): SheetRow => ({
-          cells: [
-            p.store,
-            p.person,
-            t(`connect.paymentStage.${p.stage}`),
-            p.decider,
-            p.sum,
-            p.days,
-          ],
-          formats: waiting,
-        })),
-      );
-    }
-    if (block.checklistFails.length) {
-      rows.push(
-        [],
-        { cells: [t("connect.ism.checklist")], kind: "title" },
-        ...block.checklistFails.map((f): SheetRow => ({
-          cells: [localizeData(f.q), `${f.no}/${f.total}`, `${f.rate}%`],
-          formats: ["text", "count", "count"],
-        })),
-      );
-    }
-    const ws = sheet(name, [col("stage", 40), count("count"), col("sum", 18, "money")], rows, {
-      source: "bot",
-      about: about("ism"),
-    });
-    // The list under the stages is wider than they are: a person and a stage under the stages'
-    // numbers, then three columns more.
-    if (block.waitingList.length)
-      [28, 24, 30, 16, 10].forEach((width, i) => (ws.getColumn(2 + i).width = width));
-  };
-
-  if (report.exec) {
-    const e = report.exec;
-    sheet(
-      t("connect.sheets.regions"),
-      [
-        col("region", 20),
-        count("people", 8),
-        count("planned", 10),
-        // The two shares the page colours against the owner's lines.
-        col("visitedRate", 10, "percent", {
-          tone: (_, __, i) => visitedTone(e.regions[i]!, rules),
-        }),
-        col("connectRate", 10, "percent", {
-          tone: (_, __, i) => connectTone(e.regions[i]!, rules),
-        }),
-        share("withMvRate", 10),
-        share("withOosRate", 10),
-        share("inTimeRate", 10),
-        count("otherEmployee", 10),
-        count("closed", 10),
-        share("mvFullRate", 10),
-        count("oosFound", 10),
-        count("orders", 10),
-        count("packs", 10),
-        col("sum", 16, "money"),
-      ],
-      e.regions.map((r) => [
-        r.region === NO_VISITS_REGION ? t("connect.section.noVisitsRegion") : r.region,
-        r.people,
-        r.planned,
-        r.visitedRate,
-        r.connectRate,
-        r.withMvRate,
-        r.withOosRate,
-        r.timed ? r.inTimeRate : null,
-        r.otherEmployee,
-        r.closed,
-        r.mvFullRate,
-        r.oosFound,
-        r.orders,
-        r.packs,
-        r.sum,
-      ]),
       {
-        source: "both",
-        about: about("regions"),
-        rowTone: (_, i) => regionTone(e.regions[i]!, rules),
+        label: t("connect.tile.orders"),
+        value: o.orders,
+        note: t("connect.packs", { count: formatNumber(o.packs) }),
       },
+      { label: t("connect.tile.ordersSum"), value: o.sum, format: "money" },
+    ],
+    // As the page's grid on a wide screen: four in a row with the recovery tile, six without.
+    recovery?.stores ? 4 : 6,
+  );
+  if (previous && changes && Object.values(changes).some(Boolean))
+    page.text(
+      t("connect.trend.caption", {
+        dates: `${formatDay(previous.from)} – ${formatDay(previous.to)}`,
+      }),
+      "small",
     );
-    sections(e.sections);
-    ism(e.ism, null);
-  }
 
-  if (report.manager) {
-    const m = report.manager;
-    if (m.tree) tree(m.tree.roots, m.tree.idle);
-    people(m.people);
-    sections(m.sections);
-    ism(m.ism, null);
-  }
+  attentionBlock(page, insights);
+  worstBlock(page, worstLists({ routes: data.routes, insights, regions: data.regions }));
+  regionsBlock(page, data.regions, rules);
+  routeBlocks(page, data.routes);
+  visitsBlock(page, v);
+  oosBlock(page, o, () => {
+    if (insights && o.checked > 0) recoveryBlock(page, insights.recovery, false);
+    if (insights?.followUp) followUpBlock(page, insights.followUp);
+  });
+  if (insights && o.checked > 0) oosPathBlock(page, insights.oosPath, "exec");
+  mvBlock(page, m);
+  ismBlock(page, { level: "exec", months: months(report), block: data.ism });
+}
 
-  if (report.executor) {
-    const x = report.executor;
-    const d = x.detail;
-    people([x.row]);
-    sheet(
-      t("connect.sheets.attention"),
-      [
-        col("store", 40),
-        col("date", 12, "date"),
-        col("smartUp", 14),
-        col("mv", 8),
-        col("oos", 8),
-        col("issue", 60),
-      ],
-      d.attention.map((a) => [
-        a.store,
-        a.day,
-        a.smartUp,
-        a.mvAt,
-        a.oosAt,
-        [
-          ...a.issues.map((i) => t(`connect.status.${i}`)),
-          a.result && a.result !== "full" && a.result !== "closed"
-            ? `${t("connect.section.mv")}: ${t(`connect.result.${a.result}`)}`
-            : null,
-          a.closed ? t("connect.status.closed") : null,
-          a.by ? t("connect.executor.byOther", { person: a.by }) : null,
-        ]
-          .filter(Boolean)
-          .join("; "),
-      ]),
-      { source: "both", about: about("attention") },
-    );
-    sheet(
-      t("connect.sheets.notVisited"),
-      [col("store", 40), col("date", 12, "date")],
-      d.notVisited.map((n) => [n.store, n.day]),
-      { source: "both", about: about("notVisited") },
-    );
-    sheet(
-      t("connect.sheets.withoutVisit"),
-      [col("store", 40), col("date", 12, "date"), col("time", 8)],
-      d.withoutVisit.map((w) => [w.store, w.day, w.at]),
-      { source: "both", about: about("withoutVisit") },
-    );
-    sheet(
-      t("connect.sheets.duplicates"),
-      [col("store", 40), col("date", 12, "date"), count("mv", 8), count("oos", 8)],
-      d.duplicates.map((w) => [w.store, w.day, w.mv || null, w.oos || null]),
-      { source: "both", about: about("duplicates") },
-    );
-    sheet(
-      t("connect.sheets.problems"),
-      [col("store", 40), col("date", 12, "date"), col("problems", 90)],
-      d.problems.map((p) => [p.store, p.day, p.problems.map((x) => localizeData(x)).join("; ")]),
-      { source: "bot", about: about("problems") },
-    );
-    sheet(
-      t("connect.sheets.orders"),
-      [
-        col("order", 14),
-        col("store", 40),
-        col("date", 12, "date"),
-        { ...statusColumn(d.orders.map((o) => o.status)), width: 40 },
-        count("packs"),
-        col("sum", 14, "money"),
-      ],
-      d.orders.map((o) => [o.id, o.store, o.day, localizeData(o.status), o.packs, o.sum]),
-      { source: "bot", about: about("orders") },
-    );
-    if (report.salesDate)
-      sheet(
-        t("connect.sheets.unsold"),
-        [
-          col("order", 14),
-          col("store", 40),
-          col("date", 12, "date"),
-          { ...statusColumn(d.unsold.map((o) => o.status)), width: 40 },
-          col("skus", 80),
-        ],
-        d.unsold.map((o) => [o.id, o.store, o.day, localizeData(o.status), o.skus.join(", ")]),
-        { source: "both", about: about("unsold") },
+// Managers: who needs attention and the worst results, the positions as a tree with the numbers
+// of the TSMs under each (or, without the employee info, one row per TSM), then the sections for
+// those TSMs.
+function manager(page: Page, report: ConnectReport) {
+  const data = report.manager!;
+  const insights = report.insights;
+  const sales = report.salesDate !== null;
+  const o = data.sections.oos;
+  attentionBlock(page, insights);
+  worstBlock(page, worstLists({ routes: data.routes, insights, people: data.people }));
+  const people = peopleTable(data.people, sales);
+  if (data.tree) {
+    treeBlock(page, data.tree, sales, people);
+    if (data.tree.outside.length > 0)
+      peopleBlock(
+        page,
+        data.tree.outside,
+        people,
+        t("connect.manager.outside"),
+        t("connect.manager.outsideHint"),
       );
-    sections(x.sections);
-    ism(null, x.payments);
+  } else
+    peopleBlock(
+      page,
+      data.people,
+      people,
+      t("connect.manager.people"),
+      t("connect.manager.peopleHint"),
+    );
+  routeBlocks(page, data.routes);
+  visitsBlock(page, data.sections.visits);
+  oosBlock(page, o, () => {
+    if (insights && o.checked > 0) recoveryBlock(page, insights.recovery, false);
+    if (insights?.followUp) followUpBlock(page, insights.followUp);
+  });
+  if (insights && o.checked > 0) oosPathBlock(page, insights.oosPath, "manager");
+  mvBlock(page, data.sections.mv);
+  ismBlock(page, { level: "manager", months: months(report), block: data.ism });
+}
+
+// One TSM (or one rep's zone): the numbers, then each section with the lists to act on.
+function executor(page: Page, report: ConnectReport) {
+  const data = report.executor!;
+  const insights = report.insights;
+  const { row: r, sections: s, detail: d } = data;
+  // A distributor's rep has a route and nothing in Connect Bot: the route is all there is.
+  const zone = data.routes?.zone;
+  if (
+    zone?.kind === "DR" &&
+    !(r.planned || r.unplanned || r.mvUnique || r.oosChecked || r.orders || data.payments.length)
+  ) {
+    page.person(zone.zone, zone.person, zone.organization);
+    routeBlocks(page, data.routes);
+    // The checks at the rep's stores that found a product out: what became of each.
+    if (insights && insights.oosPath.totals.checks > 0)
+      oosPathBlock(page, insights.oosPath, "executor");
+    return;
   }
-  // «Маршруты и дисциплина» of the level on the screen.
-  const routes = report.exec?.routes ?? report.manager?.routes ?? report.executor?.routes;
-  if (routes) routeSheets(sheet, routes);
-  // Recovery of stock, the distributor's orders after an OOS, who needs attention.
-  insightSheets(sheet, report.insights, report.executor !== null);
-  // The chain after each check that found a product out, up to the sale in Smart Up.
-  oosPathSheets(sheet, report.insights?.oosPath, report.executor !== null);
-  fillCoverSheet(cover, connectCover(report, today, listed));
-  return Buffer.from(await book.xlsx.writeBuffer());
+  page.person(r.code, r.name, [r.region, r.zone].filter(Boolean).join(" · ") || null);
+  page.gap();
+  page.tiles(
+    [
+      {
+        label: t("connect.tile.planDone"),
+        value: r.visitedRate,
+        format: "percent",
+        meter: r.visitedRate,
+        note: t("connect.tile.planDoneNote", {
+          visited: formatNumber(r.visited),
+          planned: formatNumber(r.planned),
+        }),
+      },
+      {
+        label: t("connect.tile.connectUsed"),
+        value: r.connectRate,
+        format: "percent",
+        meter: r.connectRate,
+        note: t("connect.tile.connectUsedNote", { rate: s.visits.allGoodRate }),
+      },
+      {
+        label: t("connect.col.attention"),
+        value: r.attention,
+        tone: r.attention ? "warn" : "good",
+      },
+      {
+        label: t("connect.tile.mvFull"),
+        value: r.mvFullRate,
+        format: "percent",
+        meter: r.mvFullRate,
+        note: t("connect.tile.mvFullNote", { count: formatNumber(r.mvUnique) }),
+      },
+      {
+        label: t("connect.tile.oosStores"),
+        value: r.oosFound,
+        note: t("connect.tile.oosStoresNote", {
+          rate: s.oos.gapRate,
+          checked: formatNumber(r.oosChecked),
+        }),
+      },
+      {
+        label: t("connect.tile.orders"),
+        value: r.orders,
+        note: `${t("connect.packs", { count: formatNumber(r.packs) })} · ${formatMoney(r.sum)}`,
+      },
+    ],
+    6,
+  );
+  routeBlocks(page, data.routes);
+  visitsBlock(page, s.visits, () => visitLists(page, d));
+  oosBlock(page, s.oos, () => {
+    orderLists(page, d, report.salesDate !== null);
+    if (insights && s.oos.checked > 0) recoveryBlock(page, insights.recovery, true);
+  });
+  if (insights && insights.oosPath.totals.checks > 0)
+    oosPathBlock(page, insights.oosPath, "executor");
+  mvBlock(page, s.mv, () => problemList(page, d));
+  ismBlock(page, { level: "executor", months: months(report), issues: data.payments });
+}
+
+// «Нормы и цвета» at the bottom of the page: the owner's norms in force with what each colour
+// means, and what is coloured without a norm of the owner's — only what this file has.
+function norms(page: Page, report: ConnectReport) {
+  const rules = report.insights?.rules ?? DEFAULT_RULES;
+  const routes = report.exec?.routes ?? report.manager?.routes ?? report.executor?.routes ?? null;
+  const share = (value: number) => `${decimal(value, 2)}%`;
+  const bands = (
+    key: "attendance" | "hitRate" | "connect" | "recovery" | "visited",
+    at: { warn: number; good: number } | null,
+  ) => {
+    const off = t("connect.cover.band.off");
+    const text: Record<Tone, string> = at
+      ? {
+          good: t("connect.cover.band.from", { value: share(at.good) }),
+          warn: t("connect.cover.band.between", { from: share(at.warn), to: share(at.good) }),
+          bad: t("connect.cover.band.below", { value: share(at.warn) }),
+        }
+      : { good: off, warn: off, bad: off };
+    return { label: t(`connect.rules.field.${key}`), value: share(rules[key]), ...text };
+  };
+  const R = attentionRules(rules);
+  const attention = t("connect.attention.hint", {
+    connect: R.connect.below,
+    recovery: R.recovery.below,
+    followUp: R.followUp.below,
+    unsold: R.unsold.from,
+  });
+  const title = t("connect.cover.norms");
+  page.section(title, { hint: t("connect.cover.normsHint"), own: true });
+  page.norms({
+    head: [
+      t("connect.cover.norm"),
+      t("connect.col.value"),
+      t("connect.cover.green"),
+      t("connect.cover.amber"),
+      t("connect.cover.red"),
+    ],
+    rows: [
+      bands("attendance", targetBands(rules.attendance)),
+      bands("hitRate", targetBands(rules.hitRate)),
+      bands("visited", lineBands(rules.visited)),
+      bands("connect", lineBands(rules.connect)),
+      bands("recovery", lineBands(rules.recovery)),
+    ],
+    more: {
+      title: t("connect.cover.more"),
+      rows: [
+        ...(routes
+          ? [[t("connect.routes.title"), t("connect.cover.rule.routes")] as [string, string]]
+          : []),
+        ...(routes?.sales
+          ? [[t("connect.zoneSales.title"), t("connect.cover.rule.change")] as [string, string]]
+          : []),
+        ...(routes?.sales?.idle.length
+          ? [[t("connect.zoneSales.idle.title"), t("connect.cover.rule.idle")] as [string, string]]
+          : []),
+        ...(report.insights?.oosPath.totals.checks
+          ? [[t("connect.oosPath.title"), t("connect.cover.rule.path")] as [string, string]]
+          : []),
+        ...(report.insights?.attention
+          ? [
+              [
+                t("connect.attention.title"),
+                report.insights.attendance
+                  ? `${attention} ${t("connect.attention.hintAttendance", { attendance: R.attendance.below })}`
+                  : attention,
+              ] as [string, string],
+            ]
+          : []),
+        [t("connect.cover.rule.rowTitle"), t("connect.cover.rule.row")],
+        [t("connect.cover.rule.statusTitle"), t("connect.cover.rule.status")],
+        [t("connect.cover.rule.listsTitle"), t("connect.cover.rule.lists")],
+      ],
+    },
+  });
 }

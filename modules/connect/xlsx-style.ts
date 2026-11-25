@@ -2,11 +2,12 @@ import type ExcelJS from "exceljs";
 
 import type { Tone } from "./tone";
 
-// How the Connect download looks: the one style layer every sheet goes through (decision of
-// 25.11.2026, see docs/DECISIONS.md). A sheet stays a table to filter, sort and pivot — the header
-// in row 1, one record per row, numbers as numbers — and reads like the page: the same header,
-// the same number formats, and every number the page colours against its norm coloured here by
-// the same rule. Whose data a sheet is counted from is the colour of its tab.
+// How the Connect download looks: the colours and number formats of every sheet, and the sheet of
+// a full list (decisions of 25.11.2026, see docs/DECISIONS.md). The first sheet is the page itself
+// (xlsx-page.ts); a full list stays a table to filter, sort and pivot — the header in row 1, one
+// record per row, numbers as numbers — and reads like the page: the same header, the same number
+// formats, and every number the page colours against its norm coloured here by the same rule.
+// Whose data a sheet is counted from is the colour of its tab.
 //
 // Styles are shared objects (one per look, never changed after they are made): ExcelJS writes a
 // style it has seen before without building it again, so a sheet of thousands of rows costs a
@@ -60,8 +61,11 @@ export type SheetRow =
 
 export type SheetOptions = {
   source: SheetSource;
-  // What the sheet is, in a line: for the list of sheets on the cover.
+  // What the sheet is, in a line: the hint of the link that opens it.
   about: string;
+  // The way back to the block of the first sheet the list belongs to: a link at the end of the
+  // header row (after the table, so the header and the records stay what they are).
+  back?: { text: string; target: string };
   // A row the page marks on its left edge: its first cell is tinted.
   rowTone?: (row: Value[], index: number) => Tone | null;
   // A two-column list of numbers, not a table: no filter.
@@ -80,40 +84,40 @@ export type AddSheet = (
 
 // The page's TONE_CELL (emerald-500/15, amber-400/25, red-500/20) as it looks on white, with its
 // dark text of the same family; TONE_TEXT for a number that is only written in colour.
-const TONE_FILL: Record<Tone, string> = { good: "D9F5EB", warn: "FFEEBF", bad: "FED5D7" };
-const TONE_INK: Record<Tone, string> = { good: "004F3B", warn: "7B3306", bad: "82181A" };
-const TONE_TEXT: Record<Tone, string> = { good: "007A55", warn: "BB4D00", bad: "E7000B" };
+export const TONE_FILL: Record<Tone, string> = { good: "D9F5EB", warn: "FFEEBF", bad: "FED5D7" };
+export const TONE_INK: Record<Tone, string> = { good: "004F3B", warn: "7B3306", bad: "82181A" };
+export const TONE_TEXT: Record<Tone, string> = { good: "007A55", warn: "BB4D00", bad: "E7000B" };
 // The left edge of a marked row (the page's red-500 and amber-400; a good row has no mark).
-const TONE_EDGE: Record<Tone, string | null> = { good: null, warn: "FFB900", bad: "FB2C36" };
+export const TONE_EDGE: Record<Tone, string | null> = { good: null, warn: "FFB900", bad: "FB2C36" };
 
 // The page's SourceTags: sky for the Connect bot, violet for Smart Up; slate where both are
 // compared (neither's colour, and not one of the norms').
-const SOURCE_TAB: Record<SheetSource, string> = {
+export const SOURCE_TAB: Record<SheetSource, string> = {
   bot: "00A6F4",
   smartup: "8E51FF",
   both: "62748E",
 };
-const SOURCE_FILL: Record<SheetSource, string> = {
+export const SOURCE_FILL: Record<SheetSource, string> = {
   bot: "E6F6FE",
   smartup: "F4EEFF",
   both: "EEF1F5",
 };
-const SOURCE_INK: Record<SheetSource, string> = {
+export const SOURCE_INK: Record<SheetSource, string> = {
   bot: "024A70",
   smartup: "4D179A",
   both: "314158",
 };
 
 // The page's neutrals: the table header, the lines between rows, the secondary text, links.
-const HEAD_FILL = "F0F3F7";
-const HEAD_INK = "3F4759";
-const HEAD_LINE = "C3C9D3";
-const LINE = "E3E6EC";
-const INK = "171F30";
-const MUTED = "616978";
-const LINK = "2A78D6";
+export const HEAD_FILL = "F0F3F7";
+export const HEAD_INK = "3F4759";
+export const HEAD_LINE = "C3C9D3";
+export const LINE = "E3E6EC";
+export const INK = "171F30";
+export const MUTED = "616978";
+export const LINK = "2A78D6";
 
-const argb = (hex: string) => ({ argb: `FF${hex.replace("#", "").toUpperCase()}` });
+export const argb = (hex: string) => ({ argb: `FF${hex.replace("#", "").toUpperCase()}` });
 const font = (color: string, more: Partial<ExcelJS.Font> = {}): Partial<ExcelJS.Font> => ({
   name: "Calibri",
   family: 2,
@@ -126,7 +130,10 @@ const fill = (color: string): ExcelJS.Fill => ({
   pattern: "solid",
   fgColor: argb(color),
 });
-const line = (color: string, style: ExcelJS.BorderStyle = "thin"): Partial<ExcelJS.Border> => ({
+export const line = (
+  color: string,
+  style: ExcelJS.BorderStyle = "thin",
+): Partial<ExcelJS.Border> => ({
   style,
   color: argb(color),
 });
@@ -242,8 +249,8 @@ function headerStyle(format: CellFormat | undefined, source?: SheetSource, inden
 
 // A column's width is counted in digits of the plain font; letters are a little narrower than a
 // digit, bold ones a little wider.
-const PLAIN = 0.92;
-const BOLD = 1.14;
+export const PLAIN = 0.92;
+export const BOLD = 1.14;
 
 // How many lines a text takes in a cell this wide (`scale`: how wide its letters are).
 export function textLines(text: string, width: number, scale = PLAIN): number {
@@ -295,6 +302,11 @@ function freeName(book: ExcelJS.Workbook, name: string) {
 }
 
 // --- A sheet ---------------------------------------------------------------------------------
+
+const backStyle: Partial<ExcelJS.Style> = {
+  font: font(LINK, { underline: true }),
+  alignment: { vertical: "middle" },
+};
 
 const cellsOf = (row: SheetRow) => (Array.isArray(row) ? row : row.cells);
 
@@ -399,229 +411,14 @@ export function addStyledSheet(
       });
     }
   });
+  if (options.back) {
+    // One empty column after the table, then the link: the filter and the print keep to the table.
+    const cell = head.getCell(columns.length + 2);
+    cell.value = { text: options.back.text, hyperlink: options.back.target };
+    cell.style = backStyle;
+    ws.getColumn(columns.length + 1).width = 2;
+    ws.getColumn(columns.length + 2).width = Math.min(60, options.back.text.length + 2);
+    ws.pageSetup.printArea = `A1:${ws.getColumn(columns.length).letter}${rows.length + 1}`;
+  }
   return ws;
-}
-
-// --- The cover -------------------------------------------------------------------------------
-
-export type CoverTile = {
-  label: string;
-  value: Value;
-  format?: CellFormat;
-  tone?: Tone | null;
-  // Against the previous period, in percentage points, coloured by whether it got better.
-  change?: { delta: number; tone: Tone | null } | null;
-  note?: string | null;
-};
-
-export type Cover = {
-  title: string;
-  // The level's headline numbers, as the page's tiles: the heads of the label and the value.
-  tilesHead: [string, string];
-  tiles: CoverTile[];
-  // What a change is counted in («п.п.») and the line under the tiles that says what it is against.
-  changeUnit: string;
-  caption?: string | null;
-  // About the file: the level, whose data, the period, how fresh the data is.
-  facts: { title: string; rows: [string, string][] };
-  norms: {
-    title: string;
-    hint: string;
-    // Norm, its value, then what is green, amber and red.
-    head: [string, string, string, string, string];
-    rows: { label: string; value: string; good: string; warn: string; bad: string }[];
-    // What is coloured without a norm of the owner's: where and by which rule.
-    more: { title: string; rows: [string, string][] };
-  };
-  sheets: {
-    title: string;
-    hint: string;
-    head: [string, string, string];
-    rows: { name: string; about: string; source: SheetSource; sourceLabel: string }[];
-  };
-};
-
-// Columns of the cover: labels, a value, then three more the wide texts are merged over.
-const COVER_WIDTHS = [44, 16, 24, 24, 26];
-const COVER_COLUMNS = COVER_WIDTHS.length;
-
-// The first sheet: what the file is, the headline numbers, the norms with the colours' meaning
-// and the list of sheets. A designed page (merged cells, no filter), not a table. Made empty
-// before the other sheets (it is the first) and filled when they are known.
-export function addCoverSheet(book: ExcelJS.Workbook, name: string): ExcelJS.Worksheet {
-  const ws = book.addWorksheet(sheetName(name), {
-    views: [{ showGridLines: false }],
-    pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
-  });
-  ws.columns = COVER_WIDTHS.map((width) => ({ width }));
-  return ws;
-}
-
-export function fillCoverSheet(ws: ExcelJS.Worksheet, cover: Cover) {
-  const widthOf = (from: number, to: number) =>
-    COVER_WIDTHS.slice(from - 1, to).reduce((a, b) => a + b, 0);
-  let at = 0;
-  const next = () => ws.getRow(++at);
-  // A text over several columns, the row as high as it needs.
-  const wide = (
-    row: ExcelJS.Row,
-    from: number,
-    text: string,
-    style: Partial<ExcelJS.Style>,
-    to = COVER_COLUMNS,
-  ) => {
-    const cell = row.getCell(from);
-    cell.value = text;
-    cell.style = { ...style, alignment: { wrapText: true, vertical: "top", ...style.alignment } };
-    // The cells merged into it take its style (the line under them).
-    if (to > from) ws.mergeCells(row.number, from, row.number, to);
-    row.height = Math.max(row.height ?? 0, rowHeight(textLines(text, widthOf(from, to))));
-  };
-  const section = (title: string) => {
-    at += 1;
-    const row = next();
-    row.height = 24;
-    for (let c = 1; c <= COVER_COLUMNS; c++)
-      row.getCell(c).style = {
-        font: font(INK, { bold: true, size: 13 }),
-        alignment: { vertical: "middle" },
-        border: { bottom: line(HEAD_LINE, "medium") },
-      };
-    row.getCell(1).value = title;
-  };
-  const head = (labels: string[], spans: [number, number][]) => {
-    const row = next();
-    for (let c = 1; c <= COVER_COLUMNS; c++) row.getCell(c).style = headerStyle("text");
-    labels.forEach((label, i) => {
-      const [from, to] = spans[i]!;
-      if (to > from) ws.mergeCells(row.number, from, row.number, to);
-      row.getCell(from).value = label;
-    });
-    row.height = rowHeight(
-      Math.max(...labels.map((label, i) => textLines(label, widthOf(...spans[i]!), BOLD))),
-    );
-  };
-  const top: Partial<ExcelJS.Alignment> = { vertical: "top", wrapText: true };
-  const under = { bottom: line(LINE) };
-  const plain: Partial<ExcelJS.Style> = { font: font(INK), border: under, alignment: top };
-  const muted: Partial<ExcelJS.Style> = { font: font(MUTED), border: under, alignment: top };
-  const note: Partial<ExcelJS.Style> = { font: font(MUTED) };
-
-  // The title, then the headline numbers: the label, the number in its colour, the change
-  // against the previous period and the tile's note.
-  const title = next();
-  wide(title, 1, cover.title, {
-    font: font(INK, { bold: true, size: 16 }),
-    alignment: { vertical: "middle" },
-  });
-  title.height = Math.max(30, textLines(cover.title, widthOf(1, COVER_COLUMNS), 1.5) * 22 + 8);
-  head(cover.tilesHead, [
-    [1, 1],
-    [2, 2],
-  ]);
-  for (const tile of cover.tiles) {
-    const row = next();
-    row.getCell(1).value = tile.label;
-    row.getCell(1).style = plain;
-    row.getCell(2).value = tile.value;
-    const numFmt = numberFormat(tile.format);
-    row.getCell(2).style = {
-      ...(numFmt ? { numFmt } : {}),
-      alignment: { horizontal: "right", vertical: "top" },
-      border: under,
-      font: font(tile.tone ? TONE_INK[tile.tone] : INK, { bold: true }),
-      ...(tile.tone ? { fill: fill(TONE_FILL[tile.tone]) } : {}),
-    };
-    row.getCell(3).value = tile.change ? tile.change.delta : null;
-    row.getCell(3).style = {
-      numFmt: numberFormat("change", cover.changeUnit),
-      alignment: { horizontal: "right", vertical: "top" },
-      border: under,
-      font: font(tile.change?.tone ? TONE_TEXT[tile.change.tone] : MUTED),
-    };
-    wide(row, 4, tile.note ?? "", muted);
-    row.height = Math.max(row.height, rowHeight(textLines(tile.label, COVER_WIDTHS[0]!)));
-  }
-  if (cover.caption) wide(next(), 1, cover.caption, note);
-
-  section(cover.facts.title);
-  for (const [label, value] of cover.facts.rows) {
-    const row = next();
-    row.getCell(1).value = label;
-    row.getCell(1).style = muted;
-    wide(row, 2, value, plain);
-  }
-
-  section(cover.norms.title);
-  wide(next(), 1, cover.norms.hint, note);
-  head(cover.norms.head, [
-    [1, 1],
-    [2, 2],
-    [3, 3],
-    [4, 4],
-    [5, 5],
-  ]);
-  for (const norm of cover.norms.rows) {
-    const row = next();
-    row.getCell(1).value = norm.label;
-    row.getCell(1).style = plain;
-    row.getCell(2).value = norm.value;
-    row.getCell(2).style = { ...plain, font: font(INK, { bold: true }) };
-    (["good", "warn", "bad"] as const).forEach((tone, i) => {
-      const cell = row.getCell(3 + i);
-      cell.value = norm[tone];
-      cell.style = {
-        font: font(TONE_INK[tone]),
-        fill: fill(TONE_FILL[tone]),
-        border: under,
-        alignment: top,
-      };
-    });
-    row.height = rowHeight(
-      Math.max(
-        textLines(norm.label, COVER_WIDTHS[0]!),
-        ...(["good", "warn", "bad"] as const).map((tone, i) =>
-          textLines(norm[tone], COVER_WIDTHS[2 + i]!),
-        ),
-      ),
-    );
-  }
-  if (cover.norms.more.rows.length) {
-    at += 1;
-    const sub = next();
-    sub.getCell(1).value = cover.norms.more.title;
-    sub.getCell(1).style = { font: font(INK, { bold: true }) };
-    for (const [where, rule] of cover.norms.more.rows) {
-      const row = next();
-      row.getCell(1).value = where;
-      row.getCell(1).style = plain;
-      wide(row, 2, rule, plain);
-      row.height = Math.max(row.height, rowHeight(textLines(where, COVER_WIDTHS[0]!)));
-    }
-  }
-
-  section(cover.sheets.title);
-  wide(next(), 1, cover.sheets.hint, note);
-  head(cover.sheets.head, [
-    [1, 1],
-    [2, 4],
-    [5, 5],
-  ]);
-  for (const sheet of cover.sheets.rows) {
-    const row = next();
-    // The name opens its sheet.
-    row.getCell(1).value = {
-      text: sheet.name,
-      hyperlink: `#'${sheet.name.replace(/'/g, "''")}'!A1`,
-    };
-    row.getCell(1).style = { font: font(LINK, { underline: true }), border: under, alignment: top };
-    wide(row, 2, sheet.about, plain, 4);
-    row.getCell(5).value = sheet.sourceLabel;
-    row.getCell(5).style = {
-      font: font(SOURCE_INK[sheet.source]),
-      fill: fill(SOURCE_FILL[sheet.source]),
-      border: under,
-      alignment: top,
-    };
-  }
 }
