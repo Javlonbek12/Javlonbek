@@ -18,6 +18,7 @@ export const CONFIGURABLE_MODULES = [
   "reports",
   "connect",
   "distribution",
+  "sop",
 ] as const;
 export type ConfigurableModule = (typeof CONFIGURABLE_MODULES)[number];
 
