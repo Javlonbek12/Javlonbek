@@ -1498,3 +1498,71 @@ model DistShipment {
   @@index([destination])
   @@index([waybill])
 }
+
+// ============================================================
+// S&OP: the monthly sales-and-operations workbook of the regional HQ (production orders by
+// factory, shipments, sales to the distributor and to the market, stocks), uploaded every
+// cycle and checked: errors, risks, stock forecast, order hints.
+// ============================================================
+
+enum SopKind {
+  // Our sheet before it is sent back.
+  OURS
+  // What HQ returned for discussion.
+  HQ_DRAFT
+  // The approved plan.
+  HQ_FINAL
+}
+
+enum SopMarkStatus {
+  // Looked at, nothing more to do.
+  CHECKED
+  // Not a mistake: meant to be so.
+  ACCEPTED
+}
+
+// One uploaded workbook: the parsed sheet of our market (see modules/sop/types.ts), never the
+// file itself.
+model SopUpload {
+  id         String   @id @default(cuid())
+  createdAt  DateTime @default(now())
+  uploadedBy String?
+  fileName   String
+  // The date in the file's name (YYYY-MM-DD), when it has one.
+  fileDate   String?
+  // The month being planned, "YYYY-MM": detected from the file, or chosen by the person.
+  cycle      String
+  kind       SopKind
+  note       String   @default("")
+  market     String
+  data       Json
+  // Sizes in bytes: the file as uploaded and the parsed model as stored; rows of the sheet.
+  fileSize   Int
+  dataSize   Int
+  skuCount   Int
+
+  @@index([cycle, createdAt])
+}
+
+// What belongs to a cycle whatever is uploaded for it: the ticks of the monthly checklist
+// (the point → who ticked it and when).
+model SopCycle {
+  id        String   @id @default(cuid())
+  cycle     String   @unique
+  checklist Json     @default("{}")
+  updatedAt DateTime @updatedAt
+}
+
+// A person's mark on a finding of a cycle (the finding's key: rule, SKU, months): it stays when
+// the cycle's file is uploaded again.
+model SopMark {
+  id        String        @id @default(cuid())
+  cycle     String
+  key       String
+  status    SopMarkStatus
+  note      String        @default("")
+  userId    String?
+  updatedAt DateTime      @updatedAt
+
+  @@unique([cycle, key])
+}
