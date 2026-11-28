@@ -15,10 +15,17 @@ export function monthLabel(month: string): string {
   return `${MONTHS[Number(month.slice(5)) - 1]}'${month.slice(2, 4)}`;
 }
 
+// A value that rounds to zero is written «0», never «-0».
+const rounded = (value: number, decimals: number) => Number(value.toFixed(decimals)) || 0;
+
 // Cases: whole above a hundred, one decimal below («5 546», «12,5»).
-export const cases = (value: number) => formatNumber(value, Math.abs(value) >= 100 ? 0 : 1);
+export const cases = (value: number) => {
+  const decimals = Math.abs(value) >= 100 ? 0 : 1;
+  return formatNumber(rounded(value, decimals), decimals);
+};
 // Months of stock: one decimal.
-export const coverText = (value: number | null) => (value === null ? "—" : formatNumber(value, 1));
+export const coverText = (value: number | null) =>
+  value === null ? "—" : formatNumber(rounded(value, 1), 1);
 
 const isMetric = (value: unknown): value is Metric =>
   typeof value === "string" && (METRICS as readonly string[]).includes(value);
