@@ -37,6 +37,8 @@ export const HELP_SUB_PAGES: SubPage[] = [
   { href: "/distribution/help", titleKey: "help.pages.distributionHelp" },
   { href: "/content/new", titleKey: "help.pages.contentNew" },
   { href: "/connect/import", titleKey: "help.pages.connectImport", roles: MANAGERS },
+  { href: "/sop/uploads", titleKey: "help.pages.sopUploads" },
+  { href: "/sop/guide", titleKey: "help.pages.sopGuide" },
   { href: "/settings/invites", titleKey: "help.pages.settingsInvites", roles: MANAGERS },
   { href: "/settings/roles", titleKey: "help.pages.settingsRoles", roles: ["OWNER"] },
 ];

@@ -30,6 +30,7 @@ const SECTIONS: [prefix: string, modules: ConfigurableModule[], exact?: boolean]
   ["/reports", ["reports"]],
   ["/connect", ["connect"]],
   ["/distribution", ["distribution"]],
+  ["/sop", ["sop"]],
   ["/equipment", ["distribution", "planograms"]],
 ];
 

@@ -24,7 +24,8 @@ export type LightSheet = {
   rows: (onRow: RowHandler) => Promise<string[]>;
 };
 
-type Entry = { method: number; start: number; size: number };
+export type ZipEntry = { method: number; start: number; size: number };
+type Entry = ZipEntry;
 
 // The inflated XML comes in pieces of this size (a sheet may be hundreds of MB as text; bigger
 // pieces are not faster, only more memory).
@@ -33,7 +34,7 @@ const PIECE = 64 * 1024;
 // The files of a zip by name, from its central directory (the list at the end of the archive).
 // The sizes are taken from there: Smart Up writes them after each file's data, not in the header
 // before it, which is why readers going through the archive from its start fail on its exports.
-function zipEntries(zip: Buffer): Map<string, Entry> {
+export function zipEntries(zip: Buffer): Map<string, Entry> {
   // The end record is the last thing in the file, but for an optional comment after it (of up
   // to 65 535 bytes).
   let end = zip.length - 22;
@@ -64,7 +65,7 @@ function zipEntries(zip: Buffer): Map<string, Entry> {
 }
 
 // The text of a file in the zip, piece by piece: never the whole of it in memory.
-async function* textOf(zip: Buffer, entry: Entry): AsyncGenerator<string> {
+export async function* textOf(zip: Buffer, entry: Entry): AsyncGenerator<string> {
   const data = zip.subarray(entry.start, entry.start + entry.size);
   // 0: stored as is; 8: deflate. An .xlsx has nothing else.
   if (entry.method === 0) {
@@ -116,7 +117,7 @@ async function walk(
 }
 
 // Excel writes a control character in a string as _x000D_.
-const unescape = (text: string) =>
+export const unescape = (text: string) =>
   text.includes("_x")
     ? text.replace(/_x([0-9A-Fa-f]{4})_/g, (_, hex: string) =>
         String.fromCharCode(parseInt(hex, 16)),
@@ -145,7 +146,7 @@ async function sharedStrings(xml: AsyncIterable<string>) {
 }
 
 // «C7» → 2: the cell's column, from its address.
-function columnOf(address: string) {
+export function columnOf(address: string) {
   let column = 0;
   for (let i = 0; i < address.length; i++) {
     const code = address.charCodeAt(i);

@@ -3,6 +3,7 @@ import {
   BarChart3,
   Bell,
   CalendarClock,
+  Factory,
   FolderKanban,
   House,
   LayoutGrid,
@@ -123,6 +124,16 @@ export const MODULES: ModuleEntry[] = [
     roles: ALL_ROLES,
     group: "content",
   },
+  // S&OP: the monthly workbook of production orders, shipments, sales and stocks. Off for every
+  // role until the owner switches it on.
+  {
+    id: "sop",
+    titleKey: "nav.sop",
+    href: "/sop",
+    icon: Factory,
+    roles: ALL_ROLES,
+    group: "content",
+  },
   // Management report: owner and managers.
   {
     id: "reports",
@@ -209,6 +220,7 @@ const SWITCHABLE = new Set([
   "reports",
   "connect",
   "distribution",
+  "sop",
 ]);
 
 export function modulesForRole(
